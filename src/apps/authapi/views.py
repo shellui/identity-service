@@ -8,7 +8,7 @@ from django.core.cache import cache
 from django.http import HttpResponseRedirect
 from django.contrib.auth import get_user_model
 from django.db.utils import OperationalError, ProgrammingError
-from allauth.socialaccount.models import SocialApp
+from allauth.socialaccount.models import SocialApp, SocialAccount
 from drf_spectacular.utils import OpenApiResponse, extend_schema, extend_schema_view
 from rest_framework import status
 from rest_framework.permissions import AllowAny
@@ -139,6 +139,18 @@ def _issue_shellui_tokens(user: User, provider: str, avatar_url: str | None = No
     }
 
 
+def _link_social_account(user: User, provider: str, provider_id: str, userinfo: dict) -> None:
+    # Persist provider payload in DB so one user can have multiple linked auth methods.
+    SocialAccount.objects.update_or_create(
+        provider=provider,
+        uid=provider_id,
+        defaults={
+            'user': user,
+            'extra_data': userinfo if isinstance(userinfo, dict) else {},
+        },
+    )
+
+
 def _build_callback_redirect(redirect_to: str, payload: dict, provider: str) -> str:
     params = {
         'access_token': payload['access_token'],
@@ -235,6 +247,7 @@ class SocialLoginView(APIView):
             if not user.last_name and ' ' in full_name:
                 user.last_name = ' '.join(full_name.split(' ')[1:])
             user.save(update_fields=['first_name', 'last_name'])
+        _link_social_account(user=user, provider=provider, provider_id=provider_id, userinfo=userinfo)
 
         token_payload = _issue_tokens(user)
         return Response(token_payload, status=status.HTTP_200_OK)
@@ -323,6 +336,7 @@ class ShellUIOAuthCallbackView(APIView):
             if not user.last_name and ' ' in full_name:
                 user.last_name = ' '.join(full_name.split(' ')[1:])
             user.save(update_fields=['first_name', 'last_name'])
+        _link_social_account(user=user, provider=provider, provider_id=provider_id, userinfo=userinfo)
 
         cache.set(
             f"shellui:user_metadata:{user.id}",
