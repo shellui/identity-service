@@ -5,6 +5,7 @@ from .views import (
     ShellUIAuthorizeView,
     ShellUILogoutView,
     ShellUIOAuthCallbackView,
+    ShellUIPreferenceView,
     ShellUITokenView,
     ShellUIUserView,
     SocialAuthorizeView,
@@ -18,6 +19,7 @@ urlpatterns = [
     path('token', ShellUITokenView.as_view(), name='shellui-token'),
     path('logout', ShellUILogoutView.as_view(), name='shellui-logout'),
     path('user', ShellUIUserView.as_view(), name='shellui-user'),
+    path('preferences', ShellUIPreferenceView.as_view(), name='shellui-preferences'),
     path('providers/<str:provider>/authorize/', SocialAuthorizeView.as_view(), name='social-authorize'),
     path('providers/<str:provider>/login/', SocialLoginView.as_view(), name='social-login'),
 ]

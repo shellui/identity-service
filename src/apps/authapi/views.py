@@ -18,11 +18,22 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 
+from .models import UserPreference
 from .oauth import build_authorize_url, exchange_code_for_token, fetch_provider_userinfo, get_provider_config
-from .serializers import ProviderAuthorizeSerializer, ProviderCallbackSerializer
+from .serializers import ProviderAuthorizeSerializer, ProviderCallbackSerializer, UserPreferenceSerializer
 
 User = get_user_model()
 FRONTEND_DEFAULT_REDIRECT_PATH = '/login/callback'
+
+
+def _user_preferences_payload(user: User) -> dict:
+    preference, _ = UserPreference.objects.get_or_create(user=user)
+    return {
+        'themeName': preference.theme_name,
+        'language': preference.language,
+        'region': preference.region,
+        'colorScheme': preference.color_scheme,
+    }
 
 
 def _extract_user_data(provider: str, userinfo: dict, access_token: str) -> tuple[str, str, str, str | None]:
@@ -118,16 +129,20 @@ def _enabled_oauth_providers() -> list[str]:
 
 def _issue_shellui_tokens(user: User, provider: str, avatar_url: str | None = None) -> dict:
     refresh = RefreshToken.for_user(user)
+    preferences = _user_preferences_payload(user)
     user_metadata = {
         'name': user.get_full_name() or user.get_username(),
         'full_name': user.get_full_name() or user.get_username(),
         'avatar_url': avatar_url,
+        'shelluiPreferences': preferences,
     }
     app_metadata = {'provider': provider}
     access = refresh.access_token
     access['email'] = user.email
     access['user_metadata'] = user_metadata
     access['app_metadata'] = app_metadata
+    refresh['user_metadata'] = user_metadata
+    refresh['app_metadata'] = app_metadata
     now_ts = int(datetime.now(timezone.utc).timestamp())
     expires_at = int(access['exp'])
     return {
@@ -395,6 +410,7 @@ class ShellUIUserView(APIView):
             'full_name': user.get_full_name() or user.get_username(),
             'avatar_url': None,
         }
+        user_metadata['shelluiPreferences'] = _user_preferences_payload(user)
         return Response(
             {
                 'id': str(user.id),
@@ -418,6 +434,24 @@ class ShellUIUserView(APIView):
         current = cache.get(cache_key) or {}
         merged = {**current, **data}
         cache.set(cache_key, merged, timeout=60 * 60 * 24 * 30)
+        incoming_preferences = merged.get('shelluiPreferences')
+        if isinstance(incoming_preferences, dict):
+            serializer = UserPreferenceSerializer(data=incoming_preferences)
+            if serializer.is_valid():
+                preference, _ = UserPreference.objects.get_or_create(user=user)
+                validated = serializer.validated_data
+                if 'themeName' in validated:
+                    preference.theme_name = validated['themeName']
+                if 'language' in validated:
+                    preference.language = validated['language']
+                if 'region' in validated:
+                    preference.region = validated['region']
+                if 'colorScheme' in validated:
+                    preference.color_scheme = validated['colorScheme']
+                preference.save()
+                merged['shelluiPreferences'] = _user_preferences_payload(user)
+        else:
+            merged['shelluiPreferences'] = _user_preferences_payload(user)
         return Response(
             {
                 'id': str(user.id),
@@ -426,3 +460,43 @@ class ShellUIUserView(APIView):
                 'user_metadata': merged,
             }
         )
+
+
+class ShellUIPreferenceView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        user = _authenticate_bearer_user(request)
+        if not user:
+            return Response({'error': 'Unauthorized'}, status=status.HTTP_401_UNAUTHORIZED)
+
+        return Response(_user_preferences_payload(user), status=status.HTTP_200_OK)
+
+    def put(self, request):
+        user = _authenticate_bearer_user(request)
+        if not user:
+            return Response({'error': 'Unauthorized'}, status=status.HTTP_401_UNAUTHORIZED)
+
+        serializer = UserPreferenceSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        preference, _ = UserPreference.objects.get_or_create(user=user)
+        validated = serializer.validated_data
+        if 'themeName' in validated:
+            preference.theme_name = validated['themeName']
+        if 'language' in validated:
+            preference.language = validated['language']
+        if 'region' in validated:
+            preference.region = validated['region']
+        if 'colorScheme' in validated:
+            preference.color_scheme = validated['colorScheme']
+        preference.save()
+        return Response(_user_preferences_payload(user), status=status.HTTP_200_OK)
+
+    def delete(self, request):
+        user = _authenticate_bearer_user(request)
+        if not user:
+            return Response({'error': 'Unauthorized'}, status=status.HTTP_401_UNAUTHORIZED)
+
+        UserPreference.objects.filter(user=user).delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
