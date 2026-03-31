@@ -9,7 +9,7 @@ from django.http import HttpResponseRedirect
 from django.contrib.auth import get_user_model
 from django.db.utils import OperationalError, ProgrammingError
 from allauth.socialaccount.models import SocialApp, SocialAccount
-from drf_spectacular.utils import OpenApiResponse, extend_schema, extend_schema_view
+from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema, extend_schema_view
 from rest_framework import status
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -327,6 +327,21 @@ class SocialLoginView(APIView):
         return Response(token_payload, status=status.HTTP_200_OK)
 
 
+@extend_schema_view(
+    get=extend_schema(
+        tags=['auth'],
+        summary='Get ShellUI auth capabilities',
+        description=(
+            'Return authentication capabilities for the ShellUI client, including enabled OAuth '
+            'providers and feature flags used by the login UI.'
+        ),
+        responses={
+            200: OpenApiResponse(
+                description='Capabilities payload with methods, oauthProviders, and feature flags',
+            ),
+        },
+    ),
+)
 class ShellUIAuthSettingsView(APIView):
     permission_classes = [AllowAny]
 
@@ -344,6 +359,37 @@ class ShellUIAuthSettingsView(APIView):
         )
 
 
+@extend_schema_view(
+    get=extend_schema(
+        tags=['auth'],
+        summary='Start OAuth authorization redirect',
+        description=(
+            'Validate the selected provider and redirect the browser to the provider authorization page. '
+            'Use this endpoint for browser-based login.'
+        ),
+        parameters=[
+            OpenApiParameter(
+                name='provider',
+                type=str,
+                location=OpenApiParameter.QUERY,
+                required=True,
+                description='OAuth provider slug (github, google, or microsoft).',
+            ),
+            OpenApiParameter(
+                name='redirect_to',
+                type=str,
+                location=OpenApiParameter.QUERY,
+                required=False,
+                description='Frontend callback URL. Defaults to /login/callback on current host.',
+            ),
+        ],
+        responses={
+            302: OpenApiResponse(description='Redirect to provider authorize URL'),
+            400: OpenApiResponse(description='Missing provider or provider not enabled'),
+            500: OpenApiResponse(description='Provider is enabled but missing OAuth credentials'),
+        },
+    ),
+)
 class ShellUIAuthorizeView(APIView):
     permission_classes = [AllowAny]
 
@@ -376,6 +422,43 @@ class ShellUIAuthorizeView(APIView):
         return HttpResponseRedirect(authorize_url)
 
 
+@extend_schema_view(
+    get=extend_schema(
+        tags=['auth'],
+        summary='Handle OAuth callback and issue ShellUI tokens',
+        description=(
+            'Consume provider callback query params, exchange code for provider token, resolve user profile, '
+            'and redirect to frontend callback with ShellUI access/refresh tokens in URL hash.'
+        ),
+        parameters=[
+            OpenApiParameter(
+                name='provider',
+                type=str,
+                location=OpenApiParameter.QUERY,
+                required=True,
+                description='OAuth provider slug used during authorize step.',
+            ),
+            OpenApiParameter(
+                name='code',
+                type=str,
+                location=OpenApiParameter.QUERY,
+                required=True,
+                description='Authorization code returned by OAuth provider.',
+            ),
+            OpenApiParameter(
+                name='redirect_to',
+                type=str,
+                location=OpenApiParameter.QUERY,
+                required=False,
+                description='Frontend callback URL. Defaults to /login/callback on current host.',
+            ),
+        ],
+        responses={
+            302: OpenApiResponse(description='Redirect to frontend with auth payload in URL fragment'),
+            400: OpenApiResponse(description='Missing/invalid callback parameters or provider exchange failure'),
+        },
+    ),
+)
 class ShellUIOAuthCallbackView(APIView):
     permission_classes = [AllowAny]
 
@@ -425,6 +508,30 @@ class ShellUIOAuthCallbackView(APIView):
         return HttpResponseRedirect(_build_callback_redirect(redirect_to, payload, provider=provider))
 
 
+@extend_schema_view(
+    post=extend_schema(
+        tags=['auth'],
+        summary='Refresh access token using refresh token',
+        description=(
+            'Issue a new ShellUI token pair from a valid refresh token. '
+            'Requires grant_type=refresh_token in query params or JSON body.'
+        ),
+        parameters=[
+            OpenApiParameter(
+                name='grant_type',
+                type=str,
+                location=OpenApiParameter.QUERY,
+                required=False,
+                description='Must be refresh_token.',
+            ),
+        ],
+        responses={
+            200: OpenApiResponse(description='New access_token and refresh_token payload'),
+            400: OpenApiResponse(description='Unsupported grant_type or missing refresh_token'),
+            401: OpenApiResponse(description='Invalid refresh token'),
+        },
+    ),
+)
 class ShellUITokenView(APIView):
     permission_classes = [AllowAny]
 
@@ -459,6 +566,14 @@ class ShellUITokenView(APIView):
         return Response(payload)
 
 
+@extend_schema_view(
+    post=extend_schema(
+        tags=['auth'],
+        summary='Logout current session',
+        description='ShellUI-compatible logout endpoint. Returns success response for client sign-out flow.',
+        responses={200: OpenApiResponse(description='Logout acknowledged')},
+    ),
+)
 class ShellUILogoutView(APIView):
     permission_classes = [AllowAny]
 
@@ -466,6 +581,33 @@ class ShellUILogoutView(APIView):
         return Response({'success': True})
 
 
+@extend_schema_view(
+    get=extend_schema(
+        tags=['auth'],
+        summary='Get current user profile and metadata',
+        description=(
+            'Return authenticated user identity plus app_metadata/user_metadata. '
+            'Requires bearer access token.'
+        ),
+        responses={
+            200: OpenApiResponse(description='ShellUI user payload with metadata and preferences'),
+            401: OpenApiResponse(description='Missing or invalid bearer token'),
+        },
+    ),
+    put=extend_schema(
+        tags=['auth'],
+        summary='Update current user metadata',
+        description=(
+            'Merge metadata from request.data into cached user_metadata. '
+            'If shelluiPreferences are present, they are validated and persisted to UserPreference.'
+        ),
+        responses={
+            200: OpenApiResponse(description='Updated user payload with merged metadata'),
+            400: OpenApiResponse(description='Request body must include object field `data`'),
+            401: OpenApiResponse(description='Missing or invalid bearer token'),
+        },
+    ),
+)
 class ShellUIUserView(APIView):
     permission_classes = [AllowAny]
 
@@ -531,6 +673,37 @@ class ShellUIUserView(APIView):
         )
 
 
+@extend_schema_view(
+    get=extend_schema(
+        tags=['auth'],
+        summary='Get current user preferences',
+        description='Return persisted ShellUI preferences for the authenticated user.',
+        responses={
+            200: OpenApiResponse(description='Current preferences payload'),
+            401: OpenApiResponse(description='Missing or invalid bearer token'),
+        },
+    ),
+    put=extend_schema(
+        tags=['auth'],
+        summary='Upsert current user preferences',
+        description='Validate and persist partial or full preference payload for authenticated user.',
+        request=UserPreferenceSerializer,
+        responses={
+            200: OpenApiResponse(description='Updated preferences payload'),
+            400: OpenApiResponse(description='Invalid preference payload'),
+            401: OpenApiResponse(description='Missing or invalid bearer token'),
+        },
+    ),
+    delete=extend_schema(
+        tags=['auth'],
+        summary='Delete current user preferences',
+        description='Delete persisted preferences for the authenticated user.',
+        responses={
+            204: OpenApiResponse(description='Preferences deleted'),
+            401: OpenApiResponse(description='Missing or invalid bearer token'),
+        },
+    ),
+)
 class ShellUIPreferenceView(APIView):
     permission_classes = [AllowAny]
 
