@@ -186,6 +186,7 @@ def _issue_shellui_tokens(
         'name': user.get_full_name() or user.get_username(),
         'full_name': user.get_full_name() or user.get_username(),
         'avatar_url': resolved_avatar,
+        'is_staff': bool(user.is_staff),
         'shelluiPreferences': preferences,
     }
     app_meta_base = dict(prior_app_metadata) if isinstance(prior_app_metadata, dict) else {}
@@ -620,7 +621,9 @@ class ShellUIUserView(APIView):
             'name': user.get_full_name() or user.get_username(),
             'full_name': user.get_full_name() or user.get_username(),
             'avatar_url': None,
+            'is_staff': bool(user.is_staff),
         }
+        user_metadata['is_staff'] = bool(user.is_staff)
         user_metadata['shelluiPreferences'] = _user_preferences_payload(user)
         return Response(
             {
