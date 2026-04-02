@@ -1,6 +1,7 @@
 from django.urls import path
 
 from .views import (
+    ShellUIAdminMetricsView,
     ShellUIAdminUserDetailView,
     ShellUIAdminUserListView,
     ShellUIAuthSettingsView,
@@ -22,6 +23,7 @@ urlpatterns = [
     path('logout', ShellUILogoutView.as_view(), name='shellui-logout'),
     path('user', ShellUIUserView.as_view(), name='shellui-user'),
     path('admin/users', ShellUIAdminUserListView.as_view(), name='shellui-admin-users'),
+    path('admin/metrics', ShellUIAdminMetricsView.as_view(), name='shellui-admin-metrics'),
     path('admin/users/<int:pk>', ShellUIAdminUserDetailView.as_view(), name='shellui-admin-user-detail'),
     path('preferences', ShellUIPreferenceView.as_view(), name='shellui-preferences'),
     path('providers/<str:provider>/authorize/', SocialAuthorizeView.as_view(), name='social-authorize'),

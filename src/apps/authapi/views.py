@@ -5,7 +5,7 @@ from urllib.parse import urlencode
 
 from django.conf import settings
 from django.core.cache import cache
-from django.http import HttpResponseRedirect
+from django.http import HttpResponse, HttpResponseRedirect
 from django.contrib.auth import get_user_model
 from django.db.models import Q
 from django.db.utils import OperationalError, ProgrammingError
@@ -19,6 +19,8 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 
+from . import metrics as auth_metrics
+from .renderers import DEFAULT_METRICS_RENDERERS
 from .models import UserPreference
 from .oauth import build_authorize_url, exchange_code_for_token, fetch_provider_userinfo, get_provider_config
 from .serializers import (
@@ -361,6 +363,7 @@ class SocialLoginView(APIView):
             user.save(update_fields=['first_name', 'last_name'])
         _link_social_account(user=user, provider=provider, provider_id=provider_id, userinfo=userinfo)
 
+        auth_metrics.record_successful_login(provider)
         token_payload = _issue_tokens(user)
         return Response(token_payload, status=status.HTTP_200_OK)
 
@@ -543,6 +546,7 @@ class ShellUIOAuthCallbackView(APIView):
             timeout=60 * 60 * 24 * 30,
         )
         payload = _issue_shellui_tokens(user, avatar_url=avatar_url, oauth_provider=provider)
+        auth_metrics.record_successful_login(provider)
         return HttpResponseRedirect(_build_callback_redirect(redirect_to, payload, provider=provider))
 
 
@@ -941,3 +945,28 @@ class ShellUIAdminUserDetailView(APIView):
                 merged['shelluiPreferences'] = _user_preferences_payload(target)
 
         return Response(_admin_user_payload(target))
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=['auth-admin'],
+        summary='Prometheus metrics (staff)',
+        description=(
+            'Prometheus text exposition (openmetrics). Requires staff JWT in Authorization: Bearer. '
+            'Use from the admin UI or, later, automation with a service token; the route is not public.'
+        ),
+        responses={200: OpenApiResponse(description='text/plain Prometheus exposition')},
+    ),
+)
+class ShellUIAdminMetricsView(APIView):
+    permission_classes = [AllowAny]
+    renderer_classes = DEFAULT_METRICS_RENDERERS
+
+    def get(self, request):
+        _staff, err = _require_staff(request)
+        if err:
+            return err
+        return HttpResponse(
+            auth_metrics.metrics_http_body(),
+            content_type=auth_metrics.METRICS_CONTENT_TYPE,
+        )
