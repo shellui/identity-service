@@ -425,6 +425,7 @@ def _admin_user_payload(user: User, company: Company) -> dict:
         'first_name': user.first_name or '',
         'last_name': user.last_name or '',
         'is_staff': user.is_staff,
+        'is_company_owner': _is_user_company_owner(user, company),
         'is_active': user.is_active,
         'groups': group_rows,
         'user_metadata': user_metadata,
