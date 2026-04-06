@@ -5,6 +5,7 @@ from urllib.parse import urlencode
 
 from django.conf import settings
 from django.core.cache import cache
+from django.core.exceptions import ObjectDoesNotExist
 from django.http import HttpResponse, HttpResponseRedirect
 from django.utils.dateparse import parse_datetime
 from django.contrib.auth import get_user_model
@@ -26,6 +27,7 @@ from . import metrics as auth_metrics
 from .renderers import DEFAULT_METRICS_RENDERERS
 from .login_audit import oauth_callback_url, record_login_event
 from .models import LoginEvent, UserPreference
+from .user_activity import touch_user_last_seen
 from .oauth import build_authorize_url, exchange_code_for_token, fetch_provider_userinfo, get_provider_config
 from .serializers import (
     ProviderAuthorizeSerializer,
@@ -47,6 +49,27 @@ def _notify_user_logged_in_for_oauth(request, user: User) -> None:
     update_last_login runs (and any other user_logged_in receivers).
     """
     user_logged_in.send(sender=user.__class__, request=request, user=user)
+    touch_user_last_seen(user)
+
+
+def _last_seen_at_for_user(user: User) -> str | None:
+    """ISO 8601 timestamp from UserActivity, or None if never recorded."""
+    try:
+        ts = user.activity.last_seen_at
+    except ObjectDoesNotExist:
+        return None
+    if ts is None:
+        return None
+    return ts.isoformat()
+
+
+def _enrich_user_metadata_avatar(user: User, user_metadata: dict) -> None:
+    """
+    Fill user_metadata['avatar_url'] from cache, then linked SocialAccount extra_data (GitHub
+    avatar_url, etc.). SPA OAuth (SocialLoginView) used to skip caching; this also fixes GET /user.
+    """
+    explicit = _normalize_avatar_url(user_metadata.get('avatar_url'))
+    user_metadata['avatar_url'] = _resolve_avatar_url_for_jwt(user, explicit)
 
 
 def _user_preferences_payload(user: User) -> dict:
@@ -329,6 +352,8 @@ def _admin_user_payload(user: User) -> dict:
     user_metadata['shelluiPreferences'] = _user_preferences_payload(user)
     group_rows = _admin_user_group_rows(user)
     user_metadata['groups'] = [row['name'] for row in group_rows]
+    user_metadata['last_seen_at'] = _last_seen_at_for_user(user)
+    _enrich_user_metadata_avatar(user, user_metadata)
     return {
         'id': user.id,
         'email': user.email,
@@ -388,7 +413,7 @@ class SocialLoginView(APIView):
                 redirect_uri=serializer.validated_data['redirect_uri'],
             )
             userinfo = fetch_provider_userinfo(provider, access_token)
-            provider_id, email, full_name, _avatar_url = _extract_user_data(provider, userinfo, access_token)
+            provider_id, email, full_name, avatar_url = _extract_user_data(provider, userinfo, access_token)
         except Exception as exc:
             record_login_event(
                 request=request,
@@ -419,6 +444,16 @@ class SocialLoginView(APIView):
                 user.last_name = ' '.join(full_name.split(' ')[1:])
             user.save(update_fields=['first_name', 'last_name'])
         _link_social_account(user=user, provider=provider, provider_id=provider_id, userinfo=userinfo)
+
+        cache.set(
+            f"shellui:user_metadata:{user.id}",
+            {
+                'name': user.get_full_name() or user.get_username(),
+                'full_name': user.get_full_name() or user.get_username(),
+                'avatar_url': avatar_url,
+            },
+            timeout=60 * 60 * 24 * 30,
+        )
 
         _notify_user_logged_in_for_oauth(request, user)
         auth_metrics.record_successful_login(provider)
@@ -714,6 +749,7 @@ class ShellUITokenView(APIView):
             prior_avatar = _normalize_avatar_url(prior_meta.get('avatar_url'))
 
         prior_app = refresh.get('app_metadata')
+        touch_user_last_seen(user)
         payload = _issue_shellui_tokens(
             user,
             avatar_url=prior_avatar,
@@ -771,6 +807,7 @@ class ShellUIUserView(APIView):
         user = _authenticate_bearer_user(request)
         if not user:
             return Response({'error': 'Unauthorized'}, status=status.HTTP_401_UNAUTHORIZED)
+        user = User.objects.select_related('activity').get(pk=user.pk)
         cache_key = f"shellui:user_metadata:{user.id}"
         user_metadata = cache.get(cache_key) or {
             'name': user.get_full_name() or user.get_username(),
@@ -781,6 +818,8 @@ class ShellUIUserView(APIView):
         user_metadata['is_staff'] = bool(user.is_staff)
         user_metadata['shelluiPreferences'] = _user_preferences_payload(user)
         user_metadata['groups'] = _user_group_names(user)
+        user_metadata['last_seen_at'] = _last_seen_at_for_user(user)
+        _enrich_user_metadata_avatar(user, user_metadata)
         return Response(
             {
                 'id': str(user.id),
@@ -794,6 +833,7 @@ class ShellUIUserView(APIView):
         user = _authenticate_bearer_user(request)
         if not user:
             return Response({'error': 'Unauthorized'}, status=status.HTTP_401_UNAUTHORIZED)
+        user = User.objects.select_related('activity').get(pk=user.pk)
         data = request.data.get('data')
         if not isinstance(data, dict):
             return Response(
@@ -823,6 +863,9 @@ class ShellUIUserView(APIView):
         else:
             merged['shelluiPreferences'] = _user_preferences_payload(user)
         merged['groups'] = _user_group_names(user)
+        merged.pop('last_seen_at', None)
+        merged['last_seen_at'] = _last_seen_at_for_user(user)
+        _enrich_user_metadata_avatar(user, merged)
         cache.set(cache_key, merged, timeout=60 * 60 * 24 * 30)
         return Response(
             {
@@ -941,7 +984,7 @@ class ShellUIAdminUserListView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        qs = User.objects.all().order_by('-id').prefetch_related('groups')
+        qs = User.objects.all().order_by('-id').select_related('activity').prefetch_related('groups')
         if q:
             q_filter = (
                 Q(email__icontains=q)
@@ -990,7 +1033,7 @@ class ShellUIAdminUserDetailView(APIView):
         if err:
             return err
         try:
-            target = User.objects.get(pk=pk)
+            target = User.objects.select_related('activity').get(pk=pk)
         except User.DoesNotExist:
             return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
         return Response(_admin_user_payload(target))
@@ -1000,7 +1043,7 @@ class ShellUIAdminUserDetailView(APIView):
         if err:
             return err
         try:
-            target = User.objects.get(pk=pk)
+            target = User.objects.select_related('activity').get(pk=pk)
         except User.DoesNotExist:
             return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -1045,6 +1088,7 @@ class ShellUIAdminUserDetailView(APIView):
             cache_key = f"shellui:user_metadata:{target.id}"
             current = cache.get(cache_key) or {}
             merged = {**current, **data}
+            merged.pop('last_seen_at', None)
             cache.set(cache_key, merged, timeout=60 * 60 * 24 * 30)
             incoming_preferences = merged.get('shelluiPreferences')
             if isinstance(incoming_preferences, dict):

@@ -58,6 +58,28 @@ class LoginEvent(models.Model):
         return f'LoginEvent(id={self.pk}, outcome={self.outcome}, provider={self.provider})'
 
 
+class UserActivity(models.Model):
+    """
+    Tracks when a user last interacted in a way we care about (sign-in or token refresh).
+
+    Distinct from ``User.last_login`` (Django session login / OAuth signal); ``last_seen_at``
+    also moves on refresh-token use so MAU reflects active API clients.
+    """
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='activity',
+    )
+    last_seen_at = models.DateTimeField(db_index=True)
+
+    class Meta:
+        ordering = ['-last_seen_at']
+
+    def __str__(self) -> str:
+        return f'UserActivity(user_id={self.user_id})'
+
+
 class UserPreference(models.Model):
     LANGUAGE_EN = 'en'
     LANGUAGE_FR = 'fr'

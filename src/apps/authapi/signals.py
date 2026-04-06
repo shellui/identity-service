@@ -13,6 +13,7 @@ from django.dispatch import receiver
 
 from .login_audit import record_login_event
 from .models import LoginEvent
+from .user_activity import touch_user_last_seen
 
 User = get_user_model()
 
@@ -49,6 +50,7 @@ def login_event_on_admin_session_login(sender, request, user, **kwargs):
         provider=PROVIDER_DJANGO_ADMIN,
         user=user,
     )
+    touch_user_last_seen(user)
 
 
 @receiver(user_login_failed)

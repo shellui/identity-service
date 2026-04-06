@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import LoginEvent, UserPreference
+from .models import LoginEvent, UserActivity, UserPreference
 
 
 @admin.register(LoginEvent)
@@ -32,6 +32,20 @@ class LoginEventAdmin(admin.ModelAdmin):
         'client_country',
         'client_city',
     )
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(UserActivity)
+class UserActivityAdmin(admin.ModelAdmin):
+    list_display = ('user', 'last_seen_at')
+    ordering = ('-last_seen_at',)
+    search_fields = ('user__email', 'user__username')
+    readonly_fields = ('user', 'last_seen_at')
 
     def has_add_permission(self, request):
         return False
