@@ -41,6 +41,13 @@ from .serializers import (
 User = get_user_model()
 FRONTEND_DEFAULT_REDIRECT_PATH = '/login/callback'
 
+# Client-supplied user_metadata merges cannot set these; they are derived from Django / company state.
+_SHELLUI_JWT_PRIVILEGED_METADATA_KEYS = frozenset({'is_staff', 'is_company_owner', 'groups'})
+
+
+def _is_user_company_owner(user: User, company: Company) -> bool:
+    return company.owners.filter(pk=user.pk).exists()
+
 
 def _notify_user_logged_in_for_oauth(request, user: User) -> None:
     """
@@ -248,6 +255,7 @@ def _issue_shellui_tokens(
         'full_name': user.get_full_name() or user.get_username(),
         'avatar_url': resolved_avatar,
         'is_staff': bool(user.is_staff),
+        'is_company_owner': _is_user_company_owner(user, company),
         'shelluiPreferences': preferences,
         'groups': _user_group_names(user, company),
     }
@@ -359,6 +367,22 @@ def _require_staff(request):
     return user, company, None
 
 
+def _require_staff_or_company_owner(request):
+    """
+    Like `_require_staff` but also allows users in `company.owners` (same `company_id` as token).
+    Used for company-scoped admin APIs so operators without Django `is_staff` can use the admin SPA.
+    """
+    user = _authenticate_bearer_user(request)
+    if not user:
+        return None, None, Response({'error': 'Unauthorized'}, status=status.HTTP_401_UNAUTHORIZED)
+    company, cerr = _required_company_from_request(request, user=user)
+    if cerr:
+        return None, None, cerr
+    if user.is_staff or _is_user_company_owner(user, company):
+        return user, company, None
+    return None, None, Response({'error': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
+
+
 def _login_event_payload(event: LoginEvent) -> dict:
     return {
         'id': event.id,
@@ -388,6 +412,7 @@ def _admin_user_payload(user: User, company: Company) -> dict:
         'is_staff': bool(user.is_staff),
     }
     user_metadata['is_staff'] = bool(user.is_staff)
+    user_metadata['is_company_owner'] = _is_user_company_owner(user, company)
     user_metadata['shelluiPreferences'] = _user_preferences_payload(user)
     group_rows = _admin_user_group_rows(user, company)
     user_metadata['groups'] = [row['name'] for row in group_rows]
@@ -891,6 +916,7 @@ class ShellUIUserView(APIView):
             'is_staff': bool(user.is_staff),
         }
         user_metadata['is_staff'] = bool(user.is_staff)
+        user_metadata['is_company_owner'] = _is_user_company_owner(user, company)
         user_metadata['shelluiPreferences'] = _user_preferences_payload(user)
         user_metadata['groups'] = _user_group_names(user, company)
         user_metadata['last_seen_at'] = _last_seen_at_for_user(user)
@@ -918,7 +944,7 @@ class ShellUIUserView(APIView):
                 {'error': 'Expected JSON body with object field `data`.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        data = {k: v for k, v in data.items() if k != 'groups'}
+        data = {k: v for k, v in data.items() if k not in _SHELLUI_JWT_PRIVILEGED_METADATA_KEYS}
         cache_key = f"shellui:user_metadata:{user.id}"
         current = cache.get(cache_key) or {}
         merged = {**current, **data}
@@ -943,6 +969,8 @@ class ShellUIUserView(APIView):
         merged['groups'] = _user_group_names(user, company)
         merged.pop('last_seen_at', None)
         merged['last_seen_at'] = _last_seen_at_for_user(user)
+        merged['is_staff'] = bool(user.is_staff)
+        merged['is_company_owner'] = _is_user_company_owner(user, company)
         _enrich_user_metadata_avatar(user, merged)
         cache.set(cache_key, merged, timeout=60 * 60 * 24 * 30)
         return Response(
@@ -1038,8 +1066,8 @@ class ShellUIPreferenceView(APIView):
 @extend_schema_view(
     get=extend_schema(
         tags=['auth-admin'],
-        summary='List users (staff)',
-        description='Paginated directory of users. Requires staff JWT.',
+        summary='List users (staff or company owner)',
+        description='Paginated directory of users. Requires staff JWT or company-owner membership.',
         parameters=[
             OpenApiParameter(
                 name='q',
@@ -1056,7 +1084,7 @@ class ShellUIAdminUserListView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request):
-        _staff, company, err = _require_staff(request)
+        _actor, company, err = _require_staff_or_company_owner(request)
         if err:
             return err
 
@@ -1101,15 +1129,16 @@ class ShellUIAdminUserListView(APIView):
 @extend_schema_view(
     get=extend_schema(
         tags=['auth-admin'],
-        summary='Retrieve user (staff)',
-        description='Single user with ShellUI metadata. Requires staff JWT.',
+        summary='Retrieve user (staff or company owner)',
+        description='Single user with ShellUI metadata. Requires staff JWT or company-owner membership.',
     ),
     put=extend_schema(
         tags=['auth-admin'],
-        summary='Update user (staff)',
+        summary='Update user (staff or company owner)',
         description=(
             'Update Django user fields and/or merge `data` into cached user_metadata (same shape as '
-            'PUT /auth/v1/user). Requires staff JWT.'
+            'PUT /auth/v1/user). Staff may change is_staff, is_active, and group_ids. '
+            'Company owners may only update first_name, last_name, and `data`.'
         ),
         request=ShellUIAdminUserUpdateSerializer,
     ),
@@ -1118,7 +1147,7 @@ class ShellUIAdminUserDetailView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request, pk):
-        _staff, company, err = _require_staff(request)
+        _actor, company, err = _require_staff_or_company_owner(request)
         if err:
             return err
         try:
@@ -1128,7 +1157,7 @@ class ShellUIAdminUserDetailView(APIView):
         return Response(_admin_user_payload(target, company))
 
     def put(self, request, pk):
-        staff, company, err = _require_staff(request)
+        actor, company, err = _require_staff_or_company_owner(request)
         if err:
             return err
         try:
@@ -1140,7 +1169,17 @@ class ShellUIAdminUserDetailView(APIView):
         serializer.is_valid(raise_exception=True)
         validated = serializer.validated_data
 
-        if target.pk == staff.pk:
+        if not actor.is_staff and any(
+            k in validated for k in ('is_staff', 'is_active', 'group_ids')
+        ):
+            return Response(
+                {
+                    'error': 'Only staff may change is_staff, is_active, or group membership.',
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        if target.pk == actor.pk:
             if validated.get('is_staff') is False:
                 return Response(
                     {'error': 'You cannot remove your own staff status.'},
@@ -1186,11 +1225,13 @@ class ShellUIAdminUserDetailView(APIView):
 
         data = validated.get('data')
         if isinstance(data, dict):
-            data = {k: v for k, v in data.items() if k != 'groups'}
+            data = {k: v for k, v in data.items() if k not in _SHELLUI_JWT_PRIVILEGED_METADATA_KEYS}
             cache_key = f"shellui:user_metadata:{target.id}"
             current = cache.get(cache_key) or {}
             merged = {**current, **data}
             merged.pop('last_seen_at', None)
+            merged['is_staff'] = bool(target.is_staff)
+            merged['is_company_owner'] = _is_user_company_owner(target, company)
             cache.set(cache_key, merged, timeout=60 * 60 * 24 * 30)
             incoming_preferences = merged.get('shelluiPreferences')
             if isinstance(incoming_preferences, dict):
@@ -1217,13 +1258,13 @@ class ShellUIAdminUserDetailView(APIView):
 @extend_schema_view(
     get=extend_schema(
         tags=['auth-admin'],
-        summary='List auth groups (staff)',
-        description='All company groups for requested company with `user_count`. Requires staff JWT.',
+        summary='List auth groups (staff or company owner)',
+        description='All company groups for requested company with `user_count`.',
     ),
     post=extend_schema(
         tags=['auth-admin'],
-        summary='Create auth group (staff)',
-        description='Create a named group. Requires staff JWT.',
+        summary='Create auth group (staff or company owner)',
+        description='Create a named group.',
         request=ShellUIAdminGroupCreateSerializer,
     ),
 )
@@ -1231,7 +1272,7 @@ class ShellUIAdminGroupListView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request):
-        _staff, company, err = _require_staff(request)
+        _actor, company, err = _require_staff_or_company_owner(request)
         if err:
             return err
         rows = list(
@@ -1243,7 +1284,7 @@ class ShellUIAdminGroupListView(APIView):
         return Response(rows)
 
     def post(self, request):
-        _staff, company, err = _require_staff(request)
+        _actor, company, err = _require_staff_or_company_owner(request)
         if err:
             return err
         serializer = ShellUIAdminGroupCreateSerializer(data=request.data)
@@ -1263,23 +1304,23 @@ class ShellUIAdminGroupListView(APIView):
 @extend_schema_view(
     get=extend_schema(
         tags=['auth-admin'],
-        summary='Retrieve auth group (staff)',
+        summary='Retrieve auth group (staff or company owner)',
     ),
     put=extend_schema(
         tags=['auth-admin'],
-        summary='Rename auth group (staff)',
+        summary='Rename auth group (staff or company owner)',
         request=ShellUIAdminGroupUpdateSerializer,
     ),
     delete=extend_schema(
         tags=['auth-admin'],
-        summary='Delete auth group (staff)',
+        summary='Delete auth group (staff or company owner)',
     ),
 )
 class ShellUIAdminGroupDetailView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request, pk):
-        _staff, company, err = _require_staff(request)
+        _actor, company, err = _require_staff_or_company_owner(request)
         if err:
             return err
         try:
@@ -1289,7 +1330,7 @@ class ShellUIAdminGroupDetailView(APIView):
         return Response({'id': g.id, 'name': g.name, 'user_count': g.user_count})
 
     def put(self, request, pk):
-        _staff, company, err = _require_staff(request)
+        _actor, company, err = _require_staff_or_company_owner(request)
         if err:
             return err
         try:
@@ -1312,7 +1353,7 @@ class ShellUIAdminGroupDetailView(APIView):
         return Response({'id': g.id, 'name': g.name, 'user_count': g.user_count})
 
     def delete(self, request, pk):
-        _staff, company, err = _require_staff(request)
+        _actor, company, err = _require_staff_or_company_owner(request)
         if err:
             return err
         try:
@@ -1326,11 +1367,10 @@ class ShellUIAdminGroupDetailView(APIView):
 @extend_schema_view(
     get=extend_schema(
         tags=['auth-admin'],
-        summary='List login audit events (staff)',
+        summary='List login audit events (staff or company owner)',
         description=(
             'Paginated OAuth sign-in attempts (success and failure). '
             'Contains privacy-oriented fields (hashed IP, truncated user-agent). '
-            'Requires staff JWT.'
         ),
         parameters=[
             OpenApiParameter(
@@ -1416,7 +1456,7 @@ class ShellUIAdminLoginEventListView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request):
-        _staff, company, err = _require_staff(request)
+        _actor, company, err = _require_staff_or_company_owner(request)
         if err:
             return err
 
@@ -1510,8 +1550,8 @@ class ShellUIAdminLoginEventListView(APIView):
 @extend_schema_view(
     get=extend_schema(
         tags=['auth-admin'],
-        summary='Retrieve login audit event (staff)',
-        description='Single login event row. Requires staff JWT.',
+        summary='Retrieve login audit event (staff or company owner)',
+        description='Single login event row.',
         responses={200: OpenApiResponse(description='Login audit event')},
     ),
 )
@@ -1519,7 +1559,7 @@ class ShellUIAdminLoginEventDetailView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request, pk):
-        _staff, company, err = _require_staff(request)
+        _actor, company, err = _require_staff_or_company_owner(request)
         if err:
             return err
         try:
@@ -1532,10 +1572,10 @@ class ShellUIAdminLoginEventDetailView(APIView):
 @extend_schema_view(
     get=extend_schema(
         tags=['auth-admin'],
-        summary='Prometheus metrics (staff)',
+        summary='Prometheus metrics (staff or company owner)',
         description=(
-            'Prometheus text exposition (openmetrics). Requires staff JWT in Authorization: Bearer. '
-            'Use from the admin UI or, later, automation with a service token; the route is not public.'
+            'Prometheus text exposition (openmetrics) for the requested company. '
+            'Requires Bearer token (staff or company owner).'
         ),
         responses={200: OpenApiResponse(description='text/plain Prometheus exposition')},
     ),
@@ -1545,7 +1585,7 @@ class ShellUIAdminMetricsView(APIView):
     renderer_classes = DEFAULT_METRICS_RENDERERS
 
     def get(self, request):
-        _staff, company, err = _require_staff(request)
+        _actor, company, err = _require_staff_or_company_owner(request)
         if err:
             return err
         return HttpResponse(
