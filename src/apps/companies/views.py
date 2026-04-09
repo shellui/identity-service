@@ -24,6 +24,12 @@ from .serializers import CompanySerializer, CompanyUpdateSerializer
         description='Only company owners can update company name and owners list.',
         request=CompanyUpdateSerializer,
     ),
+    update=extend_schema(
+        tags=['companies'],
+        summary='Replace company settings',
+        description='Only company owners can update company name and owners list.',
+        request=CompanyUpdateSerializer,
+    ),
 )
 class CompanyViewSet(
     mixins.ListModelMixin,
