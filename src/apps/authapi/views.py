@@ -10,6 +10,7 @@ from django.http import HttpResponse, HttpResponseRedirect
 from django.utils.dateparse import parse_datetime
 from django.contrib.auth import get_user_model
 from django.contrib.auth.signals import user_logged_in
+from django.contrib.sites.models import Site
 from django.db import IntegrityError
 from django.db.models import Count, Q
 from django.db.utils import OperationalError, ProgrammingError
@@ -24,7 +25,7 @@ from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from . import metrics as auth_metrics
-from apps.companies.models import Company, CompanyGroup, CompanyOAuthRedirect
+from apps.companies.models import Company, CompanyGroup, CompanyOAuthClient, CompanyOAuthRedirect
 from apps.companies.redirect_allowlist import (
     loopback_client_bounce_url_for_oauth_error,
     validate_redirect_to_for_company,
@@ -33,7 +34,12 @@ from .renderers import DEFAULT_METRICS_RENDERERS
 from .login_audit import oauth_callback_url, record_login_event
 from .models import LoginEvent, UserPreference
 from .user_activity import touch_user_last_seen
-from .oauth import build_authorize_url, exchange_code_for_token, fetch_provider_userinfo, get_provider_config
+from .oauth import (
+    build_authorize_url,
+    exchange_code_for_token,
+    fetch_provider_userinfo,
+    get_provider_config,
+)
 from .serializers import (
     ProviderAuthorizeSerializer,
     ProviderCallbackSerializer,
@@ -41,6 +47,10 @@ from .serializers import (
     ShellUIAdminGroupUpdateSerializer,
     ShellUIAdminLoginRedirectCreateSerializer,
     ShellUIAdminLoginRedirectUpdateSerializer,
+    ShellUIAdminOAuthClientCreateSerializer,
+    ShellUIAdminOAuthSocialAppCreateSerializer,
+    ShellUIAdminOAuthSocialAppUpdateSerializer,
+    ShellUIAdminOAuthClientUpdateSerializer,
     ShellUIAdminUserUpdateSerializer,
     UserPreferenceSerializer,
 )
@@ -209,7 +219,57 @@ def _issue_tokens(user: User, company: Company) -> dict:
     }
 
 
-def _enabled_oauth_providers() -> list[str]:
+def _parse_company_oauth_client_id(value: str | None) -> int | None:
+    if value is None:
+        return None
+    raw = str(value).strip()
+    if not raw:
+        return None
+    try:
+        parsed = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
+
+
+def _company_oauth_clients(company: Company) -> list[CompanyOAuthClient]:
+    return list(
+        CompanyOAuthClient.objects.filter(company=company, is_active=True)
+        .exclude(social_app__client_id='')
+        .exclude(social_app__secret='')
+        .select_related('social_app')
+        .order_by('social_app__provider', 'social_app__name', 'id')
+    )
+
+
+def _get_company_oauth_client(
+    company: Company,
+    provider: str,
+    company_oauth_client_id: int | None,
+) -> tuple[CompanyOAuthClient | None, str | None]:
+    if company_oauth_client_id is None:
+        return None, None
+    row = (
+        CompanyOAuthClient.objects.filter(
+            pk=company_oauth_client_id,
+            company=company,
+            social_app__provider=provider,
+            is_active=True,
+        )
+        .exclude(social_app__client_id='')
+        .exclude(social_app__secret='')
+        .select_related('social_app')
+        .first()
+    )
+    if row:
+        return row, None
+    return None, 'Requested company_oauth_client_id is not available for this provider.'
+
+
+def _enabled_oauth_providers(company: Company | None = None) -> list[str]:
+    if company is not None:
+        configured = sorted({str(row.social_app.provider).lower() for row in _company_oauth_clients(company)})
+        return configured
     provider_ids = ('github', 'google', 'microsoft')
     configured = []
     social_provider_settings = getattr(settings, 'SOCIALACCOUNT_PROVIDERS', {}) or {}
@@ -243,6 +303,59 @@ def _enabled_oauth_providers() -> list[str]:
             configured.append(provider)
 
     return configured
+
+
+def _oauth_providers_from_settings() -> list[str]:
+    cfg = getattr(settings, 'SOCIALACCOUNT_PROVIDERS', {}) or {}
+    if not isinstance(cfg, dict):
+        return []
+    return sorted(str(k).strip().lower() for k in cfg.keys() if str(k).strip())
+
+
+def _oauth_client_payload(row: CompanyOAuthClient) -> dict:
+    social_app_settings = row.social_app.settings or {}
+    if not isinstance(social_app_settings, dict):
+        social_app_settings = {}
+    return {
+        'id': row.id,
+        'provider': row.social_app.provider,
+        'label': row.social_app.name,
+        'client_id': row.social_app.client_id,
+        'tenant': str(social_app_settings.get('tenant') or ''),
+        'social_app_id': row.social_app_id,
+        'is_active': row.is_active,
+        'created_at': row.created_at,
+        'updated_at': row.updated_at,
+    }
+
+
+def _oauth_social_app_payload(company: Company, app: SocialApp) -> dict:
+    mapping = (
+        CompanyOAuthClient.objects.filter(company=company, social_app=app)
+        .order_by('-id')
+        .first()
+    )
+    app_settings = app.settings if isinstance(app.settings, dict) else {}
+    return {
+        'id': app.id,
+        'provider': app.provider,
+        'name': app.name,
+        'client_id': app.client_id,
+        'tenant': str(app_settings.get('tenant') or ''),
+        'is_linked': mapping is not None,
+        'mapping_id': mapping.id if mapping is not None else None,
+        'mapping_is_active': bool(mapping.is_active) if mapping is not None else False,
+    }
+
+
+def _generated_social_app_name(provider: str, company: Company) -> str:
+    base = f'{provider}-company-{company.id}'
+    candidate = base
+    suffix = 2
+    while SocialApp.objects.filter(name=candidate).exists():
+        candidate = f'{base}-{suffix}'
+        suffix += 1
+    return candidate
 
 
 def _issue_shellui_tokens(
@@ -477,14 +590,20 @@ class SocialAuthorizeView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request, provider: str):
-        _company, company_err = _required_company_from_request(request)
+        company, company_err = _required_company_from_request(request)
         if company_err:
             return company_err
+        company_oauth_client_id = _parse_company_oauth_client_id(request.GET.get('company_oauth_client_id'))
+        _row, oauth_client_err = _get_company_oauth_client(company, provider, company_oauth_client_id)
+        if oauth_client_err:
+            return Response({'error': oauth_client_err}, status=status.HTTP_400_BAD_REQUEST)
         serializer = ProviderAuthorizeSerializer(data=request.query_params)
         serializer.is_valid(raise_exception=True)
         authorize_url = build_authorize_url(
             provider=provider,
             redirect_uri=serializer.validated_data['redirect_uri'],
+            company_id=company.id,
+            company_oauth_client_id=company_oauth_client_id,
         )
         return Response({'provider': provider, 'authorize_url': authorize_url})
 
@@ -505,6 +624,12 @@ class SocialLoginView(APIView):
         company, company_err = _required_company_from_request(request)
         if company_err:
             return company_err
+        company_oauth_client_id = _parse_company_oauth_client_id(
+            request.data.get('company_oauth_client_id') or request.GET.get('company_oauth_client_id')
+        )
+        _row, oauth_client_err = _get_company_oauth_client(company, provider, company_oauth_client_id)
+        if oauth_client_err:
+            return Response({'error': oauth_client_err}, status=status.HTTP_400_BAD_REQUEST)
         serializer = ProviderCallbackSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
@@ -515,8 +640,15 @@ class SocialLoginView(APIView):
                 provider=provider,
                 code=serializer.validated_data['code'],
                 redirect_uri=serializer.validated_data['redirect_uri'],
+                company_id=company.id,
+                company_oauth_client_id=company_oauth_client_id,
             )
-            userinfo = fetch_provider_userinfo(provider, access_token)
+            userinfo = fetch_provider_userinfo(
+                provider,
+                access_token,
+                company_id=company.id,
+                company_oauth_client_id=company_oauth_client_id,
+            )
             provider_id, email, full_name, avatar_url = _extract_user_data(provider, userinfo, access_token)
         except Exception as exc:
             record_login_event(
@@ -596,15 +728,25 @@ class ShellUIAuthSettingsView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request):
-        _company, company_err = _required_company_from_request(request)
+        company, company_err = _required_company_from_request(request)
         if company_err:
             return company_err
-        providers = _enabled_oauth_providers()
+        clients = _company_oauth_clients(company)
+        providers = sorted({str(row.social_app.provider).lower() for row in clients})
         external = {provider: True for provider in providers}
+        oauth_clients = [
+            {
+                'id': row.id,
+                'provider': row.social_app.provider,
+                'label': row.social_app.name,
+            }
+            for row in clients
+        ]
         return Response(
             {
                 'methods': ['oauth'] if providers else [],
                 'oauthProviders': providers,
+                'oauthClients': oauth_clients,
                 'enable_oauth': bool(providers),
                 'enable_magic_link': False,
                 'external': external,
@@ -666,7 +808,7 @@ class ShellUIAuthorizeView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request):
-        _company, company_err = _required_company_from_request(request)
+        company, company_err = _required_company_from_request(request)
         if company_err:
             msg = 'Invalid request.'
             data = getattr(company_err, 'data', None)
@@ -683,19 +825,31 @@ class ShellUIAuthorizeView(APIView):
                 return bounced
             return company_err
         provider = request.GET.get('provider', '').strip().lower()
+        company_oauth_client_id = _parse_company_oauth_client_id(request.GET.get('company_oauth_client_id'))
         if not provider:
             return _shellui_oauth_bounce_or_json(
                 request,
                 message='Missing provider parameter.',
                 error_code='missing_provider',
             )
-        if provider not in _enabled_oauth_providers():
+        if provider not in _enabled_oauth_providers(company):
             return _shellui_oauth_bounce_or_json(
                 request,
                 message=f"Provider '{provider}' is not enabled.",
                 error_code='provider_disabled',
             )
-        cfg = get_provider_config(provider)
+        _row, oauth_client_err = _get_company_oauth_client(company, provider, company_oauth_client_id)
+        if oauth_client_err:
+            return _shellui_oauth_bounce_or_json(
+                request,
+                message=oauth_client_err,
+                error_code='oauth_client_unavailable',
+            )
+        cfg = get_provider_config(
+            provider,
+            company_id=company.id,
+            company_oauth_client_id=company_oauth_client_id,
+        )
         if not str(cfg.client_id).strip() or not str(cfg.client_secret).strip():
             return _shellui_oauth_bounce_or_json(
                 request,
@@ -708,7 +862,7 @@ class ShellUIAuthorizeView(APIView):
                 error_code='provider_oauth_misconfigured',
             )
         redirect_to, rerr = validate_redirect_to_for_company(
-            company=_company,
+            company=company,
             request=request,
             redirect_to_raw=request.GET.get('redirect_to'),
         )
@@ -724,7 +878,12 @@ class ShellUIAuthorizeView(APIView):
                 error_code=err_code,
             )
         callback_url = oauth_callback_url(request, provider, redirect_to)
-        authorize_url = build_authorize_url(provider=provider, redirect_uri=callback_url)
+        authorize_url = build_authorize_url(
+            provider=provider,
+            redirect_uri=callback_url,
+            company_id=company.id,
+            company_oauth_client_id=company_oauth_client_id,
+        )
         return HttpResponseRedirect(authorize_url)
 
 
@@ -800,6 +959,7 @@ class ShellUIOAuthCallbackView(APIView):
                 return bounced
             return company_err
         provider = request.GET.get('provider', '').strip().lower()
+        company_oauth_client_id = _parse_company_oauth_client_id(request.GET.get('company_oauth_client_id'))
         code = request.GET.get('code', '').strip()
         redirect_to, rerr = validate_redirect_to_for_company(
             company=company,
@@ -823,12 +983,30 @@ class ShellUIOAuthCallbackView(APIView):
                 message='Missing provider or code.',
                 error_code='missing_provider_or_code',
             )
+        _row, oauth_client_err = _get_company_oauth_client(company, provider, company_oauth_client_id)
+        if oauth_client_err:
+            return _shellui_oauth_bounce_or_json(
+                request,
+                message=oauth_client_err,
+                error_code='oauth_client_unavailable',
+            )
         callback_url = oauth_callback_url(request, provider, redirect_to)
         client_tz = request.GET.get('client_timezone', '')
         client_dev = request.GET.get('client_device_id', '') or None
         try:
-            access_token = exchange_code_for_token(provider=provider, code=code, redirect_uri=callback_url)
-            userinfo = fetch_provider_userinfo(provider, access_token)
+            access_token = exchange_code_for_token(
+                provider=provider,
+                code=code,
+                redirect_uri=callback_url,
+                company_id=company.id,
+                company_oauth_client_id=company_oauth_client_id,
+            )
+            userinfo = fetch_provider_userinfo(
+                provider,
+                access_token,
+                company_id=company.id,
+                company_oauth_client_id=company_oauth_client_id,
+            )
             provider_id, email, full_name, avatar_url = _extract_user_data(provider, userinfo, access_token)
         except Exception as exc:
             record_login_event(
@@ -1577,6 +1755,304 @@ class ShellUIAdminLoginRedirectDetailView(APIView):
         try:
             row = CompanyOAuthRedirect.objects.get(pk=pk, company=company)
         except CompanyOAuthRedirect.DoesNotExist:
+            return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        row.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=['auth-admin'],
+        summary='List company OAuth clients (staff or company owner)',
+        description='All OAuth client keys for the active company, grouped by provider in UI clients.',
+    ),
+    post=extend_schema(
+        tags=['auth-admin'],
+        summary='Create company OAuth client (staff or company owner)',
+        request=ShellUIAdminOAuthClientCreateSerializer,
+    ),
+)
+class ShellUIAdminOAuthClientListView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        _actor, company, err = _require_staff_or_company_owner(request)
+        if err:
+            return err
+        rows = CompanyOAuthClient.objects.filter(company=company).select_related('social_app').order_by(
+            'social_app__provider',
+            'social_app__name',
+            'id',
+        )
+        return Response([_oauth_client_payload(r) for r in rows])
+
+    def post(self, request):
+        _actor, company, err = _require_staff_or_company_owner(request)
+        if err:
+            return err
+        serializer = ShellUIAdminOAuthClientCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        validated = serializer.validated_data
+        enabled = set(_oauth_providers_from_settings())
+        try:
+            social_app = SocialApp.objects.get(pk=validated['social_app_id'])
+        except SocialApp.DoesNotExist:
+            return Response({'error': 'SocialApp not found.'}, status=status.HTTP_400_BAD_REQUEST)
+        if str(social_app.provider).strip().lower() not in enabled:
+            return Response(
+                {'error': f"Provider '{social_app.provider}' is not enabled in settings."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not str(social_app.client_id).strip() or not str(social_app.secret).strip():
+            return Response(
+                {'error': 'Selected SocialApp is missing client_id or secret.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            row = CompanyOAuthClient.objects.create(
+                company=company,
+                social_app=social_app,
+                is_active=bool(validated.get('is_active', True)),
+            )
+        except IntegrityError:
+            return Response(
+                {'error': 'This SocialApp is already mapped for this company.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return Response(_oauth_client_payload(row), status=status.HTTP_201_CREATED)
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=['auth-admin'],
+        summary='List available allauth SocialApps for OAuth setup (staff or company owner)',
+        description=(
+            'Returns all SocialApp rows for providers enabled in settings, plus whether each app '
+            'is already linked to the active company OAuth mappings.'
+        ),
+    ),
+    post=extend_schema(
+        tags=['auth-admin'],
+        summary='Create SocialApp OAuth key and optionally map to company',
+        request=ShellUIAdminOAuthSocialAppCreateSerializer,
+    ),
+)
+class ShellUIAdminOAuthSocialAppListView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        _actor, company, err = _require_staff_or_company_owner(request)
+        if err:
+            return err
+        enabled_providers = set(_oauth_providers_from_settings())
+        apps = SocialApp.objects.all().order_by('provider', 'name', 'id')
+        rows = [
+            _oauth_social_app_payload(company, app)
+            for app in apps
+            if str(app.provider).strip().lower() in enabled_providers
+        ]
+        return Response(
+            {
+                'providers': sorted(enabled_providers),
+                'social_apps': rows,
+            }
+        )
+
+    def post(self, request):
+        _actor, company, err = _require_staff_or_company_owner(request)
+        if err:
+            return err
+        serializer = ShellUIAdminOAuthSocialAppCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        validated = serializer.validated_data
+        provider = str(validated['provider']).strip().lower()
+        if provider not in set(_oauth_providers_from_settings()):
+            return Response(
+                {'error': f"Provider '{provider}' is not enabled in settings."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if CompanyOAuthClient.objects.filter(company=company, social_app__provider=provider).exists():
+            return Response(
+                {'error': f"Provider '{provider}' is already configured for this company."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        social_settings = {}
+        tenant = str(validated.get('tenant') or '').strip()
+        if tenant:
+            social_settings = {'tenant': tenant}
+        app = SocialApp.objects.create(
+            provider=provider,
+            name=_generated_social_app_name(provider, company),
+            client_id=str(validated['client_id']).strip(),
+            secret=str(validated['client_secret']).strip(),
+            key='',
+            settings=social_settings,
+        )
+        try:
+            current_site = Site.objects.get_current()
+            app.sites.add(current_site)
+        except Exception:
+            pass
+        mapping, _created = CompanyOAuthClient.objects.get_or_create(
+            company=company,
+            social_app=app,
+            defaults={'is_active': True},
+        )
+        return Response(
+            {
+                'social_app': _oauth_social_app_payload(company, app),
+                'mapping': _oauth_client_payload(mapping) if mapping else None,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+
+@extend_schema_view(
+    delete=extend_schema(
+        tags=['auth-admin'],
+        summary='Delete SocialApp OAuth key for this company',
+        description=(
+            'Deletes the company mapping and the underlying SocialApp. '
+            'For safety, deletion is blocked when the SocialApp is mapped to another company.'
+        ),
+    ),
+)
+class ShellUIAdminOAuthSocialAppDetailView(APIView):
+    permission_classes = [AllowAny]
+
+    def put(self, request, pk):
+        _actor, company, err = _require_staff_or_company_owner(request)
+        if err:
+            return err
+        try:
+            app = SocialApp.objects.get(pk=pk)
+        except SocialApp.DoesNotExist:
+            return Response({'error': 'SocialApp not found.'}, status=status.HTTP_404_NOT_FOUND)
+        mapping = CompanyOAuthClient.objects.filter(company=company, social_app=app).first()
+        if not mapping:
+            return Response(
+                {'error': 'This SocialApp is not mapped to the current company.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        serializer = ShellUIAdminOAuthSocialAppUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        validated = serializer.validated_data
+        if 'client_id' in validated:
+            app.client_id = str(validated['client_id']).strip()
+        if 'client_secret' in validated:
+            app.secret = str(validated['client_secret']).strip()
+        settings_data = app.settings if isinstance(app.settings, dict) else {}
+        settings_data = dict(settings_data)
+        if 'tenant' in validated:
+            tenant = str(validated['tenant']).strip()
+            if tenant:
+                settings_data['tenant'] = tenant
+            else:
+                settings_data.pop('tenant', None)
+        app.settings = settings_data
+        app.save()
+        app.refresh_from_db()
+        return Response(_oauth_social_app_payload(company, app))
+
+    def delete(self, request, pk):
+        _actor, company, err = _require_staff_or_company_owner(request)
+        if err:
+            return err
+        try:
+            app = SocialApp.objects.get(pk=pk)
+        except SocialApp.DoesNotExist:
+            return Response({'error': 'SocialApp not found.'}, status=status.HTTP_404_NOT_FOUND)
+        mapping = CompanyOAuthClient.objects.filter(company=company, social_app=app).first()
+        if not mapping:
+            return Response(
+                {'error': 'This SocialApp is not mapped to the current company.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        has_other_company_mappings = CompanyOAuthClient.objects.filter(social_app=app).exclude(company=company).exists()
+        if has_other_company_mappings:
+            return Response(
+                {'error': 'Cannot delete this key because it is mapped to another company.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        app.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=['auth-admin'],
+        summary='Retrieve company OAuth client (staff or company owner)',
+    ),
+    put=extend_schema(
+        tags=['auth-admin'],
+        summary='Update company OAuth client (staff or company owner)',
+        request=ShellUIAdminOAuthClientUpdateSerializer,
+    ),
+    delete=extend_schema(
+        tags=['auth-admin'],
+        summary='Delete company OAuth client (staff or company owner)',
+    ),
+)
+class ShellUIAdminOAuthClientDetailView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request, pk):
+        _actor, company, err = _require_staff_or_company_owner(request)
+        if err:
+            return err
+        try:
+            row = CompanyOAuthClient.objects.get(pk=pk, company=company)
+        except CompanyOAuthClient.DoesNotExist:
+            return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        return Response(_oauth_client_payload(row))
+
+    def put(self, request, pk):
+        _actor, company, err = _require_staff_or_company_owner(request)
+        if err:
+            return err
+        try:
+            row = CompanyOAuthClient.objects.get(pk=pk, company=company)
+        except CompanyOAuthClient.DoesNotExist:
+            return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        serializer = ShellUIAdminOAuthClientUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        validated = serializer.validated_data
+        if 'social_app_id' in validated:
+            enabled = set(_oauth_providers_from_settings())
+            try:
+                social_app = SocialApp.objects.get(pk=validated['social_app_id'])
+            except SocialApp.DoesNotExist:
+                return Response({'error': 'SocialApp not found.'}, status=status.HTTP_400_BAD_REQUEST)
+            if str(social_app.provider).strip().lower() not in enabled:
+                return Response(
+                    {'error': f"Provider '{social_app.provider}' is not enabled in settings."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if not str(social_app.client_id).strip() or not str(social_app.secret).strip():
+                return Response(
+                    {'error': 'Selected SocialApp is missing client_id or secret.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            row.social_app = social_app
+        if 'is_active' in validated:
+            row.is_active = validated['is_active']
+        try:
+            row.save()
+        except IntegrityError:
+            return Response(
+                {'error': 'This SocialApp is already mapped for this company.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        row.refresh_from_db()
+        return Response(_oauth_client_payload(row))
+
+    def delete(self, request, pk):
+        _actor, company, err = _require_staff_or_company_owner(request)
+        if err:
+            return err
+        try:
+            row = CompanyOAuthClient.objects.get(pk=pk, company=company)
+        except CompanyOAuthClient.DoesNotExist:
             return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
         row.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)

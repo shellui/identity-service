@@ -176,6 +176,7 @@ def oauth_callback_query_string(
     provider: str,
     redirect_to: str,
     company_id: str | None = None,
+    company_oauth_client_id: str | None = None,
     client_timezone: str | None = None,
     client_device_id: str | None = None,
 ) -> str:
@@ -188,6 +189,8 @@ def oauth_callback_query_string(
     }
     if company_id and str(company_id).strip():
         params['company_id'] = str(company_id).strip()
+    if company_oauth_client_id and str(company_oauth_client_id).strip():
+        params['company_oauth_client_id'] = str(company_oauth_client_id).strip()
     tz = normalize_client_timezone(client_timezone)
     if tz:
         params['client_timezone'] = tz
@@ -203,10 +206,12 @@ def oauth_callback_url(request: HttpRequest, provider: str, redirect_to: str) ->
     tz = request.GET.get('client_timezone', '') if hasattr(request, 'GET') else ''
     dev = request.GET.get('client_device_id', '') if hasattr(request, 'GET') else ''
     company_id = request.GET.get('company_id', '') if hasattr(request, 'GET') else ''
+    company_oauth_client_id = request.GET.get('company_oauth_client_id', '') if hasattr(request, 'GET') else ''
     qs = oauth_callback_query_string(
         provider=provider,
         redirect_to=redirect_to,
         company_id=company_id or None,
+        company_oauth_client_id=company_oauth_client_id or None,
         client_timezone=tz or None,
         client_device_id=dev or None,
     )

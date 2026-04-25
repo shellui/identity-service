@@ -1,0 +1,53 @@
+{% extends "admin/base_site.html" %}
+
+{% block content %}
+<div id="content-main">
+  <h1>{{ title }}</h1>
+  <p><strong>Company:</strong> {{ company.name }} ({{ company.slug }})</p>
+  <table class="adminlist">
+    <thead>
+      <tr>
+        <th>Provider</th>
+        <th>Status</th>
+        <th>Configured apps</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in provider_rows %}
+      <tr>
+        <td>{{ row.provider }}</td>
+        <td>
+          {% if row.enabled %}
+          <span style="display:inline-block;padding:2px 8px;border-radius:999px;background:#e6ffed;color:#166534;">enabled</span>
+          {% else %}
+          <span style="display:inline-block;padding:2px 8px;border-radius:999px;background:#f3f4f6;color:#374151;">disabled</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if row.rows %}
+            {% for mapping in row.rows %}
+              <div>
+                <a href="{% url 'admin:socialaccount_socialapp_change' mapping.social_app_id %}">{{ mapping.social_app.name }}</a>
+                {% if not mapping.is_active %}(inactive mapping){% endif %}
+              </div>
+            {% endfor %}
+          {% else %}
+            <span>-</span>
+          {% endif %}
+        </td>
+        <td>
+          <a class="button" href="{{ row.add_url }}">Configure</a>
+          {% if row.rows %}
+            {% for mapping in row.rows %}
+              <a href="{% url 'admin:companies_companyoauthclient_change' mapping.id %}">Edit mapping</a>
+              <a href="{% url 'admin:companies_companyoauthclient_delete' mapping.id %}">Delete mapping</a>
+            {% endfor %}
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

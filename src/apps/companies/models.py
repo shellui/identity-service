@@ -1,6 +1,7 @@
 from django.conf import settings
 from django.db import models
 from django.utils.text import slugify
+from allauth.socialaccount.models import SocialApp
 
 
 class Company(models.Model):
@@ -91,3 +92,31 @@ class CompanyOAuthRedirect(models.Model):
 
         self.base_url = normalize_stored_base_url(self.base_url)
         super().save(*args, **kwargs)
+
+
+class CompanyOAuthClient(models.Model):
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.CASCADE,
+        related_name='oauth_clients',
+    )
+    social_app = models.ForeignKey(
+        SocialApp,
+        on_delete=models.CASCADE,
+        related_name='company_oauth_clients',
+    )
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['social_app__provider', 'social_app__name', 'id']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['company', 'social_app'],
+                name='company_oauth_client_unique_social_app_per_company',
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f'{self.company_id}:{self.social_app.provider}:{self.social_app.name}'

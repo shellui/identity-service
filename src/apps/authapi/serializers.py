@@ -94,3 +94,38 @@ class ShellUIAdminLoginEventSerializer(serializers.Serializer):
     client_device_id_hash = serializers.CharField(allow_blank=True)
     client_country = serializers.CharField(allow_blank=True)
     client_city = serializers.CharField(allow_blank=True)
+
+
+class ShellUIAdminOAuthClientCreateSerializer(serializers.Serializer):
+    social_app_id = serializers.IntegerField(min_value=1)
+    is_active = serializers.BooleanField(required=False, default=True)
+
+
+class ShellUIAdminOAuthClientUpdateSerializer(serializers.Serializer):
+    social_app_id = serializers.IntegerField(required=False, min_value=1)
+    is_active = serializers.BooleanField(required=False)
+
+    def validate(self, attrs: dict) -> dict:
+        if not attrs:
+            raise serializers.ValidationError(
+                'Provide at least one of: social_app_id, is_active.'
+            )
+        return attrs
+
+
+class ShellUIAdminOAuthSocialAppCreateSerializer(serializers.Serializer):
+    provider = serializers.CharField(max_length=64)
+    client_id = serializers.CharField(max_length=191)
+    client_secret = serializers.CharField(max_length=191)
+    tenant = serializers.CharField(required=False, allow_blank=True, max_length=255)
+
+
+class ShellUIAdminOAuthSocialAppUpdateSerializer(serializers.Serializer):
+    client_id = serializers.CharField(required=False, allow_blank=False, max_length=191)
+    client_secret = serializers.CharField(required=False, allow_blank=False, max_length=191)
+    tenant = serializers.CharField(required=False, allow_blank=True, max_length=255)
+
+    def validate(self, attrs: dict) -> dict:
+        if not attrs:
+            raise serializers.ValidationError('Provide at least one of: client_id, client_secret, tenant.')
+        return attrs
