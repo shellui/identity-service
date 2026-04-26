@@ -1,7 +1,4 @@
-"""
-OAuth login `redirect_to` allow list: only the auth server default callback or registered
-prefix URLs for the company may receive tokens in the browser redirect flow.
-"""
+"""OAuth redirect target helpers for frontend callback flows."""
 
 from __future__ import annotations
 
@@ -9,7 +6,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from django.http import HttpRequest
 
-from .models import Company, CompanyOAuthRedirect
+from .models import Company
 
 DEFAULT_LOGIN_CALLBACK_PATH = '/login/callback'
 
@@ -31,11 +28,6 @@ def canonical_url_no_fragment(url: str) -> str:
     path = p.path or ''
     query = p.query or ''
     return urlunsplit((scheme, netloc, path, query, ''))
-
-
-def normalize_stored_base_url(url: str) -> str:
-    """Normalize allow list entries for storage and comparison."""
-    return canonical_url_no_fragment(url).rstrip('/')
 
 
 def server_default_redirect_url(request: HttpRequest) -> str:
@@ -67,31 +59,13 @@ def normalize_client_redirect_url(request: HttpRequest, raw: str) -> tuple[str |
     return canonical_url_no_fragment(s), None
 
 
-def url_prefix_allowed(allowed_prefix: str, candidate: str) -> bool:
-    """True if candidate equals the prefix or is a longer path under that prefix (host-safe)."""
-    a = normalize_stored_base_url(allowed_prefix)
-    c = normalize_stored_base_url(candidate)
-    if not a or not c:
-        return False
-    if c == a:
-        return True
-    if len(c) > len(a) and c[len(a)] == '/' and c.startswith(a):
-        return True
-    return False
-
-
 def redirect_url_allowed_for_company(company: Company, absolute_url: str, request: HttpRequest) -> bool:
+    # In code-exchange OAuth flows, backend tokens are not redirected in URL fragments.
+    # Any valid absolute redirect URL is accepted for the requested company context.
+    _ = company
+    _ = request
     candidate = canonical_url_no_fragment(absolute_url)
-    if candidate == server_default_redirect_url(request):
-        return True
-    bases = CompanyOAuthRedirect.objects.filter(company=company, is_active=True).values_list(
-        'base_url',
-        flat=True,
-    )
-    for base in bases:
-        if url_prefix_allowed(base, candidate):
-            return True
-    return False
+    return bool(candidate)
 
 
 def _hostname_is_loopback(hostname: str | None) -> bool:
@@ -142,7 +116,7 @@ def validate_redirect_to_for_company(
     redirect_to_raw: str | None,
 ) -> tuple[str | None, str | None]:
     """
-    Resolve optional client `redirect_to` and validate against the company allow list.
+    Resolve optional client `redirect_to` and validate URL shape.
     Returns (absolute_url_without_fragment, error_message).
     """
     raw = (redirect_to_raw or '').strip()
@@ -152,5 +126,5 @@ def validate_redirect_to_for_company(
     if err:
         return None, err
     if not redirect_url_allowed_for_company(company, url, request):
-        return None, 'redirect_to is not allowed for this company.'
+        return None, 'Invalid redirect_to.'
     return url, None

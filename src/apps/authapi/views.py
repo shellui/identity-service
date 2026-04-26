@@ -25,7 +25,7 @@ from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from . import metrics as auth_metrics
-from apps.companies.models import Company, CompanyGroup, CompanyOAuthClient, CompanyOAuthRedirect
+from apps.companies.models import Company, CompanyGroup, CompanyOAuthClient
 from apps.companies.redirect_allowlist import (
     loopback_client_bounce_url_for_oauth_error,
     validate_redirect_to_for_company,
@@ -43,10 +43,9 @@ from .oauth import (
 from .serializers import (
     ProviderAuthorizeSerializer,
     ProviderCallbackSerializer,
+    ShellUIOAuthExchangeSerializer,
     ShellUIAdminGroupCreateSerializer,
     ShellUIAdminGroupUpdateSerializer,
-    ShellUIAdminLoginRedirectCreateSerializer,
-    ShellUIAdminLoginRedirectUpdateSerializer,
     ShellUIAdminOAuthClientCreateSerializer,
     ShellUIAdminOAuthSocialAppCreateSerializer,
     ShellUIAdminOAuthSocialAppUpdateSerializer,
@@ -519,16 +518,6 @@ def _require_staff_or_company_owner(request):
     return None, None, Response({'error': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
 
 
-def _login_redirect_payload(row: CompanyOAuthRedirect) -> dict:
-    return {
-        'id': row.id,
-        'base_url': row.base_url,
-        'label': row.label,
-        'is_active': row.is_active,
-        'created_at': row.created_at,
-    }
-
-
 def _login_event_payload(event: LoginEvent) -> dict:
     return {
         'id': event.id,
@@ -877,10 +866,9 @@ class ShellUIAuthorizeView(APIView):
                 message=rerr or 'Invalid redirect.',
                 error_code=err_code,
             )
-        callback_url = oauth_callback_url(request, provider, redirect_to)
         authorize_url = build_authorize_url(
             provider=provider,
-            redirect_uri=callback_url,
+            redirect_uri=redirect_to,
             company_id=company.id,
             company_oauth_client_id=company_oauth_client_id,
         )
@@ -1068,6 +1056,110 @@ class ShellUIOAuthCallbackView(APIView):
             client_device_id=client_dev,
         )
         return HttpResponseRedirect(_build_callback_redirect(redirect_to, payload, provider=provider))
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=['auth'],
+        summary='Exchange OAuth code for ShellUI tokens',
+        description=(
+            'Used by frontend OAuth callback routes. Exchanges provider authorization code, '
+            'provisions/updates user mapping, and returns ShellUI tokens as JSON.'
+        ),
+        request=ShellUIOAuthExchangeSerializer,
+        responses={
+            200: OpenApiResponse(description='Token payload returned'),
+            400: OpenApiResponse(description='Invalid payload or provider exchange failure'),
+        },
+    ),
+)
+class ShellUIOAuthExchangeView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        company, company_err = _required_company_from_request(request)
+        if company_err:
+            return company_err
+        serializer = ShellUIOAuthExchangeSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        validated = serializer.validated_data
+        provider = str(validated['provider']).strip().lower()
+        code = str(validated['code']).strip()
+        redirect_uri = validated['redirect_uri']
+        company_oauth_client_id = validated.get('company_oauth_client_id')
+        _row, oauth_client_err = _get_company_oauth_client(company, provider, company_oauth_client_id)
+        if oauth_client_err:
+            return Response({'error': oauth_client_err}, status=status.HTTP_400_BAD_REQUEST)
+        client_tz = validated.get('client_timezone') or ''
+        client_dev = validated.get('client_device_id') or None
+        try:
+            access_token = exchange_code_for_token(
+                provider=provider,
+                code=code,
+                redirect_uri=redirect_uri,
+                company_id=company.id,
+                company_oauth_client_id=company_oauth_client_id,
+            )
+            userinfo = fetch_provider_userinfo(
+                provider,
+                access_token,
+                company_id=company.id,
+                company_oauth_client_id=company_oauth_client_id,
+            )
+            provider_id, email, full_name, avatar_url = _extract_user_data(provider, userinfo, access_token)
+        except Exception as exc:
+            record_login_event(
+                request=request,
+                outcome=LoginEvent.OUTCOME_FAILURE,
+                provider=provider,
+                user=None,
+                company=company,
+                failure_reason=str(exc),
+                client_timezone=client_tz,
+                client_device_id=client_dev,
+            )
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        user, created = User.objects.get_or_create(
+            email=email,
+            defaults={
+                'username': f'{provider}_{provider_id}',
+                'first_name': full_name.split(' ')[0],
+                'last_name': ' '.join(full_name.split(' ')[1:]),
+            },
+        )
+        if not created:
+            if not user.first_name and full_name:
+                user.first_name = full_name.split(' ')[0]
+            if not user.last_name and ' ' in full_name:
+                user.last_name = ' '.join(full_name.split(' ')[1:])
+            user.save(update_fields=['first_name', 'last_name'])
+        if not company.members.filter(pk=user.pk).exists():
+            company.members.add(user)
+        _link_social_account(user=user, provider=provider, provider_id=provider_id, userinfo=userinfo)
+
+        cache.set(
+            f"shellui:user_metadata:{user.id}",
+            {
+                'name': user.get_full_name() or user.get_username(),
+                'full_name': user.get_full_name() or user.get_username(),
+                'avatar_url': avatar_url,
+            },
+            timeout=60 * 60 * 24 * 30,
+        )
+        _notify_user_logged_in_for_oauth(request, user)
+        payload = _issue_shellui_tokens(user, company=company, avatar_url=avatar_url, oauth_provider=provider)
+        auth_metrics.record_successful_login(provider, company_id=company.id)
+        record_login_event(
+            request=request,
+            outcome=LoginEvent.OUTCOME_SUCCESS,
+            provider=provider,
+            user=user,
+            company=company,
+            client_timezone=client_tz,
+            client_device_id=client_dev,
+        )
+        return Response(payload, status=status.HTTP_200_OK)
 
 
 @extend_schema_view(
@@ -1643,120 +1735,6 @@ class ShellUIAdminGroupDetailView(APIView):
         except CompanyGroup.DoesNotExist:
             return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
         g.delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
-
-
-@extend_schema_view(
-    get=extend_schema(
-        tags=['auth-admin'],
-        summary='List OAuth login redirect allow list (staff or company owner)',
-        description=(
-            'Allowed absolute URL prefixes for browser OAuth (`redirect_to`). '
-            'The auth server default callback for this host is always permitted without a row.'
-        ),
-    ),
-    post=extend_schema(
-        tags=['auth-admin'],
-        summary='Add allowed OAuth redirect prefix (staff or company owner)',
-        request=ShellUIAdminLoginRedirectCreateSerializer,
-    ),
-)
-class ShellUIAdminLoginRedirectListView(APIView):
-    permission_classes = [AllowAny]
-
-    def get(self, request):
-        _actor, company, err = _require_staff_or_company_owner(request)
-        if err:
-            return err
-        rows = CompanyOAuthRedirect.objects.filter(company=company).order_by('id')
-        return Response([_login_redirect_payload(r) for r in rows])
-
-    def post(self, request):
-        _actor, company, err = _require_staff_or_company_owner(request)
-        if err:
-            return err
-        serializer = ShellUIAdminLoginRedirectCreateSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        base_url = serializer.validated_data['base_url']
-        label = serializer.validated_data.get('label') or ''
-        try:
-            row = CompanyOAuthRedirect.objects.create(
-                company=company,
-                base_url=base_url,
-                label=label,
-            )
-        except IntegrityError:
-            return Response(
-                {'error': 'This base_url is already registered for this company.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        return Response(_login_redirect_payload(row), status=status.HTTP_201_CREATED)
-
-
-@extend_schema_view(
-    get=extend_schema(
-        tags=['auth-admin'],
-        summary='Retrieve OAuth login redirect rule (staff or company owner)',
-    ),
-    put=extend_schema(
-        tags=['auth-admin'],
-        summary='Update OAuth login redirect rule (staff or company owner)',
-        request=ShellUIAdminLoginRedirectUpdateSerializer,
-    ),
-    delete=extend_schema(
-        tags=['auth-admin'],
-        summary='Delete OAuth login redirect rule (staff or company owner)',
-    ),
-)
-class ShellUIAdminLoginRedirectDetailView(APIView):
-    permission_classes = [AllowAny]
-
-    def get(self, request, pk):
-        _actor, company, err = _require_staff_or_company_owner(request)
-        if err:
-            return err
-        try:
-            row = CompanyOAuthRedirect.objects.get(pk=pk, company=company)
-        except CompanyOAuthRedirect.DoesNotExist:
-            return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
-        return Response(_login_redirect_payload(row))
-
-    def put(self, request, pk):
-        _actor, company, err = _require_staff_or_company_owner(request)
-        if err:
-            return err
-        try:
-            row = CompanyOAuthRedirect.objects.get(pk=pk, company=company)
-        except CompanyOAuthRedirect.DoesNotExist:
-            return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
-        serializer = ShellUIAdminLoginRedirectUpdateSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        validated = serializer.validated_data
-        if 'base_url' in validated:
-            row.base_url = validated['base_url']
-        if 'label' in validated:
-            row.label = validated['label']
-        if 'is_active' in validated:
-            row.is_active = validated['is_active']
-        try:
-            row.save()
-        except IntegrityError:
-            return Response(
-                {'error': 'This base_url is already registered for this company.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        row.refresh_from_db()
-        return Response(_login_redirect_payload(row))
-
-    def delete(self, request, pk):
-        _actor, company, err = _require_staff_or_company_owner(request)
-        if err:
-            return err
-        try:
-            row = CompanyOAuthRedirect.objects.get(pk=pk, company=company)
-        except CompanyOAuthRedirect.DoesNotExist:
-            return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
-        row.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 

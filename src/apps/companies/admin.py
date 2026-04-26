@@ -5,14 +5,7 @@ from django.template.response import TemplateResponse
 from django.urls import path, reverse
 from django.utils.html import format_html
 
-from .models import Company, CompanyGroup, CompanyOAuthClient, CompanyOAuthRedirect
-
-
-class CompanyOAuthRedirectInline(admin.TabularInline):
-    model = CompanyOAuthRedirect
-    extra = 1
-    fields = ('base_url', 'label', 'is_active', 'created_at')
-    readonly_fields = ('created_at',)
+from .models import Company, CompanyGroup, CompanyOAuthClient
 
 
 class CompanyOAuthClientInline(admin.TabularInline):
@@ -27,7 +20,7 @@ class CompanyAdmin(admin.ModelAdmin):
     list_display = ('id', 'name', 'slug', 'oauth_clients_link')
     search_fields = ('name', 'slug')
     filter_horizontal = ('members', 'owners')
-    inlines = [CompanyOAuthClientInline, CompanyOAuthRedirectInline]
+    inlines = [CompanyOAuthClientInline]
 
     def get_urls(self):
         urls = super().get_urls()
@@ -115,14 +108,6 @@ class CompanyGroupAdmin(admin.ModelAdmin):
     search_fields = ('name', 'company__name')
     list_filter = ('company',)
     filter_horizontal = ('members',)
-
-
-@admin.register(CompanyOAuthRedirect)
-class CompanyOAuthRedirectAdmin(admin.ModelAdmin):
-    list_display = ('id', 'company', 'base_url', 'label', 'is_active', 'created_at')
-    list_filter = ('is_active', 'company')
-    search_fields = ('base_url', 'label', 'company__name')
-    autocomplete_fields = ('company',)
 
 
 @admin.register(CompanyOAuthClient)
