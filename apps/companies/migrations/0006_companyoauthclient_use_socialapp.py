@@ -5,6 +5,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('companies', '0005_companyoauthclient'),
+        ('socialaccount', '0001_initial'),
     ]
 
     operations = [
@@ -40,12 +41,20 @@ class Migration(migrations.Migration):
             model_name='companyoauthclient',
             name='social_app',
             field=models.ForeignKey(
-                default=1,
+                null=True,
                 on_delete=models.deletion.CASCADE,
                 related_name='company_oauth_clients',
                 to='socialaccount.socialapp',
             ),
-            preserve_default=False,
+        ),
+        migrations.AlterField(
+            model_name='companyoauthclient',
+            name='social_app',
+            field=models.ForeignKey(
+                on_delete=models.deletion.CASCADE,
+                related_name='company_oauth_clients',
+                to='socialaccount.socialapp',
+            ),
         ),
         migrations.AddConstraint(
             model_name='companyoauthclient',

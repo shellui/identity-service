@@ -98,3 +98,30 @@ Generate docs:
 ```
 
 Output is generated in `tools/docusaurus/build`.
+
+## Docker (local run)
+
+Build image:
+
+```bash
+docker build -t shellui/identity-service:local .
+```
+
+Run container:
+
+```bash
+docker run --rm -p 8000:8000 --name identity-service shellui/identity-service:local
+```
+
+Run with OAuth environment variables:
+
+```bash
+docker run --rm -p 8000:8000 \
+  -e GITHUB_CLIENT_ID="..." \
+  -e GITHUB_CLIENT_SECRET="..." \
+  -e CORS_ALLOWED_ORIGINS="http://localhost:4000,http://localhost:5174" \
+  --name identity-service \
+  shellui/identity-service:local
+```
+
+The container runs migrations automatically, then starts Django on `0.0.0.0:8000`.
