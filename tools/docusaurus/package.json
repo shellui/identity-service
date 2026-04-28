@@ -1,0 +1,21 @@
+{
+  "name": "identity-service-docs",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Docusaurus site for identity-service docs",
+  "scripts": {
+    "start": "docusaurus start --config docusaurus.config.js",
+    "build": "docusaurus build --config docusaurus.config.js",
+    "serve": "docusaurus serve --config docusaurus.config.js"
+  },
+  "dependencies": {
+    "@docusaurus/core": "^3.9.2",
+    "@docusaurus/preset-classic": "^3.9.2",
+    "prism-react-renderer": "^2.4.1",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "overrides": {
+    "webpack": "5.101.3"
+  }
+}

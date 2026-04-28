@@ -86,3 +86,15 @@ backend: {
 
 - `/auth/v1/settings` only enables providers that are actually configured.
 - Avatar URL from provider userinfo is included in JWT metadata (`user_metadata.avatar_url`) for ShellUI profile display.
+
+## Documentation (Docusaurus)
+
+Project docs live in `docs/` and are built with Docusaurus config in `tools/docusaurus/`.
+
+Generate docs:
+
+```bash
+./tools/generate-docs.sh
+```
+
+Output is generated in `tools/docusaurus/build`.

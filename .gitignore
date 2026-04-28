@@ -205,3 +205,8 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Docusaurus docs tooling
+tools/docusaurus/node_modules/
+tools/docusaurus/.docusaurus/
+tools/docusaurus/build/
