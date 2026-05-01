@@ -16,6 +16,7 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import include, path
+from django.views.decorators.clickjacking import xframe_options_exempt
 from drf_spectacular.views import (
     SpectacularAPIView,
     SpectacularRedocView,
@@ -32,12 +33,12 @@ urlpatterns = [
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
     path(
         'api/docs/',
-        SpectacularSwaggerView.as_view(url_name='schema'),
+        xframe_options_exempt(SpectacularSwaggerView.as_view(url_name='schema')),
         name='swagger-ui',
     ),
     path(
         'api/docs/redoc/',
-        SpectacularRedocView.as_view(url_name='schema'),
+        xframe_options_exempt(SpectacularRedocView.as_view(url_name='schema')),
         name='redoc',
     ),
 ]
