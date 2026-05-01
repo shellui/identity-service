@@ -2,7 +2,7 @@
 
 Welcome to the `identity-service` documentation.
 
-This backend provides ShellUI-compatible authentication endpoints under `/auth/v1/*` using Django.
+This backend provides ShellUI-compatible authentication endpoints under `/api/v1/*` using Django.
 
 ## Quick links
 

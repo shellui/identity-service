@@ -28,8 +28,8 @@ from . import views
 urlpatterns = [
     path('', views.root, name='root'),
     path('admin/', admin.site.urls),
-    path('auth/v1/', include('apps.authapi.urls')),
-    path('api/companies/', include('apps.companies.urls')),
+    path('api/v1/', include('apps.authapi.urls')),
+    path('api/v1/companies/', include('apps.companies.urls')),
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
     path(
         'api/docs/',

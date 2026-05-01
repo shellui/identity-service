@@ -215,4 +215,4 @@ def oauth_callback_url(request: HttpRequest, provider: str, redirect_to: str) ->
         client_timezone=tz or None,
         client_device_id=dev or None,
     )
-    return f"{request.scheme}://{request.get_host()}/auth/v1/oauth/callback?{qs}"
+    return f"{request.scheme}://{request.get_host()}/api/v1/oauth/callback?{qs}"

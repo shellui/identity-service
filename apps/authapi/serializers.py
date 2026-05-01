@@ -21,6 +21,11 @@ class ShellUIOAuthExchangeSerializer(serializers.Serializer):
     client_device_id = serializers.CharField(required=False, allow_blank=True, max_length=128)
 
 
+class ShellUIRefreshTokenSerializer(serializers.Serializer):
+    grant_type = serializers.CharField(required=False, allow_blank=False, default='refresh_token')
+    refresh_token = serializers.CharField(required=True, allow_blank=False)
+
+
 class UserPreferenceSerializer(serializers.Serializer):
     themeName = serializers.CharField(required=False, allow_blank=False, max_length=100)
     language = serializers.ChoiceField(required=False, choices=['en', 'fr'])

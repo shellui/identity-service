@@ -44,6 +44,7 @@ from .serializers import (
     ProviderAuthorizeSerializer,
     ProviderCallbackSerializer,
     ShellUIOAuthExchangeSerializer,
+    ShellUIRefreshTokenSerializer,
     ShellUIAdminGroupCreateSerializer,
     ShellUIAdminGroupUpdateSerializer,
     ShellUIAdminOAuthClientCreateSerializer,
@@ -466,12 +467,42 @@ def _authenticate_bearer_user(request):
 
 def _required_company_from_request(request, user: User | None = None) -> tuple[Company | None, Response | None]:
     raw = (request.GET.get('company_id') or request.data.get('company_id') or '').strip()
-    if not raw:
+    request_auth_token = getattr(request, 'auth', None)
+    token_company_id = (
+        request_auth_token.get('company_id')
+        if request_auth_token is not None and hasattr(request_auth_token, 'get')
+        else None
+    )
+    if token_company_id is None:
+        auth = JWTAuthentication()
+        try:
+            authenticated = auth.authenticate(request)
+        except (InvalidToken, TokenError):
+            authenticated = None
+        if authenticated:
+            _user, token = authenticated
+            token_company_id = token.get('company_id') if hasattr(token, 'get') else None
+
+    company_id: int | None = None
+    if raw:
+        try:
+            company_id = int(raw)
+        except (TypeError, ValueError):
+            return None, Response({'error': 'Invalid company_id parameter.'}, status=status.HTTP_400_BAD_REQUEST)
+    elif token_company_id is not None:
+        try:
+            company_id = int(token_company_id)
+        except (TypeError, ValueError):
+            return None, Response({'error': 'Invalid token company_id claim.'}, status=status.HTTP_400_BAD_REQUEST)
+    else:
         return None, Response({'error': 'Missing company_id parameter.'}, status=status.HTTP_400_BAD_REQUEST)
-    try:
-        company_id = int(raw)
-    except (TypeError, ValueError):
-        return None, Response({'error': 'Invalid company_id parameter.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    if raw and token_company_id is not None and int(token_company_id) != company_id:
+        return None, Response(
+            {'error': 'Requested company_id does not match token company_id.'},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
     try:
         company = Company.objects.get(pk=company_id)
     except Company.DoesNotExist:
@@ -480,13 +511,6 @@ def _required_company_from_request(request, user: User | None = None) -> tuple[C
     if user is not None:
         if not company.members.filter(pk=user.pk).exists():
             return None, Response({'error': 'Forbidden for this company.'}, status=status.HTTP_403_FORBIDDEN)
-        auth_token = getattr(request, 'auth', None)
-        auth_company_id = auth_token.get('company_id') if auth_token is not None and hasattr(auth_token, 'get') else None
-        if auth_company_id is not None and int(auth_company_id) != company.id:
-            return None, Response(
-                {'error': 'Requested company_id does not match token company_id.'},
-                status=status.HTTP_403_FORBIDDEN,
-            )
     return company, None
 
 
@@ -569,9 +593,10 @@ def _admin_user_payload(user: User, company: Company) -> dict:
 
 @extend_schema_view(
     get=extend_schema(
-        tags=['auth'],
+        tags=['auth-social'],
         summary='Get social provider authorize URL',
         description='Generate an OAuth2 authorize URL for GitHub, Google, or Microsoft.',
+        auth=[],
         responses={200: OpenApiResponse(description='Authorization URL generated')},
     )
 )
@@ -599,9 +624,10 @@ class SocialAuthorizeView(APIView):
 
 @extend_schema_view(
     post=extend_schema(
-        tags=['auth'],
+        tags=['auth-social'],
         summary='Login with social provider',
         description='Exchange OAuth code and return JWT tokens plus user profile.',
+        auth=[],
         request=ProviderCallbackSerializer,
         responses={200: OpenApiResponse(description='Authenticated successfully')},
     )
@@ -700,12 +726,22 @@ class SocialLoginView(APIView):
 
 @extend_schema_view(
     get=extend_schema(
-        tags=['auth'],
+        tags=['auth-session'],
         summary='Get ShellUI auth capabilities',
         description=(
             'Return authentication capabilities for the ShellUI client, including enabled OAuth '
             'providers and feature flags used by the login UI.'
         ),
+        auth=[],
+        parameters=[
+            OpenApiParameter(
+                name='company_id',
+                type=int,
+                location=OpenApiParameter.QUERY,
+                required=False,
+                description='Company id used to resolve enabled OAuth clients/settings. Optional when JWT includes company_id.',
+            ),
+        ],
         responses={
             200: OpenApiResponse(
                 description='Capabilities payload with methods, oauthProviders, and feature flags',
@@ -745,12 +781,13 @@ class ShellUIAuthSettingsView(APIView):
 
 @extend_schema_view(
     get=extend_schema(
-        tags=['auth'],
+        tags=['auth-social'],
         summary='Start OAuth authorization redirect',
         description=(
             'Validate the selected provider and redirect the browser to the provider authorization page. '
             'Use this endpoint for browser-based login.'
         ),
+        auth=[],
         parameters=[
             OpenApiParameter(
                 name='provider',
@@ -877,12 +914,13 @@ class ShellUIAuthorizeView(APIView):
 
 @extend_schema_view(
     get=extend_schema(
-        tags=['auth'],
+        tags=['auth-social'],
         summary='Handle OAuth callback and issue ShellUI tokens',
         description=(
             'Consume provider callback query params, exchange code for provider token, resolve user profile, '
             'and redirect to frontend callback with ShellUI access/refresh tokens in URL hash.'
         ),
+        auth=[],
         parameters=[
             OpenApiParameter(
                 name='provider',
@@ -1060,12 +1098,13 @@ class ShellUIOAuthCallbackView(APIView):
 
 @extend_schema_view(
     post=extend_schema(
-        tags=['auth'],
+        tags=['auth-social'],
         summary='Exchange OAuth code for ShellUI tokens',
         description=(
             'Used by frontend OAuth callback routes. Exchanges provider authorization code, '
             'provisions/updates user mapping, and returns ShellUI tokens as JSON.'
         ),
+        auth=[],
         request=ShellUIOAuthExchangeSerializer,
         responses={
             200: OpenApiResponse(description='Token payload returned'),
@@ -1164,11 +1203,11 @@ class ShellUIOAuthExchangeView(APIView):
 
 @extend_schema_view(
     post=extend_schema(
-        tags=['auth'],
+        tags=['auth-session'],
         summary='Refresh access token using refresh token',
         description=(
             'Issue a new ShellUI token pair from a valid refresh token. '
-            'Requires grant_type=refresh_token in query params or JSON body.'
+            'Requires bearer access token plus grant_type=refresh_token in query params or JSON body.'
         ),
         parameters=[
             OpenApiParameter(
@@ -1179,6 +1218,7 @@ class ShellUIOAuthExchangeView(APIView):
                 description='Must be refresh_token.',
             ),
         ],
+        request=ShellUIRefreshTokenSerializer,
         responses={
             200: OpenApiResponse(description='New access_token and refresh_token payload'),
             400: OpenApiResponse(description='Unsupported grant_type or missing refresh_token'),
@@ -1190,7 +1230,10 @@ class ShellUITokenView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
-        company, company_err = _required_company_from_request(request)
+        actor = _authenticate_bearer_user(request)
+        if not actor:
+            return Response({'error': 'Unauthorized'}, status=status.HTTP_401_UNAUTHORIZED)
+        company, company_err = _required_company_from_request(request, user=actor)
         if company_err:
             return company_err
         grant_type = request.GET.get('grant_type') or request.data.get('grant_type')
@@ -1208,6 +1251,11 @@ class ShellUITokenView(APIView):
             user = User.objects.get(pk=user_id)
         except Exception:
             return Response({'error': 'Invalid refresh token.'}, status=status.HTTP_401_UNAUTHORIZED)
+        if int(user.pk) != int(actor.pk):
+            return Response(
+                {'error': 'Refresh token does not belong to authenticated user.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
         prior_meta = refresh.get('user_metadata')
         prior_avatar = None
@@ -1230,7 +1278,7 @@ class ShellUITokenView(APIView):
 
 @extend_schema_view(
     post=extend_schema(
-        tags=['auth'],
+        tags=['auth-session'],
         summary='Logout current session',
         description='ShellUI-compatible logout endpoint. Returns success response for client sign-out flow.',
         responses={200: OpenApiResponse(description='Logout acknowledged')},
@@ -1248,7 +1296,7 @@ class ShellUILogoutView(APIView):
 
 @extend_schema_view(
     get=extend_schema(
-        tags=['auth'],
+        tags=['auth-profile'],
         summary='Get current user profile and metadata',
         description=(
             'Return authenticated user identity plus app_metadata/user_metadata. '
@@ -1260,7 +1308,7 @@ class ShellUILogoutView(APIView):
         },
     ),
     put=extend_schema(
-        tags=['auth'],
+        tags=['auth-profile'],
         summary='Update current user metadata',
         description=(
             'Merge metadata from request.data into cached user_metadata. '
@@ -1361,7 +1409,7 @@ class ShellUIUserView(APIView):
 
 @extend_schema_view(
     get=extend_schema(
-        tags=['auth'],
+        tags=['auth-preferences'],
         summary='Get current user preferences',
         description='Return persisted ShellUI preferences for the authenticated user.',
         responses={
@@ -1370,7 +1418,7 @@ class ShellUIUserView(APIView):
         },
     ),
     put=extend_schema(
-        tags=['auth'],
+        tags=['auth-preferences'],
         summary='Upsert current user preferences',
         description='Validate and persist partial or full preference payload for authenticated user.',
         request=UserPreferenceSerializer,
@@ -1381,7 +1429,7 @@ class ShellUIUserView(APIView):
         },
     ),
     delete=extend_schema(
-        tags=['auth'],
+        tags=['auth-preferences'],
         summary='Delete current user preferences',
         description='Delete persisted preferences for the authenticated user.',
         responses={
@@ -1441,7 +1489,7 @@ class ShellUIPreferenceView(APIView):
 
 @extend_schema_view(
     get=extend_schema(
-        tags=['auth-admin'],
+        tags=['directory-users'],
         summary='List users (staff or company owner)',
         description='Paginated directory of users. Requires staff JWT or company-owner membership.',
         parameters=[
@@ -1504,16 +1552,16 @@ class ShellUIAdminUserListView(APIView):
 
 @extend_schema_view(
     get=extend_schema(
-        tags=['auth-admin'],
+        tags=['directory-users'],
         summary='Retrieve user (staff or company owner)',
         description='Single user with ShellUI metadata. Requires staff JWT or company-owner membership.',
     ),
     put=extend_schema(
-        tags=['auth-admin'],
+        tags=['directory-users'],
         summary='Update user (staff or company owner)',
         description=(
             'Update Django user fields and/or merge `data` into cached user_metadata (same shape as '
-            'PUT /auth/v1/user). Staff may change is_staff and is_active. Staff and company owners '
+            'PUT /api/v1/user). Staff may change is_staff and is_active. Staff and company owners '
             'may change first_name, last_name, group_ids (within this company), and `data`.'
         ),
         request=ShellUIAdminUserUpdateSerializer,
@@ -1631,12 +1679,12 @@ class ShellUIAdminUserDetailView(APIView):
 
 @extend_schema_view(
     get=extend_schema(
-        tags=['auth-admin'],
+        tags=['directory-groups'],
         summary='List auth groups (staff or company owner)',
         description='All company groups for requested company with `user_count`.',
     ),
     post=extend_schema(
-        tags=['auth-admin'],
+        tags=['directory-groups'],
         summary='Create auth group (staff or company owner)',
         description='Create a named group.',
         request=ShellUIAdminGroupCreateSerializer,
@@ -1677,16 +1725,16 @@ class ShellUIAdminGroupListView(APIView):
 
 @extend_schema_view(
     get=extend_schema(
-        tags=['auth-admin'],
+        tags=['directory-groups'],
         summary='Retrieve auth group (staff or company owner)',
     ),
     put=extend_schema(
-        tags=['auth-admin'],
+        tags=['directory-groups'],
         summary='Rename auth group (staff or company owner)',
         request=ShellUIAdminGroupUpdateSerializer,
     ),
     delete=extend_schema(
-        tags=['auth-admin'],
+        tags=['directory-groups'],
         summary='Delete auth group (staff or company owner)',
     ),
 )
@@ -1740,12 +1788,12 @@ class ShellUIAdminGroupDetailView(APIView):
 
 @extend_schema_view(
     get=extend_schema(
-        tags=['auth-admin'],
+        tags=['oauth-clients'],
         summary='List company OAuth clients (staff or company owner)',
         description='All OAuth client keys for the active company, grouped by provider in UI clients.',
     ),
     post=extend_schema(
-        tags=['auth-admin'],
+        tags=['oauth-clients'],
         summary='Create company OAuth client (staff or company owner)',
         request=ShellUIAdminOAuthClientCreateSerializer,
     ),
@@ -1802,7 +1850,7 @@ class ShellUIAdminOAuthClientListView(APIView):
 
 @extend_schema_view(
     get=extend_schema(
-        tags=['auth-admin'],
+        tags=['oauth-social-apps'],
         summary='List available allauth SocialApps for OAuth setup (staff or company owner)',
         description=(
             'Returns all SocialApp rows for providers enabled in settings, plus whether each app '
@@ -1810,7 +1858,7 @@ class ShellUIAdminOAuthClientListView(APIView):
         ),
     ),
     post=extend_schema(
-        tags=['auth-admin'],
+        tags=['oauth-social-apps'],
         summary='Create SocialApp OAuth key and optionally map to company',
         request=ShellUIAdminOAuthSocialAppCreateSerializer,
     ),
@@ -1886,8 +1934,12 @@ class ShellUIAdminOAuthSocialAppListView(APIView):
 
 
 @extend_schema_view(
+    put=extend_schema(
+        tags=['oauth-social-apps'],
+        summary='Update SocialApp OAuth key for this company',
+    ),
     delete=extend_schema(
-        tags=['auth-admin'],
+        tags=['oauth-social-apps'],
         summary='Delete SocialApp OAuth key for this company',
         description=(
             'Deletes the company mapping and the underlying SocialApp. '
@@ -1958,16 +2010,16 @@ class ShellUIAdminOAuthSocialAppDetailView(APIView):
 
 @extend_schema_view(
     get=extend_schema(
-        tags=['auth-admin'],
+        tags=['oauth-clients'],
         summary='Retrieve company OAuth client (staff or company owner)',
     ),
     put=extend_schema(
-        tags=['auth-admin'],
+        tags=['oauth-clients'],
         summary='Update company OAuth client (staff or company owner)',
         request=ShellUIAdminOAuthClientUpdateSerializer,
     ),
     delete=extend_schema(
-        tags=['auth-admin'],
+        tags=['oauth-clients'],
         summary='Delete company OAuth client (staff or company owner)',
     ),
 )
@@ -2038,7 +2090,7 @@ class ShellUIAdminOAuthClientDetailView(APIView):
 
 @extend_schema_view(
     get=extend_schema(
-        tags=['auth-admin'],
+        tags=['audit-events'],
         summary='List login audit events (staff or company owner)',
         description=(
             'Paginated OAuth sign-in attempts (success and failure). '
@@ -2221,7 +2273,7 @@ class ShellUIAdminLoginEventListView(APIView):
 
 @extend_schema_view(
     get=extend_schema(
-        tags=['auth-admin'],
+        tags=['audit-events'],
         summary='Retrieve login audit event (staff or company owner)',
         description='Single login event row.',
         responses={200: OpenApiResponse(description='Login audit event')},
@@ -2243,7 +2295,7 @@ class ShellUIAdminLoginEventDetailView(APIView):
 
 @extend_schema_view(
     get=extend_schema(
-        tags=['auth-admin'],
+        tags=['platform-metrics'],
         summary='Prometheus metrics (staff or company owner)',
         description=(
             'Prometheus text exposition (openmetrics) for the requested company. '
@@ -2268,7 +2320,7 @@ class ShellUIAdminMetricsView(APIView):
 
 @extend_schema_view(
     get=extend_schema(
-        tags=['auth-admin'],
+        tags=['platform-metrics'],
         summary='Prometheus metrics for all companies (staff)',
         description='Global Prometheus text exposition across all companies; staff users only.',
         responses={200: OpenApiResponse(description='text/plain Prometheus exposition')},

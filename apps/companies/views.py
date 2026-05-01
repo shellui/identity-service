@@ -39,7 +39,6 @@ class CompanyViewSet(
 ):
     serializer_class = CompanySerializer
     permission_classes = [IsAuthenticated]
-    lookup_field = 'slug'
     queryset = Company.objects.none()
 
     def get_queryset(self):

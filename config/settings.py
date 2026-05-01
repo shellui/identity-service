@@ -69,6 +69,19 @@ SPECTACULAR_SETTINGS = {
     'DESCRIPTION': 'API documentation',
     'VERSION': VERSION,
     'SERVE_INCLUDE_SCHEMA': False,
+    'TAGS': [
+        {'name': 'auth-session', 'description': 'Session lifecycle endpoints (settings, token refresh, logout).'},
+        {'name': 'auth-social', 'description': 'OAuth/social login flow endpoints.'},
+        {'name': 'auth-profile', 'description': 'Current authenticated user profile and metadata.'},
+        {'name': 'auth-preferences', 'description': 'Current authenticated user preferences.'},
+        {'name': 'directory-users', 'description': 'User directory management for staff/company owners.'},
+        {'name': 'directory-groups', 'description': 'Group management for staff/company owners.'},
+        {'name': 'oauth-clients', 'description': 'Company OAuth client mappings.'},
+        {'name': 'oauth-social-apps', 'description': 'SocialApp key catalog and setup flows.'},
+        {'name': 'audit-events', 'description': 'Login audit events and filters.'},
+        {'name': 'platform-metrics', 'description': 'Prometheus metrics endpoints.'},
+        {'name': 'companies', 'description': 'Company membership and company settings endpoints.'},
+    ],
 }
 
 MIDDLEWARE = [
