@@ -1,4 +1,5 @@
 import json
+import uuid
 import urllib.request
 from datetime import datetime, timezone
 from urllib.parse import urlencode
@@ -18,11 +19,12 @@ from allauth.socialaccount.models import SocialApp, SocialAccount
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema, extend_schema_view
 from rest_framework import status
 from rest_framework.permissions import AllowAny
+
+from .permissions import ShellUIPermission
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
-from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 
 from . import metrics as auth_metrics
 from apps.companies.models import Company, CompanyGroup, CompanyOAuthClient
@@ -30,9 +32,10 @@ from apps.companies.redirect_allowlist import (
     loopback_client_bounce_url_for_oauth_error,
     validate_redirect_to_for_company,
 )
-from .renderers import DEFAULT_METRICS_RENDERERS
+from .renderers import PrometheusTextRenderer
 from .login_audit import oauth_callback_url, record_login_event
-from .models import LoginEvent, UserPreference
+from .authentication import ShellUIJWTAuthentication
+from .models import LoginEvent, PersonalAccessToken, UserPreference
 from .user_activity import touch_user_last_seen
 from .oauth import (
     build_authorize_url,
@@ -51,6 +54,7 @@ from .serializers import (
     ShellUIAdminOAuthSocialAppCreateSerializer,
     ShellUIAdminOAuthSocialAppUpdateSerializer,
     ShellUIAdminOAuthClientUpdateSerializer,
+    ShellUIPersonalAccessTokenCreateSerializer,
     ShellUIAdminUserUpdateSerializer,
     UserPreferenceSerializer,
 )
@@ -405,6 +409,48 @@ def _issue_shellui_tokens(
     }
 
 
+def _issue_personal_access_token(
+    user: User,
+    company: Company,
+    *,
+    read_only: bool,
+    access_global_metrics: bool = False,
+    name: str = '',
+) -> tuple[PersonalAccessToken, str]:
+    pat_id = uuid.uuid4()
+    access = AccessToken.for_user(user)
+    preferences = _user_preferences_payload(user)
+    resolved_avatar = _resolve_avatar_url_for_jwt(user, None)
+    user_metadata = {
+        'name': user.get_full_name() or user.get_username(),
+        'full_name': user.get_full_name() or user.get_username(),
+        'avatar_url': resolved_avatar,
+        'is_staff': bool(user.is_staff),
+        'is_company_owner': _is_user_company_owner(user, company),
+        'shelluiPreferences': preferences,
+        'groups': _user_group_names(user, company),
+    }
+    access['email'] = user.email
+    access['company_id'] = company.id
+    access['user_metadata'] = user_metadata
+    access['app_metadata'] = {'provider': 'personal_access_token'}
+    access['pat_id'] = str(pat_id)
+    access['pat_ro'] = bool(read_only)
+    access['pat_agm'] = bool(access_global_metrics)
+    access.set_exp(lifetime=settings.PERSONAL_ACCESS_TOKEN_LIFETIME)
+    jti = access['jti']
+    row = PersonalAccessToken.objects.create(
+        id=pat_id,
+        company=company,
+        user=user,
+        jti=jti,
+        read_only=read_only,
+        access_global_metrics=access_global_metrics,
+        name=(name or '')[:200],
+    )
+    return row, str(access)
+
+
 def _link_social_account(user: User, provider: str, provider_id: str, userinfo: dict) -> None:
     # Persist provider payload in DB so one user can have multiple linked auth methods.
     SocialAccount.objects.update_or_create(
@@ -454,7 +500,10 @@ def _shellui_oauth_bounce_or_json(
 
 
 def _authenticate_bearer_user(request):
-    auth = JWTAuthentication()
+    user = getattr(request, 'user', None)
+    if user is not None and user.is_authenticated:
+        return user
+    auth = ShellUIJWTAuthentication()
     try:
         result = auth.authenticate(request)
     except (InvalidToken, TokenError):
@@ -465,8 +514,8 @@ def _authenticate_bearer_user(request):
     return user
 
 
-def _required_company_from_request(request, user: User | None = None) -> tuple[Company | None, Response | None]:
-    raw = (request.GET.get('company_id') or request.data.get('company_id') or '').strip()
+def _jwt_bearer_company_id(request) -> int | None:
+    """`company_id` from validated JWT access token, or None if missing/invalid."""
     request_auth_token = getattr(request, 'auth', None)
     token_company_id = (
         request_auth_token.get('company_id')
@@ -474,14 +523,25 @@ def _required_company_from_request(request, user: User | None = None) -> tuple[C
         else None
     )
     if token_company_id is None:
-        auth = JWTAuthentication()
+        auth = ShellUIJWTAuthentication()
         try:
             authenticated = auth.authenticate(request)
         except (InvalidToken, TokenError):
-            authenticated = None
+            return None
         if authenticated:
             _user, token = authenticated
             token_company_id = token.get('company_id') if hasattr(token, 'get') else None
+    if token_company_id is None:
+        return None
+    try:
+        return int(token_company_id)
+    except (TypeError, ValueError):
+        return None
+
+
+def _required_company_from_request(request, user: User | None = None) -> tuple[Company | None, Response | None]:
+    raw = (request.GET.get('company_id') or request.data.get('company_id') or '').strip()
+    token_company_id = _jwt_bearer_company_id(request)
 
     company_id: int | None = None
     if raw:
@@ -490,14 +550,11 @@ def _required_company_from_request(request, user: User | None = None) -> tuple[C
         except (TypeError, ValueError):
             return None, Response({'error': 'Invalid company_id parameter.'}, status=status.HTTP_400_BAD_REQUEST)
     elif token_company_id is not None:
-        try:
-            company_id = int(token_company_id)
-        except (TypeError, ValueError):
-            return None, Response({'error': 'Invalid token company_id claim.'}, status=status.HTTP_400_BAD_REQUEST)
+        company_id = token_company_id
     else:
         return None, Response({'error': 'Missing company_id parameter.'}, status=status.HTTP_400_BAD_REQUEST)
 
-    if raw and token_company_id is not None and int(token_company_id) != company_id:
+    if raw and token_company_id is not None and token_company_id != company_id:
         return None, Response(
             {'error': 'Requested company_id does not match token company_id.'},
             status=status.HTTP_403_FORBIDDEN,
@@ -540,6 +597,70 @@ def _require_staff_or_company_owner(request):
     if user.is_staff or _is_user_company_owner(user, company):
         return user, company, None
     return None, None, Response({'error': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
+
+
+def _company_from_bearer_token_only(request, user: User) -> tuple[Company | None, Response | None]:
+    """Resolve company from JWT/PAT ``company_id`` only (no ``company_id`` query override)."""
+    if (request.GET.get('company_id') or '').strip():
+        return None, Response(
+            {
+                'error': 'Remove company_id from the query string; company scope comes from the access token only.',
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    token_company_id = _jwt_bearer_company_id(request)
+    if token_company_id is None:
+        return None, Response(
+            {'error': 'Missing company_id in access token.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    try:
+        company = Company.objects.get(pk=token_company_id)
+    except Company.DoesNotExist:
+        return None, Response({'error': 'Company not found.'}, status=status.HTTP_404_NOT_FOUND)
+    if not company.members.filter(pk=user.pk).exists():
+        return None, Response({'error': 'Forbidden for this company.'}, status=status.HTTP_403_FORBIDDEN)
+    return company, None
+
+
+def _require_staff_or_company_owner_metrics(request):
+    """Like `_require_staff_or_company_owner` but company scope is taken only from the Bearer token."""
+    user = _authenticate_bearer_user(request)
+    if not user:
+        return None, None, Response({'error': 'Unauthorized'}, status=status.HTTP_401_UNAUTHORIZED)
+    company, cerr = _company_from_bearer_token_only(request, user=user)
+    if cerr:
+        return None, None, cerr
+    if user.is_staff or _is_user_company_owner(user, company):
+        return user, company, None
+    return None, None, Response({'error': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
+
+
+def _require_authenticated_company_member(request):
+    """Current user must belong to the company implied by JWT ``company_id`` (or explicit ``company_id``)."""
+    user = _authenticate_bearer_user(request)
+    if not user:
+        return None, None, Response({'error': 'Unauthorized'}, status=status.HTTP_401_UNAUTHORIZED)
+    company, cerr = _required_company_from_request(request, user=user)
+    if cerr:
+        return None, None, cerr
+    return user, company, None
+
+
+def _personal_access_token_row(t: PersonalAccessToken, *, include_access_token: str | None = None) -> dict:
+    row = {
+        'id': str(t.id),
+        'user_id': t.user_id,
+        'read_only': t.read_only,
+        'access_global_metrics': t.access_global_metrics,
+        'name': t.name or '',
+        'created_at': t.created_at,
+        'last_used_at': t.last_used_at,
+        'revoked_at': t.revoked_at,
+    }
+    if include_access_token:
+        row['access_token'] = include_access_token
+    return row
 
 
 def _login_event_payload(event: LoginEvent) -> dict:
@@ -1227,7 +1348,7 @@ class ShellUIOAuthExchangeView(APIView):
     ),
 )
 class ShellUITokenView(APIView):
-    permission_classes = [AllowAny]
+    permission_classes = [ShellUIPermission]
 
     def post(self, request):
         actor = _authenticate_bearer_user(request)
@@ -1280,15 +1401,21 @@ class ShellUITokenView(APIView):
     post=extend_schema(
         tags=['auth-session'],
         summary='Logout current session',
-        description='ShellUI-compatible logout endpoint. Returns success response for client sign-out flow.',
-        responses={200: OpenApiResponse(description='Logout acknowledged')},
+        description=(
+            'ShellUI-compatible logout endpoint. Requires a valid Bearer access token; '
+            '`company_id` may be omitted when the JWT includes `company_id`.'
+        ),
+        responses={
+            200: OpenApiResponse(description='Logout acknowledged'),
+            401: OpenApiResponse(description='Missing or invalid Bearer token'),
+        },
     ),
 )
 class ShellUILogoutView(APIView):
-    permission_classes = [AllowAny]
+    permission_classes = [ShellUIPermission]
 
     def post(self, request):
-        _company, company_err = _required_company_from_request(request)
+        _company, company_err = _required_company_from_request(request, user=request.user)
         if company_err:
             return company_err
         return Response({'success': True})
@@ -1322,7 +1449,7 @@ class ShellUILogoutView(APIView):
     ),
 )
 class ShellUIUserView(APIView):
-    permission_classes = [AllowAny]
+    permission_classes = [ShellUIPermission]
 
     def get(self, request):
         user = _authenticate_bearer_user(request)
@@ -1439,7 +1566,7 @@ class ShellUIUserView(APIView):
     ),
 )
 class ShellUIPreferenceView(APIView):
-    permission_classes = [AllowAny]
+    permission_classes = [ShellUIPermission]
 
     def get(self, request):
         user = _authenticate_bearer_user(request)
@@ -1505,7 +1632,7 @@ class ShellUIPreferenceView(APIView):
     ),
 )
 class ShellUIAdminUserListView(APIView):
-    permission_classes = [AllowAny]
+    permission_classes = [ShellUIPermission]
 
     def get(self, request):
         _actor, company, err = _require_staff_or_company_owner(request)
@@ -1568,7 +1695,7 @@ class ShellUIAdminUserListView(APIView):
     ),
 )
 class ShellUIAdminUserDetailView(APIView):
-    permission_classes = [AllowAny]
+    permission_classes = [ShellUIPermission]
 
     def get(self, request, pk):
         _actor, company, err = _require_staff_or_company_owner(request)
@@ -1691,7 +1818,7 @@ class ShellUIAdminUserDetailView(APIView):
     ),
 )
 class ShellUIAdminGroupListView(APIView):
-    permission_classes = [AllowAny]
+    permission_classes = [ShellUIPermission]
 
     def get(self, request):
         _actor, company, err = _require_staff_or_company_owner(request)
@@ -1739,7 +1866,7 @@ class ShellUIAdminGroupListView(APIView):
     ),
 )
 class ShellUIAdminGroupDetailView(APIView):
-    permission_classes = [AllowAny]
+    permission_classes = [ShellUIPermission]
 
     def get(self, request, pk):
         _actor, company, err = _require_staff_or_company_owner(request)
@@ -1799,7 +1926,7 @@ class ShellUIAdminGroupDetailView(APIView):
     ),
 )
 class ShellUIAdminOAuthClientListView(APIView):
-    permission_classes = [AllowAny]
+    permission_classes = [ShellUIPermission]
 
     def get(self, request):
         _actor, company, err = _require_staff_or_company_owner(request)
@@ -1864,7 +1991,7 @@ class ShellUIAdminOAuthClientListView(APIView):
     ),
 )
 class ShellUIAdminOAuthSocialAppListView(APIView):
-    permission_classes = [AllowAny]
+    permission_classes = [ShellUIPermission]
 
     def get(self, request):
         _actor, company, err = _require_staff_or_company_owner(request)
@@ -1948,7 +2075,7 @@ class ShellUIAdminOAuthSocialAppListView(APIView):
     ),
 )
 class ShellUIAdminOAuthSocialAppDetailView(APIView):
-    permission_classes = [AllowAny]
+    permission_classes = [ShellUIPermission]
 
     def put(self, request, pk):
         _actor, company, err = _require_staff_or_company_owner(request)
@@ -2024,7 +2151,7 @@ class ShellUIAdminOAuthSocialAppDetailView(APIView):
     ),
 )
 class ShellUIAdminOAuthClientDetailView(APIView):
-    permission_classes = [AllowAny]
+    permission_classes = [ShellUIPermission]
 
     def get(self, request, pk):
         _actor, company, err = _require_staff_or_company_owner(request)
@@ -2177,7 +2304,7 @@ class ShellUIAdminOAuthClientDetailView(APIView):
     ),
 )
 class ShellUIAdminLoginEventListView(APIView):
-    permission_classes = [AllowAny]
+    permission_classes = [ShellUIPermission]
 
     def get(self, request):
         _actor, company, err = _require_staff_or_company_owner(request)
@@ -2280,7 +2407,7 @@ class ShellUIAdminLoginEventListView(APIView):
     ),
 )
 class ShellUIAdminLoginEventDetailView(APIView):
-    permission_classes = [AllowAny]
+    permission_classes = [ShellUIPermission]
 
     def get(self, request, pk):
         _actor, company, err = _require_staff_or_company_owner(request)
@@ -2295,21 +2422,107 @@ class ShellUIAdminLoginEventDetailView(APIView):
 
 @extend_schema_view(
     get=extend_schema(
+        tags=['personal-access-tokens'],
+        summary='List personal access tokens',
+        description='JWT-based personal access tokens for the signed-in user in the current company.',
+    ),
+    post=extend_schema(
+        tags=['personal-access-tokens'],
+        summary='Create personal access token',
+        request=ShellUIPersonalAccessTokenCreateSerializer,
+        description=(
+            'Returns a ShellUI-shaped JWT once in `access_token`. '
+            '`read_only` restricts to safe HTTP methods. Only Django staff may set '
+            '`access_global_metrics` for GET /api/v1/metrics/all.'
+        ),
+    ),
+)
+class ShellUIPersonalAccessTokenListCreateView(APIView):
+    permission_classes = [ShellUIPermission]
+
+    def get(self, request):
+        user, company, err = _require_authenticated_company_member(request)
+        if err:
+            return err
+        qs = PersonalAccessToken.objects.filter(company=company, user=user).order_by('-created_at')
+        return Response({'results': [_personal_access_token_row(t) for t in qs]})
+
+    def post(self, request):
+        user, company, err = _require_authenticated_company_member(request)
+        if err:
+            return err
+        serializer = ShellUIPersonalAccessTokenCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        read_only = bool(serializer.validated_data.get('read_only'))
+        access_global_metrics = bool(serializer.validated_data.get('access_global_metrics'))
+        if access_global_metrics and not user.is_staff:
+            return Response(
+                {'error': 'Only staff may create tokens with access to global metrics.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        name = serializer.validated_data.get('name') or ''
+        row, access_token_str = _issue_personal_access_token(
+            user,
+            company,
+            read_only=read_only,
+            access_global_metrics=access_global_metrics,
+            name=name,
+        )
+        return Response(
+            _personal_access_token_row(row, include_access_token=access_token_str),
+            status=status.HTTP_201_CREATED,
+        )
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=['personal-access-tokens'],
+        summary='Revoke personal access token',
+        description='Marks the token as revoked; JWT access stops immediately.',
+    ),
+)
+class ShellUIPersonalAccessTokenRevokeView(APIView):
+    permission_classes = [ShellUIPermission]
+
+    def post(self, request, key_id):
+        user, company, err = _require_authenticated_company_member(request)
+        if err:
+            return err
+        try:
+            row = PersonalAccessToken.objects.get(pk=key_id, company=company, user=user)
+        except PersonalAccessToken.DoesNotExist:
+            return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        if row.revoked_at is not None:
+            return Response({'error': 'Already revoked.'}, status=status.HTTP_400_BAD_REQUEST)
+        row.revoked_at = datetime.now(timezone.utc)
+        row.save(update_fields=['revoked_at'])
+        return Response(_personal_access_token_row(row))
+
+
+@extend_schema_view(
+    get=extend_schema(
         tags=['platform-metrics'],
         summary='Prometheus metrics (staff or company owner)',
         description=(
-            'Prometheus text exposition (openmetrics) for the requested company. '
-            'Requires Bearer token (staff or company owner).'
+            'Prometheus text exposition (openmetrics) for the company in the Bearer token '
+            '(JWT or PAT must include a `company_id` claim). Do not send `company_id` as a query parameter.'
         ),
-        responses={200: OpenApiResponse(description='text/plain Prometheus exposition')},
+        responses={
+            200: OpenApiResponse(description='text/plain Prometheus exposition'),
+            400: OpenApiResponse(
+                description='Missing company_id in token, or company_id was sent in the query string'
+            ),
+            401: OpenApiResponse(description='Missing or invalid Bearer token'),
+            403: OpenApiResponse(description='Forbidden'),
+        },
     ),
 )
 class ShellUIAdminMetricsView(APIView):
-    permission_classes = [AllowAny]
-    renderer_classes = DEFAULT_METRICS_RENDERERS
+    permission_classes = [ShellUIPermission]
+    renderer_classes = [PrometheusTextRenderer]
 
     def get(self, request):
-        _actor, company, err = _require_staff_or_company_owner(request)
+        _actor, company, err = _require_staff_or_company_owner_metrics(request)
         if err:
             return err
         return HttpResponse(
@@ -2322,19 +2535,31 @@ class ShellUIAdminMetricsView(APIView):
     get=extend_schema(
         tags=['platform-metrics'],
         summary='Prometheus metrics for all companies (staff)',
-        description='Global Prometheus text exposition across all companies; staff users only.',
-        responses={200: OpenApiResponse(description='text/plain Prometheus exposition')},
+        description=(
+            'Global Prometheus text exposition across all companies. Requires a Django staff user '
+            'or a PAT created by staff with `access_global_metrics` (claim `pat_agm`).'
+        ),
+        responses={
+            200: OpenApiResponse(description='text/plain Prometheus exposition'),
+            401: OpenApiResponse(description='Missing or invalid Bearer token'),
+            403: OpenApiResponse(description='Forbidden (not staff and no global-metrics PAT)'),
+        },
     ),
 )
 class ShellUIAdminGlobalMetricsView(APIView):
-    permission_classes = [AllowAny]
-    renderer_classes = DEFAULT_METRICS_RENDERERS
+    permission_classes = [ShellUIPermission]
+    renderer_classes = [PrometheusTextRenderer]
 
     def get(self, request):
-        user = _authenticate_bearer_user(request)
-        if not user:
+        user = getattr(request, 'user', None)
+        if user is None or not user.is_authenticated:
             return Response({'error': 'Unauthorized'}, status=status.HTTP_401_UNAUTHORIZED)
-        if not user.is_staff:
+        auth = getattr(request, 'auth', None)
+        if user.is_staff:
+            pass
+        elif auth is not None and auth.get('pat_agm') is True:
+            pass
+        else:
             return Response({'error': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
         return HttpResponse(
             auth_metrics.metrics_http_body(),

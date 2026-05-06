@@ -57,18 +57,24 @@ INSTALLED_APPS = [
 REST_FRAMEWORK = {
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        'apps.authapi.authentication.ShellUIJWTAuthentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [
-        'rest_framework.permissions.IsAuthenticated',
+        'apps.authapi.permissions.ShellUIPermission',
     ],
 }
 
 SPECTACULAR_SETTINGS = {
     'TITLE': 'ShellUI Auth API',
-    'DESCRIPTION': 'API documentation',
+    'DESCRIPTION': (
+        'API documentation. Use **Authorize** and enter `Bearer <token>` or paste the raw JWT; '
+        'Swagger sends `Authorization: Bearer …` for operations that require **bearerAuth**.'
+    ),
     'VERSION': VERSION,
     'SERVE_INCLUDE_SCHEMA': False,
+    'SWAGGER_UI_SETTINGS': {
+        'persistAuthorization': True,
+    },
     'TAGS': [
         {'name': 'auth-session', 'description': 'Session lifecycle endpoints (settings, token refresh, logout).'},
         {'name': 'auth-social', 'description': 'OAuth/social login flow endpoints.'},
@@ -80,6 +86,7 @@ SPECTACULAR_SETTINGS = {
         {'name': 'oauth-social-apps', 'description': 'SocialApp key catalog and setup flows.'},
         {'name': 'audit-events', 'description': 'Login audit events and filters.'},
         {'name': 'platform-metrics', 'description': 'Prometheus metrics endpoints.'},
+        {'name': 'personal-access-tokens', 'description': 'User-personal JWT access tokens (read-only or read/write).'},
         {'name': 'companies', 'description': 'Company membership and company settings endpoints.'},
     ],
 }
@@ -130,6 +137,9 @@ SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
 }
+
+# Personal access tokens (PAT): JWT access token lifetime when creating a PAT (see views._issue_personal_access_token).
+PERSONAL_ACCESS_TOKEN_LIFETIME = timedelta(days=90)
 
 GITHUB_CLIENT_ID = os.getenv('GITHUB_CLIENT_ID', '')
 GITHUB_CLIENT_SECRET = os.getenv('GITHUB_CLIENT_SECRET', '')

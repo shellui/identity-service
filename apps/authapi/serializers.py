@@ -33,6 +33,12 @@ class UserPreferenceSerializer(serializers.Serializer):
     colorScheme = serializers.ChoiceField(required=False, choices=['light', 'dark', 'system'])
 
 
+class ShellUIPersonalAccessTokenCreateSerializer(serializers.Serializer):
+    read_only = serializers.BooleanField(required=False, default=False)
+    access_global_metrics = serializers.BooleanField(required=False, default=False)
+    name = serializers.CharField(required=False, allow_blank=True, max_length=200)
+
+
 class ShellUIAdminUserUpdateSerializer(serializers.Serializer):
     """Partial update for Django user fields plus optional ShellUI user_metadata merge (`data`)."""
 

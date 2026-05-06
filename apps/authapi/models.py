@@ -1,3 +1,5 @@
+import uuid
+
 from django.conf import settings
 from django.db import models
 
@@ -125,3 +127,49 @@ class UserPreference(models.Model):
 
     def __str__(self) -> str:
         return f'UserPreference(user_id={self.user_id})'
+
+
+class PersonalAccessToken(models.Model):
+    """
+    Metadata for a long-lived JWT (ShellUI access token shape with ``pat_id``, ``pat_ro``, ``pat_agm``).
+
+    The secret is only the signed JWT returned once at creation; we store ``jti`` to validate
+    revocation; ``read_only`` / ``access_global_metrics`` must match claims ``pat_ro`` / ``pat_agm``.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    company = models.ForeignKey(
+        'companies.Company',
+        on_delete=models.CASCADE,
+        related_name='personal_access_tokens',
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='personal_access_tokens',
+    )
+    jti = models.CharField(max_length=255, db_index=True)
+    read_only = models.BooleanField(
+        default=False,
+        help_text='If True, only safe HTTP methods are allowed when this PAT is used.',
+    )
+    access_global_metrics = models.BooleanField(
+        default=False,
+        help_text='If True, PAT may call GET /api/v1/metrics/all (cross-company). Only staff may enable.',
+    )
+    name = models.CharField(max_length=200, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    revoked_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    last_used_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Personal access token'
+        verbose_name_plural = 'Personal access tokens'
+        indexes = [
+            models.Index(fields=['company', '-created_at']),
+            models.Index(fields=['user', '-created_at']),
+        ]
+
+    def __str__(self) -> str:
+        return f'PersonalAccessToken(id={self.pk}, company_id={self.company_id})'

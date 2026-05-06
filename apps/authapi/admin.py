@@ -1,6 +1,52 @@
 from django.contrib import admin
 
-from .models import LoginEvent, UserActivity, UserPreference
+from .models import LoginEvent, PersonalAccessToken, UserActivity, UserPreference
+
+
+@admin.register(PersonalAccessToken)
+class PersonalAccessTokenAdmin(admin.ModelAdmin):
+    list_display = (
+        'id',
+        'company',
+        'user',
+        'read_only',
+        'access_global_metrics',
+        'name',
+        'created_at',
+        'last_used_at',
+        'revoked_at',
+    )
+    list_editable = ('access_global_metrics',)
+    list_filter = ('read_only', 'access_global_metrics', 'revoked_at')
+    search_fields = ('user__email', 'user__username', 'id', 'name')
+    ordering = ('-created_at',)
+    list_select_related = ('company', 'user')
+    readonly_fields = (
+        'id',
+        'company',
+        'user',
+        'jti',
+        'created_at',
+        'revoked_at',
+        'last_used_at',
+    )
+    fieldsets = (
+        (None, {'fields': ('id', 'company', 'user', 'name')}),
+        (
+            'Token',
+            {
+                'fields': ('jti', 'read_only', 'access_global_metrics'),
+                'description': (
+                    'JWT claims pat_ro / pat_agm must match these flags; changing a flag invalidates '
+                    'existing JWTs until you re-issue the PAT. Only staff may enable global metrics.'
+                ),
+            },
+        ),
+        ('Status', {'fields': ('created_at', 'revoked_at', 'last_used_at')}),
+    )
+
+    def has_add_permission(self, request):
+        return False
 
 
 @admin.register(LoginEvent)
