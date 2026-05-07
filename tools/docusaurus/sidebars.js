@@ -8,6 +8,11 @@ const sidebars = {
       id: 'index',
       label: 'Introduction',
     },
+    {
+      type: 'doc',
+      id: 'metrics',
+      label: 'Metrics',
+    },
   ],
 };
 
