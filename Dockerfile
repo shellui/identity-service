@@ -17,6 +17,8 @@ RUN pip install --upgrade pip && pip install -r /app/requirements.txt
 
 COPY . /app
 
+RUN python manage.py collectstatic --noinput
+
 RUN useradd --create-home --shell /bin/bash appuser \
     && chown -R appuser:appuser /app
 
