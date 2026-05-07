@@ -21,7 +21,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
 -->
 
-## [0.1.0] - 2026-04-28
+## [0.1.0-beta] - 2026-05-07
 
 ### ✨ Feature
 
@@ -29,3 +29,20 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 - Added **API scaffolding** for **identity endpoints**.
 - Added **configuration** for **local development** and **environment variables**.
 - Added project setup for future **authentication** and **user management** workflows.
+- Added OAuth login support for GitHub, Google, and Microsoft providers.
+- Added JWT session lifecycle endpoints (`/api/v1/token`, `/api/v1/logout`) and authenticated user profile APIs.
+- Added staff directory endpoints for users and groups administration workflows.
+
+### 🛠 Improvements
+
+- Added OpenAPI documentation with drf-spectacular integration and improved API tagging.
+- Expanded local container workflow with migration-on-start entrypoint.
+
+### 🚨 Changed
+
+- Updated Docker runtime to persist SQLite data at `/app/data/db.sqlite3`.
+- Added Docker volume declaration to avoid SQLite reset when the container or VM restarts.
+
+### 📚 Documentation
+
+- Added clearer Docker run examples using a named volume (`identity-service-data`) for persistent data.

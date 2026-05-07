@@ -110,13 +110,18 @@ docker build -t shellui/identity-service:local .
 Run container:
 
 ```bash
-docker run --rm -p 8000:8000 --name identity-service shellui/identity-service:local
+docker volume create identity-service-data
+docker run --rm -p 8000:8000 \
+  -v identity-service-data:/app/data \
+  --name identity-service \
+  shellui/identity-service:local
 ```
 
 Run with OAuth environment variables:
 
 ```bash
 docker run --rm -p 8000:8000 \
+  -v identity-service-data:/app/data \
   -e GITHUB_CLIENT_ID="..." \
   -e GITHUB_CLIENT_SECRET="..." \
   -e CORS_ALLOWED_ORIGINS="http://localhost:4000,http://localhost:5174" \
@@ -124,4 +129,27 @@ docker run --rm -p 8000:8000 \
   shellui/identity-service:local
 ```
 
-The container runs migrations automatically, then starts Django on `0.0.0.0:8000`.
+The container runs migrations automatically, stores SQLite at `/app/data/db.sqlite3`, then starts with Gunicorn on `0.0.0.0:8000`.
+
+Runtime env vars:
+
+- `DEBUG` (default `false`)
+- `POSTGRES_DATABASE_URL` (optional; when set, Postgres is used instead of SQLite)
+- `GUNICORN_WORKERS` (default `2`)
+- `GUNICORN_THREADS` (default `2`)
+- `GUNICORN_TIMEOUT` (default `60`)
+
+## Docker Compose (recommended local run)
+
+```bash
+cp .env.example .env
+docker compose up --build
+```
+
+Stop:
+
+```bash
+docker compose down
+```
+
+Data persists in named volume `identity-service-data` (`/app/data/db.sqlite3` in container).

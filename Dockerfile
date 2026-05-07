@@ -2,7 +2,9 @@ FROM python:3.14-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \
+    SQLITE_PATH=/app/data/db.sqlite3 \
+    DEBUG=false
 
 WORKDIR /app
 
@@ -18,7 +20,7 @@ COPY . /app
 RUN useradd --create-home --shell /bin/bash appuser \
     && chown -R appuser:appuser /app
 
-USER appuser
+VOLUME ["/app/data"]
 
 EXPOSE 8000
 
