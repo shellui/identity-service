@@ -19,6 +19,13 @@ import dj_database_url
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
+def _env_csv(name, default):
+    raw = os.getenv(name, '').strip()
+    if not raw:
+        return list(default)
+    return [item.strip() for item in raw.split(',') if item.strip()]
+
+
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
@@ -28,8 +35,20 @@ SECRET_KEY = 'django-insecure-^&=p_lox(iw64b9e-vr&krx2cz&%0gvggdl@w_hjiwvafh-eld
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DEBUG', 'false').strip().lower() in {'1', 'true', 'yes', 'on'}
 
-ALLOWED_HOSTS = ['*']
-CSRF_TRUSTED_ORIGINS = ALLOWED_HOSTS
+# Comma-separated; use * for all hosts only in trusted networks. Example: app.example.com,127.0.0.1
+ALLOWED_HOSTS = _env_csv('ALLOWED_HOSTS', ('localhost', '127.0.0.1'))
+# Full origins with scheme (required for cross-site POST / CSRF). Example: https://app.example.com
+CSRF_TRUSTED_ORIGINS = _env_csv(
+    'CSRF_TRUSTED_ORIGINS',
+    (
+        'http://localhost:8000',
+        'http://127.0.0.1:8000',
+        'http://localhost:4000',
+        'http://127.0.0.1:4000',
+        'http://localhost:5174',
+        'http://127.0.0.1:5174',
+    ),
+)
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
 VERSION = '0.1.0-beta'

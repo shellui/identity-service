@@ -134,6 +134,8 @@ The container runs migrations automatically, stores SQLite at `/app/data/db.sqli
 Runtime env vars:
 
 - `DEBUG` (default `false`)
+- `ALLOWED_HOSTS` (comma-separated hostnames; empty → `localhost,127.0.0.1`)
+- `CSRF_TRUSTED_ORIGINS` (comma-separated full URLs with scheme; empty → common local dev URLs including ShellUI ports)
 - `POSTGRES_DATABASE_URL` (optional; when set, Postgres is used instead of SQLite)
 - `GUNICORN_WORKERS` (default `2`)
 - `GUNICORN_THREADS` (default `2`)
