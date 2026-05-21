@@ -17,7 +17,8 @@ RUN pip install --upgrade pip && pip install -r /app/requirements.txt
 
 COPY . /app
 
-RUN python manage.py collectstatic --noinput
+# Build-time only; runtime SECRET_KEY must be supplied via env (see .env.example).
+RUN SECRET_KEY=build-only-not-for-runtime python manage.py collectstatic --noinput
 
 RUN useradd --create-home --shell /bin/bash appuser \
     && chown -R appuser:appuser /app

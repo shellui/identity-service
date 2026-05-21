@@ -13,10 +13,15 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 import os
 from pathlib import Path
 from datetime import timedelta
+
 import dj_database_url
+from dotenv import load_dotenv
+from django.core.exceptions import ImproperlyConfigured
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+load_dotenv(BASE_DIR / '.env')
 
 
 def _env_csv(name, default):
@@ -30,7 +35,27 @@ def _env_csv(name, default):
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-^&=p_lox(iw64b9e-vr&krx2cz&%0gvggdl@w_hjiwvafh-eld'
+_secret_key = os.getenv('SECRET_KEY', '').strip()
+if not _secret_key:
+    raise ImproperlyConfigured(
+        '\n'
+        'SECRET_KEY is not set — identity-service cannot start.\n'
+        '\n'
+        'Django uses this value to sign sessions, CSRF tokens, and JWTs. '
+        'It must be set explicitly and kept secret in production.\n'
+        '\n'
+        'How to fix:\n'
+        '  1. Copy the example env file:\n'
+        '       cp .env.example .env\n'
+        '  2. Set SECRET_KEY in .env (or export it in your shell).\n'
+        '  3. Generate a strong key:\n'
+        '       python -c "from django.core.management.utils import '
+        'get_random_secret_key; print(get_random_secret_key())"\n'
+        '\n'
+        'With Docker Compose, define SECRET_KEY in your .env file before '
+        'running docker compose up.\n'
+    )
+SECRET_KEY = _secret_key
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DEBUG', 'false').strip().lower() in {'1', 'true', 'yes', 'on'}

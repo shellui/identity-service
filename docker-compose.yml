@@ -8,6 +8,7 @@ services:
     ports:
       - "${IDENTITY_SERVICE_PORT:-8000}:8000"
     environment:
+      SECRET_KEY: "${SECRET_KEY:?SECRET_KEY is required — copy .env.example to .env and set SECRET_KEY}"
       DEBUG: "${DEBUG:-false}"
       ALLOWED_HOSTS: "${ALLOWED_HOSTS:-}"
       CSRF_TRUSTED_ORIGINS: "${CSRF_TRUSTED_ORIGINS:-}"
