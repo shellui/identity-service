@@ -99,6 +99,10 @@ Generate docs:
 
 Output is generated in `tools/docusaurus/build`.
 
+## Releases (Docker Hub)
+
+See [docs/RELEASES.md](docs/RELEASES.md) for the pre-release checklist, tagging conventions, and steps to build and push `shellui/identity-service` to Docker Hub.
+
 ## Docker (local run)
 
 Build image:

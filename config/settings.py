@@ -76,7 +76,7 @@ CSRF_TRUSTED_ORIGINS = _env_csv(
 )
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
-VERSION = '0.1.0-beta'
+VERSION = '0.1.0'
 
 # Application definition
 
