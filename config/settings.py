@@ -18,6 +18,8 @@ import dj_database_url
 from dotenv import load_dotenv
 from django.core.exceptions import ImproperlyConfigured
 
+from apps.authapi.jwks import read_jwt_env, resolve_jwt_configuration
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -41,8 +43,8 @@ if not _secret_key:
         '\n'
         'SECRET_KEY is not set — identity-service cannot start.\n'
         '\n'
-        'Django uses this value to sign sessions, CSRF tokens, and JWTs. '
-        'It must be set explicitly and kept secret in production.\n'
+        'Django uses this value to sign sessions and CSRF tokens. '
+        'When JWT_PRIVATE_KEY is set, JWTs are signed with RS256 instead.\n'
         '\n'
         'How to fix:\n'
         '  1. Copy the example env file:\n'
@@ -76,7 +78,7 @@ CSRF_TRUSTED_ORIGINS = _env_csv(
 )
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
-VERSION = '0.1.0'
+VERSION = '0.2.0'
 
 # Application definition
 
@@ -123,7 +125,7 @@ SPECTACULAR_SETTINGS = {
         'persistAuthorization': True,
     },
     'TAGS': [
-        {'name': 'auth-session', 'description': 'Session lifecycle endpoints (settings, token refresh, logout).'},
+        {'name': 'auth-session', 'description': 'Session lifecycle endpoints (settings, token refresh, logout, JWKS).'},
         {'name': 'auth-social', 'description': 'OAuth/social login flow endpoints.'},
         {'name': 'auth-profile', 'description': 'Current authenticated user profile and metadata.'},
         {'name': 'auth-preferences', 'description': 'Current authenticated user preferences.'},
@@ -185,6 +187,28 @@ SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
 }
+
+_jwt_env = read_jwt_env()
+_jwt_config = resolve_jwt_configuration(
+    secret_key=SECRET_KEY,
+    debug=DEBUG,
+    **_jwt_env,
+)
+JWT_ALGORITHM = _jwt_config['algorithm']
+JWT_ACTIVE_KEY_ID = _jwt_config['active_key_id']
+JWT_SIGNING_KEY = _jwt_config['signing_key_obj']
+JWT_PREVIOUS_VERIFYING_KEYS = _jwt_config['previous_verifying_keys']
+JWT_ACCEPT_HS256_LEGACY = _jwt_config['accept_hs256_legacy']
+JWKS_ENABLED = _jwt_config['jwks_enabled']
+JWT_REQUIRES_RS256 = _jwt_config['requires_rs256']
+
+SIMPLE_JWT.update(
+    {
+        'ALGORITHM': JWT_ALGORITHM,
+        'SIGNING_KEY': _jwt_config['signing_key'],
+        'VERIFYING_KEY': _jwt_config['verifying_key'],
+    }
+)
 
 # Personal access tokens (PAT): JWT access token lifetime when creating a PAT (see views._issue_personal_access_token).
 PERSONAL_ACCESS_TOKEN_LIFETIME = timedelta(days=90)

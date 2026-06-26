@@ -21,6 +21,29 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
 -->
 
+
+
+## [0.2.0] - 2026-06-26
+
+### ✨ Feature
+
+- Added **JWKS** endpoint at `GET /.well-known/jwks.json` for public RS256 key discovery.
+- Added **RS256 JWT signing** when `JWT_PRIVATE_KEY` is configured.
+- Added `python manage.py generate_jwt_keys` to generate RSA key pairs and suggested env vars.
+- Tokens now include a `kid` header for key rotation and verifier key selection.
+
+### 🔒 Security
+
+- Production (`DEBUG=false`) requires `JWT_PRIVATE_KEY`; JWTs are no longer signed with `SECRET_KEY` in production.
+- External services can verify JWTs via JWKS without sharing `SECRET_KEY`.
+- Optional `JWT_PREVIOUS_PUBLIC_KEY` supports safe key rotation with overlapping JWKS keys.
+- `JWT_ACCEPT_HS256_LEGACY` (default `true`) allows gradual migration from HS256; disable after cutover.
+
+### 📚 Documentation
+
+- Added [docs/jwks.md](docs/jwks.md) with configuration, verification, rotation, and security guidance.
+- Updated README, `.env.example`, and release checklist for JWT key requirements.
+
 ## [0.1.0] - 2026-05-23
 
 ### ✨ Feature

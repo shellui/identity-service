@@ -1,4 +1,5 @@
 from django import forms
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
@@ -82,6 +83,9 @@ def root(request):
         "show_setup_form": not user_model._default_manager.exists(),
         "swagger_url": reverse("swagger-ui"),
         "redoc_url": reverse("redoc"),
+        "schema_url": reverse("schema"),
+        "jwks_url": reverse("jwks"),
+        "version": settings.VERSION,
         "setup_done": request.GET.get("setup") == "done",
     }
     return render(request, "home.html", context)

@@ -24,7 +24,7 @@ from .permissions import ShellUIPermission
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
-from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
+from .tokens import ShellUIAccessToken, ShellUIRefreshToken
 
 from . import metrics as auth_metrics
 from apps.companies.models import Company, CompanyGroup, CompanyOAuthClient
@@ -210,7 +210,7 @@ def _issue_tokens(user: User, company: Company) -> dict:
         'username': user.get_username(),
         'full_name': user.get_full_name() or user.get_username(),
     }
-    refresh = RefreshToken.for_user(user)
+    refresh = ShellUIRefreshToken.for_user(user)
     refresh['user'] = user_payload
     refresh['company_id'] = company.id
     access = refresh.access_token
@@ -370,7 +370,7 @@ def _issue_shellui_tokens(
     oauth_provider: str | None = None,
     prior_app_metadata: dict | None = None,
 ) -> dict:
-    refresh = RefreshToken.for_user(user)
+    refresh = ShellUIRefreshToken.for_user(user)
     preferences = _user_preferences_payload(user)
     resolved_avatar = _resolve_avatar_url_for_jwt(user, avatar_url)
     user_metadata = {
@@ -418,7 +418,7 @@ def _issue_personal_access_token(
     name: str = '',
 ) -> tuple[PersonalAccessToken, str]:
     pat_id = uuid.uuid4()
-    access = AccessToken.for_user(user)
+    access = ShellUIAccessToken.for_user(user)
     preferences = _user_preferences_payload(user)
     resolved_avatar = _resolve_avatar_url_for_jwt(user, None)
     user_metadata = {
@@ -1367,7 +1367,7 @@ class ShellUITokenView(APIView):
         if not isinstance(refresh_token, str) or not refresh_token.strip():
             return Response({'error': 'Missing refresh_token.'}, status=status.HTTP_400_BAD_REQUEST)
         try:
-            refresh = RefreshToken(refresh_token)
+            refresh = ShellUIRefreshToken(refresh_token)
             user_id = refresh.get('user_id')
             user = User.objects.get(pk=user_id)
         except Exception:

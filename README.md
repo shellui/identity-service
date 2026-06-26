@@ -8,7 +8,7 @@ It supports OAuth login (GitHub/Google/Microsoft), issues JWT tokens, exposes Su
 
 - ShellUI-compatible auth API at `/api/v1/*`
 - OAuth login flow for GitHub, Google, Microsoft
-- JWT access + refresh token issuance
+- JWT access + refresh token issuance (RS256 with JWKS when `JWT_PRIVATE_KEY` is set)
 - Token refresh endpoint (`grant_type=refresh_token`)
 - User metadata endpoint (`/api/v1/user`)
 - CORS for local ShellUI (`http://localhost:4000`), admin dev server (`http://localhost:5174`), and optional extra origins via env `CORS_ALLOWED_ORIGINS` (comma-separated)
@@ -22,6 +22,7 @@ It supports OAuth login (GitHub/Google/Microsoft), issues JWT tokens, exposes Su
 
 ## Main Auth Endpoints
 
+- `GET /.well-known/jwks.json` public JWKS for RS256 JWT verification (see [docs/jwks.md](docs/jwks.md))
 - `GET /api/v1/settings` list enabled login methods/providers
 - `GET /api/v1/authorize?provider=github&redirect_to=...` start OAuth redirect
 - `GET /api/v1/oauth/callback` OAuth callback from provider
@@ -61,6 +62,27 @@ export GITHUB_CLIENT_SECRET="..."
 python manage.py migrate
 python manage.py runserver
 ```
+
+## JWT private key (RS256)
+
+Production (`DEBUG=false`) requires an RSA private key for JWT signing. Local dev can skip this when `DEBUG=true` (HS256 with `SECRET_KEY`).
+
+Generate a key pair and print suggested env vars:
+
+```bash
+python manage.py generate_jwt_keys
+```
+
+Copy the output into `.env` (or your secret manager). The private key must stay on one line with `\n` for newlines:
+
+```bash
+JWT_KEY_ID=abc123...
+JWT_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nMIIE...\n-----END PRIVATE KEY-----\n"
+```
+
+`JWT_PUBLIC_KEY` is optional (derived from the private key). Verifiers fetch the public key from `GET /.well-known/jwks.json` — see [docs/jwks.md](docs/jwks.md).
+
+With Docker Compose, add `JWT_PRIVATE_KEY` to `.env` before running when `DEBUG=false`.
 
 ## ShellUI Frontend Config
 
@@ -137,6 +159,10 @@ The container runs migrations automatically, stores SQLite at `/app/data/db.sqli
 
 Runtime env vars:
 
+- `SECRET_KEY` (required; Django sessions/CSRF — not used for JWT signing when `JWT_PRIVATE_KEY` is set)
+- `JWT_PRIVATE_KEY` (required in production; RS256 private key PEM — generate with `python manage.py generate_jwt_keys`, see [JWT private key](#jwt-private-key-rs256))
+- `JWT_PUBLIC_KEY`, `JWT_KEY_ID`, `JWT_PREVIOUS_PUBLIC_KEY`, `JWT_PREVIOUS_KEY_ID` (optional; see JWKS docs)
+- `JWT_ACCEPT_HS256_LEGACY` (default `true`; set `false` after RS256 migration)
 - `DEBUG` (default `false`)
 - `ALLOWED_HOSTS` (comma-separated hostnames; empty → `localhost,127.0.0.1`)
 - `CSRF_TRUSTED_ORIGINS` (comma-separated full URLs with scheme; empty → common local dev URLs including ShellUI ports)

@@ -9,7 +9,14 @@ services:
       - "${IDENTITY_SERVICE_PORT:-8000}:8000"
     environment:
       SECRET_KEY: "${SECRET_KEY:?SECRET_KEY is required — copy .env.example to .env and set SECRET_KEY}"
+      # Local compose defaults DEBUG=true (HS256 without JWT_PRIVATE_KEY). Set DEBUG=false + JWT_PRIVATE_KEY for production-like runs.
       DEBUG: "${DEBUG:-false}"
+      JWT_PRIVATE_KEY: "${JWT_PRIVATE_KEY:-}"
+      JWT_PUBLIC_KEY: "${JWT_PUBLIC_KEY:-}"
+      JWT_KEY_ID: "${JWT_KEY_ID:-}"
+      JWT_PREVIOUS_PUBLIC_KEY: "${JWT_PREVIOUS_PUBLIC_KEY:-}"
+      JWT_PREVIOUS_KEY_ID: "${JWT_PREVIOUS_KEY_ID:-}"
+      JWT_ACCEPT_HS256_LEGACY: "${JWT_ACCEPT_HS256_LEGACY:-true}"
       ALLOWED_HOSTS: "${ALLOWED_HOSTS:-}"
       CSRF_TRUSTED_ORIGINS: "${CSRF_TRUSTED_ORIGINS:-}"
       POSTGRES_DATABASE_URL: "${POSTGRES_DATABASE_URL:-}"

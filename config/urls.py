@@ -23,11 +23,14 @@ from drf_spectacular.views import (
     SpectacularSwaggerView,
 )
 
+from apps.authapi.jwks_views import ShellUIJwksView
+
 from . import views
 
 urlpatterns = [
     path('', views.root, name='root'),
     path('admin/', admin.site.urls),
+    path('.well-known/jwks.json', ShellUIJwksView.as_view(), name='jwks'),
     path('api/v1/', include('apps.authapi.urls')),
     path('api/v1/companies/', include('apps.companies.urls')),
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),

@@ -46,7 +46,8 @@ docker run --rm --entrypoint sh shellui/identity-service:release-check \
 
 Operators must set at minimum:
 
-- `SECRET_KEY` — required; app refuses to start without it
+- `SECRET_KEY` — required; app refuses to start without it (Django sessions/CSRF)
+- `JWT_PRIVATE_KEY` — required when `DEBUG=false`; RS256 JWT signing (see [docs/jwks.md](jwks.md))
 - `ALLOWED_HOSTS` — hostnames for production (comma-separated, no scheme)
 - `CSRF_TRUSTED_ORIGINS` — full URLs with scheme when using browser-based flows behind HTTPS
 - `CORS_ALLOWED_ORIGINS` — ShellUI / admin front-end origins in production
@@ -60,16 +61,22 @@ Optional but typical for production:
 
 ```bash
 export SECRET_KEY="$(python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())")"
+export JWT_PRIVATE_KEY="$(python manage.py generate_jwt_keys 2>/dev/null | awk -F'\"' '/JWT_PRIVATE_KEY=/ {print $2}')"
+# Or set JWT_PRIVATE_KEY from output of: python manage.py generate_jwt_keys
 
-docker build -t shellui/identity-service:0.1.0 .
+docker build -t shellui/identity-service:0.2.0 .
 
 docker run --rm -d --name identity-release-smoke -p 18000:8000 \
   -e SECRET_KEY \
+  -e JWT_PRIVATE_KEY \
   -e ALLOWED_HOSTS=localhost,127.0.0.1 \
-  shellui/identity-service:0.1.0
+  shellui/identity-service:0.2.0
 
 # Expect HTTP response (400 with company_id is fine — proves Gunicorn + Django are up)
 curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:18000/api/v1/settings
+
+# JWKS should return at least one RSA key
+curl -s http://127.0.0.1:18000/.well-known/jwks.json | python -c "import sys,json; d=json.load(sys.stdin); assert len(d.get('keys',[]))>=1"
 
 docker stop identity-release-smoke
 ```
@@ -179,6 +186,7 @@ docker run -d \
   -p 8000:8000 \
   -v identity-service-data:/app/data \
   -e SECRET_KEY='replace-with-generated-key' \
+  -e JWT_PRIVATE_KEY='replace-with-pem-from-generate_jwt_keys' \
   -e ALLOWED_HOSTS='auth.example.com' \
   -e CSRF_TRUSTED_ORIGINS='https://auth.example.com,https://app.example.com' \
   -e CORS_ALLOWED_ORIGINS='https://app.example.com' \
@@ -205,7 +213,8 @@ The entrypoint runs migrations on start, then starts Gunicorn as user `appuser`.
 | Topic | Status |
 |-------|--------|
 | `.env` in image | Excluded via `.dockerignore` — verified absent in image |
-| Runtime `SECRET_KEY` | Must be provided by operator; not baked into image |
+| Runtime `JWT_PRIVATE_KEY` | Must be provided in production; never baked into image |
+| JWKS endpoint | `/.well-known/jwks.json` exposes public keys only |
 | Build-time `SECRET_KEY` | Used only for `collectstatic` during `docker build`; appears in build history as `build-only-not-for-runtime` — not used at runtime |
 | `.env.example` | Included; contains placeholder values only |
 | SQLite / DB files | Excluded from image; use volume or Postgres |

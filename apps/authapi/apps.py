@@ -6,5 +6,6 @@ class AuthApiConfig(AppConfig):
     name = 'apps.authapi'
 
     def ready(self) -> None:
+        from . import checks  # noqa: F401
         from . import openapi_extensions  # noqa: F401
         from . import signals  # noqa: F401
