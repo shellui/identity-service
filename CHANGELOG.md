@@ -23,36 +23,19 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 
 
-## [Unreleased] - yyyy-mm-dd
-
-### 🚨 Changed
-
-- OAuth provider credentials are company-scoped only; global `GITHUB_*` / `GOOGLE_*` / `MICROSOFT_*` environment variables are removed.
-
-### 🗑 Removed
-
-- Global OAuth env vars from `docker-compose.yml`, `.env.example`, and `config/settings.py`.
-
-## [0.2.0] - 2026-06-26
+## [0.2.0] - yyyy-mm-dd
 
 ### ✨ Feature
 
-- Added **JWKS** endpoint at `GET /.well-known/jwks.json` for public RS256 key discovery.
-- Added **RS256 JWT signing** when `JWT_PRIVATE_KEY` is configured.
-- Added `python manage.py generate_jwt_keys` to generate RSA key pairs and suggested env vars.
-- Tokens now include a `kid` header for key rotation and verifier key selection.
+- RS256 JWT signing with a public JWKS endpoint so other services can verify tokens without sharing secrets.
 
-### 🔒 Security
+### 🚨 Changed
 
-- Production (`DEBUG=false`) requires `JWT_PRIVATE_KEY`; JWTs are no longer signed with `SECRET_KEY` in production.
-- External services can verify JWTs via JWKS without sharing `SECRET_KEY`.
-- Optional `JWT_PREVIOUS_PUBLIC_KEY` supports safe key rotation with overlapping JWKS keys.
-- `JWT_ACCEPT_HS256_LEGACY` (default `true`) allows gradual migration from HS256; disable after cutover.
+- OAuth credentials are configured per company; global GitHub, Google, and Microsoft environment variables are removed.
 
 ### 📚 Documentation
 
-- Added [docs/jwks.md](docs/jwks.md) with configuration, verification, rotation, and security guidance.
-- Updated README, `.env.example`, and release checklist for JWT key requirements.
+- Added [docs/jwks.md](docs/jwks.md) and updated setup guides for JWT keys and OAuth configuration.
 
 ## [0.1.0] - 2026-05-23
 
