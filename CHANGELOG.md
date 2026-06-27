@@ -23,6 +23,16 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 
 
+## [Unreleased] - yyyy-mm-dd
+
+### 🚨 Changed
+
+- OAuth provider credentials are company-scoped only; global `GITHUB_*` / `GOOGLE_*` / `MICROSOFT_*` environment variables are removed.
+
+### 🗑 Removed
+
+- Global OAuth env vars from `docker-compose.yml`, `.env.example`, and `config/settings.py`.
+
 ## [0.2.0] - 2026-06-26
 
 ### ✨ Feature

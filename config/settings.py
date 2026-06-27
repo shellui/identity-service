@@ -213,46 +213,16 @@ SIMPLE_JWT.update(
 # Personal access tokens (PAT): JWT access token lifetime when creating a PAT (see views._issue_personal_access_token).
 PERSONAL_ACCESS_TOKEN_LIFETIME = timedelta(days=90)
 
-GITHUB_CLIENT_ID = os.getenv('GITHUB_CLIENT_ID', '')
-GITHUB_CLIENT_SECRET = os.getenv('GITHUB_CLIENT_SECRET', '')
-GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID', '')
-GOOGLE_CLIENT_SECRET = os.getenv('GOOGLE_CLIENT_SECRET', '')
-MICROSOFT_CLIENT_ID = os.getenv('MICROSOFT_CLIENT_ID', '')
-MICROSOFT_CLIENT_SECRET = os.getenv('MICROSOFT_CLIENT_SECRET', '')
-
 # Optional MaxMind GeoLite2/GeoIP2 City database (.mmdb) for login audit country/city.
 # Install: pip install geoip2  — then set path to your .mmdb file.
 SHELLUI_GEOIP_DATABASE_PATH = os.getenv('SHELLUI_GEOIP_DATABASE_PATH', '')
 
+# OAuth credentials live per company on SocialApp rows (via CompanyOAuthClient).
+# Scopes only — used by django-allauth provider modules and the admin UI.
 SOCIALACCOUNT_PROVIDERS = {
-    'github': {
-        'APPS': [
-            {
-                'client_id': GITHUB_CLIENT_ID,
-                'secret': GITHUB_CLIENT_SECRET,
-                'key': '',
-            }
-        ],
-        'SCOPE': ['read:user', 'user:email'],
-    },
-    'google': {
-        'APPS': [
-            {
-                'client_id': GOOGLE_CLIENT_ID,
-                'secret': GOOGLE_CLIENT_SECRET,
-                'key': '',
-            }
-        ],
-        'SCOPE': ['openid', 'email', 'profile'],
-    },
+    'github': {'SCOPE': ['read:user', 'user:email']},
+    'google': {'SCOPE': ['openid', 'email', 'profile']},
     'microsoft': {
-        'APPS': [
-            {
-                'client_id': MICROSOFT_CLIENT_ID,
-                'secret': MICROSOFT_CLIENT_SECRET,
-                'key': '',
-            }
-        ],
         'SCOPE': ['openid', 'email', 'profile', 'User.Read'],
         'TENANT': 'common',
     },

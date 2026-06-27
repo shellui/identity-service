@@ -55,7 +55,7 @@ Operators must set at minimum:
 Optional but typical for production:
 
 - `POSTGRES_DATABASE_URL` — use Postgres instead of SQLite
-- OAuth `*_CLIENT_ID` / `*_CLIENT_SECRET` for enabled providers
+- OAuth client id/secret per company (via Django admin or `/api/v1/admin/oauth-social-apps`)
 
 ### 4. Smoke test the image
 
@@ -199,12 +199,7 @@ With Postgres:
 -e POSTGRES_DATABASE_URL='postgres://user:pass@host:5432/dbname'
 ```
 
-OAuth (example):
-
-```bash
--e GITHUB_CLIENT_ID='...' \
--e GITHUB_CLIENT_SECRET='...'
-```
+OAuth credentials are configured per company in the database (Django admin or `/api/v1/admin/oauth-social-apps`), not via container environment variables.
 
 The entrypoint runs migrations on start, then starts Gunicorn as user `appuser`.
 

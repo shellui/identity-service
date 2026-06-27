@@ -49,11 +49,11 @@ cd src
 pip install -r requirements.txt
 ```
 
-3. Configure OAuth credentials (env vars or allauth SocialApp in DB):
+3. Configure OAuth credentials per company (Django admin → Company → OAuth clients, or `POST /api/v1/admin/oauth-social-apps`):
 
 ```bash
-export GITHUB_CLIENT_ID="..."
-export GITHUB_CLIENT_SECRET="..."
+# After starting the service, create a company and add GitHub/Google/Microsoft client id + secret
+# for that company via the admin API or Django admin UI.
 ```
 
 4. Run migrations and start server:
@@ -106,7 +106,7 @@ backend: {
 
 ## Notes
 
-- `/api/v1/settings` only enables providers that are actually configured.
+- `/api/v1/settings` only enables providers configured for the requested company.
 - Avatar URL from provider userinfo is included in JWT metadata (`user_metadata.avatar_url`) for ShellUI profile display.
 
 ## Documentation (Docusaurus)
@@ -139,17 +139,6 @@ Run container:
 docker volume create identity-service-data
 docker run --rm -p 8000:8000 \
   -v identity-service-data:/app/data \
-  --name identity-service \
-  shellui/identity-service:local
-```
-
-Run with OAuth environment variables:
-
-```bash
-docker run --rm -p 8000:8000 \
-  -v identity-service-data:/app/data \
-  -e GITHUB_CLIENT_ID="..." \
-  -e GITHUB_CLIENT_SECRET="..." \
   -e CORS_ALLOWED_ORIGINS="http://localhost:4000,http://localhost:5174" \
   --name identity-service \
   shellui/identity-service:local

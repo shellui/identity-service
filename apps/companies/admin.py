@@ -1,10 +1,10 @@
-from django.conf import settings
 from django.contrib import admin, messages
 from django.http import Http404, HttpResponseRedirect
 from django.template.response import TemplateResponse
 from django.urls import path, reverse
 from django.utils.html import format_html
 
+from apps.authapi.oauth import SUPPORTED_OAUTH_PROVIDERS
 from .models import Company, CompanyGroup, CompanyOAuthClient
 
 
@@ -45,10 +45,7 @@ class CompanyAdmin(admin.ModelAdmin):
 
     @staticmethod
     def _enabled_providers() -> list[str]:
-        providers_cfg = getattr(settings, 'SOCIALACCOUNT_PROVIDERS', {}) or {}
-        if not isinstance(providers_cfg, dict):
-            return []
-        return sorted(str(key).strip().lower() for key in providers_cfg.keys() if str(key).strip())
+        return sorted(SUPPORTED_OAUTH_PROVIDERS)
 
     def oauth_clients_view(self, request, company_id: int):
         try:
@@ -94,7 +91,7 @@ class CompanyAdmin(admin.ModelAdmin):
             raise Http404('Company not found.') from exc
         normalized_provider = str(provider or '').strip().lower()
         if normalized_provider not in self._enabled_providers():
-            messages.error(request, f"Provider '{normalized_provider}' is not enabled in settings.")
+            messages.error(request, f"Provider '{normalized_provider}' is not supported.")
             return HttpResponseRedirect(reverse('admin:companies_company_oauth_clients', args=[company.pk]))
         add_url = reverse('admin:socialaccount_socialapp_add')
         next_url = reverse('admin:companies_company_oauth_clients', args=[company.pk])

@@ -14,7 +14,6 @@ from django.contrib.auth.signals import user_logged_in
 from django.contrib.sites.models import Site
 from django.db import IntegrityError
 from django.db.models import Count, Q
-from django.db.utils import OperationalError, ProgrammingError
 from allauth.socialaccount.models import SocialApp, SocialAccount
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema, extend_schema_view
 from rest_framework import status
@@ -38,6 +37,7 @@ from .authentication import ShellUIJWTAuthentication
 from .models import LoginEvent, PersonalAccessToken, UserPreference
 from .user_activity import touch_user_last_seen
 from .oauth import (
+    SUPPORTED_OAUTH_PROVIDERS,
     build_authorize_url,
     exchange_code_for_token,
     fetch_provider_userinfo,
@@ -270,50 +270,12 @@ def _get_company_oauth_client(
     return None, 'Requested company_oauth_client_id is not available for this provider.'
 
 
-def _enabled_oauth_providers(company: Company | None = None) -> list[str]:
-    if company is not None:
-        configured = sorted({str(row.social_app.provider).lower() for row in _company_oauth_clients(company)})
-        return configured
-    provider_ids = ('github', 'google', 'microsoft')
-    configured = []
-    social_provider_settings = getattr(settings, 'SOCIALACCOUNT_PROVIDERS', {}) or {}
-
-    db_configured = set()
-    try:
-        db_apps = SocialApp.objects.filter(provider__in=provider_ids).values('provider', 'client_id', 'secret')
-        db_configured = {
-            str(app['provider']).lower()
-            for app in db_apps
-            if str(app.get('client_id', '')).strip() and str(app.get('secret', '')).strip()
-        }
-    except (OperationalError, ProgrammingError):
-        db_configured = set()
-
-    for provider in provider_ids:
-        env_client_id = getattr(settings, f'{provider.upper()}_CLIENT_ID', '') or ''
-        env_client_secret = getattr(settings, f'{provider.upper()}_CLIENT_SECRET', '') or ''
-        env_ready = bool(str(env_client_id).strip() and str(env_client_secret).strip())
-
-        provider_cfg = social_provider_settings.get(provider, {})
-        apps_cfg = provider_cfg.get('APPS', []) if isinstance(provider_cfg, dict) else []
-        settings_ready = any(
-            isinstance(app, dict)
-            and str(app.get('client_id', '')).strip()
-            and str(app.get('secret', '')).strip()
-            for app in apps_cfg
-        )
-
-        if env_ready or settings_ready or provider in db_configured:
-            configured.append(provider)
-
-    return configured
+def _enabled_oauth_providers(company: Company) -> list[str]:
+    return sorted({str(row.social_app.provider).lower() for row in _company_oauth_clients(company)})
 
 
-def _oauth_providers_from_settings() -> list[str]:
-    cfg = getattr(settings, 'SOCIALACCOUNT_PROVIDERS', {}) or {}
-    if not isinstance(cfg, dict):
-        return []
-    return sorted(str(k).strip().lower() for k in cfg.keys() if str(k).strip())
+def _supported_oauth_providers() -> list[str]:
+    return sorted(SUPPORTED_OAUTH_PROVIDERS)
 
 
 def _oauth_client_payload(row: CompanyOAuthClient) -> dict:
@@ -1001,9 +963,8 @@ class ShellUIAuthorizeView(APIView):
             return _shellui_oauth_bounce_or_json(
                 request,
                 message=(
-                    f"Provider '{provider}' is missing OAuth credentials. "
-                    f"Set {provider.upper()}_CLIENT_ID/{provider.upper()}_CLIENT_SECRET "
-                    f"or configure an allauth SocialApp with client id + secret."
+                    f"Provider '{provider}' is missing OAuth credentials for this company. "
+                    'Configure a company OAuth client in Django admin or the ShellUI admin API.'
                 ),
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 error_code='provider_oauth_misconfigured',
@@ -1946,14 +1907,14 @@ class ShellUIAdminOAuthClientListView(APIView):
         serializer = ShellUIAdminOAuthClientCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         validated = serializer.validated_data
-        enabled = set(_oauth_providers_from_settings())
+        enabled = set(_supported_oauth_providers())
         try:
             social_app = SocialApp.objects.get(pk=validated['social_app_id'])
         except SocialApp.DoesNotExist:
             return Response({'error': 'SocialApp not found.'}, status=status.HTTP_400_BAD_REQUEST)
         if str(social_app.provider).strip().lower() not in enabled:
             return Response(
-                {'error': f"Provider '{social_app.provider}' is not enabled in settings."},
+                {'error': f"Provider '{social_app.provider}' is not supported."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         if not str(social_app.client_id).strip() or not str(social_app.secret).strip():
@@ -1980,7 +1941,7 @@ class ShellUIAdminOAuthClientListView(APIView):
         tags=['oauth-social-apps'],
         summary='List available allauth SocialApps for OAuth setup (staff or company owner)',
         description=(
-            'Returns all SocialApp rows for providers enabled in settings, plus whether each app '
+            'Returns SocialApp rows for supported providers, plus whether each app '
             'is already linked to the active company OAuth mappings.'
         ),
     ),
@@ -1997,7 +1958,7 @@ class ShellUIAdminOAuthSocialAppListView(APIView):
         _actor, company, err = _require_staff_or_company_owner(request)
         if err:
             return err
-        enabled_providers = set(_oauth_providers_from_settings())
+        enabled_providers = set(_supported_oauth_providers())
         apps = SocialApp.objects.all().order_by('provider', 'name', 'id')
         rows = [
             _oauth_social_app_payload(company, app)
@@ -2019,9 +1980,9 @@ class ShellUIAdminOAuthSocialAppListView(APIView):
         serializer.is_valid(raise_exception=True)
         validated = serializer.validated_data
         provider = str(validated['provider']).strip().lower()
-        if provider not in set(_oauth_providers_from_settings()):
+        if provider not in set(_supported_oauth_providers()):
             return Response(
-                {'error': f"Provider '{provider}' is not enabled in settings."},
+                {'error': f"Provider '{provider}' is not supported."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         if CompanyOAuthClient.objects.filter(company=company, social_app__provider=provider).exists():
@@ -2175,14 +2136,14 @@ class ShellUIAdminOAuthClientDetailView(APIView):
         serializer.is_valid(raise_exception=True)
         validated = serializer.validated_data
         if 'social_app_id' in validated:
-            enabled = set(_oauth_providers_from_settings())
+            enabled = set(_supported_oauth_providers())
             try:
                 social_app = SocialApp.objects.get(pk=validated['social_app_id'])
             except SocialApp.DoesNotExist:
                 return Response({'error': 'SocialApp not found.'}, status=status.HTTP_400_BAD_REQUEST)
             if str(social_app.provider).strip().lower() not in enabled:
                 return Response(
-                    {'error': f"Provider '{social_app.provider}' is not enabled in settings."},
+                    {'error': f"Provider '{social_app.provider}' is not supported."},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
             if not str(social_app.client_id).strip() or not str(social_app.secret).strip():
