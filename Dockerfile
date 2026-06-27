@@ -18,7 +18,16 @@ RUN pip install --upgrade pip && pip install -r /app/requirements.txt
 COPY . /app
 
 # Build-time only; runtime SECRET_KEY must be supplied via env (see .env.example).
-RUN SECRET_KEY=build-only-not-for-runtime python manage.py collectstatic --noinput
+# Coolify injects runtime env/build-args before this step — override them here so
+# collectstatic does not load production JWT config or fail on compose "$" mangling.
+RUN DEBUG=true \
+    SECRET_KEY=build-only-not-for-runtime \
+    JWT_PRIVATE_KEY= \
+    JWT_PUBLIC_KEY= \
+    JWT_PREVIOUS_PUBLIC_KEY= \
+    JWT_ACCESS_TOKEN_LIFETIME=300 \
+    JWT_REFRESH_TOKEN_LIFETIME=604800 \
+    python manage.py collectstatic --noinput --skip-checks
 
 RUN useradd --create-home --shell /bin/bash appuser \
     && chown -R appuser:appuser /app
