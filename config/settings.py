@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
+import logging
 import os
 import re
 from pathlib import Path
@@ -63,6 +64,16 @@ def _env_duration(name, default):
     if amount <= 0:
         raise ImproperlyConfigured(f'{name} must be greater than zero. Got: {raw!r}')
     return timedelta(seconds=amount * _DURATION_UNITS[unit])
+
+
+def _env_float(name, default):
+    raw = os.getenv(name, '').strip()
+    if not raw:
+        return default
+    try:
+        return float(raw)
+    except ValueError as exc:
+        raise ImproperlyConfigured(f'{name} must be a number. Got: {raw!r}') from exc
 
 
 # Quick-start development settings - unsuitable for production
@@ -346,3 +357,32 @@ STORAGES = {
         'BACKEND': 'whitenoise.storage.CompressedStaticFilesStorage',
     },
 }
+
+# Sentry error reporting (optional — enabled when SENTRY_DSN is set)
+SENTRY_DSN = os.getenv('SENTRY_DSN', '').strip()
+SENTRY_ENVIRONMENT = os.getenv('SENTRY_ENVIRONMENT', '').strip() or (
+    'development' if DEBUG else 'production'
+)
+SENTRY_RELEASE = os.getenv('SENTRY_RELEASE', '').strip() or VERSION
+SENTRY_TRACES_SAMPLE_RATE = _env_float('SENTRY_TRACES_SAMPLE_RATE', 0.0)
+
+if SENTRY_DSN:
+    import sentry_sdk
+    from sentry_sdk.integrations.django import DjangoIntegration
+    from sentry_sdk.integrations.logging import LoggingIntegration
+
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        integrations=[
+            DjangoIntegration(),
+            LoggingIntegration(
+                level=logging.INFO,
+                event_level=logging.ERROR,
+            ),
+        ],
+        environment=SENTRY_ENVIRONMENT,
+        release=SENTRY_RELEASE,
+        traces_sample_rate=SENTRY_TRACES_SAMPLE_RATE,
+        send_default_pii=False,
+        attach_stacktrace=True,
+    )

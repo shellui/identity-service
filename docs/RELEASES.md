@@ -55,6 +55,8 @@ Operators must set at minimum:
 Optional but typical for production:
 
 - `POSTGRES_DATABASE_URL` — use Postgres instead of SQLite
+- `SENTRY_DSN` — Sentry project DSN for error reporting (see README observability section)
+- `SENTRY_ENVIRONMENT` — Sentry environment tag (e.g. `staging`, `production`)
 - OAuth client id/secret per company (via Django admin or `/api/v1/admin/oauth-social-apps`)
 
 ### 4. Smoke test the image

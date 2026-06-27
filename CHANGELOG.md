@@ -26,6 +26,7 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 ### ✨ Feature
 
 - RS256 JWT signing with a public JWKS endpoint so other services can verify tokens without sharing secrets.
+- Optional Sentry error reporting via `SENTRY_DSN` (Django exceptions and `ERROR`-level logs).
 
 ### 🚨 Changed
 

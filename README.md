@@ -161,6 +161,22 @@ Runtime env vars:
 - `GUNICORN_WORKERS` (default `2`)
 - `GUNICORN_THREADS` (default `2`)
 - `GUNICORN_TIMEOUT` (default `60`)
+- `SENTRY_DSN` (optional; enable Sentry error reporting — leave empty in local dev)
+- `SENTRY_ENVIRONMENT` (optional; default `development` when `DEBUG=true`, else `production`)
+- `SENTRY_RELEASE` (optional; default app `VERSION`, e.g. `0.2.0`)
+- `SENTRY_TRACES_SAMPLE_RATE` (optional; default `0` — errors only; set e.g. `0.1` for performance traces)
+
+## Observability (Sentry)
+
+To capture unhandled exceptions and `ERROR`-level Django logs in [Sentry](https://sentry.io), set `SENTRY_DSN` to your project DSN (from **Settings → Client Keys** in Sentry). Leave it empty for local development.
+
+```bash
+# .env
+SENTRY_DSN=https://examplePublicKey@o0.ingest.sentry.io/0
+SENTRY_ENVIRONMENT=development
+```
+
+Rebuild or restart after changing env vars. With Docker Compose, `SENTRY_DSN` is passed through from `.env` automatically.
 
 ## Docker Compose (recommended local run)
 
