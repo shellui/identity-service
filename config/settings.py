@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
 import os
+import re
 from pathlib import Path
 from datetime import timedelta
 
@@ -31,6 +32,37 @@ def _env_csv(name, default):
     if not raw:
         return list(default)
     return [item.strip() for item in raw.split(',') if item.strip()]
+
+
+_DURATION_RE = re.compile(r'^(\d+(?:\.\d+)?)(s|m|h|d)?$', re.IGNORECASE)
+_DURATION_UNITS = {
+    's': 1,
+    'm': 60,
+    'h': 3600,
+    'd': 86400,
+}
+
+
+def _env_duration(name, default):
+    """
+    Parse JWT-style lifetimes from env.
+
+    Supported forms: ``30s``, ``5m``, ``2h``, ``7d``, or a bare integer (seconds).
+    """
+    raw = os.getenv(name, '').strip()
+    if not raw:
+        return default
+    match = _DURATION_RE.fullmatch(raw)
+    if not match:
+        raise ImproperlyConfigured(
+            f'{name} must be a duration like 30s, 5m, 2h, or 7d (bare integer = seconds). '
+            f'Got: {raw!r}'
+        )
+    amount = float(match.group(1))
+    unit = (match.group(2) or 's').lower()
+    if amount <= 0:
+        raise ImproperlyConfigured(f'{name} must be greater than zero. Got: {raw!r}')
+    return timedelta(seconds=amount * _DURATION_UNITS[unit])
 
 
 # Quick-start development settings - unsuitable for production
@@ -184,9 +216,12 @@ ACCOUNT_EMAIL_VERIFICATION = 'none'
 ACCOUNT_SIGNUP_FIELDS = ['email*', 'password1*', 'password2*']
 ACCOUNT_LOGIN_METHODS = {'email'}
 
+JWT_ACCESS_TOKEN_LIFETIME = _env_duration('JWT_ACCESS_TOKEN_LIFETIME', timedelta(minutes=5))
+JWT_REFRESH_TOKEN_LIFETIME = _env_duration('JWT_REFRESH_TOKEN_LIFETIME', timedelta(days=7))
+
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=5),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'ACCESS_TOKEN_LIFETIME': JWT_ACCESS_TOKEN_LIFETIME,
+    'REFRESH_TOKEN_LIFETIME': JWT_REFRESH_TOKEN_LIFETIME,
 }
 
 _jwt_env = read_jwt_env()

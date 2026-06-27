@@ -152,6 +152,8 @@ Runtime env vars:
 - `JWT_PRIVATE_KEY` (required in production; RS256 private key PEM — generate with `python manage.py generate_jwt_keys`, see [JWT private key](#jwt-private-key-rs256))
 - `JWT_PUBLIC_KEY`, `JWT_KEY_ID`, `JWT_PREVIOUS_PUBLIC_KEY`, `JWT_PREVIOUS_KEY_ID` (optional; see JWKS docs)
 - `JWT_ACCEPT_HS256_LEGACY` (default `true`; set `false` after RS256 migration)
+- `JWT_ACCESS_TOKEN_LIFETIME` (default `5m`; e.g. `30s`, `5m`, `2h` — bare integer = seconds)
+- `JWT_REFRESH_TOKEN_LIFETIME` (default `7d`)
 - `DEBUG` (default `false`)
 - `ALLOWED_HOSTS` (comma-separated hostnames; empty → `localhost,127.0.0.1`)
 - `CSRF_TRUSTED_ORIGINS` (comma-separated full URLs with scheme; empty → common local dev URLs including ShellUI ports)

@@ -30,7 +30,7 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 ### 🚨 Changed
 
 - OAuth credentials are configured per company; global GitHub, Google, and Microsoft environment variables are removed.
-- JWT access token lifetime set to 5 minutes; refresh token lifetime remains 7 days (`SIMPLE_JWT`).
+- JWT access and refresh token lifetimes are configurable via `JWT_ACCESS_TOKEN_LIFETIME` and `JWT_REFRESH_TOKEN_LIFETIME` (defaults `5m` and `7d`).
 
 ### 📚 Documentation
 
