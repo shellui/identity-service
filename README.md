@@ -26,7 +26,7 @@ It supports OAuth login (GitHub/Google/Microsoft), issues JWT tokens, exposes Su
 - `GET /api/v1/settings` list enabled login methods/providers
 - `GET /api/v1/authorize?provider=github&redirect_to=...` start OAuth redirect
 - `GET /api/v1/oauth/callback` OAuth callback from provider
-- `POST /api/v1/token?grant_type=refresh_token` refresh session using refresh token
+- `POST /api/v1/token?grant_type=refresh_token` refresh session using `refresh_token` in the body (Bearer access token optional)
 - `POST /api/v1/logout` logout endpoint
 - `GET /api/v1/user` return authenticated user profile + metadata
 - `PUT /api/v1/user` update user metadata

@@ -534,6 +534,62 @@ def _required_company_from_request(request, user: User | None = None) -> tuple[C
     return company, None
 
 
+def _token_claim_int(token, key: str) -> int | None:
+    if token is None or not hasattr(token, 'get'):
+        return None
+    raw = token.get(key)
+    if raw is None:
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def _required_company_for_token_refresh(
+    request,
+    *,
+    refresh,
+    user: User,
+) -> tuple[Company | None, Response | None]:
+    """Resolve company for refresh grant from body/query, refresh JWT, or optional access JWT."""
+    raw = (request.GET.get('company_id') or request.data.get('company_id') or '').strip()
+    refresh_company_id = _token_claim_int(refresh, 'company_id')
+    access_company_id = _jwt_bearer_company_id(request)
+
+    company_id: int | None = None
+    if raw:
+        try:
+            company_id = int(raw)
+        except (TypeError, ValueError):
+            return None, Response({'error': 'Invalid company_id parameter.'}, status=status.HTTP_400_BAD_REQUEST)
+        if refresh_company_id is not None and company_id != refresh_company_id:
+            return None, Response(
+                {'error': 'Requested company_id does not match refresh token company_id.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if access_company_id is not None and company_id != access_company_id:
+            return None, Response(
+                {'error': 'Requested company_id does not match token company_id.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+    elif refresh_company_id is not None:
+        company_id = refresh_company_id
+    elif access_company_id is not None:
+        company_id = access_company_id
+    else:
+        return None, Response({'error': 'Missing company_id parameter.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        company = Company.objects.get(pk=company_id)
+    except Company.DoesNotExist:
+        return None, Response({'error': 'Company not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    if not company.members.filter(pk=user.pk).exists():
+        return None, Response({'error': 'Forbidden for this company.'}, status=status.HTTP_403_FORBIDDEN)
+    return company, None
+
+
 def _require_staff(request):
     user = _authenticate_bearer_user(request)
     if not user:
@@ -1290,7 +1346,8 @@ class ShellUIOAuthExchangeView(APIView):
         summary='Refresh access token using refresh token',
         description=(
             'Issue a new ShellUI token pair from a valid refresh token. '
-            'Requires bearer access token plus grant_type=refresh_token in query params or JSON body.'
+            'Send `refresh_token` in the JSON body. Bearer access token is optional; '
+            'when omitted, `company_id` is taken from the refresh token.'
         ),
         parameters=[
             OpenApiParameter(
@@ -1310,15 +1367,10 @@ class ShellUIOAuthExchangeView(APIView):
     ),
 )
 class ShellUITokenView(APIView):
-    permission_classes = [ShellUIPermission]
+    permission_classes = [AllowAny]
+    authentication_classes = []
 
     def post(self, request):
-        actor = _authenticate_bearer_user(request)
-        if not actor:
-            return Response({'error': 'Unauthorized'}, status=status.HTTP_401_UNAUTHORIZED)
-        company, company_err = _required_company_from_request(request, user=actor)
-        if company_err:
-            return company_err
         grant_type = request.GET.get('grant_type') or request.data.get('grant_type')
         if grant_type != 'refresh_token':
             return Response(
@@ -1334,11 +1386,17 @@ class ShellUITokenView(APIView):
             user = User.objects.get(pk=user_id)
         except Exception:
             return Response({'error': 'Invalid refresh token.'}, status=status.HTTP_401_UNAUTHORIZED)
-        if int(user.pk) != int(actor.pk):
+
+        actor = _authenticate_bearer_user(request)
+        if actor is not None and int(actor.pk) != int(user.pk):
             return Response(
                 {'error': 'Refresh token does not belong to authenticated user.'},
                 status=status.HTTP_403_FORBIDDEN,
             )
+
+        company, company_err = _required_company_for_token_refresh(request, refresh=refresh, user=user)
+        if company_err:
+            return company_err
 
         prior_meta = refresh.get('user_metadata')
         prior_avatar = None
@@ -1347,8 +1405,6 @@ class ShellUITokenView(APIView):
 
         prior_app = refresh.get('app_metadata')
         touch_user_last_seen(user)
-        if not company.members.filter(pk=user.pk).exists():
-            return Response({'error': 'Forbidden for this company.'}, status=status.HTTP_403_FORBIDDEN)
 
         payload = _issue_shellui_tokens(
             user,

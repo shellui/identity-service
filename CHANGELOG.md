@@ -31,6 +31,7 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 - OAuth credentials are configured per company; global GitHub, Google, and Microsoft environment variables are removed.
 - JWT access and refresh token lifetimes are configurable via `JWT_ACCESS_TOKEN_LIFETIME` and `JWT_REFRESH_TOKEN_LIFETIME` (defaults `5m` and `7d`).
+- Token refresh (`POST /api/v1/token`) accepts a valid `refresh_token` without requiring a Bearer access token.
 
 ### 📚 Documentation
 
