@@ -48,6 +48,7 @@ from .serializers import (
     ProviderCallbackSerializer,
     ShellUIOAuthExchangeSerializer,
     ShellUIRefreshTokenSerializer,
+    ShellUIOpenAPISerializer,
     ShellUIAdminGroupCreateSerializer,
     ShellUIAdminGroupUpdateSerializer,
     ShellUIAdminOAuthClientCreateSerializer,
@@ -1374,6 +1375,7 @@ class ShellUITokenView(APIView):
 )
 class ShellUILogoutView(APIView):
     permission_classes = [ShellUIPermission]
+    serializer_class = ShellUIOpenAPISerializer
 
     def post(self, request):
         _company, company_err = _required_company_from_request(request, user=request.user)
@@ -1411,6 +1413,7 @@ class ShellUILogoutView(APIView):
 )
 class ShellUIUserView(APIView):
     permission_classes = [ShellUIPermission]
+    serializer_class = ShellUIOpenAPISerializer
 
     def get(self, request):
         user = _authenticate_bearer_user(request)
@@ -1580,6 +1583,7 @@ class ShellUIPreferenceView(APIView):
         tags=['directory-users'],
         summary='List users (staff or company owner)',
         description='Paginated directory of users. Requires staff JWT or company-owner membership.',
+        operation_id='api_v1_users_list',
         parameters=[
             OpenApiParameter(
                 name='q',
@@ -1594,6 +1598,7 @@ class ShellUIPreferenceView(APIView):
 )
 class ShellUIAdminUserListView(APIView):
     permission_classes = [ShellUIPermission]
+    serializer_class = ShellUIOpenAPISerializer
 
     def get(self, request):
         _actor, company, err = _require_staff_or_company_owner(request)
@@ -1643,6 +1648,7 @@ class ShellUIAdminUserListView(APIView):
         tags=['directory-users'],
         summary='Retrieve user (staff or company owner)',
         description='Single user with ShellUI metadata. Requires staff JWT or company-owner membership.',
+        operation_id='api_v1_users_retrieve',
     ),
     put=extend_schema(
         tags=['directory-users'],
@@ -1657,6 +1663,7 @@ class ShellUIAdminUserListView(APIView):
 )
 class ShellUIAdminUserDetailView(APIView):
     permission_classes = [ShellUIPermission]
+    serializer_class = ShellUIOpenAPISerializer
 
     def get(self, request, pk):
         _actor, company, err = _require_staff_or_company_owner(request)
@@ -1770,6 +1777,7 @@ class ShellUIAdminUserDetailView(APIView):
         tags=['directory-groups'],
         summary='List auth groups (staff or company owner)',
         description='All company groups for requested company with `user_count`.',
+        operation_id='api_v1_groups_list',
     ),
     post=extend_schema(
         tags=['directory-groups'],
@@ -1780,6 +1788,7 @@ class ShellUIAdminUserDetailView(APIView):
 )
 class ShellUIAdminGroupListView(APIView):
     permission_classes = [ShellUIPermission]
+    serializer_class = ShellUIOpenAPISerializer
 
     def get(self, request):
         _actor, company, err = _require_staff_or_company_owner(request)
@@ -1815,6 +1824,7 @@ class ShellUIAdminGroupListView(APIView):
     get=extend_schema(
         tags=['directory-groups'],
         summary='Retrieve auth group (staff or company owner)',
+        operation_id='api_v1_groups_retrieve',
     ),
     put=extend_schema(
         tags=['directory-groups'],
@@ -1828,6 +1838,7 @@ class ShellUIAdminGroupListView(APIView):
 )
 class ShellUIAdminGroupDetailView(APIView):
     permission_classes = [ShellUIPermission]
+    serializer_class = ShellUIOpenAPISerializer
 
     def get(self, request, pk):
         _actor, company, err = _require_staff_or_company_owner(request)
@@ -1879,6 +1890,7 @@ class ShellUIAdminGroupDetailView(APIView):
         tags=['oauth-clients'],
         summary='List company OAuth clients (staff or company owner)',
         description='All OAuth client keys for the active company, grouped by provider in UI clients.',
+        operation_id='api_v1_oauth_clients_list',
     ),
     post=extend_schema(
         tags=['oauth-clients'],
@@ -1888,6 +1900,7 @@ class ShellUIAdminGroupDetailView(APIView):
 )
 class ShellUIAdminOAuthClientListView(APIView):
     permission_classes = [ShellUIPermission]
+    serializer_class = ShellUIOpenAPISerializer
 
     def get(self, request):
         _actor, company, err = _require_staff_or_company_owner(request)
@@ -1953,6 +1966,7 @@ class ShellUIAdminOAuthClientListView(APIView):
 )
 class ShellUIAdminOAuthSocialAppListView(APIView):
     permission_classes = [ShellUIPermission]
+    serializer_class = ShellUIOpenAPISerializer
 
     def get(self, request):
         _actor, company, err = _require_staff_or_company_owner(request)
@@ -2025,6 +2039,7 @@ class ShellUIAdminOAuthSocialAppListView(APIView):
     put=extend_schema(
         tags=['oauth-social-apps'],
         summary='Update SocialApp OAuth key for this company',
+        request=ShellUIAdminOAuthSocialAppUpdateSerializer,
     ),
     delete=extend_schema(
         tags=['oauth-social-apps'],
@@ -2037,6 +2052,7 @@ class ShellUIAdminOAuthSocialAppListView(APIView):
 )
 class ShellUIAdminOAuthSocialAppDetailView(APIView):
     permission_classes = [ShellUIPermission]
+    serializer_class = ShellUIOpenAPISerializer
 
     def put(self, request, pk):
         _actor, company, err = _require_staff_or_company_owner(request)
@@ -2100,6 +2116,7 @@ class ShellUIAdminOAuthSocialAppDetailView(APIView):
     get=extend_schema(
         tags=['oauth-clients'],
         summary='Retrieve company OAuth client (staff or company owner)',
+        operation_id='api_v1_oauth_clients_retrieve',
     ),
     put=extend_schema(
         tags=['oauth-clients'],
@@ -2113,6 +2130,7 @@ class ShellUIAdminOAuthSocialAppDetailView(APIView):
 )
 class ShellUIAdminOAuthClientDetailView(APIView):
     permission_classes = [ShellUIPermission]
+    serializer_class = ShellUIOpenAPISerializer
 
     def get(self, request, pk):
         _actor, company, err = _require_staff_or_company_owner(request)
@@ -2184,6 +2202,7 @@ class ShellUIAdminOAuthClientDetailView(APIView):
             'Paginated OAuth sign-in attempts (success and failure). '
             'Contains privacy-oriented fields (hashed IP, truncated user-agent). '
         ),
+        operation_id='api_v1_login_events_list',
         parameters=[
             OpenApiParameter(
                 name='user_id',
@@ -2364,6 +2383,7 @@ class ShellUIAdminLoginEventListView(APIView):
         tags=['audit-events'],
         summary='Retrieve login audit event (staff or company owner)',
         description='Single login event row.',
+        operation_id='api_v1_login_events_retrieve',
         responses={200: OpenApiResponse(description='Login audit event')},
     ),
 )
@@ -2400,6 +2420,7 @@ class ShellUIAdminLoginEventDetailView(APIView):
 )
 class ShellUIPersonalAccessTokenListCreateView(APIView):
     permission_classes = [ShellUIPermission]
+    serializer_class = ShellUIOpenAPISerializer
 
     def get(self, request):
         user, company, err = _require_authenticated_company_member(request)
@@ -2444,6 +2465,7 @@ class ShellUIPersonalAccessTokenListCreateView(APIView):
 )
 class ShellUIPersonalAccessTokenRevokeView(APIView):
     permission_classes = [ShellUIPermission]
+    serializer_class = ShellUIOpenAPISerializer
 
     def post(self, request, key_id):
         user, company, err = _require_authenticated_company_member(request)
