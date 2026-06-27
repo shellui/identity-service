@@ -123,7 +123,7 @@ Output is generated in `tools/docusaurus/build`.
 
 ## Releases (Docker Hub)
 
-See [docs/RELEASES.md](docs/RELEASES.md) for the pre-release checklist, tagging conventions, and steps to build and push `shellui/identity-service` to Docker Hub.
+See [PUBLISH.md](PUBLISH.md) for the pre-release checklist, tagging conventions, and steps to build, push, and deploy `shellui/identity-service` on Docker Hub.
 
 ## Docker (local run)
 

@@ -1,5 +1,7 @@
 # Releases and Docker Hub
 
+> **Canonical guide:** [PUBLISH.md](../PUBLISH.md) at the repository root.
+
 This document describes how to cut a release of `identity-service` and publish the container image to [Docker Hub](https://hub.docker.com/) as `shellui/identity-service`.
 
 For day-to-day local runs, see the **Docker (local run)** section in the repository README.
