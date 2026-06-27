@@ -23,6 +23,12 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 
 
+## [Unreleased] - yyyy-mm-dd
+
+### 🚨 Changed
+
+- JWT access token lifetime set to 5 minutes; refresh token lifetime remains 7 days (`SIMPLE_JWT`).
+
 ## [0.2.0] - yyyy-mm-dd
 
 ### ✨ Feature
