@@ -21,14 +21,6 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
 -->
 
-
-
-## [Unreleased] - yyyy-mm-dd
-
-### 🚨 Changed
-
-- JWT access token lifetime set to 5 minutes; refresh token lifetime remains 7 days (`SIMPLE_JWT`).
-
 ## [0.2.0] - yyyy-mm-dd
 
 ### ✨ Feature
@@ -38,6 +30,7 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 ### 🚨 Changed
 
 - OAuth credentials are configured per company; global GitHub, Google, and Microsoft environment variables are removed.
+- JWT access token lifetime set to 5 minutes; refresh token lifetime remains 7 days (`SIMPLE_JWT`).
 
 ### 📚 Documentation
 
