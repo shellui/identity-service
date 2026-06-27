@@ -11,7 +11,7 @@ It supports OAuth login (GitHub/Google/Microsoft), issues JWT tokens, exposes Su
 - JWT access + refresh token issuance (RS256 with JWKS when `JWT_PRIVATE_KEY` is set)
 - Token refresh endpoint (`grant_type=refresh_token`)
 - User metadata endpoint (`/api/v1/user`)
-- CORS for local ShellUI (`http://localhost:4000`), admin dev server (`http://localhost:5174`), and optional extra origins via env `CORS_ALLOWED_ORIGINS` (comma-separated)
+- CORS for local ShellUI (`http://localhost:4000`), admin dev server (`http://localhost:5174`), hosted admin (`https://admin.shellui.com`), and optional extra origins via env `CORS_ALLOWED_ORIGINS` (comma-separated)
 - OpenAPI docs with drf-spectacular
 
 ## Project Structure

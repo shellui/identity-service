@@ -74,6 +74,7 @@ CSRF_TRUSTED_ORIGINS = _env_csv(
         'http://127.0.0.1:4000',
         'http://localhost:5174',
         'http://127.0.0.1:5174',
+        'https://admin.shellui.com',
     ),
 )
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
@@ -228,13 +229,14 @@ SOCIALACCOUNT_PROVIDERS = {
     },
 }
 
-# Cross-origin: ShellUI app, admin iframe (Vite), and optional extra origins from env
-# (comma-separated), e.g. CORS_ALLOWED_ORIGINS=https://app.example.com,https://admin.example.com
+# Cross-origin: ShellUI app, admin iframe (Vite), hosted admin UI, and optional extra origins from env
+# (comma-separated), e.g. CORS_ALLOWED_ORIGINS=https://app.example.com
 CORS_ALLOWED_ORIGINS = [
     'http://localhost:4000',
     'http://127.0.0.1:4000',
     'http://localhost:5174',
     'http://127.0.0.1:5174',
+    'https://admin.shellui.com',
 ]
 for _origin in os.getenv('CORS_ALLOWED_ORIGINS', '').split(','):
     _origin = _origin.strip()
