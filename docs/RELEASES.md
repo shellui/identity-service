@@ -2,7 +2,7 @@
 
 This document describes how to cut a release of `identity-service` and publish the container image to [Docker Hub](https://hub.docker.com/) as `shellui/identity-service`.
 
-For day-to-day local runs, see [README.md](../README.md#docker-local-run).
+For day-to-day local runs, see the **Docker (local run)** section in the repository README.
 
 ## Image overview
 
@@ -14,7 +14,7 @@ For day-to-day local runs, see [README.md](../README.md#docker-local-run).
 | Listen port | `8000` |
 | Data volume | `/app/data` (SQLite default path: `/app/data/db.sqlite3`) |
 
-The image contains application code and collected static files only. Secrets and runtime configuration are supplied via environment variables at container start (see [.env.example](../.env.example)).
+The image contains application code and collected static files only. Secrets and runtime configuration are supplied via environment variables at container start (see `.env.example` in the repository root).
 
 ## Pre-release checklist
 

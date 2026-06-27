@@ -2,7 +2,8 @@ name: Deploy Docs
 
 on:
   push:
-  workflow_dispatch:
+    tags:
+      - 'v*'
 
 jobs:
   deploy:
@@ -13,6 +14,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Verify tag points to main
+        run: |
+          git fetch origin main --depth=1
+          git merge-base --is-ancestor HEAD origin/main
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
