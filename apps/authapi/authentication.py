@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import uuid
 
+from django.conf import settings
 from django.utils import timezone
 from rest_framework_simplejwt.authentication import JWTAuthentication
-from rest_framework_simplejwt.exceptions import InvalidToken
+from rest_framework_simplejwt.backends import TokenBackend
+from rest_framework_simplejwt.exceptions import InvalidToken, TokenBackendError
 from rest_framework_simplejwt.settings import api_settings
 
 from .models import PersonalAccessToken
@@ -16,7 +18,7 @@ class ShellUIJWTAuthentication(JWTAuthentication):
     """Same as SimpleJWT, but rejects revoked PATs and mismatched ``jti`` / user."""
 
     def get_validated_token(self, raw_token):
-        validated = super().get_validated_token(raw_token)
+        validated = self._decode_with_configured_keys(raw_token)
         pat_id = validated.get('pat_id')
         if pat_id is None:
             return validated
@@ -52,3 +54,38 @@ class ShellUIJWTAuthentication(JWTAuthentication):
 
         PersonalAccessToken.objects.filter(pk=pat.pk).update(last_used_at=timezone.now())
         return validated
+
+    def _decode_with_configured_keys(self, raw_token):
+        decode_errors: list[Exception] = []
+        try:
+            return super().get_validated_token(raw_token)
+        except InvalidToken as exc:
+            decode_errors.append(exc)
+
+        for previous_key in getattr(settings, 'JWT_PREVIOUS_VERIFYING_KEYS', []):
+            backend = TokenBackend(
+                algorithm='RS256',
+                verifying_key=previous_key.public_pem,
+            )
+            try:
+                return backend.decode(raw_token)
+            except TokenBackendError as exc:
+                decode_errors.append(exc)
+
+        if (
+            getattr(settings, 'JWT_ACCEPT_HS256_LEGACY', False)
+            and getattr(settings, 'JWT_ALGORITHM', 'HS256') != 'HS256'
+        ):
+            legacy_backend = TokenBackend(
+                algorithm='HS256',
+                signing_key=settings.SECRET_KEY,
+                verifying_key=settings.SECRET_KEY,
+            )
+            try:
+                return legacy_backend.decode(raw_token)
+            except TokenBackendError as exc:
+                decode_errors.append(exc)
+
+        if decode_errors:
+            raise InvalidToken({'detail': 'Token is invalid or expired.'}) from decode_errors[0]
+        raise InvalidToken({'detail': 'Token is invalid or expired.'})

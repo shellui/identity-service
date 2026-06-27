@@ -21,6 +21,23 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
 -->
 
+## [0.2.0] - yyyy-mm-dd
+
+### ✨ Feature
+
+- RS256 JWT signing with a public JWKS endpoint so other services can verify tokens without sharing secrets.
+- Optional Sentry error reporting via `SENTRY_DSN` (Django exceptions and `ERROR`-level logs).
+
+### 🚨 Changed
+
+- OAuth credentials are configured per company; global GitHub, Google, and Microsoft environment variables are removed.
+- JWT access and refresh token lifetimes are configurable via `JWT_ACCESS_TOKEN_LIFETIME` and `JWT_REFRESH_TOKEN_LIFETIME` (defaults `5m` and `7d`).
+- Token refresh (`POST /api/v1/token`) accepts a valid `refresh_token` without requiring a Bearer access token.
+
+### 📚 Documentation
+
+- Added [docs/jwks.md](docs/jwks.md) and updated setup guides for JWT keys and OAuth configuration.
+
 ## [0.1.0] - 2026-05-23
 
 ### ✨ Feature

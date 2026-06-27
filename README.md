@@ -8,10 +8,10 @@ It supports OAuth login (GitHub/Google/Microsoft), issues JWT tokens, exposes Su
 
 - ShellUI-compatible auth API at `/api/v1/*`
 - OAuth login flow for GitHub, Google, Microsoft
-- JWT access + refresh token issuance
+- JWT access + refresh token issuance (RS256 with JWKS when `JWT_PRIVATE_KEY` is set)
 - Token refresh endpoint (`grant_type=refresh_token`)
 - User metadata endpoint (`/api/v1/user`)
-- CORS for local ShellUI (`http://localhost:4000`), admin dev server (`http://localhost:5174`), and optional extra origins via env `CORS_ALLOWED_ORIGINS` (comma-separated)
+- CORS for local ShellUI (`http://localhost:4000`), admin dev server (`http://localhost:5174`), hosted admin (`https://admin.shellui.com`), and optional extra origins via env `CORS_ALLOWED_ORIGINS` (comma-separated)
 - OpenAPI docs with drf-spectacular
 
 ## Project Structure
@@ -22,10 +22,11 @@ It supports OAuth login (GitHub/Google/Microsoft), issues JWT tokens, exposes Su
 
 ## Main Auth Endpoints
 
+- `GET /.well-known/jwks.json` public JWKS for RS256 JWT verification (see [docs/jwks.md](docs/jwks.md))
 - `GET /api/v1/settings` list enabled login methods/providers
 - `GET /api/v1/authorize?provider=github&redirect_to=...` start OAuth redirect
 - `GET /api/v1/oauth/callback` OAuth callback from provider
-- `POST /api/v1/token?grant_type=refresh_token` refresh session using refresh token
+- `POST /api/v1/token?grant_type=refresh_token` refresh session using `refresh_token` in the body (Bearer access token optional)
 - `POST /api/v1/logout` logout endpoint
 - `GET /api/v1/user` return authenticated user profile + metadata
 - `PUT /api/v1/user` update user metadata
@@ -48,11 +49,11 @@ cd src
 pip install -r requirements.txt
 ```
 
-3. Configure OAuth credentials (env vars or allauth SocialApp in DB):
+3. Configure OAuth credentials per company (Django admin → Company → OAuth clients, or `POST /api/v1/admin/oauth-social-apps`):
 
 ```bash
-export GITHUB_CLIENT_ID="..."
-export GITHUB_CLIENT_SECRET="..."
+# After starting the service, create a company and add GitHub/Google/Microsoft client id + secret
+# for that company via the admin API or Django admin UI.
 ```
 
 4. Run migrations and start server:
@@ -61,6 +62,27 @@ export GITHUB_CLIENT_SECRET="..."
 python manage.py migrate
 python manage.py runserver
 ```
+
+## JWT private key (RS256)
+
+Production (`DEBUG=false`) requires an RSA private key for JWT signing. Local dev can skip this when `DEBUG=true` (HS256 with `SECRET_KEY`).
+
+Generate a key pair and print suggested env vars:
+
+```bash
+python manage.py generate_jwt_keys
+```
+
+Copy the output into `.env` (or your secret manager). The private key must stay on one line with `\n` for newlines:
+
+```bash
+JWT_KEY_ID=abc123...
+JWT_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nMIIE...\n-----END PRIVATE KEY-----\n"
+```
+
+`JWT_PUBLIC_KEY` is optional (derived from the private key). Verifiers fetch the public key from `GET /.well-known/jwks.json` — see [docs/jwks.md](docs/jwks.md).
+
+With Docker Compose, add `JWT_PRIVATE_KEY` to `.env` before running when `DEBUG=false`.
 
 ## ShellUI Frontend Config
 
@@ -84,7 +106,7 @@ backend: {
 
 ## Notes
 
-- `/api/v1/settings` only enables providers that are actually configured.
+- `/api/v1/settings` only enables providers configured for the requested company.
 - Avatar URL from provider userinfo is included in JWT metadata (`user_metadata.avatar_url`) for ShellUI profile display.
 
 ## Documentation (Docusaurus)
@@ -117,17 +139,6 @@ Run container:
 docker volume create identity-service-data
 docker run --rm -p 8000:8000 \
   -v identity-service-data:/app/data \
-  --name identity-service \
-  shellui/identity-service:local
-```
-
-Run with OAuth environment variables:
-
-```bash
-docker run --rm -p 8000:8000 \
-  -v identity-service-data:/app/data \
-  -e GITHUB_CLIENT_ID="..." \
-  -e GITHUB_CLIENT_SECRET="..." \
   -e CORS_ALLOWED_ORIGINS="http://localhost:4000,http://localhost:5174" \
   --name identity-service \
   shellui/identity-service:local
@@ -137,6 +148,12 @@ The container runs migrations automatically, stores SQLite at `/app/data/db.sqli
 
 Runtime env vars:
 
+- `SECRET_KEY` (required; Django sessions/CSRF — not used for JWT signing when `JWT_PRIVATE_KEY` is set)
+- `JWT_PRIVATE_KEY` (required in production; RS256 private key PEM — generate with `python manage.py generate_jwt_keys`, see [JWT private key](#jwt-private-key-rs256))
+- `JWT_PUBLIC_KEY`, `JWT_KEY_ID`, `JWT_PREVIOUS_PUBLIC_KEY`, `JWT_PREVIOUS_KEY_ID` (optional; see JWKS docs)
+- `JWT_ACCEPT_HS256_LEGACY` (default `true`; set `false` after RS256 migration)
+- `JWT_ACCESS_TOKEN_LIFETIME` (default `5m`; e.g. `30s`, `5m`, `2h` — bare integer = seconds)
+- `JWT_REFRESH_TOKEN_LIFETIME` (default `7d`)
 - `DEBUG` (default `false`)
 - `ALLOWED_HOSTS` (comma-separated hostnames; empty → `localhost,127.0.0.1`)
 - `CSRF_TRUSTED_ORIGINS` (comma-separated full URLs with scheme; empty → common local dev URLs including ShellUI ports)
@@ -144,6 +161,22 @@ Runtime env vars:
 - `GUNICORN_WORKERS` (default `2`)
 - `GUNICORN_THREADS` (default `2`)
 - `GUNICORN_TIMEOUT` (default `60`)
+- `SENTRY_DSN` (optional; enable Sentry error reporting — leave empty in local dev)
+- `SENTRY_ENVIRONMENT` (optional; default `development` when `DEBUG=true`, else `production`)
+- `SENTRY_RELEASE` (optional; default app `VERSION`, e.g. `0.2.0`)
+- `SENTRY_TRACES_SAMPLE_RATE` (optional; default `0` — errors only; set e.g. `0.1` for performance traces)
+
+## Observability (Sentry)
+
+To capture unhandled exceptions and `ERROR`-level Django logs in [Sentry](https://sentry.io), set `SENTRY_DSN` to your project DSN (from **Settings → Client Keys** in Sentry). Leave it empty for local development.
+
+```bash
+# .env
+SENTRY_DSN=https://examplePublicKey@o0.ingest.sentry.io/0
+SENTRY_ENVIRONMENT=development
+```
+
+Rebuild or restart after changing env vars. With Docker Compose, `SENTRY_DSN` is passed through from `.env` automatically.
 
 ## Docker Compose (recommended local run)
 

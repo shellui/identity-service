@@ -1,6 +1,10 @@
 from rest_framework import serializers
 
 
+class ShellUIOpenAPISerializer(serializers.Serializer):
+    """Placeholder for APIView classes documented via @extend_schema_view."""
+
+
 class ProviderAuthorizeSerializer(serializers.Serializer):
     redirect_uri = serializers.URLField()
 

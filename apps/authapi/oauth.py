@@ -4,10 +4,10 @@ import urllib.request
 import uuid
 from dataclasses import dataclass
 
-from django.conf import settings
 from django.db.utils import OperationalError, ProgrammingError
-from allauth.socialaccount.models import SocialApp
 from apps.companies.models import CompanyOAuthClient
+
+SUPPORTED_OAUTH_PROVIDERS = frozenset({'github', 'google', 'microsoft'})
 
 
 @dataclass(frozen=True)
@@ -65,32 +65,6 @@ def _resolve_company_client(
     )
 
 
-def _credentials_from_settings(provider: str) -> tuple[str, str]:
-    provider_cfg = (getattr(settings, 'SOCIALACCOUNT_PROVIDERS', {}) or {}).get(provider, {})
-    apps_cfg = provider_cfg.get('APPS', []) if isinstance(provider_cfg, dict) else []
-    for app in apps_cfg:
-        if not isinstance(app, dict):
-            continue
-        client_id = str(app.get('client_id', '')).strip()
-        client_secret = str(app.get('secret', '')).strip()
-        if client_id and client_secret:
-            return client_id, client_secret
-
-    env_client_id = str(getattr(settings, f'{provider.upper()}_CLIENT_ID', '') or '').strip()
-    env_client_secret = str(getattr(settings, f'{provider.upper()}_CLIENT_SECRET', '') or '').strip()
-    return env_client_id, env_client_secret
-
-
-def _credentials_from_socialapp(provider: str) -> tuple[str, str]:
-    try:
-        app = SocialApp.objects.filter(provider=provider).exclude(client_id='').exclude(secret='').first()
-    except (OperationalError, ProgrammingError):
-        return '', ''
-    if not app:
-        return '', ''
-    return str(app.client_id).strip(), str(app.secret).strip()
-
-
 def resolve_oauth_client(
     provider: str,
     *,
@@ -98,14 +72,13 @@ def resolve_oauth_client(
     company_oauth_client_id: int | None = None,
 ) -> ResolvedOAuthClient:
     selected = _resolve_company_client(provider, company_id, company_oauth_client_id)
-    if selected:
-        return selected
-    client_id, client_secret = _credentials_from_settings(provider)
-    if not client_id or not client_secret:
-        db_client_id, db_client_secret = _credentials_from_socialapp(provider)
-        client_id = client_id or db_client_id
-        client_secret = client_secret or db_client_secret
-    return ResolvedOAuthClient(provider=provider, client_id=client_id, client_secret=client_secret)
+    if not selected:
+        raise ValueError(
+            f'No OAuth client configured for provider {provider!r} and company {company_id!r}.'
+        )
+    if not selected.client_id or not selected.client_secret:
+        raise ValueError(f'OAuth client for provider {provider!r} is missing credentials.')
+    return selected
 
 
 def get_provider_config(
@@ -119,7 +92,7 @@ def get_provider_config(
         company_id=company_id,
         company_oauth_client_id=company_oauth_client_id,
     )
-    tenant = resolved.tenant or settings.SOCIALACCOUNT_PROVIDERS.get('microsoft', {}).get('TENANT', 'common')
+    tenant = resolved.tenant or 'common'
     providers = {
         'github': ProviderConfig(
             name='github',

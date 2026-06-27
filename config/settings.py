@@ -10,13 +10,17 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
+import logging
 import os
+import re
 from pathlib import Path
 from datetime import timedelta
 
 import dj_database_url
 from dotenv import load_dotenv
 from django.core.exceptions import ImproperlyConfigured
+
+from apps.authapi.jwks import read_jwt_env, resolve_jwt_configuration
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -31,6 +35,47 @@ def _env_csv(name, default):
     return [item.strip() for item in raw.split(',') if item.strip()]
 
 
+_DURATION_RE = re.compile(r'^(\d+(?:\.\d+)?)(s|m|h|d)?$', re.IGNORECASE)
+_DURATION_UNITS = {
+    's': 1,
+    'm': 60,
+    'h': 3600,
+    'd': 86400,
+}
+
+
+def _env_duration(name, default):
+    """
+    Parse JWT-style lifetimes from env.
+
+    Supported forms: ``30s``, ``5m``, ``2h``, ``7d``, or a bare integer (seconds).
+    """
+    raw = os.getenv(name, '').strip()
+    if not raw:
+        return default
+    match = _DURATION_RE.fullmatch(raw)
+    if not match:
+        raise ImproperlyConfigured(
+            f'{name} must be a duration like 30s, 5m, 2h, or 7d (bare integer = seconds). '
+            f'Got: {raw!r}'
+        )
+    amount = float(match.group(1))
+    unit = (match.group(2) or 's').lower()
+    if amount <= 0:
+        raise ImproperlyConfigured(f'{name} must be greater than zero. Got: {raw!r}')
+    return timedelta(seconds=amount * _DURATION_UNITS[unit])
+
+
+def _env_float(name, default):
+    raw = os.getenv(name, '').strip()
+    if not raw:
+        return default
+    try:
+        return float(raw)
+    except ValueError as exc:
+        raise ImproperlyConfigured(f'{name} must be a number. Got: {raw!r}') from exc
+
+
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
@@ -41,8 +86,8 @@ if not _secret_key:
         '\n'
         'SECRET_KEY is not set — identity-service cannot start.\n'
         '\n'
-        'Django uses this value to sign sessions, CSRF tokens, and JWTs. '
-        'It must be set explicitly and kept secret in production.\n'
+        'Django uses this value to sign sessions and CSRF tokens. '
+        'When JWT_PRIVATE_KEY is set, JWTs are signed with RS256 instead.\n'
         '\n'
         'How to fix:\n'
         '  1. Copy the example env file:\n'
@@ -72,11 +117,12 @@ CSRF_TRUSTED_ORIGINS = _env_csv(
         'http://127.0.0.1:4000',
         'http://localhost:5174',
         'http://127.0.0.1:5174',
+        'https://admin.shellui.com',
     ),
 )
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
-VERSION = '0.1.0'
+VERSION = '0.2.0'
 
 # Application definition
 
@@ -123,7 +169,7 @@ SPECTACULAR_SETTINGS = {
         'persistAuthorization': True,
     },
     'TAGS': [
-        {'name': 'auth-session', 'description': 'Session lifecycle endpoints (settings, token refresh, logout).'},
+        {'name': 'auth-session', 'description': 'Session lifecycle endpoints (settings, token refresh, logout, JWKS).'},
         {'name': 'auth-social', 'description': 'OAuth/social login flow endpoints.'},
         {'name': 'auth-profile', 'description': 'Current authenticated user profile and metadata.'},
         {'name': 'auth-preferences', 'description': 'Current authenticated user preferences.'},
@@ -181,66 +227,62 @@ ACCOUNT_EMAIL_VERIFICATION = 'none'
 ACCOUNT_SIGNUP_FIELDS = ['email*', 'password1*', 'password2*']
 ACCOUNT_LOGIN_METHODS = {'email'}
 
+JWT_ACCESS_TOKEN_LIFETIME = _env_duration('JWT_ACCESS_TOKEN_LIFETIME', timedelta(minutes=5))
+JWT_REFRESH_TOKEN_LIFETIME = _env_duration('JWT_REFRESH_TOKEN_LIFETIME', timedelta(days=7))
+
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'ACCESS_TOKEN_LIFETIME': JWT_ACCESS_TOKEN_LIFETIME,
+    'REFRESH_TOKEN_LIFETIME': JWT_REFRESH_TOKEN_LIFETIME,
 }
+
+_jwt_env = read_jwt_env()
+_jwt_config = resolve_jwt_configuration(
+    secret_key=SECRET_KEY,
+    debug=DEBUG,
+    **_jwt_env,
+)
+JWT_ALGORITHM = _jwt_config['algorithm']
+JWT_ACTIVE_KEY_ID = _jwt_config['active_key_id']
+JWT_SIGNING_KEY = _jwt_config['signing_key_obj']
+JWT_PREVIOUS_VERIFYING_KEYS = _jwt_config['previous_verifying_keys']
+JWT_ACCEPT_HS256_LEGACY = _jwt_config['accept_hs256_legacy']
+JWKS_ENABLED = _jwt_config['jwks_enabled']
+JWT_REQUIRES_RS256 = _jwt_config['requires_rs256']
+
+SIMPLE_JWT.update(
+    {
+        'ALGORITHM': JWT_ALGORITHM,
+        'SIGNING_KEY': _jwt_config['signing_key'],
+        'VERIFYING_KEY': _jwt_config['verifying_key'],
+    }
+)
 
 # Personal access tokens (PAT): JWT access token lifetime when creating a PAT (see views._issue_personal_access_token).
 PERSONAL_ACCESS_TOKEN_LIFETIME = timedelta(days=90)
-
-GITHUB_CLIENT_ID = os.getenv('GITHUB_CLIENT_ID', '')
-GITHUB_CLIENT_SECRET = os.getenv('GITHUB_CLIENT_SECRET', '')
-GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID', '')
-GOOGLE_CLIENT_SECRET = os.getenv('GOOGLE_CLIENT_SECRET', '')
-MICROSOFT_CLIENT_ID = os.getenv('MICROSOFT_CLIENT_ID', '')
-MICROSOFT_CLIENT_SECRET = os.getenv('MICROSOFT_CLIENT_SECRET', '')
 
 # Optional MaxMind GeoLite2/GeoIP2 City database (.mmdb) for login audit country/city.
 # Install: pip install geoip2  — then set path to your .mmdb file.
 SHELLUI_GEOIP_DATABASE_PATH = os.getenv('SHELLUI_GEOIP_DATABASE_PATH', '')
 
+# OAuth credentials live per company on SocialApp rows (via CompanyOAuthClient).
+# Scopes only — used by django-allauth provider modules and the admin UI.
 SOCIALACCOUNT_PROVIDERS = {
-    'github': {
-        'APPS': [
-            {
-                'client_id': GITHUB_CLIENT_ID,
-                'secret': GITHUB_CLIENT_SECRET,
-                'key': '',
-            }
-        ],
-        'SCOPE': ['read:user', 'user:email'],
-    },
-    'google': {
-        'APPS': [
-            {
-                'client_id': GOOGLE_CLIENT_ID,
-                'secret': GOOGLE_CLIENT_SECRET,
-                'key': '',
-            }
-        ],
-        'SCOPE': ['openid', 'email', 'profile'],
-    },
+    'github': {'SCOPE': ['read:user', 'user:email']},
+    'google': {'SCOPE': ['openid', 'email', 'profile']},
     'microsoft': {
-        'APPS': [
-            {
-                'client_id': MICROSOFT_CLIENT_ID,
-                'secret': MICROSOFT_CLIENT_SECRET,
-                'key': '',
-            }
-        ],
         'SCOPE': ['openid', 'email', 'profile', 'User.Read'],
         'TENANT': 'common',
     },
 }
 
-# Cross-origin: ShellUI app, admin iframe (Vite), and optional extra origins from env
-# (comma-separated), e.g. CORS_ALLOWED_ORIGINS=https://app.example.com,https://admin.example.com
+# Cross-origin: ShellUI app, admin iframe (Vite), hosted admin UI, and optional extra origins from env
+# (comma-separated), e.g. CORS_ALLOWED_ORIGINS=https://app.example.com
 CORS_ALLOWED_ORIGINS = [
     'http://localhost:4000',
     'http://127.0.0.1:4000',
     'http://localhost:5174',
     'http://127.0.0.1:5174',
+    'https://admin.shellui.com',
 ]
 for _origin in os.getenv('CORS_ALLOWED_ORIGINS', '').split(','):
     _origin = _origin.strip()
@@ -315,3 +357,32 @@ STORAGES = {
         'BACKEND': 'whitenoise.storage.CompressedStaticFilesStorage',
     },
 }
+
+# Sentry error reporting (optional — enabled when SENTRY_DSN is set)
+SENTRY_DSN = os.getenv('SENTRY_DSN', '').strip()
+SENTRY_ENVIRONMENT = os.getenv('SENTRY_ENVIRONMENT', '').strip() or (
+    'development' if DEBUG else 'production'
+)
+SENTRY_RELEASE = os.getenv('SENTRY_RELEASE', '').strip() or VERSION
+SENTRY_TRACES_SAMPLE_RATE = _env_float('SENTRY_TRACES_SAMPLE_RATE', 0.0)
+
+if SENTRY_DSN:
+    import sentry_sdk
+    from sentry_sdk.integrations.django import DjangoIntegration
+    from sentry_sdk.integrations.logging import LoggingIntegration
+
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        integrations=[
+            DjangoIntegration(),
+            LoggingIntegration(
+                level=logging.INFO,
+                event_level=logging.ERROR,
+            ),
+        ],
+        environment=SENTRY_ENVIRONMENT,
+        release=SENTRY_RELEASE,
+        traces_sample_rate=SENTRY_TRACES_SAMPLE_RATE,
+        send_default_pii=False,
+        attach_stacktrace=True,
+    )

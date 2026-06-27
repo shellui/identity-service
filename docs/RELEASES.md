@@ -2,7 +2,7 @@
 
 This document describes how to cut a release of `identity-service` and publish the container image to [Docker Hub](https://hub.docker.com/) as `shellui/identity-service`.
 
-For day-to-day local runs, see [README.md](../README.md#docker-local-run).
+For day-to-day local runs, see the **Docker (local run)** section in the repository README.
 
 ## Image overview
 
@@ -14,7 +14,7 @@ For day-to-day local runs, see [README.md](../README.md#docker-local-run).
 | Listen port | `8000` |
 | Data volume | `/app/data` (SQLite default path: `/app/data/db.sqlite3`) |
 
-The image contains application code and collected static files only. Secrets and runtime configuration are supplied via environment variables at container start (see [.env.example](../.env.example)).
+The image contains application code and collected static files only. Secrets and runtime configuration are supplied via environment variables at container start (see `.env.example` in the repository root).
 
 ## Pre-release checklist
 
@@ -46,7 +46,8 @@ docker run --rm --entrypoint sh shellui/identity-service:release-check \
 
 Operators must set at minimum:
 
-- `SECRET_KEY` — required; app refuses to start without it
+- `SECRET_KEY` — required; app refuses to start without it (Django sessions/CSRF)
+- `JWT_PRIVATE_KEY` — required when `DEBUG=false`; RS256 JWT signing (see [docs/jwks.md](jwks.md))
 - `ALLOWED_HOSTS` — hostnames for production (comma-separated, no scheme)
 - `CSRF_TRUSTED_ORIGINS` — full URLs with scheme when using browser-based flows behind HTTPS
 - `CORS_ALLOWED_ORIGINS` — ShellUI / admin front-end origins in production
@@ -54,22 +55,30 @@ Operators must set at minimum:
 Optional but typical for production:
 
 - `POSTGRES_DATABASE_URL` — use Postgres instead of SQLite
-- OAuth `*_CLIENT_ID` / `*_CLIENT_SECRET` for enabled providers
+- `SENTRY_DSN` — Sentry project DSN for error reporting (see README observability section)
+- `SENTRY_ENVIRONMENT` — Sentry environment tag (e.g. `staging`, `production`)
+- OAuth client id/secret per company (via Django admin or `/api/v1/admin/oauth-social-apps`)
 
 ### 4. Smoke test the image
 
 ```bash
 export SECRET_KEY="$(python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())")"
+export JWT_PRIVATE_KEY="$(python manage.py generate_jwt_keys 2>/dev/null | awk -F'\"' '/JWT_PRIVATE_KEY=/ {print $2}')"
+# Or set JWT_PRIVATE_KEY from output of: python manage.py generate_jwt_keys
 
-docker build -t shellui/identity-service:0.1.0 .
+docker build -t shellui/identity-service:0.2.0 .
 
 docker run --rm -d --name identity-release-smoke -p 18000:8000 \
   -e SECRET_KEY \
+  -e JWT_PRIVATE_KEY \
   -e ALLOWED_HOSTS=localhost,127.0.0.1 \
-  shellui/identity-service:0.1.0
+  shellui/identity-service:0.2.0
 
 # Expect HTTP response (400 with company_id is fine — proves Gunicorn + Django are up)
 curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:18000/api/v1/settings
+
+# JWKS should return at least one RSA key
+curl -s http://127.0.0.1:18000/.well-known/jwks.json | python -c "import sys,json; d=json.load(sys.stdin); assert len(d.get('keys',[]))>=1"
 
 docker stop identity-release-smoke
 ```
@@ -179,6 +188,7 @@ docker run -d \
   -p 8000:8000 \
   -v identity-service-data:/app/data \
   -e SECRET_KEY='replace-with-generated-key' \
+  -e JWT_PRIVATE_KEY='replace-with-pem-from-generate_jwt_keys' \
   -e ALLOWED_HOSTS='auth.example.com' \
   -e CSRF_TRUSTED_ORIGINS='https://auth.example.com,https://app.example.com' \
   -e CORS_ALLOWED_ORIGINS='https://app.example.com' \
@@ -191,12 +201,7 @@ With Postgres:
 -e POSTGRES_DATABASE_URL='postgres://user:pass@host:5432/dbname'
 ```
 
-OAuth (example):
-
-```bash
--e GITHUB_CLIENT_ID='...' \
--e GITHUB_CLIENT_SECRET='...'
-```
+OAuth credentials are configured per company in the database (Django admin or `/api/v1/admin/oauth-social-apps`), not via container environment variables.
 
 The entrypoint runs migrations on start, then starts Gunicorn as user `appuser`.
 
@@ -205,7 +210,8 @@ The entrypoint runs migrations on start, then starts Gunicorn as user `appuser`.
 | Topic | Status |
 |-------|--------|
 | `.env` in image | Excluded via `.dockerignore` — verified absent in image |
-| Runtime `SECRET_KEY` | Must be provided by operator; not baked into image |
+| Runtime `JWT_PRIVATE_KEY` | Must be provided in production; never baked into image |
+| JWKS endpoint | `/.well-known/jwks.json` exposes public keys only |
 | Build-time `SECRET_KEY` | Used only for `collectstatic` during `docker build`; appears in build history as `build-only-not-for-runtime` — not used at runtime |
 | `.env.example` | Included; contains placeholder values only |
 | SQLite / DB files | Excluded from image; use volume or Postgres |

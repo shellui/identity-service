@@ -24,6 +24,11 @@
       background: var(--bg);
       color: var(--text);
       min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    .page {
+      flex: 1;
       display: grid;
       place-items: center;
       padding: 2rem 1rem;
@@ -112,9 +117,29 @@
     a { color: #1d4ed8; text-decoration: none; }
     a:hover { text-decoration: underline; }
     .tiny { font-size: 0.82rem; color: var(--muted); margin-top: 0.8rem; }
+    .site-footer {
+      padding: 0.6rem 1rem 1rem;
+      text-align: center;
+      font-size: 0.72rem;
+      color: #9ca3af;
+      letter-spacing: 0.01em;
+    }
+    .site-footer a {
+      color: inherit;
+      text-decoration: none;
+    }
+    .site-footer a:hover {
+      color: var(--muted);
+      text-decoration: underline;
+    }
+    .site-footer .sep {
+      margin: 0 0.4rem;
+      opacity: 0.65;
+    }
   </style>
 </head>
 <body>
+  <div class="page">
   <main class="card">
     <h1>ShellUI Auth</h1>
     {% if show_setup_form %}
@@ -180,5 +205,9 @@
       </ul>
     {% endif %}
   </main>
+  </div>
+  <footer class="site-footer">
+    <a href="{{ schema_url }}">OpenAPI</a><span class="sep">·</span><a href="{{ jwks_url }}">JWKS</a><span class="sep">·</span>v{{ version }}
+  </footer>
 </body>
 </html>
