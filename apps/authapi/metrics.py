@@ -7,7 +7,7 @@ from datetime import timedelta
 from allauth.socialaccount.models import SocialAccount
 from django.contrib.auth import get_user_model
 from django.utils import timezone
-from apps.companies.models import Company
+from apps.companies.models import Company, CompanyMembership
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, generate_latest
 
 from .models import UserActivity
@@ -51,7 +51,7 @@ _company_users_total = Gauge(
 )
 _company_users_active = Gauge(
     'shellui_auth_company_users_active',
-    'Number of active users (is_active=True) in a company.',
+    'Number of users with company membership is_enabled=True.',
     labelnames=('company_id',),
 )
 _company_users_staff = Gauge(
@@ -130,7 +130,9 @@ def refresh_company_gauges(company: Company) -> None:
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
     _company_users_total.labels(company_id=company_id).set(users.count())
-    _company_users_active.labels(company_id=company_id).set(users.filter(is_active=True).count())
+    _company_users_active.labels(company_id=company_id).set(
+        CompanyMembership.objects.filter(company=company, is_enabled=True).count()
+    )
     _company_users_staff.labels(company_id=company_id).set(users.filter(is_staff=True).count())
     _company_social_accounts_total.labels(company_id=company_id).set(
         SocialAccount.objects.filter(user__companies=company).distinct().count()

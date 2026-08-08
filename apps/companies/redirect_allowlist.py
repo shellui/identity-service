@@ -14,6 +14,22 @@ SHELLUI_OAUTH_ERROR_PARAM = 'shellui_oauth_error'
 SHELLUI_OAUTH_ERROR_CODE_PARAM = 'shellui_oauth_error_code'
 
 
+def append_oauth_error_params(redirect_to: str, message: str, error_code: str) -> str:
+    """Attach shellui_oauth_error(+_code) query params to an absolute redirect URL."""
+    p = urlsplit((redirect_to or '').strip())
+    pairs = [
+        (k, v)
+        for k, v in parse_qsl(p.query, keep_blank_values=True)
+        if not k.startswith('shellui_oauth_')
+    ]
+    safe_msg = (message or '').replace('\r', ' ').replace('\n', ' ').strip()[:500]
+    pairs.append((SHELLUI_OAUTH_ERROR_PARAM, safe_msg if safe_msg else 'OAuth request failed.'))
+    code = (error_code or '').strip()[:64] or 'oauth_authorize_failed'
+    pairs.append((SHELLUI_OAUTH_ERROR_CODE_PARAM, code))
+    new_query = urlencode(pairs)
+    return urlunsplit((p.scheme, p.netloc, p.path or '', new_query, ''))
+
+
 def _lower_netloc(netloc: str) -> str:
     if not netloc or '@' in netloc:
         return netloc
@@ -95,18 +111,7 @@ def loopback_client_bounce_url_for_oauth_error(
     host = urlsplit(url).hostname
     if not _hostname_is_loopback(host):
         return None
-    p = urlsplit(url)
-    pairs = [
-        (k, v)
-        for k, v in parse_qsl(p.query, keep_blank_values=True)
-        if not k.startswith('shellui_oauth_')
-    ]
-    safe_msg = (error_message or '').replace('\r', ' ').replace('\n', ' ').strip()[:500]
-    pairs.append((SHELLUI_OAUTH_ERROR_PARAM, safe_msg if safe_msg else 'OAuth request failed.'))
-    code = (error_code or '').strip()[:64] or 'oauth_authorize_failed'
-    pairs.append((SHELLUI_OAUTH_ERROR_CODE_PARAM, code))
-    new_query = urlencode(pairs)
-    return urlunsplit((p.scheme, p.netloc, p.path or '', new_query, ''))
+    return append_oauth_error_params(url, error_message, error_code)
 
 
 def validate_redirect_to_for_company(

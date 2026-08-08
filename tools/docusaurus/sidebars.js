@@ -10,6 +10,11 @@ const sidebars = {
     },
     {
       type: 'doc',
+      id: 'company-access',
+      label: 'Company access',
+    },
+    {
+      type: 'doc',
       id: 'jwks',
       label: 'JWKS',
     },

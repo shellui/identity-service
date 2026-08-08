@@ -8,6 +8,7 @@ It supports OAuth login (GitHub/Google/Microsoft), issues JWT tokens, exposes Su
 
 - ShellUI-compatible auth API at `/api/v1/*`
 - OAuth login flow for GitHub, Google, Microsoft
+- Company join modes: **public**, **domain** allow-list, or **invitation-only** (see [docs/company-access.md](docs/company-access.md))
 - JWT access + refresh token issuance (RS256 with JWKS when `JWT_PRIVATE_KEY` is set)
 - Token refresh endpoint (`grant_type=refresh_token`)
 - User metadata endpoint (`/api/v1/user`)
@@ -37,7 +38,8 @@ These routes require a valid JWT whose user has `is_staff=true` (`user_metadata.
 
 - `GET /api/v1/users?q=&page=&page_size=` — paginated user list (`page_size` capped at 100)
 - `GET /api/v1/users/<id>` — single user (Django fields + `user_metadata` cache)
-- `PUT /api/v1/users/<id>` — JSON body may include `first_name`, `last_name`, `is_staff`, `is_active`, and optional `data` object to merge into cached metadata (same idea as `PUT /api/v1/user`). You cannot remove your own staff flag or deactivate yourself via this API.
+- `PUT /api/v1/users/<id>` — JSON body may include `first_name`, `last_name`, `is_staff` (staff only), `is_active` (staff or company owner; **per-company** membership enable), and optional `data` object to merge into cached metadata (same idea as `PUT /api/v1/user`). You cannot remove your own staff flag or disable your own company access via this API. Enabling a previously disabled membership emails the user.
+- `PATCH /api/v1/companies/<id>/` — company owners may update `name`, `owner_ids`, `access_mode` (`public` \| `domain` \| `invite`), and `allowed_email_domains`.
 
 ## Quick Start
 

@@ -1,3 +1,4 @@
+from django import forms
 from django.contrib import admin, messages
 from django.http import Http404, HttpResponseRedirect
 from django.template.response import TemplateResponse
@@ -5,7 +6,88 @@ from django.urls import path, reverse
 from django.utils.html import format_html
 
 from apps.authapi.oauth import SUPPORTED_OAUTH_PROVIDERS
-from .models import Company, CompanyGroup, CompanyOAuthClient
+from .access import normalize_allowed_domains
+from .models import Company, CompanyGroup, CompanyMembership, CompanyOAuthClient
+
+
+class AllowedEmailDomainsField(forms.CharField):
+    """Comma-separated domains in the widget; list[str] in cleaned_data / model."""
+
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault('required', False)
+        kwargs.setdefault(
+            'widget',
+            forms.TextInput(attrs={'size': 60, 'placeholder': 'acme.com, acme.co.uk'}),
+        )
+        kwargs.setdefault(
+            'help_text',
+            'Comma-separated email domains (no @). Used when Access mode is Domain. '
+            'Subdomains of a listed domain also match.',
+        )
+        super().__init__(*args, **kwargs)
+
+    def prepare_value(self, value):
+        # Always show a plain comma-separated string — never Python list repr.
+        return ', '.join(normalize_allowed_domains(value))
+
+    def to_python(self, value):
+        if value in self.empty_values:
+            return []
+        return normalize_allowed_domains(value)
+
+
+class CompanyAdminForm(forms.ModelForm):
+    """Edit allowed_email_domains as a comma-separated list instead of raw JSON."""
+
+    allowed_email_domains = AllowedEmailDomainsField(label='Allowed email domains')
+
+    class Meta:
+        model = Company
+        fields = (
+            'name',
+            'slug',
+            'access_mode',
+            'allowed_email_domains',
+            'owners',
+        )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance and self.instance.pk:
+            # Force widget value from normalized domains (fixes previously corrupted rows).
+            self.initial['allowed_email_domains'] = normalize_allowed_domains(
+                self.instance.allowed_email_domains
+            )
+        self.fields['access_mode'].help_text = (
+            'Public: anyone who signs in gets access for this company. '
+            'Domain: only listed email domains get access; others are blocked and owners emailed. '
+            'Invitation only: new members stay disabled for this company until an admin enables them.'
+        )
+
+    def clean_allowed_email_domains(self):
+        return normalize_allowed_domains(self.cleaned_data.get('allowed_email_domains'))
+
+    def clean(self):
+        cleaned = super().clean()
+        mode = cleaned.get('access_mode')
+        domains = cleaned.get('allowed_email_domains') or []
+        if mode == Company.ACCESS_DOMAIN and not domains:
+            self.add_error(
+                'allowed_email_domains',
+                'Add at least one domain when Access mode is Domain.',
+            )
+        return cleaned
+
+
+class CompanyMembershipInline(admin.TabularInline):
+    model = CompanyMembership
+    extra = 0
+    autocomplete_fields = ('user',)
+    fields = ('user', 'is_enabled', 'created_at', 'updated_at')
+    readonly_fields = ('created_at', 'updated_at')
+    ordering = ('user__email', 'user__username')
+    verbose_name = 'Member'
+    verbose_name_plural = 'Members (per-company access)'
 
 
 class CompanyOAuthClientInline(admin.TabularInline):
@@ -17,10 +99,40 @@ class CompanyOAuthClientInline(admin.TabularInline):
 
 @admin.register(Company)
 class CompanyAdmin(admin.ModelAdmin):
-    list_display = ('id', 'name', 'slug', 'oauth_clients_link')
+    form = CompanyAdminForm
+    list_display = (
+        'id',
+        'name',
+        'slug',
+        'access_mode',
+        'domains_display',
+        'oauth_clients_link',
+    )
+    list_filter = ('access_mode',)
+    list_editable = ('access_mode',)
     search_fields = ('name', 'slug')
-    filter_horizontal = ('members', 'owners')
-    inlines = [CompanyOAuthClientInline]
+    filter_horizontal = ('owners',)
+    inlines = [CompanyMembershipInline, CompanyOAuthClientInline]
+    fieldsets = (
+        (None, {'fields': ('name', 'slug')}),
+        (
+            'Join access',
+            {
+                'fields': ('access_mode', 'allowed_email_domains'),
+                'description': (
+                    'Controls how new OAuth users join this company. '
+                    'Access is granted per company via membership is_enabled (see Members inline).'
+                ),
+            },
+        ),
+        (
+            'Owners',
+            {
+                'fields': ('owners',),
+                'description': 'Owners receive access-request emails and can manage the company in ShellUI admin.',
+            },
+        ),
+    )
 
     def get_urls(self):
         urls = super().get_urls()
@@ -37,6 +149,16 @@ class CompanyAdmin(admin.ModelAdmin):
             ),
         ]
         return custom_urls + urls
+
+    @admin.display(description='Allowed domains')
+    def domains_display(self, obj: Company) -> str:
+        domains = normalize_allowed_domains(obj.allowed_email_domains)
+        if not domains:
+            return '—' if obj.access_mode != Company.ACCESS_DOMAIN else '(none)'
+        text = ', '.join(domains)
+        if len(text) > 48:
+            return text[:45] + '…'
+        return text
 
     @admin.display(description='OAuth clients')
     def oauth_clients_link(self, obj: Company):
@@ -97,6 +219,17 @@ class CompanyAdmin(admin.ModelAdmin):
         next_url = reverse('admin:companies_company_oauth_clients', args=[company.pk])
         redirect_to = f'{add_url}?provider={normalized_provider}&_popup=0&next={next_url}'
         return HttpResponseRedirect(redirect_to)
+
+
+@admin.register(CompanyMembership)
+class CompanyMembershipAdmin(admin.ModelAdmin):
+    list_display = ('id', 'company', 'user', 'is_enabled', 'created_at', 'updated_at')
+    list_filter = ('is_enabled', 'company')
+    list_editable = ('is_enabled',)
+    search_fields = ('user__email', 'user__username', 'company__name', 'company__slug')
+    autocomplete_fields = ('company', 'user')
+    readonly_fields = ('created_at', 'updated_at')
+    ordering = ('company__name', 'user__email')
 
 
 @admin.register(CompanyGroup)

@@ -27,7 +27,14 @@ from .tokens import ShellUIAccessToken, ShellUIRefreshToken
 
 from . import metrics as auth_metrics
 from apps.companies.models import Company, CompanyGroup, CompanyOAuthClient
+from apps.companies.access import (
+    apply_company_join,
+    is_company_access_enabled,
+    notify_user_access_enabled,
+    set_company_access,
+)
 from apps.companies.redirect_allowlist import (
+    append_oauth_error_params,
     loopback_client_bounce_url_for_oauth_error,
     validate_redirect_to_for_company,
 )
@@ -459,7 +466,20 @@ def _shellui_oauth_bounce_or_json(
     )
     if bounce:
         return HttpResponseRedirect(bounce)
-    return Response({'error': message}, status=status_code)
+    return Response({'error': message, 'error_code': error_code}, status=status_code)
+
+
+def _join_denied_response(
+    *,
+    decision,
+    redirect_to: str | None = None,
+):
+    """Return a browser redirect (when possible) or JSON 403 for blocked company joins."""
+    code = decision.error_code or 'access_pending'
+    message = decision.message or 'Access denied.'
+    if redirect_to:
+        return HttpResponseRedirect(append_oauth_error_params(redirect_to, message, code))
+    return Response({'error': message, 'error_code': code}, status=status.HTTP_403_FORBIDDEN)
 
 
 def _authenticate_bearer_user(request):
@@ -717,6 +737,7 @@ def _admin_user_payload(user: User, company: Company) -> dict:
     user_metadata['groups'] = [row['name'] for row in group_rows]
     user_metadata['last_seen_at'] = _last_seen_at_for_user(user)
     _enrich_user_metadata_avatar(user, user_metadata)
+    # `is_active` here means company membership access for this tenant (not User.is_active).
     return {
         'id': user.id,
         'email': user.email,
@@ -725,7 +746,7 @@ def _admin_user_payload(user: User, company: Company) -> dict:
         'last_name': user.last_name or '',
         'is_staff': user.is_staff,
         'is_company_owner': _is_user_company_owner(user, company),
-        'is_active': user.is_active,
+        'is_active': is_company_access_enabled(company, user),
         'groups': group_rows,
         'user_metadata': user_metadata,
     }
@@ -835,8 +856,7 @@ class SocialLoginView(APIView):
             if not user.last_name and ' ' in full_name:
                 user.last_name = ' '.join(full_name.split(' ')[1:])
             user.save(update_fields=['first_name', 'last_name'])
-        if not company.members.filter(pk=user.pk).exists():
-            company.members.add(user)
+        join = apply_company_join(company, user, email=email)
         _link_social_account(user=user, provider=provider, provider_id=provider_id, userinfo=userinfo)
 
         cache.set(
@@ -848,6 +868,19 @@ class SocialLoginView(APIView):
             },
             timeout=60 * 60 * 24 * 30,
         )
+
+        if not join.allowed:
+            record_login_event(
+                request=request,
+                outcome=LoginEvent.OUTCOME_FAILURE,
+                provider=provider,
+                user=user,
+                company=company,
+                failure_reason=join.error_code or 'access_denied',
+                client_timezone=client_tz,
+                client_device_id=client_dev,
+            )
+            return _join_denied_response(decision=join)
 
         _notify_user_logged_in_for_oauth(request, user)
         auth_metrics.record_successful_login(provider, company_id=company.id)
@@ -1207,8 +1240,7 @@ class ShellUIOAuthCallbackView(APIView):
             if not user.last_name and ' ' in full_name:
                 user.last_name = ' '.join(full_name.split(' ')[1:])
             user.save(update_fields=['first_name', 'last_name'])
-        if not company.members.filter(pk=user.pk).exists():
-            company.members.add(user)
+        join = apply_company_join(company, user, email=email)
         _link_social_account(user=user, provider=provider, provider_id=provider_id, userinfo=userinfo)
 
         cache.set(
@@ -1220,6 +1252,18 @@ class ShellUIOAuthCallbackView(APIView):
             },
             timeout=60 * 60 * 24 * 30,
         )
+        if not join.allowed:
+            record_login_event(
+                request=request,
+                outcome=LoginEvent.OUTCOME_FAILURE,
+                provider=provider,
+                user=user,
+                company=company,
+                failure_reason=join.error_code or 'access_denied',
+                client_timezone=client_tz,
+                client_device_id=client_dev,
+            )
+            return _join_denied_response(decision=join, redirect_to=redirect_to)
         _notify_user_logged_in_for_oauth(request, user)
         payload = _issue_shellui_tokens(user, company=company, avatar_url=avatar_url, oauth_provider=provider)
         auth_metrics.record_successful_login(provider, company_id=company.id)
@@ -1312,8 +1356,7 @@ class ShellUIOAuthExchangeView(APIView):
             if not user.last_name and ' ' in full_name:
                 user.last_name = ' '.join(full_name.split(' ')[1:])
             user.save(update_fields=['first_name', 'last_name'])
-        if not company.members.filter(pk=user.pk).exists():
-            company.members.add(user)
+        join = apply_company_join(company, user, email=email)
         _link_social_account(user=user, provider=provider, provider_id=provider_id, userinfo=userinfo)
 
         cache.set(
@@ -1325,6 +1368,18 @@ class ShellUIOAuthExchangeView(APIView):
             },
             timeout=60 * 60 * 24 * 30,
         )
+        if not join.allowed:
+            record_login_event(
+                request=request,
+                outcome=LoginEvent.OUTCOME_FAILURE,
+                provider=provider,
+                user=user,
+                company=company,
+                failure_reason=join.error_code or 'access_denied',
+                client_timezone=client_tz,
+                client_device_id=client_dev,
+            )
+            return _join_denied_response(decision=join)
         _notify_user_logged_in_for_oauth(request, user)
         payload = _issue_shellui_tokens(user, company=company, avatar_url=avatar_url, oauth_provider=provider)
         auth_metrics.record_successful_login(provider, company_id=company.id)
@@ -1397,6 +1452,15 @@ class ShellUITokenView(APIView):
         company, company_err = _required_company_for_token_refresh(request, refresh=refresh, user=user)
         if company_err:
             return company_err
+
+        if not is_company_access_enabled(company, user):
+            return Response(
+                {
+                    'error': 'Company access is disabled. Contact an administrator.',
+                    'error_code': 'access_pending',
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
         prior_meta = refresh.get('user_metadata')
         prior_avatar = None
@@ -1711,8 +1775,10 @@ class ShellUIAdminUserListView(APIView):
         summary='Update user (staff or company owner)',
         description=(
             'Update Django user fields and/or merge `data` into cached user_metadata (same shape as '
-            'PUT /api/v1/user). Staff may change is_staff and is_active. Staff and company owners '
-            'may change first_name, last_name, group_ids (within this company), and `data`.'
+            'PUT /api/v1/user). Staff may change is_staff. Staff and company owners may change '
+            'is_active (enables/disables access for this company only), first_name, last_name, '
+            'group_ids (within this company), and `data`. Enabling a previously disabled membership '
+            'emails the user.'
         ),
         request=ShellUIAdminUserUpdateSerializer,
     ),
@@ -1744,11 +1810,9 @@ class ShellUIAdminUserDetailView(APIView):
         serializer.is_valid(raise_exception=True)
         validated = serializer.validated_data
 
-        if not actor.is_staff and any(k in validated for k in ('is_staff', 'is_active')):
+        if not actor.is_staff and 'is_staff' in validated:
             return Response(
-                {
-                    'error': 'Only staff may change is_staff or is_active.',
-                },
+                {'error': 'Only staff may change is_staff.'},
                 status=status.HTTP_403_FORBIDDEN,
             )
 
@@ -1760,10 +1824,11 @@ class ShellUIAdminUserDetailView(APIView):
                 )
             if validated.get('is_active') is False:
                 return Response(
-                    {'error': 'You cannot deactivate your own account.'},
+                    {'error': 'You cannot disable your own company access.'},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
+        was_company_enabled = is_company_access_enabled(company, target)
         update_fields: list[str] = []
         if 'first_name' in validated:
             target.first_name = validated['first_name']
@@ -1774,11 +1839,13 @@ class ShellUIAdminUserDetailView(APIView):
         if 'is_staff' in validated:
             target.is_staff = validated['is_staff']
             update_fields.append('is_staff')
-        if 'is_active' in validated:
-            target.is_active = validated['is_active']
-            update_fields.append('is_active')
         if update_fields:
             target.save(update_fields=list(dict.fromkeys(update_fields)))
+
+        if 'is_active' in validated:
+            set_company_access(company, target, enabled=bool(validated['is_active']))
+            if (not was_company_enabled) and bool(validated['is_active']):
+                notify_user_access_enabled(company, target)
 
         if 'group_ids' in validated:
             requested_ids = set(validated['group_ids'])

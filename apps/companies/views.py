@@ -21,13 +21,19 @@ from .serializers import CompanySerializer, CompanyUpdateSerializer
     partial_update=extend_schema(
         tags=['companies'],
         summary='Update company settings',
-        description='Only company owners can update company name and owners list.',
+        description=(
+            'Only company owners can update company name, owners list, and join access '
+            '(public / domain / invite) settings.'
+        ),
         request=CompanyUpdateSerializer,
     ),
     update=extend_schema(
         tags=['companies'],
         summary='Replace company settings',
-        description='Only company owners can update company name and owners list.',
+        description=(
+            'Only company owners can update company name, owners list, and join access '
+            '(public / domain / invite) settings.'
+        ),
         request=CompanyUpdateSerializer,
     ),
 )
@@ -53,9 +59,18 @@ class CompanyViewSet(
         serializer.is_valid(raise_exception=True)
         validated = serializer.validated_data
 
+        update_fields: list[str] = []
         if 'name' in validated:
             company.name = validated['name']
-            company.save(update_fields=['name'])
+            update_fields.append('name')
+        if 'access_mode' in validated:
+            company.access_mode = validated['access_mode']
+            update_fields.append('access_mode')
+        if 'allowed_email_domains' in validated:
+            company.allowed_email_domains = validated['allowed_email_domains']
+            update_fields.append('allowed_email_domains')
+        if update_fields:
+            company.save(update_fields=update_fields)
 
         if 'owner_ids' in validated:
             owner_ids = validated['owner_ids']
