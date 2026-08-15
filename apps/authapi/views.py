@@ -1,4 +1,5 @@
 import json
+import logging
 import uuid
 import urllib.request
 from datetime import datetime, timezone
@@ -68,6 +69,8 @@ from .serializers import (
 )
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 # Client-supplied user_metadata merges cannot set these; they are derived from Django / company state.
 _SHELLUI_JWT_PRIVILEGED_METADATA_KEYS = frozenset({'is_staff', 'is_company_owner', 'groups'})
@@ -1426,6 +1429,12 @@ class ShellUITokenView(APIView):
     authentication_classes = []
 
     def post(self, request):
+        logger.info(
+            'token refresh request origin=%s referer=%s ua=%s',
+            request.headers.get('Origin') or '-',
+            request.headers.get('Referer') or '-',
+            (request.headers.get('User-Agent') or '-')[:120],
+        )
         grant_type = request.GET.get('grant_type') or request.data.get('grant_type')
         if grant_type != 'refresh_token':
             return Response(

@@ -323,6 +323,11 @@ else:
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',
             'NAME': os.getenv('SQLITE_PATH', str(BASE_DIR / 'db.sqlite3')),
+            # Wait for the lock instead of failing immediately under concurrent writes
+            # (e.g. token refresh updating UserActivity.last_seen_at).
+            'OPTIONS': {
+                'timeout': 20,
+            },
         }
     }
 
