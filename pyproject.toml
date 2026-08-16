@@ -1,0 +1,31 @@
+[project]
+name = "identity-service"
+version = "0.2.0"
+description = "ShellUI-compatible authentication backend (OAuth, JWT, JWKS)"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "django==6.0.3",
+    "django-allauth==65.8.1",
+    "django-filter==25.2",
+    "django-cors-headers==4.9.0",
+    "djangorestframework==3.17.1",
+    "djangorestframework-simplejwt==5.5.1",
+    "drf-spectacular==0.29.0",
+    "markdown==3.10.2",
+    "python-dotenv==1.2.2",
+    "prometheus-client==0.21.1",
+    "requests==2.32.5",
+    "sentry-sdk==2.63.0",
+    "gunicorn==26.0.0",
+    "dj-database-url==3.1.2",
+    "psycopg[binary]==3.3.4",
+    "whitenoise==6.12.0",
+    "cryptography==46.0.1",
+]
+
+[dependency-groups]
+dev = []
+
+[tool.uv]
+package = false

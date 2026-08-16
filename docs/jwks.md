@@ -43,7 +43,7 @@ Set an RSA private key. The service refuses to start in production (`DEBUG=false
 
 ```bash
 # Generate a key pair and suggested env vars
-python manage.py generate_jwt_keys
+uv run python manage.py generate_jwt_keys
 ```
 
 | Variable | Required | Description |
@@ -93,7 +93,7 @@ payload = jwt.decode(
 
 ## Key rotation
 
-1. Generate a new key pair (`python manage.py generate_jwt_keys`).
+1. Generate a new key pair (`uv run python manage.py generate_jwt_keys`).
 2. Move the current public key to `JWT_PREVIOUS_PUBLIC_KEY` (and `JWT_PREVIOUS_KEY_ID` if you set a custom `kid`).
 3. Set the new private key as `JWT_PRIVATE_KEY` and update `JWT_KEY_ID` if needed.
 4. Deploy. New tokens use the new key; JWKS lists both keys.

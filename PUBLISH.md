@@ -45,8 +45,8 @@ docker run --rm --entrypoint sh shellui/identity-service:release-check \
 ### 3. Smoke test the image
 
 ```bash
-export SECRET_KEY="$(python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())")"
-export JWT_PRIVATE_KEY="$(python manage.py generate_jwt_keys 2>/dev/null | awk -F'\"' '/JWT_PRIVATE_KEY=/ {print $2}')"
+export SECRET_KEY="$(uv run python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())")"
+export JWT_PRIVATE_KEY="$(uv run python manage.py generate_jwt_keys 2>/dev/null | awk -F'\"' '/JWT_PRIVATE_KEY=/ {print $2}')"
 
 VERSION=0.2.0
 docker build -t "shellui/identity-service:${VERSION}" .

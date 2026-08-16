@@ -64,9 +64,9 @@ Optional but typical for production:
 ### 4. Smoke test the image
 
 ```bash
-export SECRET_KEY="$(python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())")"
-export JWT_PRIVATE_KEY="$(python manage.py generate_jwt_keys 2>/dev/null | awk -F'\"' '/JWT_PRIVATE_KEY=/ {print $2}')"
-# Or set JWT_PRIVATE_KEY from output of: python manage.py generate_jwt_keys
+export SECRET_KEY="$(uv run python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())")"
+export JWT_PRIVATE_KEY="$(uv run python manage.py generate_jwt_keys 2>/dev/null | awk -F'\"' '/JWT_PRIVATE_KEY=/ {print $2}')"
+# Or set JWT_PRIVATE_KEY from output of: uv run python manage.py generate_jwt_keys
 
 docker build -t shellui/identity-service:0.2.0 .
 

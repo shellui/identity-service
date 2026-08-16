@@ -275,7 +275,7 @@ SIMPLE_JWT.update(
 PERSONAL_ACCESS_TOKEN_LIFETIME = timedelta(days=90)
 
 # Optional MaxMind GeoLite2/GeoIP2 City database (.mmdb) for login audit country/city.
-# Install: pip install geoip2  — then set path to your .mmdb file.
+# Install: uv add geoip2  — then set path to your .mmdb file.
 SHELLUI_GEOIP_DATABASE_PATH = os.getenv('SHELLUI_GEOIP_DATABASE_PATH', '')
 
 # OAuth credentials live per company on SocialApp rows (via CompanyOAuthClient).
