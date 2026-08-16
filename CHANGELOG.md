@@ -30,6 +30,7 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 ### 🛠 Improvements
 
 - Switched dependency management from `requirements.txt` / pip to [uv](https://docs.astral.sh/uv/) (`pyproject.toml` + `uv.lock`). Docker installs with `uv sync --frozen`.
+- App `VERSION` (OpenAPI / Sentry release) is read from `project.version` in `pyproject.toml`.
 
 ### 🚨 Changed
 

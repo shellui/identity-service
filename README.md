@@ -167,7 +167,7 @@ Runtime env vars:
 - `GUNICORN_TIMEOUT` (default `60`)
 - `SENTRY_DSN` (optional; enable Sentry error reporting — leave empty in local dev)
 - `SENTRY_ENVIRONMENT` (optional; default `development` when `DEBUG=true`, else `production`)
-- `SENTRY_RELEASE` (optional; default app `VERSION`, e.g. `0.2.0`)
+- `SENTRY_RELEASE` (optional; default `project.version` from `pyproject.toml`)
 - `SENTRY_TRACES_SAMPLE_RATE` (optional; default `0` — errors only; set e.g. `0.1` for performance traces)
 
 ## Observability (Sentry)

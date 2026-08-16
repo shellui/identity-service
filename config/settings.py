@@ -13,6 +13,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 import logging
 import os
 import re
+import tomllib
 from pathlib import Path
 from datetime import timedelta
 
@@ -122,7 +123,18 @@ CSRF_TRUSTED_ORIGINS = _env_csv(
 )
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
-VERSION = '0.2.0'
+
+def _project_version():
+    pyproject = BASE_DIR / 'pyproject.toml'
+    with pyproject.open('rb') as fh:
+        data = tomllib.load(fh)
+    version = str(data.get('project', {}).get('version', '')).strip()
+    if not version:
+        raise ImproperlyConfigured(f'project.version is missing in {pyproject}')
+    return version
+
+
+VERSION = _project_version()
 
 # Application definition
 
