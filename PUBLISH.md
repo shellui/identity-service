@@ -89,7 +89,7 @@ For semver release `0.3.0`, typical Docker Hub tags:
 | `0.3`    | Latest patch in the 0.3 line             |
 | `latest` | Newest published release (use with care) |
 
-### Option A — single platform (fastest)
+### Option A — single platform (fastest, not recommended, see option B)
 
 From the repository root:
 

@@ -33,12 +33,43 @@ class JwtVerifyingKey:
 
 
 def normalize_pem(value: str) -> str:
-    """Accept PEM inline or with literal ``\\n`` sequences from env vars."""
-    pem = value.strip()
+    """Accept PEM with real newlines, literal ``\\n``, and extra quoting from env UIs.
+
+    Coolify, Docker Compose, and pasted ``generate_jwt_keys`` output often wrap the
+    key in quotes or escape newlines/quotes (``\\"-----BEGIN...\\\\n...\\"``). That
+    leaves a leading backslash (byte 92) which cryptography rejects.
+    """
+    pem = (value or '').strip()
     if not pem:
         return ''
-    if '\\n' in pem:
-        pem = pem.replace('\\n', '\n')
+
+    for _ in range(4):
+        before = pem
+        pem = pem.strip()
+        if len(pem) >= 2 and pem[0] == pem[-1] and pem[0] in {'"', "'"}:
+            pem = pem[1:-1]
+            continue
+        if pem.startswith('\\"') and pem.endswith('\\"'):
+            pem = pem[2:-2]
+            continue
+        if pem.startswith("\\'") and pem.endswith("\\'"):
+            pem = pem[2:-2]
+            continue
+        if '\\\\n' in pem:
+            pem = pem.replace('\\\\n', '\\n')
+        if '\\\\r' in pem:
+            pem = pem.replace('\\\\r', '\\r')
+        if '\\n' in pem:
+            pem = pem.replace('\\n', '\n')
+        if '\\r' in pem:
+            pem = pem.replace('\\r', '\r')
+        if '\\"' in pem:
+            pem = pem.replace('\\"', '"')
+        if "\\'" in pem:
+            pem = pem.replace("\\'", "'")
+        pem = pem.replace('\r\n', '\n').strip()
+        if pem == before:
+            break
     return pem
 
 
@@ -65,7 +96,15 @@ def compute_rsa_kid(public_pem: str) -> str:
 
 
 def _load_rsa_private_key(pem: str):
-    key = load_pem_private_key(pem.encode(), password=None, backend=default_backend())
+    try:
+        key = load_pem_private_key(pem.encode(), password=None, backend=default_backend())
+    except ValueError as exc:
+        preview = pem[:48].replace('\n', '\\n')
+        raise ImproperlyConfigured(
+            'JWT_PRIVATE_KEY is not a valid PEM. Paste the key with real newlines '
+            'or literal \\n sequences, without wrapping quotes (Coolify / Docker). '
+            f'Parser saw {len(pem)} chars starting with {preview!r}.'
+        ) from exc
     if key.key_size < MIN_RSA_KEY_SIZE:
         raise ImproperlyConfigured(
             f'JWT RSA private key must be at least {MIN_RSA_KEY_SIZE} bits (got {key.key_size}).'

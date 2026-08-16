@@ -78,6 +78,8 @@ JWT_KEY_ID=abc123...
 JWT_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nMIIE...\n-----END PRIVATE KEY-----\n"
 ```
 
+In Coolify / Docker secret UIs, paste **only the PEM** (quotes stripped). See [docs/jwks.md](docs/jwks.md).
+
 `JWT_PUBLIC_KEY` is optional (derived from the private key). Verifiers fetch the public key from `GET /.well-known/jwks.json` — see [docs/jwks.md](docs/jwks.md).
 
 With Docker Compose, add `JWT_PRIVATE_KEY` to `.env` before running when `DEBUG=false`.
