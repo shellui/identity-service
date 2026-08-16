@@ -13,6 +13,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 import logging
 import os
 import re
+import tomllib
 from pathlib import Path
 from datetime import timedelta
 
@@ -122,7 +123,18 @@ CSRF_TRUSTED_ORIGINS = _env_csv(
 )
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
-VERSION = '0.2.0'
+
+def _project_version():
+    pyproject = BASE_DIR / 'pyproject.toml'
+    with pyproject.open('rb') as fh:
+        data = tomllib.load(fh)
+    version = str(data.get('project', {}).get('version', '')).strip()
+    if not version:
+        raise ImproperlyConfigured(f'project.version is missing in {pyproject}')
+    return version
+
+
+VERSION = _project_version()
 
 # Application definition
 
@@ -227,6 +239,20 @@ ACCOUNT_EMAIL_VERIFICATION = 'none'
 ACCOUNT_SIGNUP_FIELDS = ['email*', 'password1*', 'password2*']
 ACCOUNT_LOGIN_METHODS = {'email'}
 
+# Transactional email (company access requests / enable notifications).
+# Local default: print to console. Production: set EMAIL_HOST / EMAIL_BACKEND.
+EMAIL_BACKEND = os.getenv(
+    'EMAIL_BACKEND',
+    'django.core.mail.backends.console.EmailBackend' if DEBUG else 'django.core.mail.backends.smtp.EmailBackend',
+)
+EMAIL_HOST = os.getenv('EMAIL_HOST', 'localhost')
+EMAIL_PORT = int(os.getenv('EMAIL_PORT', '25') or '25')
+EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
+EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'false').strip().lower() in {'1', 'true', 'yes', 'on'}
+EMAIL_USE_SSL = os.getenv('EMAIL_USE_SSL', 'false').strip().lower() in {'1', 'true', 'yes', 'on'}
+DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@localhost')
+
 JWT_ACCESS_TOKEN_LIFETIME = _env_duration('JWT_ACCESS_TOKEN_LIFETIME', timedelta(minutes=5))
 JWT_REFRESH_TOKEN_LIFETIME = _env_duration('JWT_REFRESH_TOKEN_LIFETIME', timedelta(days=7))
 
@@ -261,7 +287,7 @@ SIMPLE_JWT.update(
 PERSONAL_ACCESS_TOKEN_LIFETIME = timedelta(days=90)
 
 # Optional MaxMind GeoLite2/GeoIP2 City database (.mmdb) for login audit country/city.
-# Install: pip install geoip2  — then set path to your .mmdb file.
+# Install: uv add geoip2  — then set path to your .mmdb file.
 SHELLUI_GEOIP_DATABASE_PATH = os.getenv('SHELLUI_GEOIP_DATABASE_PATH', '')
 
 # OAuth credentials live per company on SocialApp rows (via CompanyOAuthClient).
@@ -309,6 +335,11 @@ else:
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',
             'NAME': os.getenv('SQLITE_PATH', str(BASE_DIR / 'db.sqlite3')),
+            # Wait for the lock instead of failing immediately under concurrent writes
+            # (e.g. token refresh updating UserActivity.last_seen_at).
+            'OPTIONS': {
+                'timeout': 20,
+            },
         }
     }
 

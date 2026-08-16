@@ -4,18 +4,77 @@ from django.utils.text import slugify
 from allauth.socialaccount.models import SocialApp
 
 
+class CompanyMembership(models.Model):
+    """Per-company membership and access flag (a user may belong to many companies)."""
+
+    company = models.ForeignKey(
+        'Company',
+        on_delete=models.CASCADE,
+        related_name='memberships',
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='company_memberships',
+    )
+    is_enabled = models.BooleanField(
+        default=True,
+        help_text='When false, the user cannot obtain tokens for this company.',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['company_id', 'user_id']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['company', 'user'],
+                name='company_membership_unique_user_per_company',
+            ),
+        ]
+
+    def __str__(self) -> str:
+        state = 'enabled' if self.is_enabled else 'disabled'
+        return f'{self.company_id}:{self.user_id}:{state}'
+
+
 class Company(models.Model):
+    ACCESS_PUBLIC = 'public'
+    ACCESS_DOMAIN = 'domain'
+    ACCESS_INVITE = 'invite'
+    ACCESS_MODE_CHOICES = [
+        (ACCESS_PUBLIC, 'Public'),
+        (ACCESS_DOMAIN, 'Domain'),
+        (ACCESS_INVITE, 'Invitation only'),
+    ]
+
     name = models.CharField(max_length=255)
     slug = models.SlugField(max_length=255, unique=True, blank=True)
     members = models.ManyToManyField(
         settings.AUTH_USER_MODEL,
         related_name='companies',
         blank=True,
+        through='CompanyMembership',
+        through_fields=('company', 'user'),
     )
     owners = models.ManyToManyField(
         settings.AUTH_USER_MODEL,
         related_name='owned_companies',
         blank=True,
+    )
+    access_mode = models.CharField(
+        max_length=20,
+        choices=ACCESS_MODE_CHOICES,
+        default=ACCESS_PUBLIC,
+        help_text=(
+            'How new OAuth users join: Public (open), Domain (email allow list), '
+            'or Invitation only (admin must enable the user).'
+        ),
+    )
+    allowed_email_domains = models.JSONField(
+        default=list,
+        blank=True,
+        help_text='Lowercase domains without @ (e.g. ["acme.com"]). Used when access mode is Domain.',
     )
 
     class Meta:

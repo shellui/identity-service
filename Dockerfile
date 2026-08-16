@@ -1,8 +1,10 @@
+# syntax=docker/dockerfile:1
 FROM python:3.14-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1 \
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
     SQLITE_PATH=/app/data/db.sqlite3 \
     DEBUG=false
 
@@ -12,8 +14,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt /app/requirements.txt
-RUN pip install --upgrade pip && pip install -r /app/requirements.txt
+COPY --from=ghcr.io/astral-sh/uv:0.12.1 /uv /uvx /bin/
+
+COPY pyproject.toml uv.lock /app/
+RUN uv sync --frozen --no-dev --no-install-project
 
 COPY . /app
 
@@ -27,10 +31,13 @@ RUN DEBUG=true \
     JWT_PREVIOUS_PUBLIC_KEY= \
     JWT_ACCESS_TOKEN_LIFETIME=300 \
     JWT_REFRESH_TOKEN_LIFETIME=604800 \
-    python manage.py collectstatic --noinput --skip-checks
+    uv run python manage.py collectstatic --noinput --skip-checks
 
 RUN useradd --create-home --shell /bin/bash appuser \
-    && chown -R appuser:appuser /app
+    && chown -R appuser:appuser /app \
+    && chmod +x /app/tools/docker-entrypoint.sh
+
+ENV PATH="/app/.venv/bin:$PATH"
 
 VOLUME ["/app/data"]
 

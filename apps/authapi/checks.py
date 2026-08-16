@@ -14,7 +14,7 @@ def jwt_rs256_required_in_production(app_configs, **kwargs):
         Error(
             'JWT_PRIVATE_KEY is not set — RS256 signing is required when DEBUG=false.',
             hint=(
-                'Run `python manage.py generate_jwt_keys`, then set JWT_PRIVATE_KEY '
+                'Run `uv run python manage.py generate_jwt_keys`, then set JWT_PRIVATE_KEY '
                 'in your environment (PEM; use \\n for newlines in .env).'
             ),
             id='authapi.E001',

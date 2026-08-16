@@ -8,6 +8,7 @@ __pycache__/
 *.sqlite3
 *.log
 .env
+staticfiles/
 docs/
 tools/docusaurus/node_modules/
 tools/docusaurus/.docusaurus/

@@ -8,6 +8,7 @@ It supports OAuth login (GitHub/Google/Microsoft), issues JWT tokens, exposes Su
 
 - ShellUI-compatible auth API at `/api/v1/*`
 - OAuth login flow for GitHub, Google, Microsoft
+- Company join modes: **public**, **domain** allow-list, or **invitation-only** (see [docs/company-access.md](docs/company-access.md))
 - JWT access + refresh token issuance (RS256 with JWKS when `JWT_PRIVATE_KEY` is set)
 - Token refresh endpoint (`grant_type=refresh_token`)
 - User metadata endpoint (`/api/v1/user`)
@@ -37,30 +38,27 @@ These routes require a valid JWT whose user has `is_staff=true` (`user_metadata.
 
 - `GET /api/v1/users?q=&page=&page_size=` — paginated user list (`page_size` capped at 100)
 - `GET /api/v1/users/<id>` — single user (Django fields + `user_metadata` cache)
-- `PUT /api/v1/users/<id>` — JSON body may include `first_name`, `last_name`, `is_staff`, `is_active`, and optional `data` object to merge into cached metadata (same idea as `PUT /api/v1/user`). You cannot remove your own staff flag or deactivate yourself via this API.
+- `PUT /api/v1/users/<id>` — JSON body may include `first_name`, `last_name`, `is_staff` (staff only), `is_active` (staff or company owner; **per-company** membership enable), and optional `data` object to merge into cached metadata (same idea as `PUT /api/v1/user`). You cannot remove your own staff flag or disable your own company access via this API. Enabling a previously disabled membership emails the user.
+- `PATCH /api/v1/companies/<id>/` — company owners may update `name`, `owner_ids`, `access_mode` (`public` \| `domain` \| `invite`), and `allowed_email_domains`.
 
 ## Quick Start
 
-1. Create and activate a Python virtual environment.
-2. Install dependencies:
-
 ```bash
-cd src
-pip install -r requirements.txt
+# Requires https://docs.astral.sh/uv/
+uv sync
+cp .env.example .env
+# Set SECRET_KEY; generate JWT keys for production (DEBUG=false)
+uv run python manage.py migrate
+uv run python manage.py runserver
 ```
 
-3. Configure OAuth credentials per company (Django admin → Company → OAuth clients, or `POST /api/v1/admin/oauth-social-apps`):
+Dependencies live in `pyproject.toml` and are locked in `uv.lock`. Add a package with `uv add <name>`; refresh the lock with `uv lock`.
+
+Configure OAuth credentials per company (Django admin → Company → OAuth clients, or `POST /api/v1/admin/oauth-social-apps`):
 
 ```bash
 # After starting the service, create a company and add GitHub/Google/Microsoft client id + secret
 # for that company via the admin API or Django admin UI.
-```
-
-4. Run migrations and start server:
-
-```bash
-python manage.py migrate
-python manage.py runserver
 ```
 
 ## JWT private key (RS256)
@@ -70,7 +68,7 @@ Production (`DEBUG=false`) requires an RSA private key for JWT signing. Local de
 Generate a key pair and print suggested env vars:
 
 ```bash
-python manage.py generate_jwt_keys
+uv run python manage.py generate_jwt_keys
 ```
 
 Copy the output into `.env` (or your secret manager). The private key must stay on one line with `\n` for newlines:
@@ -121,6 +119,12 @@ Generate docs:
 
 Output is generated in `tools/docusaurus/build`.
 
+## Tests
+
+```bash
+uv run python manage.py test
+```
+
 ## Releases (Docker Hub)
 
 See [PUBLISH.md](PUBLISH.md) for the pre-release checklist, tagging conventions, and steps to build, push, and deploy `shellui/identity-service` on Docker Hub.
@@ -149,7 +153,7 @@ The container runs migrations automatically, stores SQLite at `/app/data/db.sqli
 Runtime env vars:
 
 - `SECRET_KEY` (required; Django sessions/CSRF — not used for JWT signing when `JWT_PRIVATE_KEY` is set)
-- `JWT_PRIVATE_KEY` (required in production; RS256 private key PEM — generate with `python manage.py generate_jwt_keys`, see [JWT private key](#jwt-private-key-rs256))
+- `JWT_PRIVATE_KEY` (required in production; RS256 private key PEM — generate with `uv run python manage.py generate_jwt_keys`, see [JWT private key](#jwt-private-key-rs256))
 - `JWT_PUBLIC_KEY`, `JWT_KEY_ID`, `JWT_PREVIOUS_PUBLIC_KEY`, `JWT_PREVIOUS_KEY_ID` (optional; see JWKS docs)
 - `JWT_ACCEPT_HS256_LEGACY` (default `true`; set `false` after RS256 migration)
 - `JWT_ACCESS_TOKEN_LIFETIME` (default `5m`; e.g. `30s`, `5m`, `2h` — bare integer = seconds)
@@ -163,7 +167,7 @@ Runtime env vars:
 - `GUNICORN_TIMEOUT` (default `60`)
 - `SENTRY_DSN` (optional; enable Sentry error reporting — leave empty in local dev)
 - `SENTRY_ENVIRONMENT` (optional; default `development` when `DEBUG=true`, else `production`)
-- `SENTRY_RELEASE` (optional; default app `VERSION`, e.g. `0.2.0`)
+- `SENTRY_RELEASE` (optional; default `project.version` from `pyproject.toml`)
 - `SENTRY_TRACES_SAMPLE_RATE` (optional; default `0` — errors only; set e.g. `0.1` for performance traces)
 
 ## Observability (Sentry)
