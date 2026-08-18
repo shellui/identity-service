@@ -27,6 +27,10 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 - In Coolify / Docker secret UIs, paste **only the PEM** (quotes stripped).
 
+### 📚 Documentation
+
+- Add ShellUI brand favicon (ICO + PNG sizes) to the Docusaurus docs site.
+
 ## [0.3.0] - 2026-08-16
 
 ### ✨ Feature
