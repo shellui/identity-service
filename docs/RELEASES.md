@@ -52,7 +52,7 @@ Operators must set at minimum:
 - `JWT_PRIVATE_KEY` — required when `DEBUG=false`; RS256 JWT signing (see [docs/jwks.md](jwks.md))
 - `ALLOWED_HOSTS` — hostnames for production (comma-separated, no scheme)
 - `CSRF_TRUSTED_ORIGINS` — full URLs with scheme when using browser-based flows behind HTTPS
-- `CORS_ALLOWED_ORIGINS` — ShellUI / admin front-end origins in production
+- `CORS_ALLOWED_ORIGINS` — Shellui / admin front-end origins in production
 
 Optional but typical for production:
 

@@ -5,8 +5,8 @@ const darkCodeTheme = require("prism-react-renderer").themes.dracula;
 
 /** @type {import('@docusaurus/types').Config} */
 const config = {
-  title: "ShellUI identity-service",
-  tagline: "ShellUI-compatible identity backend",
+  title: "Shellui identity-service",
+  tagline: "Shellui-compatible identity backend",
   favicon: "img/favicon.ico",
   headTags: [
     {
@@ -69,7 +69,7 @@ const config = {
     /** @type {import('@docusaurus/preset-classic').ThemeConfig} */
     ({
       navbar: {
-        title: "ShellUI identity-service",
+        title: "Shellui identity-service",
         items: [
           {
             type: "docSidebar",
@@ -81,7 +81,7 @@ const config = {
       },
       footer: {
         style: "light",
-        copyright: `Copyright © ${new Date().getFullYear()} ShellUI identity-service.`,
+        copyright: `Copyright © ${new Date().getFullYear()} Shellui identity-service.`,
       },
       prism: {
         theme: lightCodeTheme,

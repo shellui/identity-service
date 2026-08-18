@@ -161,7 +161,7 @@ The entrypoint runs migrations on start, then starts Gunicorn as user `appuser`.
 | `JWT_PRIVATE_KEY`      | Required when `DEBUG=false`; RS256 JWT signing. See [docs/jwks.md](docs/jwks.md). |
 | `ALLOWED_HOSTS`        | Comma-separated hostnames, no scheme.                                             |
 | `CSRF_TRUSTED_ORIGINS` | Full URLs with scheme when using browser flows behind HTTPS.                      |
-| `CORS_ALLOWED_ORIGINS` | ShellUI / admin front-end origins.                                                |
+| `CORS_ALLOWED_ORIGINS` | Shellui / admin front-end origins.                                                |
 
 ### Optional runtime env vars
 

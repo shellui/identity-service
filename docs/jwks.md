@@ -1,6 +1,6 @@
 # JWT signing and JWKS
 
-identity-service issues JWT access and refresh tokens for ShellUI sessions and personal access tokens (PATs). External services can verify those tokens **without** sharing `SECRET_KEY` by fetching the public keys from the JWKS endpoint.
+identity-service issues JWT access and refresh tokens for Shellui sessions and personal access tokens (PATs). External services can verify those tokens **without** sharing `SECRET_KEY` by fetching the public keys from the JWKS endpoint.
 
 ## Endpoint
 
