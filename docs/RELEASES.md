@@ -8,13 +8,13 @@ For day-to-day local runs, see the **Docker (local run)** section in the reposit
 
 ## Image overview
 
-| Item | Value |
-|------|--------|
-| Registry | Docker Hub |
-| Repository | `shellui/identity-service` |
-| Recommended tags | `0.3.0`, `0.3`, `latest` (see [Tagging](#tagging)) |
-| Listen port | `8000` |
-| Data volume | `/app/data` (SQLite default path: `/app/data/db.sqlite3`) |
+| Item             | Value                                                     |
+| ---------------- | --------------------------------------------------------- |
+| Registry         | Docker Hub                                                |
+| Repository       | `shellui/identity-service`                                |
+| Recommended tags | `0.3.0`, `0.3`, `latest` (see [Tagging](#tagging))        |
+| Listen port      | `8000`                                                    |
+| Data volume      | `/app/data` (SQLite default path: `/app/data/db.sqlite3`) |
 
 The image contains application code and collected static files only. Secrets and runtime configuration are supplied via environment variables at container start (see `.env.example` in the repository root).
 
@@ -52,7 +52,7 @@ Operators must set at minimum:
 - `JWT_PRIVATE_KEY` — required when `DEBUG=false`; RS256 JWT signing (see [docs/jwks.md](jwks.md))
 - `ALLOWED_HOSTS` — hostnames for production (comma-separated, no scheme)
 - `CSRF_TRUSTED_ORIGINS` — full URLs with scheme when using browser-based flows behind HTTPS
-- `CORS_ALLOWED_ORIGINS` — ShellUI / admin front-end origins in production
+- `CORS_ALLOWED_ORIGINS` — Shellui / admin front-end origins in production
 
 Optional but typical for production:
 
@@ -109,10 +109,10 @@ docker push shellui/identity-service:0.3.0
 
 For semver release `0.3.0`, typical Docker Hub tags:
 
-| Tag | Purpose |
-|-----|---------|
-| `0.3.0` | Exact release (pin in production) |
-| `0.3` | Latest patch in 0.3 line |
+| Tag      | Purpose                                  |
+| -------- | ---------------------------------------- |
+| `0.3.0`  | Exact release (pin in production)        |
+| `0.3`    | Latest patch in 0.3 line                 |
 | `latest` | Newest published release (use with care) |
 
 Example:
@@ -209,16 +209,16 @@ The entrypoint runs migrations on start, then starts Gunicorn as user `appuser`.
 
 ## Security notes
 
-| Topic | Status |
-|-------|--------|
-| `.env` in image | Excluded via `.dockerignore` — verified absent in image |
-| Runtime `JWT_PRIVATE_KEY` | Must be provided in production; never baked into image |
-| JWKS endpoint | `/.well-known/jwks.json` exposes public keys only |
-| Build-time `SECRET_KEY` | Used only for `collectstatic` during `docker build`; appears in build history as `build-only-not-for-runtime` — not used at runtime |
-| `.env.example` | Included; contains placeholder values only |
-| SQLite / DB files | Excluded from image; use volume or Postgres |
-| Process user | Gunicorn runs as `appuser`; entrypoint may run brief setup as root |
-| `DEBUG` | Defaults to `false` in Dockerfile and compose |
+| Topic                     | Status                                                                                                                              |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `.env` in image           | Excluded via `.dockerignore` — verified absent in image                                                                             |
+| Runtime `JWT_PRIVATE_KEY` | Must be provided in production; never baked into image                                                                              |
+| JWKS endpoint             | `/.well-known/jwks.json` exposes public keys only                                                                                   |
+| Build-time `SECRET_KEY`   | Used only for `collectstatic` during `docker build`; appears in build history as `build-only-not-for-runtime` — not used at runtime |
+| `.env.example`            | Included; contains placeholder values only                                                                                          |
+| SQLite / DB files         | Excluded from image; use volume or Postgres                                                                                         |
+| Process user              | Gunicorn runs as `appuser`; entrypoint may run brief setup as root                                                                  |
+| `DEBUG`                   | Defaults to `false` in Dockerfile and compose                                                                                       |
 
 Do not commit `.env` or real OAuth secrets to git. Do not pass secrets as Docker build args unless you accept they may appear in image history.
 

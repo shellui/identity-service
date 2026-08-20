@@ -1,18 +1,18 @@
 # identity-service
 
-`identity-service` is a Django backend that provides authentication endpoints compatible with ShellUI (`backend.type = "shellui"`).
+`identity-service` is a Django backend that provides authentication endpoints compatible with Shellui (`backend.type = "shellui"`).
 
-It supports OAuth login (GitHub/Google/Microsoft), issues JWT tokens, exposes Supabase-like auth routes under `/api/v1/*`, and returns user metadata that ShellUI can use (including avatar URL).
+It supports OAuth login (GitHub/Google/Microsoft), issues JWT tokens, exposes Supabase-like auth routes under `/api/v1/*`, and returns user metadata that Shellui can use (including avatar URL).
 
 ## Features
 
-- ShellUI-compatible auth API at `/api/v1/*`
+- Shellui-compatible auth API at `/api/v1/*`
 - OAuth login flow for GitHub, Google, Microsoft
 - Company join modes: **public**, **domain** allow-list, or **invitation-only** (see [docs/company-access.md](docs/company-access.md))
 - JWT access + refresh token issuance (RS256 with JWKS when `JWT_PRIVATE_KEY` is set)
 - Token refresh endpoint (`grant_type=refresh_token`)
 - User metadata endpoint (`/api/v1/user`)
-- CORS for local ShellUI (`http://localhost:4000`), admin dev server (`http://localhost:5174`), hosted admin (`https://admin.shellui.com`), and optional extra origins via env `CORS_ALLOWED_ORIGINS` (comma-separated)
+- CORS for local Shellui (`http://localhost:4000`), admin dev server (`http://localhost:5174`), hosted admin (`https://admin.shellui.com`), and optional extra origins via env `CORS_ALLOWED_ORIGINS` (comma-separated)
 - OpenAPI docs with drf-spectacular
 
 ## Project Structure
@@ -78,13 +78,15 @@ JWT_KEY_ID=abc123...
 JWT_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nMIIE...\n-----END PRIVATE KEY-----\n"
 ```
 
+In Coolify / Docker secret UIs, paste **only the PEM** (quotes stripped). See [docs/jwks.md](docs/jwks.md).
+
 `JWT_PUBLIC_KEY` is optional (derived from the private key). Verifiers fetch the public key from `GET /.well-known/jwks.json` — see [docs/jwks.md](docs/jwks.md).
 
 With Docker Compose, add `JWT_PRIVATE_KEY` to `.env` before running when `DEBUG=false`.
 
-## ShellUI Frontend Config
+## Shellui Frontend Config
 
-In your ShellUI config (`shellui.config.ts`):
+In your Shellui config (`shellui.config.ts`):
 
 ```ts
 backend: {
@@ -105,7 +107,7 @@ backend: {
 ## Notes
 
 - `/api/v1/settings` only enables providers configured for the requested company.
-- Avatar URL from provider userinfo is included in JWT metadata (`user_metadata.avatar_url`) for ShellUI profile display.
+- Avatar URL from provider userinfo is included in JWT metadata (`user_metadata.avatar_url`) for Shellui profile display.
 
 ## Documentation (Docusaurus)
 
@@ -160,7 +162,7 @@ Runtime env vars:
 - `JWT_REFRESH_TOKEN_LIFETIME` (default `7d`)
 - `DEBUG` (default `false`)
 - `ALLOWED_HOSTS` (comma-separated hostnames; empty → `localhost,127.0.0.1`)
-- `CSRF_TRUSTED_ORIGINS` (comma-separated full URLs with scheme; empty → common local dev URLs including ShellUI ports)
+- `CSRF_TRUSTED_ORIGINS` (comma-separated full URLs with scheme; empty → common local dev URLs including Shellui ports)
 - `POSTGRES_DATABASE_URL` (optional; when set, Postgres is used instead of SQLite)
 - `GUNICORN_WORKERS` (default `2`)
 - `GUNICORN_THREADS` (default `2`)

@@ -1,6 +1,6 @@
 [project]
 name = "identity-service"
-version = "0.3.0"
+version = "0.3.1"
 description = "ShellUI-compatible authentication backend (OAuth, JWT, JWKS)"
 readme = "README.md"
 requires-python = ">=3.14"

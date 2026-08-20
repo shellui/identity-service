@@ -1,12 +1,41 @@
 // @ts-check
 
 const lightCodeTheme = require("prism-react-renderer").themes.github;
-const darkCodeTheme = require("prism-react-renderer").themes.dracula;
+const darkCodeTheme = require("prism-react-renderer").themes.vsDark;
 
 /** @type {import('@docusaurus/types').Config} */
 const config = {
-  title: "ShellUI identity-service",
-  tagline: "ShellUI-compatible identity backend",
+  title: "Shellui identity-service",
+  tagline: "Shellui-compatible identity backend",
+  favicon: "img/favicon.ico",
+  headTags: [
+    {
+      tagName: "link",
+      attributes: {
+        rel: "icon",
+        type: "image/png",
+        sizes: "32x32",
+        href: "/img/favicon-32x32.png",
+      },
+    },
+    {
+      tagName: "link",
+      attributes: {
+        rel: "icon",
+        type: "image/png",
+        sizes: "16x16",
+        href: "/img/favicon-16x16.png",
+      },
+    },
+    {
+      tagName: "link",
+      attributes: {
+        rel: "apple-touch-icon",
+        sizes: "180x180",
+        href: "/img/apple-touch-icon.png",
+      },
+    },
+  ],
   url: "https://docs.shellui.com",
   baseUrl: "/",
   onBrokenLinks: "throw",
@@ -39,20 +68,63 @@ const config = {
   themeConfig:
     /** @type {import('@docusaurus/preset-classic').ThemeConfig} */
     ({
+      colorMode: {
+        defaultMode: "light",
+        disableSwitch: false,
+        respectPrefersColorScheme: true,
+      },
       navbar: {
-        title: "ShellUI identity-service",
+        title: "identity-service",
+        hideOnScroll: false,
+        logo: {
+          alt: "Shellui documentation",
+          src: "img/shellui_documentation_logo.png",
+          href: "/",
+          height: 22,
+          width: 202,
+        },
         items: [
           {
             type: "docSidebar",
             sidebarId: "tutorialSidebar",
             position: "left",
             label: "Documentation",
+            className: "navbar__docs-link",
+          },
+          {
+            href: "https://shellui.com",
+            label: "Website",
+            position: "right",
           },
         ],
       },
       footer: {
         style: "light",
-        copyright: `Copyright © ${new Date().getFullYear()} ShellUI identity-service.`,
+        links: [
+          {
+            title: "Docs",
+            items: [
+              {
+                label: "Introduction",
+                to: "/",
+              },
+            ],
+          },
+          {
+            title: "Resources",
+            items: [
+              {
+                label: "Shellui.com",
+                href: "https://shellui.com",
+              },
+              {
+                label: "GitHub",
+                href: "https://github.com/shellui/identity-service",
+              },
+            ],
+          },
+        ],
+        copyright: `Copyright © ${new Date().getFullYear()} Shellui.`,
       },
       prism: {
         theme: lightCodeTheme,

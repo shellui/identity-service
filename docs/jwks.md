@@ -1,6 +1,6 @@
 # JWT signing and JWKS
 
-identity-service issues JWT access and refresh tokens for ShellUI sessions and personal access tokens (PATs). External services can verify those tokens **without** sharing `SECRET_KEY` by fetching the public keys from the JWKS endpoint.
+identity-service issues JWT access and refresh tokens for Shellui sessions and personal access tokens (PATs). External services can verify those tokens **without** sharing `SECRET_KEY` by fetching the public keys from the JWKS endpoint.
 
 ## Endpoint
 
@@ -48,7 +48,7 @@ uv run python manage.py generate_jwt_keys
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `JWT_PRIVATE_KEY` | Yes (production) | PEM-encoded RSA private key. Use `\n` for newlines in `.env`. |
+| `JWT_PRIVATE_KEY` | Yes (production) | PEM-encoded RSA private key. Use `\n` for newlines in `.env`. Do **not** include the surrounding quotes from `generate_jwt_keys` when pasting into Coolify / Docker UI. |
 | `JWT_PUBLIC_KEY` | No | PEM public key. Derived from the private key when omitted. |
 | `JWT_KEY_ID` | No | Key id (`kid`). Defaults to RFC 7638 JWK thumbprint. |
 | `JWT_PREVIOUS_PUBLIC_KEY` | No | Previous public key during rotation (still published in JWKS). |
@@ -62,6 +62,18 @@ uv run python manage.py generate_jwt_keys
 When `DEBUG=true` and `JWT_PRIVATE_KEY` is unset, JWTs continue to use HS256 with `SECRET_KEY` (backward compatible). The JWKS endpoint returns `{"keys":[]}`.
 
 For local RS256 testing, set `JWT_PRIVATE_KEY` the same way as production.
+
+### Coolify / Docker UI
+
+`generate_jwt_keys` prints a quoted `.env` line. Paste **only the PEM value** into Coolify (or any secret UI), not `JWT_PRIVATE_KEY="..."`:
+
+```
+-----BEGIN PRIVATE KEY-----
+MIIE...
+-----END PRIVATE KEY-----
+```
+
+or the same text with literal `\n` instead of real newlines, **without** wrapping `"` / `\"`. Including those quotes makes cryptography fail with `InvalidByte(0, 92)` (leading backslash).
 
 ## Verifying tokens (consumer services)
 

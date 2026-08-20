@@ -17,7 +17,7 @@ Configure via:
 - **Django admin → Companies → Company** — join mode, allowed domains, Members inline (`is_enabled`)
 - **Django admin → Company memberships** — list/edit per-company enable flags
 - `PATCH /api/v1/companies/<id>/` with `access_mode` and optional `allowed_email_domains` (company owners only)
-- ShellUI admin **Organization** panel
+- Shellui admin **Organization** panel
 
 ## Enable / disable (per company)
 
@@ -30,7 +30,7 @@ When access is blocked for the requested company, OAuth responses include `error
 - `access_pending` — invitation-only or disabled membership waiting for approval
 - `access_denied` — domain mode with a non-matching email
 
-ShellUI shows a pending-review screen for these codes (query params `shellui_oauth_error` / `shellui_oauth_error_code`, or JSON on `/api/v1/oauth/exchange`).
+Shellui shows a pending-review screen for these codes (query params `shellui_oauth_error` / `shellui_oauth_error_code`, or JSON on `/api/v1/oauth/exchange`).
 
 ## Email
 
