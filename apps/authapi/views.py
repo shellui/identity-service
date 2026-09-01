@@ -15,6 +15,10 @@ from django.contrib.auth.signals import user_logged_in
 from django.contrib.sites.models import Site
 from django.db import IntegrityError
 from django.db.models import Count, Q
+from django.shortcuts import render
+from django.urls import reverse
+from django.utils.decorators import method_decorator
+from django.views.decorators.csrf import csrf_protect
 from allauth.socialaccount.models import SocialApp, SocialAccount
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema, extend_schema_view
 from rest_framework import status
@@ -27,8 +31,9 @@ from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from .tokens import ShellUIAccessToken, ShellUIRefreshToken
 
 from . import metrics as auth_metrics
-from apps.companies.models import Company, CompanyGroup, CompanyOAuthClient
+from apps.companies.models import Company, CompanyGroup, CompanyOAuthClient, CompanyOAuthRedirect
 from apps.companies.access import (
+    JoinDecision,
     apply_company_join,
     is_company_access_enabled,
     notify_user_access_enabled,
@@ -40,7 +45,9 @@ from apps.companies.redirect_allowlist import (
     validate_redirect_to_for_company,
 )
 from .renderers import PrometheusTextRenderer
-from .login_audit import oauth_callback_url, record_login_event
+from .login_audit import oauth_provider_redirect_uri, record_login_event
+from .oauth_state import build_oauth_state, parse_oauth_state
+from .oauth_confirm import build_oauth_confirm_token, parse_oauth_confirm_token
 from .authentication import ShellUIJWTAuthentication
 from .models import LoginEvent, PersonalAccessToken, UserPreference
 from .user_activity import touch_user_last_seen
@@ -63,6 +70,8 @@ from .serializers import (
     ShellUIAdminOAuthSocialAppCreateSerializer,
     ShellUIAdminOAuthSocialAppUpdateSerializer,
     ShellUIAdminOAuthClientUpdateSerializer,
+    ShellUIAdminOAuthRedirectCreateSerializer,
+    ShellUIAdminOAuthRedirectUpdateSerializer,
     ShellUIPersonalAccessTokenCreateSerializer,
     ShellUIAdminUserUpdateSerializer,
     UserPreferenceSerializer,
@@ -446,6 +455,188 @@ def _build_callback_redirect(redirect_to: str, payload: dict, provider: str) -> 
         'provider': provider,
     }
     return f"{redirect_to}#{urlencode(params)}"
+
+
+def _provider_display_label(provider: str) -> str:
+    labels = {'github': 'GitHub', 'google': 'Google', 'microsoft': 'Microsoft'}
+    key = str(provider or '').strip().lower()
+    return labels.get(key, key.title() or 'OAuth')
+
+
+def _build_shellui_authorize_url(
+    request,
+    *,
+    company: Company,
+    redirect_to: str,
+    provider: str,
+    company_oauth_client_id: int | None = None,
+    client_timezone: str | None = None,
+    client_device_id: str | None = None,
+    switch_account: bool = False,
+) -> str:
+    params: dict[str, str] = {
+        'provider': str(provider).strip().lower(),
+        'company_id': str(company.id),
+        'redirect_to': redirect_to,
+    }
+    if company_oauth_client_id is not None:
+        params['company_oauth_client_id'] = str(company_oauth_client_id)
+    tz = (client_timezone or '').strip()
+    if tz:
+        params['client_timezone'] = tz[:64]
+    dev = (client_device_id or '').strip()
+    if dev:
+        params['client_device_id'] = dev[:128]
+    if switch_account:
+        params['switch_account'] = '1'
+    path = f"{reverse('shellui-authorize')}?{urlencode(params)}"
+    return request.build_absolute_uri(path)
+
+
+def _oauth_method_choices_for_company(
+    request,
+    company: Company,
+    redirect_to: str,
+    *,
+    current_provider: str | None = None,
+    client_timezone: str | None = None,
+    client_device_id: str | None = None,
+    switch_account: bool = False,
+) -> list[dict]:
+    current = str(current_provider or '').strip().lower()
+    choices: list[dict] = []
+    for provider in _enabled_oauth_providers(company):
+        choices.append(
+            {
+                'provider': provider,
+                'label': _provider_display_label(provider),
+                'url': _build_shellui_authorize_url(
+                    request,
+                    company=company,
+                    redirect_to=redirect_to,
+                    provider=provider,
+                    client_timezone=client_timezone,
+                    client_device_id=client_device_id,
+                    switch_account=switch_account and provider == current,
+                ),
+                'current': provider == current,
+            }
+        )
+    return choices
+
+
+def _render_oauth_method_select_page(
+    request,
+    *,
+    company: Company,
+    redirect_to: str,
+    client_timezone: str | None = None,
+    client_device_id: str | None = None,
+):
+    methods = _oauth_method_choices_for_company(
+        request,
+        company,
+        redirect_to,
+        client_timezone=client_timezone,
+        client_device_id=client_device_id,
+    )
+    return render(
+        request,
+        'authapi/oauth_method_select.html',
+        {
+            'company_name': company.name,
+            'methods': methods,
+            'multiple_methods': len(methods) > 1,
+        },
+    )
+
+
+def _user_display_initials(user: User, full_name: str = '') -> str:
+    name = (full_name or user.get_full_name() or user.email or user.get_username() or '?').strip()
+    parts = [p for p in name.split() if p]
+    if len(parts) >= 2:
+        return f'{parts[0][0]}{parts[-1][0]}'.upper()
+    return name[:2].upper() if name else '?'
+
+
+def _finalize_shellui_oauth_login(
+    request,
+    *,
+    user: User,
+    company: Company,
+    provider: str,
+    redirect_to: str,
+    avatar_url: str | None,
+    client_tz: str = '',
+    client_dev: str | None = None,
+) -> HttpResponseRedirect:
+    _notify_user_logged_in_for_oauth(request, user)
+    payload = _issue_shellui_tokens(user, company=company, avatar_url=avatar_url, oauth_provider=provider)
+    auth_metrics.record_successful_login(provider, company_id=company.id)
+    record_login_event(
+        request=request,
+        outcome=LoginEvent.OUTCOME_SUCCESS,
+        provider=provider,
+        user=user,
+        company=company,
+        client_timezone=client_tz,
+        client_device_id=client_dev,
+    )
+    return HttpResponseRedirect(_build_callback_redirect(redirect_to, payload, provider=provider))
+
+
+def _render_oauth_confirm_page(
+    request,
+    *,
+    user: User,
+    company: Company,
+    provider: str,
+    redirect_to: str,
+    avatar_url: str | None,
+    company_oauth_client_id: int | None = None,
+    client_tz: str = '',
+    client_dev: str | None = None,
+    error_message: str | None = None,
+):
+    confirm_token = build_oauth_confirm_token(
+        user_id=user.id,
+        company_id=company.id,
+        provider=provider,
+        redirect_to=redirect_to,
+        avatar_url=avatar_url,
+        company_oauth_client_id=company_oauth_client_id,
+        client_timezone=client_tz or None,
+        client_device_id=client_dev,
+    )
+    confirm_url = request.build_absolute_uri(reverse('shellui-oauth-confirm'))
+    switch_account_url = f'{confirm_url}?{urlencode({"action": "switch", "confirm_token": confirm_token})}'
+    display_name = user.get_full_name() or user.email or user.get_username()
+    methods = _oauth_method_choices_for_company(
+        request,
+        company,
+        redirect_to,
+        current_provider=provider,
+        client_timezone=client_tz or None,
+        client_device_id=client_dev,
+    )
+    return render(
+        request,
+        'authapi/oauth_confirm.html',
+        {
+            'company_name': company.name,
+            'display_name': display_name,
+            'email': user.email or '',
+            'avatar_url': avatar_url or '',
+            'initials': _user_display_initials(user, display_name),
+            'provider': provider,
+            'provider_label': _provider_display_label(provider),
+            'confirm_token': confirm_token,
+            'confirm_url': confirm_url,
+            'switch_account_url': switch_account_url,
+            'methods': methods,
+            'error_message': error_message,
+        },
+    )
 
 
 def _shellui_oauth_bounce_or_json(
@@ -969,8 +1160,11 @@ class ShellUIAuthSettingsView(APIView):
                 name='provider',
                 type=str,
                 location=OpenApiParameter.QUERY,
-                required=True,
-                description='OAuth provider slug (github, google, or microsoft).',
+                required=False,
+                description=(
+                    'OAuth provider slug (github, google, or microsoft). '
+                    'When omitted, shows a sign-in method picker for the company.'
+                ),
             ),
             OpenApiParameter(
                 name='redirect_to',
@@ -1000,8 +1194,9 @@ class ShellUIAuthSettingsView(APIView):
             ),
         ],
         responses={
+            200: OpenApiResponse(description='Sign-in method picker HTML (when provider is omitted)'),
             302: OpenApiResponse(description='Redirect to provider authorize URL'),
-            400: OpenApiResponse(description='Missing provider or provider not enabled'),
+            400: OpenApiResponse(description='Missing redirect_to or provider not enabled'),
             500: OpenApiResponse(description='Provider is enabled but missing OAuth credentials'),
         },
     ),
@@ -1028,11 +1223,38 @@ class ShellUIAuthorizeView(APIView):
             return company_err
         provider = request.GET.get('provider', '').strip().lower()
         company_oauth_client_id = _parse_company_oauth_client_id(request.GET.get('company_oauth_client_id'))
-        if not provider:
+        client_tz = request.GET.get('client_timezone', '')
+        client_dev = request.GET.get('client_device_id', '') or None
+        redirect_to, rerr = validate_redirect_to_for_company(
+            company=company,
+            request=request,
+            redirect_to_raw=request.GET.get('redirect_to'),
+        )
+        if rerr or not redirect_to:
+            err_code = (
+                'redirect_not_allowed'
+                if rerr and ('not allowed' in rerr or 'Invalid redirect_to' in rerr)
+                else 'invalid_redirect'
+            )
             return _shellui_oauth_bounce_or_json(
                 request,
-                message='Missing provider parameter.',
-                error_code='missing_provider',
+                message=rerr or 'Invalid redirect.',
+                error_code=err_code,
+            )
+        if not provider:
+            if not _enabled_oauth_providers(company):
+                return _shellui_oauth_bounce_or_json(
+                    request,
+                    message='No OAuth providers are configured for this company.',
+                    error_code='provider_disabled',
+                    redirect_to_raw=redirect_to,
+                )
+            return _render_oauth_method_select_page(
+                request,
+                company=company,
+                redirect_to=redirect_to,
+                client_timezone=client_tz or None,
+                client_device_id=client_dev,
             )
         if provider not in _enabled_oauth_providers(company):
             return _shellui_oauth_bounce_or_json(
@@ -1062,27 +1284,23 @@ class ShellUIAuthorizeView(APIView):
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 error_code='provider_oauth_misconfigured',
             )
-        redirect_to, rerr = validate_redirect_to_for_company(
-            company=company,
-            request=request,
-            redirect_to_raw=request.GET.get('redirect_to'),
-        )
-        if rerr or not redirect_to:
-            err_code = (
-                'redirect_not_allowed'
-                if rerr and 'not allowed' in rerr
-                else 'invalid_redirect'
-            )
-            return _shellui_oauth_bounce_or_json(
-                request,
-                message=rerr or 'Invalid redirect.',
-                error_code=err_code,
-            )
-        authorize_url = build_authorize_url(
+        switch_account = str(request.GET.get('switch_account', '')).strip().lower() in ('1', 'true', 'yes')
+        state = build_oauth_state(
             provider=provider,
-            redirect_uri=redirect_to,
+            redirect_to=redirect_to,
             company_id=company.id,
             company_oauth_client_id=company_oauth_client_id,
+            client_timezone=client_tz or None,
+            client_device_id=client_dev,
+        )
+        # Provider always returns to this service; bounce target is in signed state.
+        authorize_url = build_authorize_url(
+            provider=provider,
+            redirect_uri=oauth_provider_redirect_uri(request),
+            state=state,
+            company_id=company.id,
+            company_oauth_client_id=company_oauth_client_id,
+            switch_account=switch_account,
         )
         return HttpResponseRedirect(authorize_url)
 
@@ -1092,18 +1310,11 @@ class ShellUIAuthorizeView(APIView):
         tags=['auth-social'],
         summary='Handle OAuth callback and issue ShellUI tokens',
         description=(
-            'Consume provider callback query params, exchange code for provider token, resolve user profile, '
-            'and redirect to frontend callback with ShellUI access/refresh tokens in URL hash.'
+            'Consume provider callback (code + signed state), exchange code for provider token, '
+            'resolve user profile, and redirect to redirect_to with ShellUI tokens in the URL hash.'
         ),
         auth=[],
         parameters=[
-            OpenApiParameter(
-                name='provider',
-                type=str,
-                location=OpenApiParameter.QUERY,
-                required=True,
-                description='OAuth provider slug used during authorize step.',
-            ),
             OpenApiParameter(
                 name='code',
                 type=str,
@@ -1112,25 +1323,11 @@ class ShellUIAuthorizeView(APIView):
                 description='Authorization code returned by OAuth provider.',
             ),
             OpenApiParameter(
-                name='redirect_to',
+                name='state',
                 type=str,
                 location=OpenApiParameter.QUERY,
-                required=False,
-                description='Frontend callback URL. Defaults to /login/callback on current host.',
-            ),
-            OpenApiParameter(
-                name='client_timezone',
-                type=str,
-                location=OpenApiParameter.QUERY,
-                required=False,
-                description='Optional IANA timezone echoed from the authorize step.',
-            ),
-            OpenApiParameter(
-                name='client_device_id',
-                type=str,
-                location=OpenApiParameter.QUERY,
-                required=False,
-                description='Optional device id echoed from the authorize step.',
+                required=True,
+                description='Signed state issued by /api/v1/authorize.',
             ),
         ],
         responses={
@@ -1143,46 +1340,61 @@ class ShellUIOAuthCallbackView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request):
-        company, company_err = _required_company_from_request(request)
-        if company_err:
-            msg = 'Invalid request.'
-            data = getattr(company_err, 'data', None)
-            if isinstance(data, dict):
-                msg = str(data.get('error') or msg)
-            bounced = _shellui_oauth_bounce_or_json(
-                request,
-                message=msg,
-                status_code=getattr(company_err, 'status_code', status.HTTP_400_BAD_REQUEST)
-                or status.HTTP_400_BAD_REQUEST,
-                error_code='callback_company',
-            )
-            if isinstance(bounced, HttpResponseRedirect):
-                return bounced
-            return company_err
-        provider = request.GET.get('provider', '').strip().lower()
-        company_oauth_client_id = _parse_company_oauth_client_id(request.GET.get('company_oauth_client_id'))
         code = request.GET.get('code', '').strip()
+        state_payload, state_err = parse_oauth_state(request.GET.get('state'))
+        if state_err or not state_payload:
+            return _shellui_oauth_bounce_or_json(
+                request,
+                message=state_err or 'Invalid OAuth state.',
+                error_code='invalid_oauth_state',
+                redirect_to_raw=None,
+            )
+        provider = state_payload['provider']
+        redirect_to_raw = state_payload['redirect_to']
+        company_oauth_client_id = state_payload.get('company_oauth_client_id')
+        client_tz = state_payload.get('client_timezone') or ''
+        client_dev = state_payload.get('client_device_id') or None
+
+        try:
+            company = Company.objects.get(pk=int(state_payload['company_id']))
+        except (Company.DoesNotExist, TypeError, ValueError):
+            return _shellui_oauth_bounce_or_json(
+                request,
+                message='Company not found.',
+                error_code='callback_company',
+                redirect_to_raw=redirect_to_raw,
+            )
+
         redirect_to, rerr = validate_redirect_to_for_company(
             company=company,
             request=request,
-            redirect_to_raw=request.GET.get('redirect_to'),
+            redirect_to_raw=redirect_to_raw,
         )
         if rerr or not redirect_to:
             err_code = (
                 'redirect_not_allowed'
-                if rerr and 'not allowed' in rerr
+                if rerr and ('not allowed' in rerr or 'Invalid redirect_to' in rerr)
                 else 'invalid_redirect'
             )
             return _shellui_oauth_bounce_or_json(
                 request,
                 message=rerr or 'Invalid redirect.',
                 error_code=err_code,
+                redirect_to_raw=redirect_to_raw,
             )
-        if not provider or not code:
+        if not code:
             return _shellui_oauth_bounce_or_json(
                 request,
-                message='Missing provider or code.',
-                error_code='missing_provider_or_code',
+                message='Missing authorization code.',
+                error_code='missing_code',
+                redirect_to_raw=redirect_to,
+            )
+        if provider not in _enabled_oauth_providers(company):
+            return _shellui_oauth_bounce_or_json(
+                request,
+                message=f"Provider '{provider}' is not enabled.",
+                error_code='provider_disabled',
+                redirect_to_raw=redirect_to,
             )
         _row, oauth_client_err = _get_company_oauth_client(company, provider, company_oauth_client_id)
         if oauth_client_err:
@@ -1190,10 +1402,9 @@ class ShellUIOAuthCallbackView(APIView):
                 request,
                 message=oauth_client_err,
                 error_code='oauth_client_unavailable',
+                redirect_to_raw=redirect_to,
             )
-        callback_url = oauth_callback_url(request, provider, redirect_to)
-        client_tz = request.GET.get('client_timezone', '')
-        client_dev = request.GET.get('client_device_id', '') or None
+        callback_url = oauth_provider_redirect_uri(request)
         try:
             access_token = exchange_code_for_token(
                 provider=provider,
@@ -1224,6 +1435,7 @@ class ShellUIOAuthCallbackView(APIView):
                 request,
                 message=str(exc),
                 error_code='token_exchange_failed',
+                redirect_to_raw=redirect_to,
             )
             if isinstance(bounced, HttpResponseRedirect):
                 return bounced
@@ -1267,19 +1479,114 @@ class ShellUIOAuthCallbackView(APIView):
                 client_device_id=client_dev,
             )
             return _join_denied_response(decision=join, redirect_to=redirect_to)
-        _notify_user_logged_in_for_oauth(request, user)
-        payload = _issue_shellui_tokens(user, company=company, avatar_url=avatar_url, oauth_provider=provider)
-        auth_metrics.record_successful_login(provider, company_id=company.id)
-        record_login_event(
-            request=request,
-            outcome=LoginEvent.OUTCOME_SUCCESS,
-            provider=provider,
+        return _render_oauth_confirm_page(
+            request,
             user=user,
             company=company,
-            client_timezone=client_tz,
-            client_device_id=client_dev,
+            provider=provider,
+            redirect_to=redirect_to,
+            avatar_url=avatar_url,
+            company_oauth_client_id=company_oauth_client_id,
+            client_tz=client_tz,
+            client_dev=client_dev,
         )
-        return HttpResponseRedirect(_build_callback_redirect(redirect_to, payload, provider=provider))
+
+
+@method_decorator(csrf_protect, name='dispatch')
+class ShellUIOAuthConfirmView(APIView):
+    """Browser confirmation step after provider OAuth, before JWT fragment redirect."""
+
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        if str(request.GET.get('action', '')).strip().lower() != 'switch':
+            return Response({'error': 'Invalid action.'}, status=status.HTTP_400_BAD_REQUEST)
+        payload, err = parse_oauth_confirm_token(request.GET.get('confirm_token'))
+        if err or not payload:
+            return Response({'error': err or 'Invalid confirmation.'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            company = Company.objects.get(pk=int(payload['company_id']))
+        except Company.DoesNotExist:
+            return Response({'error': 'Company not found.'}, status=status.HTTP_404_NOT_FOUND)
+        redirect_to, rerr = validate_redirect_to_for_company(
+            company=company,
+            request=request,
+            redirect_to_raw=payload['redirect_to'],
+        )
+        if rerr or not redirect_to:
+            return Response({'error': rerr or 'Invalid redirect.'}, status=status.HTTP_400_BAD_REQUEST)
+        provider = payload['provider']
+        company_oauth_client_id = payload.get('company_oauth_client_id')
+        if provider not in _enabled_oauth_providers(company):
+            return Response({'error': 'Provider not enabled.'}, status=status.HTTP_400_BAD_REQUEST)
+        authorize_params = {
+            'provider': provider,
+            'company_id': str(company.id),
+            'redirect_to': redirect_to,
+            'switch_account': '1',
+        }
+        if company_oauth_client_id:
+            authorize_params['company_oauth_client_id'] = str(company_oauth_client_id)
+        client_tz = payload.get('client_timezone')
+        if client_tz:
+            authorize_params['client_timezone'] = client_tz
+        client_dev = payload.get('client_device_id')
+        if client_dev:
+            authorize_params['client_device_id'] = client_dev
+        authorize_path = f"{reverse('shellui-authorize')}?{urlencode(authorize_params)}"
+        return HttpResponseRedirect(request.build_absolute_uri(authorize_path))
+    def post(self, request):
+        payload, err = parse_oauth_confirm_token(request.POST.get('confirm_token'))
+        if err or not payload:
+            return Response({'error': err or 'Invalid confirmation.'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            user = User.objects.get(pk=int(payload['user_id']))
+            company = Company.objects.get(pk=int(payload['company_id']))
+        except User.DoesNotExist:
+            return Response({'error': 'User not found.'}, status=status.HTTP_404_NOT_FOUND)
+        except Company.DoesNotExist:
+            return Response({'error': 'Company not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        redirect_to, rerr = validate_redirect_to_for_company(
+            company=company,
+            request=request,
+            redirect_to_raw=payload['redirect_to'],
+        )
+        if rerr or not redirect_to:
+            return _render_oauth_confirm_page(
+                request,
+                user=user,
+                company=company,
+                provider=payload['provider'],
+                redirect_to=payload['redirect_to'],
+                avatar_url=payload.get('avatar_url'),
+                company_oauth_client_id=payload.get('company_oauth_client_id'),
+                client_tz=payload.get('client_timezone') or '',
+                client_dev=payload.get('client_device_id'),
+                error_message=rerr or 'Invalid redirect.',
+            )
+
+        provider = payload['provider']
+        if not is_company_access_enabled(company, user):
+            return _join_denied_response(
+                decision=JoinDecision(
+                    allowed=False,
+                    error_code='access_denied',
+                    message='Access denied for this company.',
+                ),
+                redirect_to=redirect_to,
+            )
+
+        return _finalize_shellui_oauth_login(
+            request,
+            user=user,
+            company=company,
+            provider=provider,
+            redirect_to=redirect_to,
+            avatar_url=payload.get('avatar_url'),
+            client_tz=payload.get('client_timezone') or '',
+            client_dev=payload.get('client_device_id'),
+        )
 
 
 @extend_schema_view(
@@ -1287,8 +1594,9 @@ class ShellUIOAuthCallbackView(APIView):
         tags=['auth-social'],
         summary='Exchange OAuth code for ShellUI tokens',
         description=(
-            'Used by frontend OAuth callback routes. Exchanges provider authorization code, '
-            'provisions/updates user mapping, and returns ShellUI tokens as JSON.'
+            'Deprecated for new shells: prefer identity /api/v1/oauth/callback fragment bounce. '
+            'Still used by older SPA callbacks that receive provider ?code= directly. '
+            'Exchanges provider authorization code and returns ShellUI tokens as JSON.'
         ),
         auth=[],
         request=ShellUIOAuthExchangeSerializer,
@@ -2321,6 +2629,145 @@ class ShellUIAdminOAuthClientDetailView(APIView):
         try:
             row = CompanyOAuthClient.objects.get(pk=pk, company=company)
         except CompanyOAuthClient.DoesNotExist:
+            return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        row.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+def _oauth_redirect_payload(row: CompanyOAuthRedirect) -> dict:
+    return {
+        'id': row.id,
+        'base_url': row.base_url,
+        'label': row.label or '',
+        'is_active': bool(row.is_active),
+        'created_at': row.created_at.isoformat() if row.created_at else None,
+    }
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=['oauth-redirects'],
+        summary='List company OAuth redirect allowlist (staff or company owner)',
+        description=(
+            'Origins allowed as post-OAuth bounce targets (`redirect_to`). '
+            'Loopback (localhost / 127.0.0.1 / ::1) is always allowed without a row. '
+            'Empty allowlist denies non-loopback redirects.'
+        ),
+        operation_id='api_v1_oauth_redirects_list',
+    ),
+    post=extend_schema(
+        tags=['oauth-redirects'],
+        summary='Add OAuth redirect allowlist origin (staff or company owner)',
+        request=ShellUIAdminOAuthRedirectCreateSerializer,
+    ),
+)
+class ShellUIAdminOAuthRedirectListView(APIView):
+    permission_classes = [ShellUIPermission]
+    serializer_class = ShellUIOpenAPISerializer
+
+    def get(self, request):
+        _actor, company, err = _require_staff_or_company_owner(request)
+        if err:
+            return err
+        rows = CompanyOAuthRedirect.objects.filter(company=company).order_by('id')
+        return Response([_oauth_redirect_payload(r) for r in rows])
+
+    def post(self, request):
+        from apps.companies.redirect_allowlist import normalize_allowlist_origin
+
+        _actor, company, err = _require_staff_or_company_owner(request)
+        if err:
+            return err
+        serializer = ShellUIAdminOAuthRedirectCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        validated = serializer.validated_data
+        origin, nerr = normalize_allowlist_origin(validated['base_url'])
+        if nerr or not origin:
+            return Response({'error': nerr or 'Invalid base_url.'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            row = CompanyOAuthRedirect.objects.create(
+                company=company,
+                base_url=origin,
+                label=str(validated.get('label') or '').strip()[:150],
+                is_active=bool(validated.get('is_active', True)),
+            )
+        except IntegrityError:
+            return Response(
+                {'error': 'This origin is already on the allowlist for this company.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return Response(_oauth_redirect_payload(row), status=status.HTTP_201_CREATED)
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=['oauth-redirects'],
+        summary='Retrieve OAuth redirect allowlist entry (staff or company owner)',
+        operation_id='api_v1_oauth_redirects_retrieve',
+    ),
+    patch=extend_schema(
+        tags=['oauth-redirects'],
+        summary='Update OAuth redirect allowlist entry (staff or company owner)',
+        request=ShellUIAdminOAuthRedirectUpdateSerializer,
+    ),
+    delete=extend_schema(
+        tags=['oauth-redirects'],
+        summary='Delete OAuth redirect allowlist entry (staff or company owner)',
+    ),
+)
+class ShellUIAdminOAuthRedirectDetailView(APIView):
+    permission_classes = [ShellUIPermission]
+    serializer_class = ShellUIOpenAPISerializer
+
+    def get(self, request, pk):
+        _actor, company, err = _require_staff_or_company_owner(request)
+        if err:
+            return err
+        try:
+            row = CompanyOAuthRedirect.objects.get(pk=pk, company=company)
+        except CompanyOAuthRedirect.DoesNotExist:
+            return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        return Response(_oauth_redirect_payload(row))
+
+    def patch(self, request, pk):
+        from apps.companies.redirect_allowlist import normalize_allowlist_origin
+
+        _actor, company, err = _require_staff_or_company_owner(request)
+        if err:
+            return err
+        try:
+            row = CompanyOAuthRedirect.objects.get(pk=pk, company=company)
+        except CompanyOAuthRedirect.DoesNotExist:
+            return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        serializer = ShellUIAdminOAuthRedirectUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        validated = serializer.validated_data
+        if 'base_url' in validated:
+            origin, nerr = normalize_allowlist_origin(validated['base_url'])
+            if nerr or not origin:
+                return Response({'error': nerr or 'Invalid base_url.'}, status=status.HTTP_400_BAD_REQUEST)
+            row.base_url = origin
+        if 'label' in validated:
+            row.label = str(validated.get('label') or '').strip()[:150]
+        if 'is_active' in validated:
+            row.is_active = bool(validated['is_active'])
+        try:
+            row.save()
+        except IntegrityError:
+            return Response(
+                {'error': 'This origin is already on the allowlist for this company.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        row.refresh_from_db()
+        return Response(_oauth_redirect_payload(row))
+
+    def delete(self, request, pk):
+        _actor, company, err = _require_staff_or_company_owner(request)
+        if err:
+            return err
+        try:
+            row = CompanyOAuthRedirect.objects.get(pk=pk, company=company)
+        except CompanyOAuthRedirect.DoesNotExist:
             return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
         row.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)

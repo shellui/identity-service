@@ -134,6 +134,7 @@ def build_authorize_url(
     *,
     company_id: int | None = None,
     company_oauth_client_id: int | None = None,
+    switch_account: bool = False,
 ) -> str:
     config = get_provider_config(
         provider,
@@ -149,7 +150,9 @@ def build_authorize_url(
     }
     if provider == 'google':
         params['access_type'] = 'offline'
-        params['prompt'] = 'consent'
+        params['prompt'] = 'select_account consent' if switch_account else 'consent'
+    elif provider == 'microsoft' and switch_account:
+        params['prompt'] = 'select_account'
     return f"{config.authorize_url}?{urllib.parse.urlencode(params)}"
 
 

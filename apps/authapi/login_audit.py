@@ -171,6 +171,14 @@ def record_login_event(
     )
 
 
+def oauth_provider_redirect_uri(request: HttpRequest) -> str:
+    """
+    Stable provider redirect_uri (no query). Must match OAuth app registration
+    and the value used in the token exchange.
+    """
+    return f'{request.scheme}://{request.get_host()}/api/v1/oauth/callback'
+
+
 def oauth_callback_query_string(
     *,
     provider: str,
@@ -180,7 +188,7 @@ def oauth_callback_query_string(
     client_timezone: str | None = None,
     client_device_id: str | None = None,
 ) -> str:
-    """Build query string for OAuth redirect_uri (must match between authorize and token exchange)."""
+    """Legacy query string builder (prefer signed state + oauth_provider_redirect_uri)."""
     from urllib.parse import urlencode
 
     params: dict[str, str] = {
@@ -202,7 +210,10 @@ def oauth_callback_query_string(
 
 
 def oauth_callback_url(request: HttpRequest, provider: str, redirect_to: str) -> str:
-    """Full redirect_uri for OAuth (authorize + callback token exchange)."""
+    """
+    Legacy redirect_uri with query params. Prefer oauth_provider_redirect_uri + signed state.
+    Kept for any callers that still encode context in the redirect_uri.
+    """
     tz = request.GET.get('client_timezone', '') if hasattr(request, 'GET') else ''
     dev = request.GET.get('client_device_id', '') if hasattr(request, 'GET') else ''
     company_id = request.GET.get('company_id', '') if hasattr(request, 'GET') else ''
@@ -215,4 +226,4 @@ def oauth_callback_url(request: HttpRequest, provider: str, redirect_to: str) ->
         client_timezone=tz or None,
         client_device_id=dev or None,
     )
-    return f"{request.scheme}://{request.get_host()}/api/v1/oauth/callback?{qs}"
+    return f'{oauth_provider_redirect_uri(request)}?{qs}'

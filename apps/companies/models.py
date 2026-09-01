@@ -144,3 +144,32 @@ class CompanyOAuthClient(models.Model):
 
     def __str__(self) -> str:
         return f'{self.company_id}:{self.social_app.provider}:{self.social_app.name}'
+
+
+class CompanyOAuthRedirect(models.Model):
+    """Allowed post-OAuth bounce origins for a company (shell /login/callback hosts)."""
+
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.CASCADE,
+        related_name='oauth_redirect_allowlist',
+    )
+    base_url = models.CharField(
+        max_length=500,
+        help_text='Canonical origin only (e.g. https://app.example.com).',
+    )
+    label = models.CharField(blank=True, max_length=150)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['id']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['company', 'base_url'],
+                name='company_oauth_redirect_unique_base_per_company',
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f'{self.company_id}:{self.base_url}'

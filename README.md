@@ -25,8 +25,12 @@ It supports OAuth login (GitHub/Google/Microsoft), issues JWT tokens, exposes Su
 
 - `GET /.well-known/jwks.json` public JWKS for RS256 JWT verification (see [docs/jwks.md](docs/jwks.md))
 - `GET /api/v1/settings` list enabled login methods/providers
-- `GET /api/v1/authorize?provider=github&redirect_to=...` start OAuth redirect
-- `GET /api/v1/oauth/callback` OAuth callback from provider
+- `GET /api/v1/authorize?provider=github&redirect_to=...&company_id=...` start OAuth (provider `redirect_uri` is always this service’s `/api/v1/oauth/callback`; `redirect_to` is the SPA/CLI bounce target and must be allowlisted or loopback)
+- `GET /api/v1/oauth/callback` provider callback (server-side code exchange + account confirmation + fragment redirect to `redirect_to`)
+- `POST /api/v1/oauth/confirm` complete sign-in after the confirmation screen (browser form)
+- `GET /api/v1/oauth/confirm?action=switch&confirm_token=…` restart OAuth with account picker (Google/Microsoft)
+- `POST /api/v1/oauth/exchange` deprecated SPA code exchange (older shells that still receive `?code=` on the frontend)
+- `GET/POST /api/v1/oauth-redirects` manage per-company post-OAuth bounce origins (staff or company owner); loopback always allowed; empty list denies non-loopback
 - `POST /api/v1/token?grant_type=refresh_token` refresh session using `refresh_token` in the body (Bearer access token optional)
 - `POST /api/v1/logout` logout endpoint
 - `GET /api/v1/user` return authenticated user profile + metadata
@@ -102,7 +106,9 @@ backend: {
 ## OAuth App (GitHub) Values
 
 - Homepage URL: `http://localhost:4000`
-- Authorization callback URL: `http://localhost:8000/api/v1/oauth/callback`
+- Authorization callback URL: register your **shell** `/login/callback` URL (see Admin → OAuth setup), e.g. `http://localhost:4000/login/callback?provider=github`
+
+`shellui login` opens that same shell login UI and bounces tokens to a local loopback listener — no separate identity-service OAuth callback registration is required for CLI.
 
 ## Notes
 
