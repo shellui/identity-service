@@ -37,6 +37,7 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 ### 📚 Documentation
 
 - Add Shellui brand favicon (ICO + PNG sizes) to the Docusaurus docs site.
+- Sync embedded Swagger UI and ReDoc light/dark mode with shellui appearance (native Swagger UI dark mode and Redoc presets).
 
 ## [0.3.0] - 2026-08-16
 
