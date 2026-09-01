@@ -185,7 +185,7 @@ def _normalize_avatar_url(value: object) -> str | None:
 
 
 def _resolve_avatar_url_for_jwt(user: User, explicit: str | None = None) -> str | None:
-    """Resolve profile image URL for ShellUI JWT user_metadata (callback, refresh, rotation)."""
+    """Resolve profile image URL for Shellui JWT user_metadata (callback, refresh, rotation)."""
     url = _normalize_avatar_url(explicit)
     if url:
         return url
@@ -1094,9 +1094,9 @@ class SocialLoginView(APIView):
 @extend_schema_view(
     get=extend_schema(
         tags=['auth-session'],
-        summary='Get ShellUI auth capabilities',
+        summary='Get Shellui auth capabilities',
         description=(
-            'Return authentication capabilities for the ShellUI client, including enabled OAuth '
+            'Return authentication capabilities for the Shellui client, including enabled OAuth '
             'providers and feature flags used by the login UI.'
         ),
         auth=[],
@@ -1279,7 +1279,7 @@ class ShellUIAuthorizeView(APIView):
                 request,
                 message=(
                     f"Provider '{provider}' is missing OAuth credentials for this company. "
-                    'Configure a company OAuth client in Django admin or the ShellUI admin API.'
+                    'Configure a company OAuth client in Django admin or the Shellui admin API.'
                 ),
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 error_code='provider_oauth_misconfigured',
@@ -1308,10 +1308,10 @@ class ShellUIAuthorizeView(APIView):
 @extend_schema_view(
     get=extend_schema(
         tags=['auth-social'],
-        summary='Handle OAuth callback and issue ShellUI tokens',
+        summary='Handle OAuth callback and issue Shellui tokens',
         description=(
             'Consume provider callback (code + signed state), exchange code for provider token, '
-            'resolve user profile, and redirect to redirect_to with ShellUI tokens in the URL hash.'
+            'resolve user profile, and redirect to redirect_to with Shellui tokens in the URL hash.'
         ),
         auth=[],
         parameters=[
@@ -1592,11 +1592,11 @@ class ShellUIOAuthConfirmView(APIView):
 @extend_schema_view(
     post=extend_schema(
         tags=['auth-social'],
-        summary='Exchange OAuth code for ShellUI tokens',
+        summary='Exchange OAuth code for Shellui tokens',
         description=(
             'Deprecated for new shells: prefer identity /api/v1/oauth/callback fragment bounce. '
             'Still used by older SPA callbacks that receive provider ?code= directly. '
-            'Exchanges provider authorization code and returns ShellUI tokens as JSON.'
+            'Exchanges provider authorization code and returns Shellui tokens as JSON.'
         ),
         auth=[],
         request=ShellUIOAuthExchangeSerializer,
@@ -1711,7 +1711,7 @@ class ShellUIOAuthExchangeView(APIView):
         tags=['auth-session'],
         summary='Refresh access token using refresh token',
         description=(
-            'Issue a new ShellUI token pair from a valid refresh token. '
+            'Issue a new Shellui token pair from a valid refresh token. '
             'Send `refresh_token` in the JSON body. Bearer access token is optional; '
             'when omitted, `company_id` is taken from the refresh token.'
         ),
@@ -1801,7 +1801,7 @@ class ShellUITokenView(APIView):
         tags=['auth-session'],
         summary='Logout current session',
         description=(
-            'ShellUI-compatible logout endpoint. Requires a valid Bearer access token; '
+            'Shellui-compatible logout endpoint. Requires a valid Bearer access token; '
             '`company_id` may be omitted when the JWT includes `company_id`.'
         ),
         responses={
@@ -1830,7 +1830,7 @@ class ShellUILogoutView(APIView):
             'Requires bearer access token.'
         ),
         responses={
-            200: OpenApiResponse(description='ShellUI user payload with metadata and preferences'),
+            200: OpenApiResponse(description='Shellui user payload with metadata and preferences'),
             401: OpenApiResponse(description='Missing or invalid bearer token'),
         },
     ),
@@ -1939,7 +1939,7 @@ class ShellUIUserView(APIView):
     get=extend_schema(
         tags=['auth-preferences'],
         summary='Get current user preferences',
-        description='Return persisted ShellUI preferences for the authenticated user.',
+        description='Return persisted Shellui preferences for the authenticated user.',
         responses={
             200: OpenApiResponse(description='Current preferences payload'),
             401: OpenApiResponse(description='Missing or invalid bearer token'),
@@ -2084,7 +2084,7 @@ class ShellUIAdminUserListView(APIView):
     get=extend_schema(
         tags=['directory-users'],
         summary='Retrieve user (staff or company owner)',
-        description='Single user with ShellUI metadata. Requires staff JWT or company-owner membership.',
+        description='Single user with Shellui metadata. Requires staff JWT or company-owner membership.',
         operation_id='api_v1_users_retrieve',
     ),
     put=extend_schema(
@@ -2852,7 +2852,7 @@ class ShellUIAdminOAuthRedirectDetailView(APIView):
                 location=OpenApiParameter.QUERY,
                 required=False,
                 description=(
-                    "Filter rows where the user's saved ShellUI preference language matches "
+                    "Filter rows where the user's saved Shellui preference language matches "
                     '(e.g. en, fr). Omits anonymous events (no user).'
                 ),
             ),
@@ -2991,7 +2991,7 @@ class ShellUIAdminLoginEventDetailView(APIView):
         summary='Create personal access token',
         request=ShellUIPersonalAccessTokenCreateSerializer,
         description=(
-            'Returns a ShellUI-shaped JWT once in `access_token`. '
+            'Returns a Shellui-shaped JWT once in `access_token`. '
             '`read_only` restricts to safe HTTP methods. Only Django staff may set '
             '`access_global_metrics` for GET /api/v1/metrics/all.'
         ),

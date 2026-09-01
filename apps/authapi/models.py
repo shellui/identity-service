@@ -131,7 +131,7 @@ class UserPreference(models.Model):
 
 class PersonalAccessToken(models.Model):
     """
-    Metadata for a long-lived JWT (ShellUI access token shape with ``pat_id``, ``pat_ro``, ``pat_agm``).
+    Metadata for a long-lived JWT (Shellui access token shape with ``pat_id``, ``pat_ro``, ``pat_agm``).
 
     The secret is only the signed JWT returned once at creation; we store ``jti`` to validate
     revocation; ``read_only`` / ``access_global_metrics`` must match claims ``pat_ro`` / ``pat_agm``.

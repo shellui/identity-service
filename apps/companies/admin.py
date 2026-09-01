@@ -129,7 +129,7 @@ class CompanyAdmin(admin.ModelAdmin):
             'Owners',
             {
                 'fields': ('owners',),
-                'description': 'Owners receive access-request emails and can manage the company in ShellUI admin.',
+                'description': 'Owners receive access-request emails and can manage the company in Shellui admin.',
             },
         ),
     )

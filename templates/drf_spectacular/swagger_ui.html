@@ -22,11 +22,11 @@
 
       await init();
       window.__shelluiAccessToken = shellui.initialSettings?.accessToken ?? null;
-      window.__applyShellUIAccessToken?.(window.__shelluiAccessToken);
+      window.__applyShelluiAccessToken?.(window.__shelluiAccessToken);
       shellui.addMessageListener("SHELLUI_SETTINGS", (message) => {
         const token = message?.payload?.settings?.accessToken ?? null;
         window.__shelluiAccessToken = token;
-        window.__applyShellUIAccessToken?.(token);
+        window.__applyShelluiAccessToken?.(token);
       });
     </script>
     <script src="{{ swagger_ui_bundle }}"></script>

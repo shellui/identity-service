@@ -156,7 +156,7 @@ def loopback_client_bounce_url_for_oauth_error(
 ) -> str | None:
     """
     When browser OAuth fails before leaving the auth host, send loopback dev clients back to their
-    app with query params instead of a JSON error page (so the Shell UI stays visible).
+    app with query params instead of a JSON error page (so the Shellui app stays visible).
     """
     raw = (redirect_to_raw or '').strip()
     if not raw:

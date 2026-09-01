@@ -44,7 +44,7 @@ class ShellUIPersonalAccessTokenCreateSerializer(serializers.Serializer):
 
 
 class ShellUIAdminUserUpdateSerializer(serializers.Serializer):
-    """Partial update for Django user fields plus optional ShellUI user_metadata merge (`data`).
+    """Partial update for Django user fields plus optional Shellui user_metadata merge (`data`).
 
     ``is_active`` enables/disables ``CompanyMembership`` for the current company only.
     """

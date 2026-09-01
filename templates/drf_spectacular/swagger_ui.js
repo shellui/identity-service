@@ -133,7 +133,7 @@ const getSpecSecuritySchemes = () => {
   }
 };
 
-const applyShellUIAccessToken = (token) => {
+const applyShelluiAccessToken = (token) => {
   if (!token) return false;
   const securitySchemes = getSpecSecuritySchemes();
   const candidateNames = Array.from(
@@ -162,21 +162,21 @@ const applyShellUIAccessToken = (token) => {
   return applied;
 };
 
-window.__applyShellUIAccessToken = (token) => {
+window.__applyShelluiAccessToken = (token) => {
   if (!token) return;
-  if (applyShellUIAccessToken(token)) return;
+  if (applyShelluiAccessToken(token)) return;
 
   // Swagger spec can load asynchronously; retry briefly until schemes are available.
   let attempts = 0;
   const maxAttempts = 30;
   const interval = setInterval(() => {
     attempts += 1;
-    if (applyShellUIAccessToken(token) || attempts >= maxAttempts) {
+    if (applyShelluiAccessToken(token) || attempts >= maxAttempts) {
       clearInterval(interval);
     }
   }, 200);
 };
 
-window.__applyShellUIAccessToken(window.__shelluiAccessToken);
+window.__applyShelluiAccessToken(window.__shelluiAccessToken);
 
 {% if oauth2_config %}ui.initOAuth({{ oauth2_config|safe }});{% endif %}

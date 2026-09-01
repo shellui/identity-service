@@ -15,7 +15,7 @@ from .jwks import build_jwks_document
 
 @method_decorator(cache_page(60 * 15), name='dispatch')
 class ShellUIJwksView(APIView):
-    """Expose the public signing keys used for ShellUI JWT verification."""
+    """Expose the public signing keys used for Shellui JWT verification."""
 
     permission_classes = [AllowAny]
     authentication_classes = []
