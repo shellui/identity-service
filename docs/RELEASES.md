@@ -1,6 +1,6 @@
 # Releases and Docker Hub
 
-> **Canonical guide:** [PUBLISH.md](../PUBLISH.md) at the repository root.
+> **Canonical guide:** [PUBLISH.md](https://github.com/shellui/identity-service/blob/main/PUBLISH.md) at the repository root.
 
 This document describes how to cut a release of `identity-service` and publish the container image to [Docker Hub](https://hub.docker.com/) as `shellui/identity-service`.
 
@@ -26,7 +26,7 @@ Run the automated checklist (same script as PRs to `main`):
 ./tools/pre-release-check.sh
 ```
 
-See [PUBLISH.md](../PUBLISH.md) for options and the manual breakdown. Summary:
+See [PUBLISH.md](https://github.com/shellui/identity-service/blob/main/PUBLISH.md) for options and the manual breakdown. Summary:
 
 ### 1. Version alignment
 
