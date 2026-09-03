@@ -1,4 +1,4 @@
-"""drf-spectacular: map ShellUI JWT authentication to OpenAPI ``bearerAuth``."""
+"""drf-spectacular: map Shellui JWT authentication to OpenAPI ``bearerAuth``."""
 
 from drf_spectacular.extensions import OpenApiAuthenticationExtension
 
@@ -15,5 +15,5 @@ class ShellUIJWTAuthenticationScheme(OpenApiAuthenticationExtension):
             'type': 'http',
             'scheme': 'bearer',
             'bearerFormat': 'JWT',
-            'description': 'ShellUI access token or personal access token (PAT): Authorization: Bearer <token>',
+            'description': 'Shellui access token or personal access token (PAT): Authorization: Bearer <token>',
         }

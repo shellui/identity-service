@@ -7,7 +7,7 @@ from django.utils.html import format_html
 
 from apps.authapi.oauth import SUPPORTED_OAUTH_PROVIDERS
 from .access import normalize_allowed_domains
-from .models import Company, CompanyGroup, CompanyMembership, CompanyOAuthClient
+from .models import Company, CompanyGroup, CompanyMembership, CompanyOAuthClient, CompanyOAuthRedirect
 
 
 class AllowedEmailDomainsField(forms.CharField):
@@ -129,7 +129,7 @@ class CompanyAdmin(admin.ModelAdmin):
             'Owners',
             {
                 'fields': ('owners',),
-                'description': 'Owners receive access-request emails and can manage the company in ShellUI admin.',
+                'description': 'Owners receive access-request emails and can manage the company in Shellui admin.',
             },
         ),
     )
@@ -251,3 +251,11 @@ class CompanyOAuthClientAdmin(admin.ModelAdmin):
     @admin.display(ordering='social_app__provider')
     def provider(self, obj: CompanyOAuthClient) -> str:
         return obj.social_app.provider
+
+
+@admin.register(CompanyOAuthRedirect)
+class CompanyOAuthRedirectAdmin(admin.ModelAdmin):
+    list_display = ('id', 'company', 'base_url', 'label', 'is_active', 'created_at')
+    list_filter = ('is_active', 'company')
+    search_fields = ('base_url', 'label', 'company__name')
+    autocomplete_fields = ('company',)

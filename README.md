@@ -7,7 +7,7 @@ It supports OAuth login (GitHub/Google/Microsoft), issues JWT tokens, exposes Su
 ## Features
 
 - Shellui-compatible auth API at `/api/v1/*`
-- OAuth login flow for GitHub, Google, Microsoft
+- OAuth login flow for GitHub, Google, Microsoft (identity-hosted callback — see [docs/oauth-login.md](docs/oauth-login.md))
 - Company join modes: **public**, **domain** allow-list, or **invitation-only** (see [docs/company-access.md](docs/company-access.md))
 - JWT access + refresh token issuance (RS256 with JWKS when `JWT_PRIVATE_KEY` is set)
 - Token refresh endpoint (`grant_type=refresh_token`)
@@ -25,8 +25,12 @@ It supports OAuth login (GitHub/Google/Microsoft), issues JWT tokens, exposes Su
 
 - `GET /.well-known/jwks.json` public JWKS for RS256 JWT verification (see [docs/jwks.md](docs/jwks.md))
 - `GET /api/v1/settings` list enabled login methods/providers
-- `GET /api/v1/authorize?provider=github&redirect_to=...` start OAuth redirect
-- `GET /api/v1/oauth/callback` OAuth callback from provider
+- `GET /api/v1/authorize?provider=github&redirect_to=...&company_id=...` start OAuth (provider `redirect_uri` is always this service’s `/api/v1/oauth/callback`; `redirect_to` is the SPA/CLI bounce target and must be allowlisted or loopback)
+- `GET /api/v1/oauth/callback` provider callback (server-side code exchange + account confirmation + fragment redirect to `redirect_to`)
+- `POST /api/v1/oauth/confirm` complete sign-in after the confirmation screen (browser form)
+- `GET /api/v1/oauth/confirm?action=switch&confirm_token=…` restart OAuth with account picker (Google/Microsoft)
+- `POST /api/v1/oauth/exchange` deprecated SPA code exchange (older shells that still receive `?code=` on the frontend)
+- `GET/POST /api/v1/oauth-redirects` manage per-company post-OAuth bounce origins (staff or company owner); loopback always allowed; empty list denies non-loopback
 - `POST /api/v1/token?grant_type=refresh_token` refresh session using `refresh_token` in the body (Bearer access token optional)
 - `POST /api/v1/logout` logout endpoint
 - `GET /api/v1/user` return authenticated user profile + metadata
@@ -99,10 +103,20 @@ backend: {
 }
 ```
 
-## OAuth App (GitHub) Values
+## OAuth provider apps
 
-- Homepage URL: `http://localhost:4000`
-- Authorization callback URL: `http://localhost:8000/api/v1/oauth/callback`
+Register a **single** Authorization callback URL on each provider (GitHub / Google / Microsoft) pointing at **identity-service** — not the shell. No query string:
+
+| Environment | Callback URL |
+|-------------|--------------|
+| Local | `http://localhost:8000/api/v1/oauth/callback` |
+| Production | `https://<identity-host>/api/v1/oauth/callback` |
+
+Homepage / application URL may still be the shell (e.g. `http://localhost:4000`).
+
+Also allowlist each shell **origin** for the company (e.g. `http://localhost:4000`, `https://app.example.com`) via Django admin → Company OAuth redirects, Shellui admin OAuth setup, or `POST /api/v1/oauth-redirects`. Loopback (`127.0.0.1` / `localhost`) is always allowed for `shellui login` / CLI.
+
+Full flow, allowlist rules, and upgrade steps: [docs/oauth-login.md](docs/oauth-login.md).
 
 ## Notes
 
@@ -126,6 +140,8 @@ Output is generated in `tools/docusaurus/build`.
 ```bash
 uv run python manage.py test
 ```
+
+Pull requests and pushes to `main` / `develop` run [`.github/workflows/ci.yml`](.github/workflows/ci.yml): Django tests, lockfile check, dependency audit (`pip-audit`), secret scan (gitleaks), markdown link check (lychee), and a Docker image build.
 
 ## Releases (Docker Hub)
 

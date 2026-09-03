@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Confirm sign-in</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f4f6f8;
+      --card: #ffffff;
+      --text: #111827;
+      --muted: #6b7280;
+      --border: #e5e7eb;
+      --primary: #111827;
+      --primary-hover: #1f2937;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0f1419;
+        --card: #151b23;
+        --text: #e7ecf3;
+        --muted: #9aa7b8;
+        --border: #2a3441;
+        --primary: #e7ecf3;
+        --primary-hover: #ffffff;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 1.5rem;
+    }
+    .card {
+      width: min(100%, 420px);
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 1.5rem;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+    }
+    h1 {
+      margin: 0 0 0.35rem;
+      font-size: 1.2rem;
+      font-weight: 650;
+      letter-spacing: -0.02em;
+    }
+    .subtitle {
+      margin: 0 0 1.25rem;
+      color: var(--muted);
+      font-size: 0.92rem;
+      line-height: 1.45;
+    }
+    .identity {
+      display: flex;
+      align-items: center;
+      gap: 0.9rem;
+      padding: 0.9rem;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      margin-bottom: 1.25rem;
+      background: rgba(127, 127, 127, 0.04);
+    }
+    .avatar {
+      width: 48px;
+      height: 48px;
+      border-radius: 999px;
+      object-fit: cover;
+      background: var(--border);
+      flex-shrink: 0;
+    }
+    .avatar-fallback {
+      display: grid;
+      place-items: center;
+      font-weight: 700;
+      font-size: 1.1rem;
+      color: var(--muted);
+    }
+    .name {
+      font-weight: 600;
+      font-size: 1rem;
+      margin: 0 0 0.15rem;
+      word-break: break-word;
+    }
+    .email {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.88rem;
+      word-break: break-all;
+    }
+    .meta {
+      margin: 0.35rem 0 0;
+      font-size: 0.78rem;
+      color: var(--muted);
+      text-transform: capitalize;
+    }
+    .button {
+      display: block;
+      width: 100%;
+      border: 0;
+      border-radius: 10px;
+      padding: 0.72rem 0.9rem;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      text-align: center;
+      text-decoration: none;
+    }
+    .button-primary {
+      background: var(--primary);
+      color: var(--bg);
+    }
+    .button-primary:hover { opacity: 0.92; }
+    .button-secondary {
+      margin-top: 0.55rem;
+      background: transparent;
+      color: var(--muted);
+      border: 1px solid var(--border);
+    }
+    .button-secondary:hover { color: var(--text); }
+    .hint {
+      margin: 0.9rem 0 0;
+      font-size: 0.78rem;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+    .errors {
+      border: 1px solid #fecaca;
+      background: #fef2f2;
+      color: #b91c1c;
+      border-radius: 10px;
+      padding: 0.7rem 0.8rem;
+      margin-bottom: 1rem;
+      font-size: 0.88rem;
+    }
+    .methods {
+      margin: 1.25rem 0 0;
+      padding-top: 1.1rem;
+      border-top: 1px solid var(--border);
+    }
+    .methods-title {
+      margin: 0 0 0.65rem;
+      font-size: 0.78rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--muted);
+    }
+    .methods-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: grid;
+      gap: 0.45rem;
+    }
+    .method {
+      display: block;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 0.62rem 0.75rem;
+      font-size: 0.88rem;
+      text-decoration: none;
+      color: var(--text);
+      background: rgba(127, 127, 127, 0.04);
+    }
+    .method-link:hover {
+      border-color: var(--primary);
+    }
+    .method-current {
+      color: var(--muted);
+      border-style: dashed;
+    }
+    .badge {
+      display: inline-block;
+      margin-left: 0.35rem;
+      padding: 0.1rem 0.4rem;
+      border-radius: 999px;
+      font-size: 0.68rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      background: rgba(127, 127, 127, 0.12);
+    }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <h1>Confirm your account</h1>
+    <p class="subtitle">
+      You are signing in to <strong>{{ company_name }}</strong>. Continue only if this is the account you want.
+    </p>
+
+    {% if error_message %}
+      <div class="errors">{{ error_message }}</div>
+    {% endif %}
+
+    <div class="identity">
+      {% if avatar_url %}
+        <img class="avatar" src="{{ avatar_url }}" alt="" width="48" height="48">
+      {% else %}
+        <div class="avatar avatar-fallback" aria-hidden="true">{{ initials }}</div>
+      {% endif %}
+      <div>
+        <p class="name">{{ display_name }}</p>
+        <p class="email">{{ email }}</p>
+        <p class="meta">via {{ provider_label }}</p>
+      </div>
+    </div>
+
+    <form method="post" action="{{ confirm_url }}">
+      {% csrf_token %}
+      <input type="hidden" name="confirm_token" value="{{ confirm_token }}">
+      <button type="submit" class="button button-primary">Continue as {{ display_name }}</button>
+    </form>
+
+    <a class="button button-secondary" href="{{ switch_account_url }}">Use another {{ provider_label }} account</a>
+
+    <section class="methods" aria-labelledby="methods-title">
+      <p id="methods-title" class="methods-title">Sign-in methods</p>
+      <ul class="methods-list">
+        {% for method in methods %}
+          <li>
+            {% if method.current %}
+              <span class="method method-current">{{ method.label }}<span class="badge">Current</span></span>
+            {% else %}
+              <a class="method method-link" href="{{ method.url }}">Use {{ method.label }} instead</a>
+            {% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    </section>
+
+    {% if provider == 'github' %}
+      <p class="hint">To pick a different GitHub account, sign out at github.com first, then choose “Use another {{ provider_label }} account”.</p>
+    {% endif %}
+  </main>
+</body>
+</html>

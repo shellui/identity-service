@@ -44,7 +44,7 @@ class ShellUIPersonalAccessTokenCreateSerializer(serializers.Serializer):
 
 
 class ShellUIAdminUserUpdateSerializer(serializers.Serializer):
-    """Partial update for Django user fields plus optional ShellUI user_metadata merge (`data`).
+    """Partial update for Django user fields plus optional Shellui user_metadata merge (`data`).
 
     ``is_active`` enables/disables ``CompanyMembership`` for the current company only.
     """
@@ -119,4 +119,21 @@ class ShellUIAdminOAuthSocialAppUpdateSerializer(serializers.Serializer):
     def validate(self, attrs: dict) -> dict:
         if not attrs:
             raise serializers.ValidationError('Provide at least one of: client_id, client_secret, tenant.')
+        return attrs
+
+
+class ShellUIAdminOAuthRedirectCreateSerializer(serializers.Serializer):
+    base_url = serializers.CharField(max_length=500)
+    label = serializers.CharField(required=False, allow_blank=True, max_length=150)
+    is_active = serializers.BooleanField(required=False, default=True)
+
+
+class ShellUIAdminOAuthRedirectUpdateSerializer(serializers.Serializer):
+    base_url = serializers.CharField(required=False, allow_blank=False, max_length=500)
+    label = serializers.CharField(required=False, allow_blank=True, max_length=150)
+    is_active = serializers.BooleanField(required=False)
+
+    def validate(self, attrs: dict) -> dict:
+        if not attrs:
+            raise serializers.ValidationError('Provide at least one of: base_url, label, is_active.')
         return attrs

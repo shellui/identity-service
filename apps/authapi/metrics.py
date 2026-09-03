@@ -1,4 +1,4 @@
-"""Prometheus-style metrics for shellui-auth; exposition is staff JWT–protected (see ShellUIAdminMetricsView)."""
+"""Prometheus-style metrics for shellui-auth; exposition is staff JWT–protected admin metrics endpoints."""
 
 from __future__ import annotations
 

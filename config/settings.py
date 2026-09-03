@@ -170,7 +170,7 @@ REST_FRAMEWORK = {
 }
 
 SPECTACULAR_SETTINGS = {
-    'TITLE': 'ShellUI Auth API',
+    'TITLE': 'Shellui Auth API',
     'DESCRIPTION': (
         'API documentation. Use **Authorize** and enter `Bearer <token>` or paste the raw JWT; '
         'Swagger sends `Authorization: Bearer …` for operations that require **bearerAuth**.'
@@ -301,7 +301,7 @@ SOCIALACCOUNT_PROVIDERS = {
     },
 }
 
-# Cross-origin: ShellUI app, admin iframe (Vite), hosted admin UI, and optional extra origins from env
+# Cross-origin: Shellui app, admin iframe (Vite), hosted admin UI, and optional extra origins from env
 # (comma-separated), e.g. CORS_ALLOWED_ORIGINS=https://app.example.com
 CORS_ALLOWED_ORIGINS = [
     'http://localhost:4000',

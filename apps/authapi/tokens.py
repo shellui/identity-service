@@ -1,4 +1,4 @@
-"""ShellUI JWT token classes with optional ``kid`` header for RS256."""
+"""Shellui JWT token classes with optional ``kid`` header for RS256."""
 
 from __future__ import annotations
 
