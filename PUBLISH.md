@@ -17,7 +17,23 @@ The image contains application code and collected static files only. Secrets and
 
 ## Pre-release checklist
 
-Complete these steps **before** building and pushing a release tag.
+Complete these steps **before** building and pushing a release tag. Prefer the automated script (same checks run on PRs to `main`):
+
+```bash
+./tools/pre-release-check.sh
+```
+
+| Step              | What it verifies                                                                                                |
+| ----------------- | --------------------------------------------------------------------------------------------------------------- |
+| Version alignment | `pyproject.toml` version matches a dated `CHANGELOG.md` entry (`## [x.y.z] - YYYY-MM-DD`) and `uv.lock`         |
+| Build secrets     | `.env` / `*.sqlite3` not tracked; `.gitignore` / `.dockerignore` exclude `.env`; built image has no `/app/.env` |
+| Image smoke test  | Container serves `/api/v1/settings` and `/.well-known/jwks.json` with ≥1 RSA key                                |
+
+Options: `--skip-docker` (version + git hygiene only), `--image TAG`, `--port PORT`.
+
+GitHub Actions: [`.github/workflows/pre-release.yml`](.github/workflows/pre-release.yml) runs this script on every pull request targeting `main` (and via **workflow_dispatch**).
+
+Manual equivalents (if you are not using the script):
 
 ### 1. Version alignment
 
@@ -25,16 +41,14 @@ Ensure these match the release version (e.g. `0.3.0`):
 
 - `version` in `pyproject.toml` (OpenAPI / API metadata via `config.settings.VERSION`)
 - `CHANGELOG.md` entry with date
-- Git tag `v0.3.0` (optional but recommended)
-- CI green on the release commit (`.github/workflows/ci.yml`)
+- Git tag `v0.4.0` (optional but recommended; not enforced by the script)
+- CI green on the release commit (`.github/workflows/ci.yml` + pre-release workflow)
 
 ### 2. No secrets in the build context
 
-Confirm locally:
-
 ```bash
 # .env must not be tracked or copied into the image
-test ! -f .env || grep -q '^\.env$' .gitignore
+test ! -f .env || grep -qE '^\.env$' .gitignore
 
 docker build -t shellui/identity-service:release-check .
 docker run --rm --entrypoint sh shellui/identity-service:release-check \
@@ -45,9 +59,11 @@ docker run --rm --entrypoint sh shellui/identity-service:release-check \
 
 ### 3. Smoke test the image
 
+Covered by `./tools/pre-release-check.sh`. Manual form:
+
 ```bash
 export SECRET_KEY="$(uv run python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())")"
-export JWT_PRIVATE_KEY="$(uv run python manage.py generate_jwt_keys 2>/dev/null | awk -F'\"' '/JWT_PRIVATE_KEY=/ {print $2}')"
+eval "$(uv run python manage.py generate_jwt_keys --shell)"
 
 VERSION=0.3.0
 docker build -t "shellui/identity-service:${VERSION}" .
@@ -58,12 +74,9 @@ docker run --rm -d --name identity-release-smoke -p 18000:8000 \
   -e ALLOWED_HOSTS=localhost,127.0.0.1 \
   "shellui/identity-service:${VERSION}"
 
-# Expect HTTP response (400 with company_id is fine — proves Gunicorn + Django are up)
+sleep 3
 curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:18000/api/v1/settings
-
-# JWKS should return at least one RSA key
-curl -s http://127.0.0.1:18000/.well-known/jwks.json | python -c "import sys,json; d=json.load(sys.stdin); assert len(d.get('keys',[]))>=1"
-
+curl -s http://127.0.0.1:18000/.well-known/jwks.json | python -c "import sys,json; d=json.load(sys.stdin); assert len(d.get('keys',[]))>=1, d"
 docker stop identity-release-smoke
 ```
 

@@ -20,16 +20,22 @@ The image contains application code and collected static files only. Secrets and
 
 ## Pre-release checklist
 
-Complete these steps **before** building and pushing a release tag.
+Run the automated checklist (same script as PRs to `main`):
+
+```bash
+./tools/pre-release-check.sh
+```
+
+See [PUBLISH.md](../PUBLISH.md) for options and the manual breakdown. Summary:
 
 ### 1. Version alignment
 
-Ensure these match the release version (e.g. `0.3.0`):
+Ensure these match the release version (e.g. `0.4.0`):
 
 - `version` in `pyproject.toml` (OpenAPI / API metadata via `config.settings.VERSION`)
 - `CHANGELOG.md` entry with date
-- CI green on the release commit (`.github/workflows/ci.yml`)
-- Git tag `v0.3.0` (optional but recommended)
+- CI + pre-release workflows green on the release commit
+- Git tag `v0.4.0` (optional but recommended; not enforced by the script)
 
 ### 2. No secrets in the build context
 
