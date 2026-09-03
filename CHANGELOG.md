@@ -34,6 +34,10 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 - In Coolify / Docker secret UIs, paste **only the PEM** (quotes stripped).
 
+### 🏗 Chore
+
+- Add GitHub Actions CI on PRs and `main`/`develop`: Django tests, `uv lock --check`, `pip-audit`, gitleaks, lychee link checks, and Docker build.
+
 ### 📚 Documentation
 
 - Document identity-hosted OAuth and redirect allowlist ([docs/oauth-login.md](docs/oauth-login.md)); fix README provider callback guidance.

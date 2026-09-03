@@ -26,6 +26,7 @@ Ensure these match the release version (e.g. `0.3.0`):
 - `version` in `pyproject.toml` (OpenAPI / API metadata via `config.settings.VERSION`)
 - `CHANGELOG.md` entry with date
 - Git tag `v0.3.0` (optional but recommended)
+- CI green on the release commit (`.github/workflows/ci.yml`)
 
 ### 2. No secrets in the build context
 

@@ -141,6 +141,8 @@ Output is generated in `tools/docusaurus/build`.
 uv run python manage.py test
 ```
 
+Pull requests and pushes to `main` / `develop` run [`.github/workflows/ci.yml`](.github/workflows/ci.yml): Django tests, lockfile check, dependency audit (`pip-audit`), secret scan (gitleaks), markdown link check (lychee), and a Docker image build.
+
 ## Releases (Docker Hub)
 
 See [PUBLISH.md](PUBLISH.md) for the pre-release checklist, tagging conventions, and steps to build, push, and deploy `shellui/identity-service` on Docker Hub.
