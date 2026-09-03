@@ -143,9 +143,15 @@ uv run python manage.py test
 
 Pull requests and pushes to `main` / `develop` run [`.github/workflows/ci.yml`](.github/workflows/ci.yml): Django tests, lockfile check, dependency audit (`pip-audit`), secret scan (gitleaks), markdown link check (lychee), and a Docker image build.
 
+Pull requests **to `main`** also run the pre-release checklist ([`.github/workflows/pre-release.yml`](.github/workflows/pre-release.yml)) — same checks as:
+
+```bash
+./tools/pre-release-check.sh
+```
+
 ## Releases (Docker Hub)
 
-See [PUBLISH.md](PUBLISH.md) for the pre-release checklist, tagging conventions, and steps to build, push, and deploy `shellui/identity-service` on Docker Hub.
+See [PUBLISH.md](PUBLISH.md) for the pre-release checklist (automated via `./tools/pre-release-check.sh`), tagging conventions, and steps to build, push, and deploy `shellui/identity-service` on Docker Hub.
 
 ## Docker (local run)
 
