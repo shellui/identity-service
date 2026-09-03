@@ -7,7 +7,7 @@ It supports OAuth login (GitHub/Google/Microsoft), issues JWT tokens, exposes Su
 ## Features
 
 - Shellui-compatible auth API at `/api/v1/*`
-- OAuth login flow for GitHub, Google, Microsoft
+- OAuth login flow for GitHub, Google, Microsoft (identity-hosted callback — see [docs/oauth-login.md](docs/oauth-login.md))
 - Company join modes: **public**, **domain** allow-list, or **invitation-only** (see [docs/company-access.md](docs/company-access.md))
 - JWT access + refresh token issuance (RS256 with JWKS when `JWT_PRIVATE_KEY` is set)
 - Token refresh endpoint (`grant_type=refresh_token`)
@@ -103,12 +103,20 @@ backend: {
 }
 ```
 
-## OAuth App (GitHub) Values
+## OAuth provider apps
 
-- Homepage URL: `http://localhost:4000`
-- Authorization callback URL: register your **shell** `/login/callback` URL (see Admin → OAuth setup), e.g. `http://localhost:4000/login/callback?provider=github`
+Register a **single** Authorization callback URL on each provider (GitHub / Google / Microsoft) pointing at **identity-service** — not the shell. No query string:
 
-`shellui login` opens that same shell login UI and bounces tokens to a local loopback listener — no separate identity-service OAuth callback registration is required for CLI.
+| Environment | Callback URL |
+|-------------|--------------|
+| Local | `http://localhost:8000/api/v1/oauth/callback` |
+| Production | `https://<identity-host>/api/v1/oauth/callback` |
+
+Homepage / application URL may still be the shell (e.g. `http://localhost:4000`).
+
+Also allowlist each shell **origin** for the company (e.g. `http://localhost:4000`, `https://app.example.com`) via Django admin → Company OAuth redirects, Shellui admin OAuth setup, or `POST /api/v1/oauth-redirects`. Loopback (`127.0.0.1` / `localhost`) is always allowed for `shellui login` / CLI.
+
+Full flow, allowlist rules, and upgrade steps: [docs/oauth-login.md](docs/oauth-login.md).
 
 ## Notes
 
