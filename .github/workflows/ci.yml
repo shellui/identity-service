@@ -97,6 +97,7 @@ jobs:
 
           # Brand spelling (Shellui / shellui only)
           if git grep -nIE '\bShellUI\b|\bshellUI\b|\bShellUi\b' -- . \
+              ':(exclude).github/workflows/**' \
               ':(exclude)tools/docusaurus/build' \
               ':(exclude)tools/docusaurus/node_modules' \
               ':(exclude).venv'; then
@@ -105,7 +106,8 @@ jobs:
           fi
 
           # High-signal secret patterns in tracked text (PEM private keys)
-          if git grep -nIE 'BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|BEGIN PRIVATE KEY' -- . \
+          if git grep -nIE 'BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY' -- . \
+              ':(exclude).github/workflows/**' \
               ':(exclude).env.example' \
               ':(exclude)*.md' \
               ':(exclude)docs/**'; then
