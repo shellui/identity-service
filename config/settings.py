@@ -199,7 +199,7 @@ SPECTACULAR_SETTINGS = {
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
-    'corsheaders.middleware.CorsMiddleware',
+    'apps.authapi.cors.ShelluiCorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -303,6 +303,8 @@ SOCIALACCOUNT_PROVIDERS = {
 
 # Cross-origin: Shellui app, admin iframe (Vite), hosted admin UI, and optional extra origins from env
 # (comma-separated), e.g. CORS_ALLOWED_ORIGINS=https://app.example.com
+# Hosted preview origins are also allowed dynamically when present on CompanyOAuthRedirect
+# (see apps.authapi.cors.ShelluiCorsMiddleware).
 CORS_ALLOWED_ORIGINS = [
     'http://localhost:4000',
     'http://127.0.0.1:4000',
@@ -314,6 +316,12 @@ for _origin in os.getenv('CORS_ALLOWED_ORIGINS', '').split(','):
     _origin = _origin.strip()
     if _origin and _origin not in CORS_ALLOWED_ORIGINS:
         CORS_ALLOWED_ORIGINS.append(_origin)
+
+CORS_ALLOWED_ORIGIN_REGEXES = []
+for _pattern in os.getenv('CORS_ALLOWED_ORIGIN_REGEXES', '').split(','):
+    _pattern = _pattern.strip()
+    if _pattern and _pattern not in CORS_ALLOWED_ORIGIN_REGEXES:
+        CORS_ALLOWED_ORIGIN_REGEXES.append(_pattern)
 
 CORS_ALLOW_CREDENTIALS = True
 

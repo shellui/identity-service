@@ -12,7 +12,7 @@ It supports OAuth login (GitHub/Google/Microsoft), issues JWT tokens, exposes Su
 - JWT access + refresh token issuance (RS256 with JWKS when `JWT_PRIVATE_KEY` is set)
 - Token refresh endpoint (`grant_type=refresh_token`)
 - User metadata endpoint (`/api/v1/user`)
-- CORS for local Shellui (`http://localhost:4000`), admin dev server (`http://localhost:5174`), hosted admin (`https://admin.shellui.com`), and optional extra origins via env `CORS_ALLOWED_ORIGINS` (comma-separated)
+- CORS for local Shellui (`http://localhost:4000`), admin dev server (`http://localhost:5174`), hosted admin (`https://admin.shellui.com`), optional extra origins via env `CORS_ALLOWED_ORIGINS`, and any origin on the company OAuth redirect allowlist (including hosting previews)
 - OpenAPI docs with drf-spectacular
 
 ## Project Structure
@@ -30,7 +30,8 @@ It supports OAuth login (GitHub/Google/Microsoft), issues JWT tokens, exposes Su
 - `POST /api/v1/oauth/confirm` complete sign-in after the confirmation screen (browser form)
 - `GET /api/v1/oauth/confirm?action=switch&confirm_token=…` restart OAuth with account picker (Google/Microsoft)
 - `POST /api/v1/oauth/exchange` deprecated SPA code exchange (older shells that still receive `?code=` on the frontend)
-- `GET/POST /api/v1/oauth-redirects` manage per-company post-OAuth bounce origins (staff or company owner); loopback always allowed; empty list denies non-loopback
+- `GET/POST /api/v1/oauth-redirects` manage per-company post-OAuth bounce origins (staff or company owner); loopback always allowed; empty list denies non-loopback; `source=hosting` rows are synced from hosting-service
+- `PUT/DELETE /api/v1/hosting-oauth-redirects` hosting-service sync using the caller's identity JWT (enabled company members)
 - `POST /api/v1/token?grant_type=refresh_token` refresh session using `refresh_token` in the body (Bearer access token optional)
 - `POST /api/v1/logout` logout endpoint
 - `GET /api/v1/user` return authenticated user profile + metadata

@@ -255,7 +255,7 @@ class CompanyOAuthClientAdmin(admin.ModelAdmin):
 
 @admin.register(CompanyOAuthRedirect)
 class CompanyOAuthRedirectAdmin(admin.ModelAdmin):
-    list_display = ('id', 'company', 'base_url', 'label', 'is_active', 'created_at')
-    list_filter = ('is_active', 'company')
+    list_display = ('id', 'company', 'base_url', 'label', 'source', 'is_active', 'created_at')
+    list_filter = ('source', 'is_active', 'company')
     search_fields = ('base_url', 'label', 'company__name')
     autocomplete_fields = ('company',)

@@ -34,6 +34,7 @@ After OAuth, identity may bounce tokens only to approved targets for that compan
 |--------|------|
 | Loopback (`127.0.0.1`, `localhost`, `::1`) | Always allowed (CLI / local listeners) |
 | Other origins | Must match an active `CompanyOAuthRedirect` row for the company |
+| Hosting previews (`{slug}.{HOSTING_APP_DOMAIN}`) | Synced automatically by hosting-service (`source=hosting`) when a site is created/deleted |
 | Empty allowlist | Non-loopback `redirect_to` is **denied** |
 
 Store **origins** only (scheme + host + optional port), for example:
@@ -46,8 +47,9 @@ Path and query on the allowlist entry are ignored; matching is by origin (or ori
 Configure via:
 
 - **Django admin → Company OAuth redirects**
-- Shellui admin **OAuth setup** (shows the identity callback URL and manage allowlist)
+- Shellui admin **OAuth setup** (manual origins + separate hosting preview list)
 - `GET` / `POST` / `PATCH` / `DELETE` `/api/v1/oauth-redirects?company_id=…` (staff or company owner)
+- Hosting sync: `PUT` / `DELETE` `/api/v1/hosting-oauth-redirects` with the deployer's identity JWT (forwarded by hosting-service; company from token)
 
 Example:
 
@@ -67,6 +69,7 @@ curl -s -X POST "https://auth.example.com/api/v1/oauth-redirects?company_id=1" \
 | `POST /api/v1/oauth/confirm` | Finish sign-in after confirmation |
 | `GET /api/v1/oauth/confirm?action=switch&confirm_token=…` | Restart OAuth with account picker (Google / Microsoft) |
 | `GET`/`POST`/`PATCH`/`DELETE` `/api/v1/oauth-redirects` | Manage allowlist |
+| `PUT`/`DELETE` `/api/v1/hosting-oauth-redirects` | Hosting-service sync (`source=hosting`, caller JWT) |
 
 Company join rules (`public` / `domain` / `invite`) still apply after a successful provider login — see [company-access.md](company-access.md).
 

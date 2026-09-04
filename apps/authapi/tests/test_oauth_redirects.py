@@ -254,9 +254,127 @@ class OAuthRedirectCrudTests(TestCase):
         )
         self.assertEqual(create.status_code, 201, create.data)
         self.assertEqual(create.data['base_url'], 'https://app.example.com')
+        self.assertEqual(create.data.get('source'), 'manual')
         listing = self.client.get(f'/api/v1/oauth-redirects?company_id={self.company.id}')
         self.assertEqual(listing.status_code, 200)
         self.assertEqual(len(listing.data), 1)
         pk = listing.data[0]['id']
         deleted = self.client.delete(f'/api/v1/oauth-redirects/{pk}?company_id={self.company.id}')
         self.assertEqual(deleted.status_code, 204)
+
+    def test_create_with_hosting_source(self):
+        create = self.client.post(
+            f'/api/v1/oauth-redirects?company_id={self.company.id}',
+            {
+                'base_url': 'https://preview.shellui.app',
+                'label': 'From admin',
+                'source': 'hosting',
+            },
+            format='json',
+        )
+        self.assertEqual(create.status_code, 201, create.data)
+        self.assertEqual(create.data['source'], 'hosting')
+        self.assertEqual(create.data['base_url'], 'https://preview.shellui.app')
+
+
+@override_settings(
+    ALLOWED_HOSTS=['testserver', 'localhost', '127.0.0.1'],
+)
+class HostingOAuthRedirectSyncTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.company = Company.objects.create(name='Hosting Sync Co', slug='hosting-sync-co')
+        self.member = User.objects.create_user(
+            username='member',
+            email='member@example.com',
+            password='x',
+        )
+        set_company_access(self.company, self.member, enabled=True)
+        self.company.members.add(self.member)
+
+    def _auth_member(self):
+        self.client.force_authenticate(
+            user=self.member,
+            token={'company_id': self.company.id},
+        )
+
+    def test_upsert_and_delete_hosting_redirect(self):
+        self._auth_member()
+        created = self.client.put(
+            '/api/v1/hosting-oauth-redirects',
+            {
+                'base_url': 'https://abc123.shellui.app/',
+                'label': 'Preview site',
+            },
+            format='json',
+        )
+        self.assertEqual(created.status_code, 201, created.data)
+        self.assertEqual(created.data['base_url'], 'https://abc123.shellui.app')
+        self.assertEqual(created.data['source'], 'hosting')
+        self.assertEqual(created.data['label'], 'Preview site')
+
+        again = self.client.put(
+            '/api/v1/hosting-oauth-redirects',
+            {
+                'base_url': 'https://abc123.shellui.app',
+                'label': 'Renamed',
+            },
+            format='json',
+        )
+        self.assertEqual(again.status_code, 200, again.data)
+        self.assertEqual(again.data['label'], 'Renamed')
+        self.assertEqual(
+            CompanyOAuthRedirect.objects.filter(
+                company=self.company,
+                source=CompanyOAuthRedirect.SOURCE_HOSTING,
+            ).count(),
+            1,
+        )
+
+        deleted = self.client.delete(
+            '/api/v1/hosting-oauth-redirects',
+            {'base_url': 'https://abc123.shellui.app'},
+            format='json',
+        )
+        self.assertEqual(deleted.status_code, 204)
+        self.assertFalse(
+            CompanyOAuthRedirect.objects.filter(company=self.company).exists(),
+        )
+
+    def test_rejects_unauthenticated(self):
+        response = self.client.put(
+            '/api/v1/hosting-oauth-redirects',
+            {'base_url': 'https://abc123.shellui.app'},
+            format='json',
+        )
+        self.assertIn(response.status_code, (401, 403))
+
+    def test_rejects_disabled_member(self):
+        set_company_access(self.company, self.member, enabled=False)
+        self._auth_member()
+        response = self.client.put(
+            '/api/v1/hosting-oauth-redirects',
+            {'base_url': 'https://abc123.shellui.app'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_delete_does_not_remove_manual_rows(self):
+        CompanyOAuthRedirect.objects.create(
+            company=self.company,
+            base_url='https://abc123.shellui.app',
+            source=CompanyOAuthRedirect.SOURCE_MANUAL,
+        )
+        self._auth_member()
+        deleted = self.client.delete(
+            '/api/v1/hosting-oauth-redirects',
+            {'base_url': 'https://abc123.shellui.app'},
+            format='json',
+        )
+        self.assertEqual(deleted.status_code, 204)
+        self.assertTrue(
+            CompanyOAuthRedirect.objects.filter(
+                company=self.company,
+                source=CompanyOAuthRedirect.SOURCE_MANUAL,
+            ).exists(),
+        )

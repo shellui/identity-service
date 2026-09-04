@@ -126,6 +126,11 @@ class ShellUIAdminOAuthRedirectCreateSerializer(serializers.Serializer):
     base_url = serializers.CharField(max_length=500)
     label = serializers.CharField(required=False, allow_blank=True, max_length=150)
     is_active = serializers.BooleanField(required=False, default=True)
+    source = serializers.ChoiceField(
+        choices=['manual', 'hosting'],
+        required=False,
+        default='manual',
+    )
 
 
 class ShellUIAdminOAuthRedirectUpdateSerializer(serializers.Serializer):
@@ -137,3 +142,12 @@ class ShellUIAdminOAuthRedirectUpdateSerializer(serializers.Serializer):
         if not attrs:
             raise serializers.ValidationError('Provide at least one of: base_url, label, is_active.')
         return attrs
+
+
+class ShellUIHostingOAuthRedirectSyncSerializer(serializers.Serializer):
+    base_url = serializers.CharField(max_length=500)
+    label = serializers.CharField(required=False, allow_blank=True, max_length=150)
+
+
+class ShellUIHostingOAuthRedirectDeleteSerializer(serializers.Serializer):
+    base_url = serializers.CharField(max_length=500)

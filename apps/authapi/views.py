@@ -72,6 +72,8 @@ from .serializers import (
     ShellUIAdminOAuthClientUpdateSerializer,
     ShellUIAdminOAuthRedirectCreateSerializer,
     ShellUIAdminOAuthRedirectUpdateSerializer,
+    ShellUIHostingOAuthRedirectSyncSerializer,
+    ShellUIHostingOAuthRedirectDeleteSerializer,
     ShellUIPersonalAccessTokenCreateSerializer,
     ShellUIAdminUserUpdateSerializer,
     UserPreferenceSerializer,
@@ -830,6 +832,29 @@ def _require_staff_or_company_owner(request):
     if user.is_staff or _is_user_company_owner(user, company):
         return user, company, None
     return None, None, Response({'error': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
+
+
+def _require_enabled_company_member(request):
+    """
+    Authenticated user with an enabled membership for the JWT company (or staff).
+    Used when hosting-service forwards the caller's JWT to sync hosting OAuth redirects.
+    """
+    user = _authenticate_bearer_user(request)
+    if not user:
+        return None, None, Response({'error': 'Unauthorized'}, status=status.HTTP_401_UNAUTHORIZED)
+    company, cerr = _company_from_bearer_token_only(request, user)
+    if cerr:
+        return None, None, cerr
+    if user.is_staff:
+        return user, company, None
+    if not company.members.filter(pk=user.pk).exists():
+        return None, None, Response({'error': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
+    if not is_company_access_enabled(company, user):
+        return None, None, Response(
+            {'error': 'Company access is disabled for this user.'},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    return user, company, None
 
 
 def _company_from_bearer_token_only(request, user: User) -> tuple[Company | None, Response | None]:
@@ -2639,6 +2664,7 @@ def _oauth_redirect_payload(row: CompanyOAuthRedirect) -> dict:
         'id': row.id,
         'base_url': row.base_url,
         'label': row.label or '',
+        'source': row.source or CompanyOAuthRedirect.SOURCE_MANUAL,
         'is_active': bool(row.is_active),
         'created_at': row.created_at.isoformat() if row.created_at else None,
     }
@@ -2651,7 +2677,8 @@ def _oauth_redirect_payload(row: CompanyOAuthRedirect) -> dict:
         description=(
             'Origins allowed as post-OAuth bounce targets (`redirect_to`). '
             'Loopback (localhost / 127.0.0.1 / ::1) is always allowed without a row. '
-            'Empty allowlist denies non-loopback redirects.'
+            'Empty allowlist denies non-loopback redirects. '
+            'Entries with `source=hosting` are synced from hosting-service preview sites.'
         ),
         operation_id='api_v1_oauth_redirects_list',
     ),
@@ -2689,6 +2716,7 @@ class ShellUIAdminOAuthRedirectListView(APIView):
                 company=company,
                 base_url=origin,
                 label=str(validated.get('label') or '').strip()[:150],
+                source=str(validated.get('source') or CompanyOAuthRedirect.SOURCE_MANUAL),
                 is_active=bool(validated.get('is_active', True)),
             )
         except IntegrityError:
@@ -2770,6 +2798,83 @@ class ShellUIAdminOAuthRedirectDetailView(APIView):
         except CompanyOAuthRedirect.DoesNotExist:
             return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
         row.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+@extend_schema_view(
+    put=extend_schema(
+        tags=['oauth-redirects'],
+        summary='Upsert a hosting-managed OAuth redirect origin (company member JWT)',
+        description=(
+            'Called by hosting-service with the deployer\'s access token. '
+            'Company scope comes from the JWT. Only `source=hosting` rows are written.'
+        ),
+        request=ShellUIHostingOAuthRedirectSyncSerializer,
+    ),
+    delete=extend_schema(
+        tags=['oauth-redirects'],
+        summary='Remove a hosting-managed OAuth redirect origin (company member JWT)',
+        request=ShellUIHostingOAuthRedirectDeleteSerializer,
+    ),
+)
+class ShellUIHostingOAuthRedirectSyncView(APIView):
+    """
+    Hosting-service forwards the caller's identity JWT after create/delete of a preview site.
+    Any enabled company member may upsert/delete ``source=hosting`` origins for their company.
+    """
+
+    permission_classes = [ShellUIPermission]
+    serializer_class = ShellUIOpenAPISerializer
+
+    def put(self, request):
+        from apps.companies.redirect_allowlist import normalize_allowlist_origin
+
+        _actor, company, err = _require_enabled_company_member(request)
+        if err:
+            return err
+        serializer = ShellUIHostingOAuthRedirectSyncSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        validated = serializer.validated_data
+        origin, nerr = normalize_allowlist_origin(validated['base_url'])
+        if nerr or not origin:
+            return Response({'error': nerr or 'Invalid base_url.'}, status=status.HTTP_400_BAD_REQUEST)
+        label = str(validated.get('label') or '').strip()[:150]
+        row, created = CompanyOAuthRedirect.objects.get_or_create(
+            company=company,
+            base_url=origin,
+            defaults={
+                'label': label,
+                'source': CompanyOAuthRedirect.SOURCE_HOSTING,
+                'is_active': True,
+            },
+        )
+        if not created:
+            row.label = label or row.label
+            row.source = CompanyOAuthRedirect.SOURCE_HOSTING
+            row.is_active = True
+            row.save(update_fields=['label', 'source', 'is_active'])
+        return Response(
+            _oauth_redirect_payload(row),
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
+
+    def delete(self, request):
+        from apps.companies.redirect_allowlist import normalize_allowlist_origin
+
+        _actor, company, err = _require_enabled_company_member(request)
+        if err:
+            return err
+        serializer = ShellUIHostingOAuthRedirectDeleteSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        validated = serializer.validated_data
+        origin, nerr = normalize_allowlist_origin(validated['base_url'])
+        if nerr or not origin:
+            return Response({'error': nerr or 'Invalid base_url.'}, status=status.HTTP_400_BAD_REQUEST)
+        CompanyOAuthRedirect.objects.filter(
+            company=company,
+            base_url=origin,
+            source=CompanyOAuthRedirect.SOURCE_HOSTING,
+        ).delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 

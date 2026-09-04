@@ -149,6 +149,13 @@ class CompanyOAuthClient(models.Model):
 class CompanyOAuthRedirect(models.Model):
     """Allowed post-OAuth bounce origins for a company (shell /login/callback hosts)."""
 
+    SOURCE_MANUAL = 'manual'
+    SOURCE_HOSTING = 'hosting'
+    SOURCE_CHOICES = [
+        (SOURCE_MANUAL, 'Manual'),
+        (SOURCE_HOSTING, 'Hosting'),
+    ]
+
     company = models.ForeignKey(
         Company,
         on_delete=models.CASCADE,
@@ -159,6 +166,12 @@ class CompanyOAuthRedirect(models.Model):
         help_text='Canonical origin only (e.g. https://app.example.com).',
     )
     label = models.CharField(blank=True, max_length=150)
+    source = models.CharField(
+        max_length=20,
+        choices=SOURCE_CHOICES,
+        default=SOURCE_MANUAL,
+        help_text='manual = owner-managed; hosting = synced from hosting-service preview sites.',
+    )
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
