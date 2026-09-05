@@ -60,6 +60,17 @@ curl -s -X POST "https://auth.example.com/api/v1/oauth-redirects?company_id=1" \
   -d '{"base_url":"https://app.example.com","label":"Production shell"}'
 ```
 
+### CORS vs redirect allowlist
+
+These are different controls:
+
+| Concern | Mechanism | Strict? |
+|---------|-----------|---------|
+| **Token delivery** (`redirect_to` after OAuth) | `CompanyOAuthRedirect` allowlist | **Yes** — a malicious bounce origin can steal tokens from the URL fragment |
+| **Browser API calls** (Bearer JWT to `/api/v1/*`) | Permissive CORS (`CORS_ALLOW_ALL_ORIGINS=true` by default) | No — JWT verification and company scoping are the auth boundary (same model as Supabase) |
+
+Do **not** add every hosting preview slug to `CORS_ALLOWED_ORIGINS`. Preview login still requires the redirect allowlist (auto-synced by hosting-service). Set `CORS_ALLOW_ALL_ORIGINS=false` only for lock-down installs that intentionally restrict API origins.
+
 ## Related endpoints
 
 | Endpoint | Role |

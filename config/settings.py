@@ -199,7 +199,7 @@ SPECTACULAR_SETTINGS = {
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
-    'apps.authapi.cors.ShelluiCorsMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -301,10 +301,16 @@ SOCIALACCOUNT_PROVIDERS = {
     },
 }
 
-# Cross-origin: Shellui app, admin iframe (Vite), hosted admin UI, and optional extra origins from env
-# (comma-separated), e.g. CORS_ALLOWED_ORIGINS=https://app.example.com
-# Hosted preview origins are also allowed dynamically when present on CompanyOAuthRedirect
-# (see apps.authapi.cors.ShelluiCorsMiddleware).
+# API auth is Bearer JWT (not cookies). Permissive CORS matches Supabase-style
+# gateways so random hosting preview origins work without per-slug allowlists.
+# Set CORS_ALLOW_ALL_ORIGINS=false and CORS_ALLOWED_ORIGINS for lock-down installs.
+# Token delivery stays strict via CompanyOAuthRedirect (see docs/oauth-login.md).
+CORS_ALLOW_ALL_ORIGINS = os.getenv('CORS_ALLOW_ALL_ORIGINS', 'true').strip().lower() in {
+    '1',
+    'true',
+    'yes',
+    'on',
+}
 CORS_ALLOWED_ORIGINS = [
     'http://localhost:4000',
     'http://127.0.0.1:4000',
@@ -323,7 +329,7 @@ for _pattern in os.getenv('CORS_ALLOWED_ORIGIN_REGEXES', '').split(','):
     if _pattern and _pattern not in CORS_ALLOWED_ORIGIN_REGEXES:
         CORS_ALLOWED_ORIGIN_REGEXES.append(_pattern)
 
-CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOW_CREDENTIALS = False
 
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases

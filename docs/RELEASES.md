@@ -59,10 +59,10 @@ Operators must set at minimum:
 - `JWT_PRIVATE_KEY` — required when `DEBUG=false`; RS256 JWT signing (see [docs/jwks.md](jwks.md))
 - `ALLOWED_HOSTS` — hostnames for production (comma-separated, no scheme)
 - `CSRF_TRUSTED_ORIGINS` — full URLs with scheme when using browser-based flows behind HTTPS
-- `CORS_ALLOWED_ORIGINS` — Shellui / admin front-end origins in production
 
 Optional but typical for production:
 
+- `CORS_ALLOW_ALL_ORIGINS` — default `true` (permissive API CORS). Set `false` + `CORS_ALLOWED_ORIGINS` only for lock-down installs
 - `POSTGRES_DATABASE_URL` — use Postgres instead of SQLite
 - `SENTRY_DSN` — Sentry project DSN for error reporting (see README observability section)
 - `SENTRY_ENVIRONMENT` — Sentry environment tag (e.g. `staging`, `production`)
@@ -200,7 +200,6 @@ docker run -d \
   -e JWT_PRIVATE_KEY='replace-with-pem-from-generate_jwt_keys' \
   -e ALLOWED_HOSTS='auth.example.com' \
   -e CSRF_TRUSTED_ORIGINS='https://auth.example.com,https://app.example.com' \
-  -e CORS_ALLOWED_ORIGINS='https://app.example.com' \
   shellui/identity-service:0.3.0
 ```
 

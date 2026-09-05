@@ -161,7 +161,6 @@ docker run -d \
   -e JWT_PRIVATE_KEY='replace-with-pem-from-generate_jwt_keys' \
   -e ALLOWED_HOSTS='auth.example.com' \
   -e CSRF_TRUSTED_ORIGINS='https://auth.example.com,https://app.example.com' \
-  -e CORS_ALLOWED_ORIGINS='https://app.example.com' \
   shellui/identity-service:0.3.0
 ```
 
@@ -175,17 +174,18 @@ The entrypoint runs migrations on start, then starts Gunicorn as user `appuser`.
 | `JWT_PRIVATE_KEY`      | Required when `DEBUG=false`; RS256 JWT signing. See [docs/jwks.md](docs/jwks.md). |
 | `ALLOWED_HOSTS`        | Comma-separated hostnames, no scheme.                                             |
 | `CSRF_TRUSTED_ORIGINS` | Full URLs with scheme when using browser flows behind HTTPS.                      |
-| `CORS_ALLOWED_ORIGINS` | Shellui / admin front-end origins.                                                |
 
 ### Optional runtime env vars
 
-| Variable                     | Notes                           |
-| ---------------------------- | ------------------------------- |
-| `POSTGRES_DATABASE_URL`      | Use Postgres instead of SQLite. |
-| `SENTRY_DSN`                 | Sentry error reporting.         |
-| `SENTRY_ENVIRONMENT`         | e.g. `staging`, `production`.   |
-| `JWT_ACCESS_TOKEN_LIFETIME`  | Default `5m`.                   |
-| `JWT_REFRESH_TOKEN_LIFETIME` | Default `7d`.                   |
+| Variable                     | Notes                                                                                          |
+| ---------------------------- | ---------------------------------------------------------------------------------------------- |
+| `CORS_ALLOW_ALL_ORIGINS`     | Default `true` (permissive API CORS; Bearer JWT is the auth boundary). Set `false` to lock down. |
+| `CORS_ALLOWED_ORIGINS`       | Used when `CORS_ALLOW_ALL_ORIGINS=false`; Shellui / admin front-end origins.                   |
+| `POSTGRES_DATABASE_URL`      | Use Postgres instead of SQLite.                                                                |
+| `SENTRY_DSN`                 | Sentry error reporting.                                                                        |
+| `SENTRY_ENVIRONMENT`         | e.g. `staging`, `production`.                                                                  |
+| `JWT_ACCESS_TOKEN_LIFETIME`  | Default `5m`.                                                                                  |
+| `JWT_REFRESH_TOKEN_LIFETIME` | Default `7d`.                                                                                  |
 
 OAuth credentials are configured **per company** in the database (Django admin or `/api/v1/admin/oauth-social-apps`), not via container environment variables.
 

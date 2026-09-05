@@ -12,7 +12,7 @@ It supports OAuth login (GitHub/Google/Microsoft), issues JWT tokens, exposes Su
 - JWT access + refresh token issuance (RS256 with JWKS when `JWT_PRIVATE_KEY` is set)
 - Token refresh endpoint (`grant_type=refresh_token`)
 - User metadata endpoint (`/api/v1/user`)
-- CORS for local Shellui (`http://localhost:4000`), admin dev server (`http://localhost:5174`), hosted admin (`https://admin.shellui.com`), optional extra origins via env `CORS_ALLOWED_ORIGINS`, and any origin on the company OAuth redirect allowlist (including hosting previews)
+- Permissive API CORS by default (`CORS_ALLOW_ALL_ORIGINS=true`) so hosted preview origins and custom shells can call JWT APIs without per-origin env edits; auth is Bearer JWT. OAuth token delivery stays strict via the company redirect allowlist (see [docs/oauth-login.md](docs/oauth-login.md))
 - OpenAPI docs with drf-spectacular
 
 ## Project Structure
@@ -168,10 +168,11 @@ Run container:
 docker volume create identity-service-data
 docker run --rm -p 8000:8000 \
   -v identity-service-data:/app/data \
-  -e CORS_ALLOWED_ORIGINS="http://localhost:4000,http://localhost:5174" \
   --name identity-service \
   shellui/identity-service:local
 ```
+
+API CORS allows all origins by default (Bearer JWT auth). For lock-down installs set `CORS_ALLOW_ALL_ORIGINS=false` and `CORS_ALLOWED_ORIGINS=…`.
 
 The container runs migrations automatically, stores SQLite at `/app/data/db.sqlite3`, then starts with Gunicorn on `0.0.0.0:8000`. Production images run `collectstatic` at build time; [WhiteNoise](https://whitenoise.readthedocs.io/) serves `/admin/` and other collected static files from the app process (no separate static server required).
 
@@ -186,6 +187,9 @@ Runtime env vars:
 - `DEBUG` (default `false`)
 - `ALLOWED_HOSTS` (comma-separated hostnames; empty → `localhost,127.0.0.1`)
 - `CSRF_TRUSTED_ORIGINS` (comma-separated full URLs with scheme; empty → common local dev URLs including Shellui ports)
+- `CORS_ALLOW_ALL_ORIGINS` (default `true`; set `false` for lock-down installs)
+- `CORS_ALLOWED_ORIGINS` (used only when `CORS_ALLOW_ALL_ORIGINS=false`; Shellui / admin front-end origins)
+- `CORS_ALLOWED_ORIGIN_REGEXES` (optional; used only when `CORS_ALLOW_ALL_ORIGINS=false`)
 - `POSTGRES_DATABASE_URL` (optional; when set, Postgres is used instead of SQLite)
 - `GUNICORN_WORKERS` (default `2`)
 - `GUNICORN_THREADS` (default `2`)
