@@ -115,13 +115,15 @@ Register a **single** Authorization callback URL on each provider (GitHub / Goog
 
 Homepage / application URL may still be the shell (e.g. `http://localhost:4000`).
 
-Also allowlist each shell **origin** for the company (e.g. `http://localhost:4000`, `https://app.example.com`) via Django admin → Company OAuth redirects, Shellui admin OAuth setup, or `POST /api/v1/oauth-redirects`. Loopback (`127.0.0.1` / `localhost`) is always allowed for `shellui login` / CLI.
+Also allowlist each shell **origin** for the company (e.g. `http://localhost:4000`, `https://app.example.com`) via Django admin → Company OAuth redirects, Shellui admin OAuth setup, or `POST /api/v1/oauth-redirects`. Loopback (`127.0.0.1` / `localhost`) is allowed when `DEBUG=true` or `OAUTH_ALLOW_LOOPBACK_REDIRECTS=true` (local CLI / dev).
 
 Full flow, allowlist rules, hosting sync, and upgrade steps (including **0.4.1**): [docs/oauth-login.md](docs/oauth-login.md).
 
+Production auth abuse controls, HTTPS defaults, Postgres SSL, and trusted-proxy IP handling: [docs/security-hardening.md](docs/security-hardening.md).
+
 ## Notes
 
-- `/api/v1/settings` only enables providers configured for the requested company.
+- `/api/v1/settings` only enables providers configured for the requested company; OAuth client details require an authenticated company member.
 - Avatar URL from provider userinfo is included in JWT metadata (`user_metadata.avatar_url`) for Shellui profile display.
 
 ## Documentation (Docusaurus)

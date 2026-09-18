@@ -51,6 +51,7 @@ from .oauth_confirm import build_oauth_confirm_token, parse_oauth_confirm_token
 from .authentication import ShellUIJWTAuthentication
 from .models import LoginEvent, PersonalAccessToken, UserPreference
 from .user_activity import touch_user_last_seen
+from .throttling import rate_limit
 from .oauth import (
     SUPPORTED_OAUTH_PROVIDERS,
     build_authorize_url,
@@ -980,6 +981,7 @@ def _admin_user_payload(user: User, company: Company) -> dict:
         responses={200: OpenApiResponse(description='Authorization URL generated')},
     )
 )
+@rate_limit('oauth')
 class SocialAuthorizeView(APIView):
     permission_classes = [AllowAny]
 
@@ -1012,6 +1014,7 @@ class SocialAuthorizeView(APIView):
         responses={200: OpenApiResponse(description='Authenticated successfully')},
     )
 )
+@rate_limit('oauth')
 class SocialLoginView(APIView):
     permission_classes = [AllowAny]
 
@@ -1141,6 +1144,7 @@ class SocialLoginView(APIView):
         },
     ),
 )
+@rate_limit('auth_settings')
 class ShellUIAuthSettingsView(APIView):
     permission_classes = [AllowAny]
 
@@ -1150,25 +1154,24 @@ class ShellUIAuthSettingsView(APIView):
             return company_err
         clients = _company_oauth_clients(company)
         providers = sorted({str(row.social_app.provider).lower() for row in clients})
-        external = {provider: True for provider in providers}
-        oauth_clients = [
-            {
-                'id': row.id,
-                'provider': row.social_app.provider,
-                'label': row.social_app.name,
-            }
-            for row in clients
-        ]
-        return Response(
-            {
-                'methods': ['oauth'] if providers else [],
-                'oauthProviders': providers,
-                'oauthClients': oauth_clients,
-                'enable_oauth': bool(providers),
-                'enable_magic_link': False,
-                'external': external,
-            }
-        )
+        payload = {
+            'methods': ['oauth'] if providers else [],
+            'oauthProviders': providers,
+            'enable_oauth': bool(providers),
+            'enable_magic_link': False,
+        }
+        actor = _authenticate_bearer_user(request)
+        if actor is not None and company.members.filter(pk=actor.pk).exists():
+            payload['oauthClients'] = [
+                {
+                    'id': row.id,
+                    'provider': row.social_app.provider,
+                    'label': row.social_app.name,
+                }
+                for row in clients
+            ]
+            payload['external'] = {provider: True for provider in providers}
+        return Response(payload)
 
 
 @extend_schema_view(
@@ -1226,6 +1229,7 @@ class ShellUIAuthSettingsView(APIView):
         },
     ),
 )
+@rate_limit('oauth')
 class ShellUIAuthorizeView(APIView):
     permission_classes = [AllowAny]
 
@@ -1361,6 +1365,7 @@ class ShellUIAuthorizeView(APIView):
         },
     ),
 )
+@rate_limit('oauth')
 class ShellUIOAuthCallbackView(APIView):
     permission_classes = [AllowAny]
 
@@ -1517,6 +1522,7 @@ class ShellUIOAuthCallbackView(APIView):
         )
 
 
+@rate_limit('oauth')
 @method_decorator(csrf_protect, name='dispatch')
 class ShellUIOAuthConfirmView(APIView):
     """Browser confirmation step after provider OAuth, before JWT fragment redirect."""
@@ -1631,6 +1637,7 @@ class ShellUIOAuthConfirmView(APIView):
         },
     ),
 )
+@rate_limit('oauth')
 class ShellUIOAuthExchangeView(APIView):
     permission_classes = [AllowAny]
 
@@ -1757,6 +1764,7 @@ class ShellUIOAuthExchangeView(APIView):
         },
     ),
 )
+@rate_limit('token_refresh')
 class ShellUITokenView(APIView):
     permission_classes = [AllowAny]
     authentication_classes = []
@@ -2676,8 +2684,8 @@ def _oauth_redirect_payload(row: CompanyOAuthRedirect) -> dict:
         summary='List company OAuth redirect allowlist (staff or company owner)',
         description=(
             'Origins allowed as post-OAuth bounce targets (`redirect_to`). '
-            'Loopback (localhost / 127.0.0.1 / ::1) is always allowed without a row. '
-            'Empty allowlist denies non-loopback redirects. '
+            'Loopback (localhost / 127.0.0.1 / ::1) is allowed when DEBUG or '
+            'OAUTH_ALLOW_LOOPBACK_REDIRECTS=true. Empty allowlist denies other redirects. '
             'Entries with `source=hosting` are synced from hosting-service preview sites.'
         ),
         operation_id='api_v1_oauth_redirects_list',
@@ -3102,6 +3110,7 @@ class ShellUIAdminLoginEventDetailView(APIView):
         ),
     ),
 )
+@rate_limit('pat', identity=lambda request: str(getattr(getattr(request, 'user', None), 'pk', '') or ''))
 class ShellUIPersonalAccessTokenListCreateView(APIView):
     permission_classes = [ShellUIPermission]
     serializer_class = ShellUIOpenAPISerializer
@@ -3147,6 +3156,7 @@ class ShellUIPersonalAccessTokenListCreateView(APIView):
         description='Marks the token as revoked; JWT access stops immediately.',
     ),
 )
+@rate_limit('pat', identity=lambda request: str(getattr(getattr(request, 'user', None), 'pk', '') or ''))
 class ShellUIPersonalAccessTokenRevokeView(APIView):
     permission_classes = [ShellUIPermission]
     serializer_class = ShellUIOpenAPISerializer

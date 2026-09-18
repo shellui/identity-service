@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## [Unreleased] - 2026-09-18
+
+### 🔒 Security
+
+- **Auth rate limits:** OAuth, token refresh, auth settings, Django admin login, and PAT CRUD endpoints are throttled per IP (or per user for PATs). See [docs/security-hardening.md](docs/security-hardening.md).
+- **Loopback OAuth:** `redirect_to` loopback targets require `DEBUG=true` or `OAUTH_ALLOW_LOOPBACK_REDIRECTS=true`.
+- **Settings enumeration:** `GET /api/v1/settings` omits OAuth client IDs/labels unless the caller is an authenticated company member.
+- **Transport hardening:** Production defaults enable SSL redirect, HSTS, and secure session/CSRF cookies; Postgres uses `ssl_require` when `DEBUG=false`.
+- **Trusted proxies:** `X-Forwarded-For` is honored for audit/rate-limit IP only when `REMOTE_ADDR` matches `TRUSTED_PROXY_IPS`.
+- **PAT lifetime:** Default new personal access token lifetime is **30 days** (was 90). Existing JWTs keep their issued expiry.
+
+### 📚 Documentation
+
+- Add [docs/security-hardening.md](docs/security-hardening.md); update `.env.example` and [docs/oauth-login.md](docs/oauth-login.md).
+
 <!---
 ## [Unreleased] - yyyy-mm-dd
 

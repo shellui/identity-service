@@ -77,6 +77,23 @@ def _env_float(name, default):
         raise ImproperlyConfigured(f'{name} must be a number. Got: {raw!r}') from exc
 
 
+def _env_bool(name, default: bool) -> bool:
+    raw = os.getenv(name, '').strip()
+    if not raw:
+        return default
+    return raw.lower() in {'1', 'true', 'yes', 'on'}
+
+
+def _env_int(name, default: int) -> int:
+    raw = os.getenv(name, '').strip()
+    if not raw:
+        return default
+    try:
+        return int(raw)
+    except ValueError as exc:
+        raise ImproperlyConfigured(f'{name} must be an integer. Got: {raw!r}') from exc
+
+
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
@@ -122,6 +139,14 @@ CSRF_TRUSTED_ORIGINS = _env_csv(
     ),
 )
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+# Trusted reverse proxies (comma-separated IPs/CIDRs). X-Forwarded-For is honored for audit IP
+# only when REMOTE_ADDR matches one of these entries. See docs/security-hardening.md.
+TRUSTED_PROXY_IPS = _env_csv('TRUSTED_PROXY_IPS', ())
+
+# Loopback OAuth redirect targets (127.0.0.1 / localhost / ::1) are allowed only when DEBUG or
+# OAUTH_ALLOW_LOOPBACK_REDIRECTS=true (local CLI / dev shells).
+OAUTH_ALLOW_LOOPBACK_REDIRECTS = _env_bool('OAUTH_ALLOW_LOOPBACK_REDIRECTS', DEBUG)
 
 
 def _project_version():
@@ -207,6 +232,7 @@ MIDDLEWARE = [
     'allauth.account.middleware.AccountMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'apps.authapi.middleware.AdminLoginRateLimitMiddleware',
 ]
 
 ROOT_URLCONF = 'config.urls'
@@ -284,7 +310,7 @@ SIMPLE_JWT.update(
 )
 
 # Personal access tokens (PAT): JWT access token lifetime when creating a PAT (see views._issue_personal_access_token).
-PERSONAL_ACCESS_TOKEN_LIFETIME = timedelta(days=90)
+PERSONAL_ACCESS_TOKEN_LIFETIME = _env_duration('PERSONAL_ACCESS_TOKEN_LIFETIME', timedelta(days=30))
 
 # Optional MaxMind GeoLite2/GeoIP2 City database (.mmdb) for login audit country/city.
 # Install: uv add geoip2  — then set path to your .mmdb file.
@@ -331,17 +357,43 @@ for _pattern in os.getenv('CORS_ALLOWED_ORIGIN_REGEXES', '').split(','):
 
 CORS_ALLOW_CREDENTIALS = False
 
+# HTTPS / cookie hardening (production defaults; override via env for local HTTP).
+SECURE_SSL_REDIRECT = _env_bool('SECURE_SSL_REDIRECT', not DEBUG)
+SECURE_HSTS_SECONDS = _env_int('SECURE_HSTS_SECONDS', 31536000 if not DEBUG else 0)
+SECURE_HSTS_INCLUDE_SUBDOMAINS = _env_bool('SECURE_HSTS_INCLUDE_SUBDOMAINS', not DEBUG)
+SECURE_HSTS_PRELOAD = _env_bool('SECURE_HSTS_PRELOAD', False)
+SESSION_COOKIE_SECURE = _env_bool('SESSION_COOKIE_SECURE', not DEBUG)
+CSRF_COOKIE_SECURE = _env_bool('CSRF_COOKIE_SECURE', not DEBUG)
+
+# Cache-backed auth rate limits (see apps/authapi/throttling.py).
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'identity-service-auth',
+    }
+}
+AUTH_RATE_LIMIT_ENABLED = _env_bool('AUTH_RATE_LIMIT_ENABLED', True)
+AUTH_RATE_LIMITS = {
+    'default': {'limit': 60, 'window': 60},
+    'oauth': {'limit': _env_int('AUTH_RATE_LIMIT_OAUTH', 30), 'window': 60},
+    'token_refresh': {'limit': _env_int('AUTH_RATE_LIMIT_TOKEN_REFRESH', 60), 'window': 60},
+    'auth_settings': {'limit': _env_int('AUTH_RATE_LIMIT_SETTINGS', 30), 'window': 60},
+    'admin_login': {'limit': _env_int('AUTH_RATE_LIMIT_ADMIN_LOGIN', 10), 'window': 300},
+    'pat': {'limit': _env_int('AUTH_RATE_LIMIT_PAT', 30), 'window': 60},
+}
+
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
 POSTGRES_DATABASE_URL = os.getenv('POSTGRES_DATABASE_URL', '').strip()
 
 if POSTGRES_DATABASE_URL:
+    _postgres_ssl_require = _env_bool('POSTGRES_SSL_REQUIRE', not DEBUG)
     DATABASES = {
         'default': dj_database_url.parse(
             POSTGRES_DATABASE_URL,
             conn_max_age=600,
-            ssl_require=False,
+            ssl_require=_postgres_ssl_require,
         )
     }
 else:
