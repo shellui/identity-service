@@ -47,15 +47,18 @@ def jwt_issuer_audience_required_in_production(app_configs, **kwargs):
 
 
 @register(deploy=True, tags='security')
-def cors_allow_all_forbidden_in_production(app_configs, **kwargs):
-    if settings.DEBUG or not getattr(settings, 'CORS_ALLOW_ALL_ORIGINS', False):
+def cors_allow_all_with_credentials_forbidden(app_configs, **kwargs):
+    if not getattr(settings, 'CORS_ALLOW_ALL_ORIGINS', False):
+        return []
+    if not getattr(settings, 'CORS_ALLOW_CREDENTIALS', False):
         return []
     return [
         Error(
-            'CORS_ALLOW_ALL_ORIGINS=true is not allowed when DEBUG=false.',
+            'CORS_ALLOW_ALL_ORIGINS=true with CORS_ALLOW_CREDENTIALS=true is unsafe.',
             hint=(
-                'Set CORS_ALLOW_ALL_ORIGINS=false and list trusted browser origins in '
-                'CORS_ALLOWED_ORIGINS (comma-separated full URLs with scheme).'
+                'Bearer JWT auth does not need credentials — leave CORS_ALLOW_CREDENTIALS=false '
+                '(default) and keep allow-all, or set CORS_ALLOW_ALL_ORIGINS=false and list '
+                'trusted browser origins in CORS_ALLOWED_ORIGINS.'
             ),
             id='authapi.E003',
         )
