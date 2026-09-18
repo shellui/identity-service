@@ -163,6 +163,25 @@ Pull requests **to `main`** also run the pre-release checklist ([`.github/workfl
 
 See [PUBLISH.md](PUBLISH.md) for the pre-release checklist (automated via `./tools/pre-release-check.sh`), tagging conventions, and steps to build, push, and deploy `shellui/identity-service` on Docker Hub.
 
+## Post-deploy prod check
+
+After deploying to production, run `./tools/prod-config-check.sh` against the live HTTPS URL:
+
+```bash
+# From a checkout of identity-service (main)
+./tools/prod-config-check.sh https://id.shellui.com
+./tools/prod-config-check.sh https://id.shellui.com --company-id YOUR_COMPANY_ID
+
+# One-off without full clone:
+curl -fsSL https://raw.githubusercontent.com/shellui/identity-service/main/tools/prod-config-check.sh -o prod-config-check.sh
+chmod +x prod-config-check.sh
+./prod-config-check.sh https://id.shellui.com --company-id YOUR_COMPANY_ID
+```
+
+The script prints `PASS:` / `FAIL:` / `WARN:` / `INFO:` lines and exits non-zero when any hard check fails. Optional env: `EXPECTED_JWT_ISSUER` and `EXPECTED_JWT_AUDIENCE` (defaults: base URL origin and `shellui`). On Coolify with internal Docker Postgres, set `POSTGRES_SSL_REQUIRE=false`.
+
+See [PUBLISH.md](PUBLISH.md#post-deploy-production-config-check) for the full check list. Full OAuth login (fragment delivery) is not verified by the script — production should use `OAUTH_TOKEN_DELIVERY=fragment` until [Shellui #66](https://github.com/shellui/shellui/issues/66) lands.
+
 ## Docker (local run)
 
 Build image:
