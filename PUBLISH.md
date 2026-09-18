@@ -166,6 +166,27 @@ docker run -d \
 
 The entrypoint runs migrations on start, then starts Gunicorn as user `appuser`.
 
+### Post-deploy production config check
+
+After deploying a release (e.g. `0.5.0`), run the smoke script against the live HTTPS URL:
+
+```bash
+./tools/prod-config-check.sh https://id.shellui.com
+./tools/prod-config-check.sh https://id.shellui.com --company-id 1
+```
+
+The script prints explicit `PASS:` / `FAIL:` / `WARN:` / `INFO:` lines and exits non-zero if any hard check fails. It verifies HTTPS reachability, JWKS (RSA keys present), pre-login `/api/v1/settings`, permissive CORS for preview origins, that `/` is not an open superuser signup form, and that `/api/v1/authorize` and `/api/v1/token` respond without server errors.
+
+Optional environment:
+
+| Variable               | Default                         |
+| ---------------------- | ------------------------------- |
+| `EXPECTED_JWT_ISSUER`  | Origin of the base URL          |
+| `EXPECTED_JWT_AUDIENCE`| `shellui`                       |
+| `COMPANY_ID`           | (none; use `--company-id` flag) |
+
+Full OAuth login (fragment vs code delivery) cannot be verified without a configured IdP — the script prints guidance to set `OAUTH_TOKEN_DELIVERY=fragment` until Shellui #66.
+
 ### Required runtime env vars (production)
 
 | Variable               | Notes                                                                             |
