@@ -9,9 +9,11 @@ identity-service owns the OAuth authorize and callback endpoints. Provider apps 
 3. Identity redirects to the IdP using `redirect_uri={identity}/api/v1/oauth/callback` and a signed `state` that carries `redirect_to` and company context.
 4. The provider returns to `/api/v1/oauth/callback`. Identity exchanges the code server-side.
 5. The user sees an **account confirmation** page (confirm, switch provider, or switch account on the same provider).
-6. On confirm, identity redirects to `redirect_to#access_token=…&refresh_token=…` (URL fragment). The shell `/login/callback` route reads the fragment and stores the session.
+6. On confirm, identity redirects to `redirect_to?shellui_auth_code=…` (default). The shell `/login/callback` route POSTs the code to `POST /api/v1/oauth/session` with the same `redirect_to` URL and stores the returned JSON tokens.
 
-`POST /api/v1/oauth/exchange` remains for older shells that still receive `?code=` on the frontend. New shells should use the fragment bounce above.
+**Legacy fragment delivery:** set `token_delivery=fragment` on `/api/v1/authorize` (or `OAUTH_TOKEN_DELIVERY=fragment`) to receive `redirect_to#access_token=…&refresh_token=…` instead. Fragment mode is deprecated and will be removed in a future release.
+
+`POST /api/v1/oauth/exchange` remains for older shells that still receive provider `?code=` on the frontend.
 
 ## Provider app registration
 
@@ -49,7 +51,7 @@ Configure via:
 - **Django admin → Company OAuth redirects**
 - Shellui admin **OAuth setup** (manual origins + separate hosting preview list)
 - `GET` / `POST` / `PATCH` / `DELETE` `/api/v1/oauth-redirects?company_id=…` (staff or company owner)
-- Hosting sync: `PUT` / `DELETE` `/api/v1/hosting-oauth-redirects` with the deployer's identity JWT (forwarded by hosting-service; company from token)
+- Hosting sync: `PUT` / `DELETE` `/api/v1/hosting-oauth-redirects` with the deployer's identity JWT (staff or company owner; forwarded by hosting-service; company from token)
 
 Example:
 
@@ -66,10 +68,10 @@ These are different controls:
 
 | Concern | Mechanism | Strict? |
 |---------|-----------|---------|
-| **Token delivery** (`redirect_to` after OAuth) | `CompanyOAuthRedirect` allowlist | **Yes** — a malicious bounce origin can steal tokens from the URL fragment |
-| **Browser API calls** (Bearer JWT to `/api/v1/*`) | Permissive CORS (`CORS_ALLOW_ALL_ORIGINS=true` by default) | No — JWT verification and company scoping are the auth boundary (same model as Supabase) |
+| **Token delivery** (`redirect_to` after OAuth) | `CompanyOAuthRedirect` allowlist + one-time code exchange | **Yes** — keep allowlist strict; prefer `code` delivery over URL fragments |
+| **Browser API calls** (Bearer JWT to `/api/v1/*`) | CORS: allow-all when `DEBUG=true`; explicit `CORS_ALLOWED_ORIGINS` in production | Production locks origins; JWT verification and company scoping remain the auth boundary |
 
-Do **not** add every hosting preview slug to `CORS_ALLOWED_ORIGINS`. Preview login still requires the redirect allowlist (auto-synced by hosting-service). Set `CORS_ALLOW_ALL_ORIGINS=false` only for lock-down installs that intentionally restrict API origins.
+Do **not** add every hosting preview slug to `CORS_ALLOWED_ORIGINS`. Preview login still requires the redirect allowlist (auto-synced by hosting-service). In production, list only trusted front-end origins in `CORS_ALLOWED_ORIGINS`.
 
 ## Security hardening
 
@@ -82,13 +84,26 @@ Rate limits, HTTPS defaults, Postgres SSL, trusted-proxy IP handling, and PAT li
 | `GET /api/v1/authorize` | Start login; optional method picker |
 | `GET /api/v1/oauth/callback` | Provider callback + confirmation UI |
 | `POST /api/v1/oauth/confirm` | Finish sign-in after confirmation |
+| `POST /api/v1/oauth/session` | Exchange `shellui_auth_code` for JWT JSON (default delivery) |
 | `GET /api/v1/oauth/confirm?action=switch&confirm_token=…` | Restart OAuth with account picker (Google / Microsoft) |
 | `GET`/`POST`/`PATCH`/`DELETE` `/api/v1/oauth-redirects` | Manage allowlist |
-| `PUT`/`DELETE` `/api/v1/hosting-oauth-redirects` | Hosting-service sync (`source=hosting`, caller JWT) |
+| `PUT`/`DELETE` `/api/v1/hosting-oauth-redirects` | Hosting-service sync (`source=hosting`, owner/staff JWT) |
 
 Company join rules (`public` / `domain` / `invite`) still apply after a successful provider login — see [company-access.md](company-access.md).
 
 ## Upgrading
+
+### To session-code token delivery (H-03)
+
+1. Deploy identity-service with migration `0010_refresh_rotation_oauth_session_code`.
+2. Update shells to read `shellui_auth_code` from the login callback query string and call `POST /api/v1/oauth/session` with `{ "auth_code": "…", "redirect_to": "<same callback URL>" }`.
+3. Until shells are updated, pass `token_delivery=fragment` on authorize or set `OAUTH_TOKEN_DELIVERY=fragment` on the identity host.
+
+### Refresh rotation (H-02)
+
+- Logout now revokes the refresh session; clients should discard both tokens locally.
+- Token refresh returns a new refresh token; persist the new value and stop using the old one.
+- All outstanding refresh tokens from before this release stop working after deploy — users must sign in again.
 
 ### From shell-hosted callbacks (pre-0.4.0)
 
@@ -102,5 +117,5 @@ If you previously registered `{shell}/login/callback` on GitHub, Google, or Micr
 ### To 0.4.1 (hosting sync + permissive CORS)
 
 1. Deploy identity-service so migration `0014_companyoauthredirect_source` runs (adds `source` on `CompanyOAuthRedirect`; existing rows default to `manual`).
-2. Keep `CORS_ALLOW_ALL_ORIGINS=true` unless you intentionally lock down API origins; do **not** enumerate hosting preview slugs in `CORS_ALLOWED_ORIGINS`.
-3. Ensure hosting-service can reach `PUT`/`DELETE /api/v1/hosting-oauth-redirects` with the deployer's identity JWT so preview origins stay on the redirect allowlist.
+2. With `DEBUG=false`, set `CORS_ALLOWED_ORIGINS` to trusted front-end origins; do **not** enumerate hosting preview slugs unless you intentionally allow them.
+3. Ensure hosting-service can reach `PUT`/`DELETE /api/v1/hosting-oauth-redirects` with a staff or company-owner identity JWT so preview origins stay on the redirect allowlist.

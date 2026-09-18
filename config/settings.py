@@ -13,6 +13,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 import logging
 import os
 import re
+import sys
 import tomllib
 from pathlib import Path
 from datetime import timedelta
@@ -122,6 +123,10 @@ SECRET_KEY = _secret_key
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DEBUG', 'false').strip().lower() in {'1', 'true', 'yes', 'on'}
+
+# One-time web bootstrap token for creating the first superuser when DEBUG=false.
+# When unset, use `manage.py createsuperuser` instead of the public form at `/`.
+SETUP_TOKEN = os.getenv('SETUP_TOKEN', '').strip()
 
 # Comma-separated; use * for all hosts only in trusted networks. Example: app.example.com,127.0.0.1
 ALLOWED_HOSTS = _env_csv('ALLOWED_HOSTS', ('localhost', '127.0.0.1'))
@@ -282,9 +287,24 @@ DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@localhost')
 JWT_ACCESS_TOKEN_LIFETIME = _env_duration('JWT_ACCESS_TOKEN_LIFETIME', timedelta(minutes=5))
 JWT_REFRESH_TOKEN_LIFETIME = _env_duration('JWT_REFRESH_TOKEN_LIFETIME', timedelta(days=7))
 
+JWT_ISSUER = os.getenv('JWT_ISSUER', '').strip() or None
+JWT_AUDIENCE = os.getenv('JWT_AUDIENCE', '').strip() or None
+
+# OAuth token delivery after login: ``code`` (one-time exchange, default) or ``fragment`` (legacy).
+_oauth_delivery = os.getenv('OAUTH_TOKEN_DELIVERY', 'code').strip().lower()
+if _oauth_delivery not in {'code', 'fragment'}:
+    raise ImproperlyConfigured(
+        'OAUTH_TOKEN_DELIVERY must be "code" or "fragment". '
+        f'Got: {_oauth_delivery!r}'
+    )
+OAUTH_TOKEN_DELIVERY = _oauth_delivery
+OAUTH_SESSION_CODE_TTL_SECONDS = int(os.getenv('OAUTH_SESSION_CODE_TTL_SECONDS', '120') or '120')
+
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': JWT_ACCESS_TOKEN_LIFETIME,
     'REFRESH_TOKEN_LIFETIME': JWT_REFRESH_TOKEN_LIFETIME,
+    'ISSUER': JWT_ISSUER,
+    'AUDIENCE': JWT_AUDIENCE,
 }
 
 _jwt_env = read_jwt_env()
@@ -327,16 +347,14 @@ SOCIALACCOUNT_PROVIDERS = {
     },
 }
 
-# API auth is Bearer JWT (not cookies). Permissive CORS matches Supabase-style
-# gateways so random hosting preview origins work without per-slug allowlists.
-# Set CORS_ALLOW_ALL_ORIGINS=false and CORS_ALLOWED_ORIGINS for lock-down installs.
+# API auth is Bearer JWT (not cookies). Development defaults to permissive CORS
+# (Supabase-style preview origins). Production requires explicit origins (M-01).
 # Token delivery stays strict via CompanyOAuthRedirect (see docs/oauth-login.md).
-CORS_ALLOW_ALL_ORIGINS = os.getenv('CORS_ALLOW_ALL_ORIGINS', 'true').strip().lower() in {
-    '1',
-    'true',
-    'yes',
-    'on',
-}
+_cors_allow_all_raw = os.getenv('CORS_ALLOW_ALL_ORIGINS', '').strip().lower()
+if _cors_allow_all_raw:
+    CORS_ALLOW_ALL_ORIGINS = _cors_allow_all_raw in {'1', 'true', 'yes', 'on'}
+else:
+    CORS_ALLOW_ALL_ORIGINS = DEBUG
 CORS_ALLOWED_ORIGINS = [
     'http://localhost:4000',
     'http://127.0.0.1:4000',
@@ -462,6 +480,25 @@ SENTRY_ENVIRONMENT = os.getenv('SENTRY_ENVIRONMENT', '').strip() or (
 )
 SENTRY_RELEASE = os.getenv('SENTRY_RELEASE', '').strip() or VERSION
 SENTRY_TRACES_SAMPLE_RATE = _env_float('SENTRY_TRACES_SAMPLE_RATE', 0.0)
+
+def _skip_production_config_validation() -> bool:
+    """Allow key-generation tooling before JWT_ISSUER/JWT_AUDIENCE are configured."""
+    return len(sys.argv) > 1 and sys.argv[1] == 'generate_jwt_keys'
+
+
+if not DEBUG and not _skip_production_config_validation():
+    _production_config_errors = []
+    if not JWT_ISSUER:
+        _production_config_errors.append('JWT_ISSUER is required when DEBUG=false.')
+    if not JWT_AUDIENCE:
+        _production_config_errors.append('JWT_AUDIENCE is required when DEBUG=false.')
+    if CORS_ALLOW_ALL_ORIGINS:
+        _production_config_errors.append(
+            'CORS_ALLOW_ALL_ORIGINS=true is not allowed when DEBUG=false — '
+            'set CORS_ALLOWED_ORIGINS to trusted browser origins.'
+        )
+    if _production_config_errors:
+        raise ImproperlyConfigured('\n'.join(_production_config_errors))
 
 if SENTRY_DSN:
     import sentry_sdk

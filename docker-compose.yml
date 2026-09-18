@@ -9,14 +9,16 @@ services:
       - "${IDENTITY_SERVICE_PORT:-8000}:8000"
     environment:
       SECRET_KEY: "${SECRET_KEY:?SECRET_KEY is required — copy .env.example to .env and set SECRET_KEY}"
-      # Local compose defaults DEBUG=true (HS256 without JWT_PRIVATE_KEY). Set DEBUG=false + JWT_PRIVATE_KEY for production-like runs.
-      DEBUG: "${DEBUG:-false}"
+      # Local compose: DEBUG=true (HS256 without JWT_PRIVATE_KEY). Set DEBUG=false + JWT_PRIVATE_KEY for production-like runs.
+      DEBUG: "${DEBUG:-true}"
       JWT_PRIVATE_KEY: "${JWT_PRIVATE_KEY:-}"
       JWT_PUBLIC_KEY: "${JWT_PUBLIC_KEY:-}"
       JWT_KEY_ID: "${JWT_KEY_ID:-}"
       JWT_PREVIOUS_PUBLIC_KEY: "${JWT_PREVIOUS_PUBLIC_KEY:-}"
       JWT_PREVIOUS_KEY_ID: "${JWT_PREVIOUS_KEY_ID:-}"
-      JWT_ACCEPT_HS256_LEGACY: "${JWT_ACCEPT_HS256_LEGACY:-true}"
+      JWT_ACCEPT_HS256_LEGACY: "${JWT_ACCEPT_HS256_LEGACY:-false}"
+      JWT_ISSUER: "${JWT_ISSUER:-}"
+      JWT_AUDIENCE: "${JWT_AUDIENCE:-}"
       # Defaults use seconds to avoid Docker Compose treating "5m" as "$m".
       JWT_ACCESS_TOKEN_LIFETIME: "${JWT_ACCESS_TOKEN_LIFETIME:-300}"
       JWT_REFRESH_TOKEN_LIFETIME: "${JWT_REFRESH_TOKEN_LIFETIME:-604800}"
@@ -24,7 +26,7 @@ services:
       CSRF_TRUSTED_ORIGINS: "${CSRF_TRUSTED_ORIGINS:-}"
       POSTGRES_DATABASE_URL: "${POSTGRES_DATABASE_URL:-}"
       SQLITE_PATH: "/app/data/db.sqlite3"
-      CORS_ALLOW_ALL_ORIGINS: "${CORS_ALLOW_ALL_ORIGINS:-true}"
+      CORS_ALLOW_ALL_ORIGINS: "${CORS_ALLOW_ALL_ORIGINS:-}"
       CORS_ALLOWED_ORIGINS: "${CORS_ALLOWED_ORIGINS:-}"
       GUNICORN_WORKERS: "${GUNICORN_WORKERS:-2}"
       GUNICORN_THREADS: "${GUNICORN_THREADS:-2}"

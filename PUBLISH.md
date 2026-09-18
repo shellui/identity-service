@@ -179,8 +179,10 @@ The entrypoint runs migrations on start, then starts Gunicorn as user `appuser`.
 
 | Variable                     | Notes                                                                                          |
 | ---------------------------- | ---------------------------------------------------------------------------------------------- |
-| `CORS_ALLOW_ALL_ORIGINS`     | Default `true` (permissive API CORS; Bearer JWT is the auth boundary). Set `false` to lock down. |
-| `CORS_ALLOWED_ORIGINS`       | Used when `CORS_ALLOW_ALL_ORIGINS=false`; Shellui / admin front-end origins.                   |
+| `JWT_ISSUER`, `JWT_AUDIENCE` | Required when `DEBUG=false`; issued tokens include `iss`/`aud`.                                |
+| `JWT_ACCEPT_HS256_LEGACY`    | Default `false` in production with RS256; set `true` only during HS256 migration.              |
+| `CORS_ALLOW_ALL_ORIGINS`     | Defaults to `DEBUG`; production requires explicit `CORS_ALLOWED_ORIGINS`.                      |
+| `CORS_ALLOWED_ORIGINS`       | Required in production; Shellui / admin front-end origins.                                     |
 | `POSTGRES_DATABASE_URL`      | Use Postgres instead of SQLite.                                                                |
 | `SENTRY_DSN`                 | Sentry error reporting.                                                                        |
 | `SENTRY_ENVIRONMENT`         | e.g. `staging`, `production`.                                                                  |

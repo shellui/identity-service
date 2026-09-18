@@ -168,14 +168,27 @@ export SECRET_KEY="${SECRET_KEY:-$(uv run python -c 'from django.core.management
 eval "$(uv run python manage.py generate_jwt_keys --shell)"
 [[ -n "${JWT_PRIVATE_KEY:-}" ]] || fail 'generate_jwt_keys --shell did not set JWT_PRIVATE_KEY'
 
-# Production-like container (DEBUG=false, RS256 JWKS) but plain HTTP for local curl.
+# Production-like smoke (DEBUG=false, RS256 JWKS, JWT/CORS from #18) with plain HTTP curl.
 # SECURE_SSL_REDIRECT stays true in real deploys; disable only for this smoke test.
+export DEBUG=false
+export JWT_ISSUER="${JWT_ISSUER:-https://auth.local}"
+export JWT_AUDIENCE="${JWT_AUDIENCE:-shellui}"
+export CORS_ALLOW_ALL_ORIGINS=false
+export CORS_ALLOWED_ORIGINS="${CORS_ALLOWED_ORIGINS:-http://localhost:4000}"
+export SECURE_SSL_REDIRECT="${SECURE_SSL_REDIRECT:-false}"
+
 docker run --rm -d --name "${CONTAINER_NAME}" -p "${HOST_PORT}:8000" \
   -e SECRET_KEY \
+  -e DEBUG \
   -e JWT_PRIVATE_KEY \
+  -e JWT_PUBLIC_KEY \
+  -e JWT_KEY_ID \
+  -e JWT_ISSUER \
+  -e JWT_AUDIENCE \
+  -e CORS_ALLOW_ALL_ORIGINS \
+  -e CORS_ALLOWED_ORIGINS \
+  -e SECURE_SSL_REDIRECT \
   -e ALLOWED_HOSTS=localhost,127.0.0.1 \
-  -e DEBUG=false \
-  -e SECURE_SSL_REDIRECT=false \
   "${IMAGE_TAG}" >/dev/null
 
 log 'Waiting for Gunicorn…'
