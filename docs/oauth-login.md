@@ -49,7 +49,7 @@ Configure via:
 - **Django admin → Company OAuth redirects**
 - Shellui admin **OAuth setup** (manual origins + separate hosting preview list)
 - `GET` / `POST` / `PATCH` / `DELETE` `/api/v1/oauth-redirects?company_id=…` (staff or company owner)
-- Hosting sync: `PUT` / `DELETE` `/api/v1/hosting-oauth-redirects` with the deployer's identity JWT (forwarded by hosting-service; company from token)
+- Hosting sync: `PUT` / `DELETE` `/api/v1/hosting-oauth-redirects` with the deployer's identity JWT (staff or company owner; forwarded by hosting-service; company from token)
 
 Example:
 
@@ -80,7 +80,7 @@ Do **not** add every hosting preview slug to `CORS_ALLOWED_ORIGINS`. Preview log
 | `POST /api/v1/oauth/confirm` | Finish sign-in after confirmation |
 | `GET /api/v1/oauth/confirm?action=switch&confirm_token=…` | Restart OAuth with account picker (Google / Microsoft) |
 | `GET`/`POST`/`PATCH`/`DELETE` `/api/v1/oauth-redirects` | Manage allowlist |
-| `PUT`/`DELETE` `/api/v1/hosting-oauth-redirects` | Hosting-service sync (`source=hosting`, caller JWT) |
+| `PUT`/`DELETE` `/api/v1/hosting-oauth-redirects` | Hosting-service sync (`source=hosting`, owner/staff JWT) |
 
 Company join rules (`public` / `domain` / `invite`) still apply after a successful provider login — see [company-access.md](company-access.md).
 
@@ -99,4 +99,4 @@ If you previously registered `{shell}/login/callback` on GitHub, Google, or Micr
 
 1. Deploy identity-service so migration `0014_companyoauthredirect_source` runs (adds `source` on `CompanyOAuthRedirect`; existing rows default to `manual`).
 2. Keep `CORS_ALLOW_ALL_ORIGINS=true` unless you intentionally lock down API origins; do **not** enumerate hosting preview slugs in `CORS_ALLOWED_ORIGINS`.
-3. Ensure hosting-service can reach `PUT`/`DELETE /api/v1/hosting-oauth-redirects` with the deployer's identity JWT so preview origins stay on the redirect allowlist.
+3. Ensure hosting-service can reach `PUT`/`DELETE /api/v1/hosting-oauth-redirects` with a staff or company-owner identity JWT so preview origins stay on the redirect allowlist.

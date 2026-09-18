@@ -836,7 +836,7 @@ def _require_staff_or_company_owner(request):
 
 def _require_enabled_company_member(request):
     """
-    Authenticated user with an enabled membership for the JWT company (or staff).
+    Authenticated staff or company owner with enabled membership for the JWT company.
     Used when hosting-service forwards the caller's JWT to sync hosting OAuth redirects.
     """
     user = _authenticate_bearer_user(request)
@@ -854,6 +854,8 @@ def _require_enabled_company_member(request):
             {'error': 'Company access is disabled for this user.'},
             status=status.HTTP_403_FORBIDDEN,
         )
+    if not _is_user_company_owner(user, company):
+        return None, None, Response({'error': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
     return user, company, None
 
 
@@ -2804,23 +2806,24 @@ class ShellUIAdminOAuthRedirectDetailView(APIView):
 @extend_schema_view(
     put=extend_schema(
         tags=['oauth-redirects'],
-        summary='Upsert a hosting-managed OAuth redirect origin (company member JWT)',
+        summary='Upsert a hosting-managed OAuth redirect origin (owner/staff JWT)',
         description=(
             'Called by hosting-service with the deployer\'s access token. '
-            'Company scope comes from the JWT. Only `source=hosting` rows are written.'
+            'Requires staff or company-owner JWT. Company scope comes from the JWT. '
+            'Only `source=hosting` rows are written.'
         ),
         request=ShellUIHostingOAuthRedirectSyncSerializer,
     ),
     delete=extend_schema(
         tags=['oauth-redirects'],
-        summary='Remove a hosting-managed OAuth redirect origin (company member JWT)',
+        summary='Remove a hosting-managed OAuth redirect origin (owner/staff JWT)',
         request=ShellUIHostingOAuthRedirectDeleteSerializer,
     ),
 )
 class ShellUIHostingOAuthRedirectSyncView(APIView):
     """
     Hosting-service forwards the caller's identity JWT after create/delete of a preview site.
-    Any enabled company member may upsert/delete ``source=hosting`` origins for their company.
+    Only staff or company owners may upsert/delete ``source=hosting`` origins for their company.
     """
 
     permission_classes = [ShellUIPermission]
