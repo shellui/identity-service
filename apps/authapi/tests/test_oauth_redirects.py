@@ -44,6 +44,7 @@ class OAuthStateTests(TestCase):
 
 @override_settings(
     ALLOWED_HOSTS=['testserver', 'localhost', '127.0.0.1'],
+    OAUTH_TOKEN_DELIVERY='code',
 )
 class OAuthAuthorizeCallbackTests(TestCase):
     def setUp(self):
@@ -202,6 +203,53 @@ class OAuthAuthorizeCallbackTests(TestCase):
         confirmed = self.client.post('/api/v1/oauth/confirm', {'confirm_token': confirm_token})
         self.assertEqual(confirmed.status_code, 302)
         location = confirmed['Location']
+        self.assertTrue(location.startswith(redirect_to))
+        self.assertIn('shellui_auth_code=', location)
+        self.assertNotIn('#access_token=', location)
+        self.assertTrue(exchange.called)
+
+        from urllib.parse import parse_qs, urlsplit
+
+        auth_code = parse_qs(urlsplit(location).query)['shellui_auth_code'][0]
+        session = self.client.post(
+            '/api/v1/oauth/session',
+            {'auth_code': auth_code, 'redirect_to': redirect_to},
+            format='json',
+            HTTP_ORIGIN='https://shell.example.com',
+        )
+        self.assertEqual(session.status_code, 200, session.data)
+        self.assertIn('access_token', session.data)
+        self.assertIn('refresh_token', session.data)
+
+    @override_settings(OAUTH_TOKEN_DELIVERY='fragment')
+    @patch('apps.authapi.views.exchange_code_for_token', return_value='provider-access')
+    @patch(
+        'apps.authapi.views.fetch_provider_userinfo',
+        return_value={'id': 1, 'login': 'legacy', 'email': 'legacy@example.com', 'name': 'Legacy User'},
+    )
+    def test_callback_fragment_delivery_legacy(self, _userinfo, exchange):
+        redirect_to = 'https://shell.example.com/login/callback'
+        state = build_oauth_state(
+            provider='github',
+            redirect_to=redirect_to,
+            company_id=self.company.id,
+            company_oauth_client_id=self.oauth_client.id,
+            token_delivery='fragment',
+        )
+        callback = self.client.get(
+            '/api/v1/oauth/callback',
+            {'code': 'auth-code', 'state': state},
+        )
+        confirm_token = None
+        for line in callback.content.decode('utf-8').splitlines():
+            if 'name="confirm_token"' in line:
+                start = line.find('value="') + len('value="')
+                end = line.find('"', start)
+                confirm_token = line[start:end]
+                break
+        confirmed = self.client.post('/api/v1/oauth/confirm', {'confirm_token': confirm_token})
+        self.assertEqual(confirmed.status_code, 302)
+        location = confirmed['Location']
         self.assertTrue(location.startswith(redirect_to + '#'))
         self.assertIn('access_token=', location)
         self.assertTrue(exchange.called)
@@ -289,17 +337,31 @@ class HostingOAuthRedirectSyncTests(TestCase):
             email='member@example.com',
             password='x',
         )
+        self.owner = User.objects.create_user(
+            username='owner',
+            email='owner@example.com',
+            password='x',
+        )
+        self.staff = User.objects.create_user(
+            username='staff',
+            email='staff@example.com',
+            password='x',
+            is_staff=True,
+        )
         set_company_access(self.company, self.member, enabled=True)
-        self.company.members.add(self.member)
+        set_company_access(self.company, self.owner, enabled=True)
+        set_company_access(self.company, self.staff, enabled=True)
+        self.company.members.add(self.member, self.owner, self.staff)
+        self.company.owners.add(self.owner)
 
-    def _auth_member(self):
+    def _auth_user(self, user):
         self.client.force_authenticate(
-            user=self.member,
+            user=user,
             token={'company_id': self.company.id},
         )
 
     def test_upsert_and_delete_hosting_redirect(self):
-        self._auth_member()
+        self._auth_user(self.owner)
         created = self.client.put(
             '/api/v1/hosting-oauth-redirects',
             {
@@ -349,9 +411,37 @@ class HostingOAuthRedirectSyncTests(TestCase):
         )
         self.assertIn(response.status_code, (401, 403))
 
-    def test_rejects_disabled_member(self):
-        set_company_access(self.company, self.member, enabled=False)
-        self._auth_member()
+    def test_rejects_regular_member(self):
+        self._auth_user(self.member)
+        put_response = self.client.put(
+            '/api/v1/hosting-oauth-redirects',
+            {'base_url': 'https://abc123.shellui.app'},
+            format='json',
+        )
+        self.assertEqual(put_response.status_code, 403)
+        delete_response = self.client.delete(
+            '/api/v1/hosting-oauth-redirects',
+            {'base_url': 'https://abc123.shellui.app'},
+            format='json',
+        )
+        self.assertEqual(delete_response.status_code, 403)
+        self.assertFalse(
+            CompanyOAuthRedirect.objects.filter(company=self.company).exists(),
+        )
+
+    def test_staff_can_sync_hosting_redirect(self):
+        self._auth_user(self.staff)
+        response = self.client.put(
+            '/api/v1/hosting-oauth-redirects',
+            {'base_url': 'https://staff-preview.shellui.app'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data['source'], 'hosting')
+
+    def test_rejects_disabled_owner(self):
+        set_company_access(self.company, self.owner, enabled=False)
+        self._auth_user(self.owner)
         response = self.client.put(
             '/api/v1/hosting-oauth-redirects',
             {'base_url': 'https://abc123.shellui.app'},
@@ -365,7 +455,7 @@ class HostingOAuthRedirectSyncTests(TestCase):
             base_url='https://abc123.shellui.app',
             source=CompanyOAuthRedirect.SOURCE_MANUAL,
         )
-        self._auth_member()
+        self._auth_user(self.owner)
         deleted = self.client.delete(
             '/api/v1/hosting-oauth-redirects',
             {'base_url': 'https://abc123.shellui.app'},

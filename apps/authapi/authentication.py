@@ -12,6 +12,7 @@ from rest_framework_simplejwt.exceptions import InvalidToken, TokenBackendError
 from rest_framework_simplejwt.settings import api_settings
 
 from .models import PersonalAccessToken
+from .refresh_sessions import is_access_jti_denied
 
 
 class ShellUIJWTAuthentication(JWTAuthentication):
@@ -19,6 +20,8 @@ class ShellUIJWTAuthentication(JWTAuthentication):
 
     def get_validated_token(self, raw_token):
         validated = self._decode_with_configured_keys(raw_token)
+        if is_access_jti_denied(validated.get('jti')):
+            raise InvalidToken({'detail': 'Access token revoked.'})
         pat_id = validated.get('pat_id')
         if pat_id is None:
             return validated

@@ -107,6 +107,10 @@ SECRET_KEY = _secret_key
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DEBUG', 'false').strip().lower() in {'1', 'true', 'yes', 'on'}
 
+# One-time web bootstrap token for creating the first superuser when DEBUG=false.
+# When unset, use `manage.py createsuperuser` instead of the public form at `/`.
+SETUP_TOKEN = os.getenv('SETUP_TOKEN', '').strip()
+
 # Comma-separated; use * for all hosts only in trusted networks. Example: app.example.com,127.0.0.1
 ALLOWED_HOSTS = _env_csv('ALLOWED_HOSTS', ('localhost', '127.0.0.1'))
 # Full origins with scheme (required for cross-site POST / CSRF). Example: https://app.example.com
@@ -259,6 +263,16 @@ JWT_REFRESH_TOKEN_LIFETIME = _env_duration('JWT_REFRESH_TOKEN_LIFETIME', timedel
 
 JWT_ISSUER = os.getenv('JWT_ISSUER', '').strip() or None
 JWT_AUDIENCE = os.getenv('JWT_AUDIENCE', '').strip() or None
+
+# OAuth token delivery after login: ``code`` (one-time exchange, default) or ``fragment`` (legacy).
+_oauth_delivery = os.getenv('OAUTH_TOKEN_DELIVERY', 'code').strip().lower()
+if _oauth_delivery not in {'code', 'fragment'}:
+    raise ImproperlyConfigured(
+        'OAUTH_TOKEN_DELIVERY must be "code" or "fragment". '
+        f'Got: {_oauth_delivery!r}'
+    )
+OAUTH_TOKEN_DELIVERY = _oauth_delivery
+OAUTH_SESSION_CODE_TTL_SECONDS = int(os.getenv('OAUTH_SESSION_CODE_TTL_SECONDS', '120') or '120')
 
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': JWT_ACCESS_TOKEN_LIFETIME,
