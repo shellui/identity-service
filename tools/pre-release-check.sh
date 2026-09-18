@@ -182,8 +182,8 @@ log 'Waiting for Gunicorn…'
 ready=0
 for _ in $(seq 1 60); do
   code="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${HOST_PORT}/api/v1/settings" || true)"
-  # 400 = missing company_id (expected); reject redirects (301/302) from misconfigured SSL flags.
-  if [[ "${code}" =~ ^[0-9]+$ && "${code}" != "000" && "${code}" -lt 300 ]]; then
+  # 400 = missing company_id (expected). Accept any app response (2xx/4xx/5xx), not 3xx redirects.
+  if [[ "${code}" =~ ^[245][0-9]{2}$ ]]; then
     ready=1
     printf 'OK: /api/v1/settings → HTTP %s\n' "${code}"
     break
