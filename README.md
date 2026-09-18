@@ -58,6 +58,12 @@ uv run python manage.py migrate
 uv run python manage.py runserver
 ```
 
+With `DEBUG=true` (local default), visiting `/` on an empty database shows a one-time web form to create the first superuser. In production (`DEBUG=false`), that form is disabled unless you set `SETUP_TOKEN` and open `/?setup_token=<token>`. Prefer creating the first admin via CLI:
+
+```bash
+uv run python manage.py createsuperuser
+```
+
 Dependencies live in `pyproject.toml` and are locked in `uv.lock`. Add a package with `uv add <name>`; refresh the lock with `uv lock`.
 
 Configure OAuth credentials per company (Django admin → Company → OAuth clients, or `POST /api/v1/admin/oauth-social-apps`):

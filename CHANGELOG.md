@@ -40,6 +40,7 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 ### 🔒 Security
 
+- Gate public first-run superuser bootstrap at `/`: disabled when `DEBUG=false` unless a valid `SETUP_TOKEN` is provided. Production installs should use `manage.py createsuperuser` or a one-time `SETUP_TOKEN` URL.
 - **Hosting redirect sync (H-04):** `PUT`/`DELETE /api/v1/hosting-oauth-redirects` now requires a staff or company-owner JWT. Regular enabled members can no longer widen the OAuth redirect allowlist via hosting sync.
 
 ## [0.4.1] - 2026-09-07
