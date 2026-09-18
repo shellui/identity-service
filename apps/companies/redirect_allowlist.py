@@ -189,3 +189,27 @@ def validate_redirect_to_for_company(
     if not redirect_url_allowed_for_company(company, url, request):
         return None, 'redirect_to is not allowed for this company.'
     return url, None
+
+
+def validate_redirect_uri_for_company(
+    *,
+    company: Company,
+    request: HttpRequest,
+    redirect_uri_raw: str | None,
+) -> tuple[str | None, str | None]:
+    """
+    Resolve legacy client `redirect_uri` and validate URL shape + allowlist.
+    Same rules as validate_redirect_to_for_company (loopback + CompanyOAuthRedirect).
+    Returns (absolute_url_without_fragment, error_message).
+    """
+    raw = (redirect_uri_raw or '').strip()
+    if not raw:
+        return None, 'Missing redirect_uri.'
+    url, err = normalize_client_redirect_url(request, raw)
+    if err:
+        if err and 'redirect_to' in err:
+            err = err.replace('redirect_to', 'redirect_uri')
+        return None, err
+    if not redirect_url_allowed_for_company(company, url, request):
+        return None, 'redirect_uri is not allowed for this company.'
+    return url, None

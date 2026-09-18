@@ -5,6 +5,7 @@ from apps.companies.redirect_allowlist import (
     normalize_allowlist_origin,
     redirect_url_allowed_for_company,
     validate_redirect_to_for_company,
+    validate_redirect_uri_for_company,
 )
 
 
@@ -86,3 +87,21 @@ class RedirectAllowlistTests(TestCase):
         )
         self.assertIsNone(url)
         self.assertIn('Missing redirect_to', err or '')
+
+    def test_validate_redirect_uri_requires_value(self):
+        url, err = validate_redirect_uri_for_company(
+            company=self.company,
+            request=self.request,
+            redirect_uri_raw=None,
+        )
+        self.assertIsNone(url)
+        self.assertIn('Missing redirect_uri', err or '')
+
+    def test_validate_redirect_uri_denies_non_allowlisted(self):
+        url, err = validate_redirect_uri_for_company(
+            company=self.company,
+            request=self.request,
+            redirect_uri_raw='https://evil.example.com/login/callback',
+        )
+        self.assertIsNone(url)
+        self.assertIn('not allowed', err or '')

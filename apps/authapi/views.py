@@ -43,6 +43,7 @@ from apps.companies.redirect_allowlist import (
     append_oauth_error_params,
     loopback_client_bounce_url_for_oauth_error,
     validate_redirect_to_for_company,
+    validate_redirect_uri_for_company,
 )
 from .renderers import PrometheusTextRenderer
 from .login_audit import oauth_provider_redirect_uri, record_login_event
@@ -993,9 +994,16 @@ class SocialAuthorizeView(APIView):
             return Response({'error': oauth_client_err}, status=status.HTTP_400_BAD_REQUEST)
         serializer = ProviderAuthorizeSerializer(data=request.query_params)
         serializer.is_valid(raise_exception=True)
+        redirect_uri, rerr = validate_redirect_uri_for_company(
+            company=company,
+            request=request,
+            redirect_uri_raw=serializer.validated_data['redirect_uri'],
+        )
+        if rerr or not redirect_uri:
+            return Response({'error': rerr or 'Invalid redirect_uri.'}, status=status.HTTP_400_BAD_REQUEST)
         authorize_url = build_authorize_url(
             provider=provider,
-            redirect_uri=serializer.validated_data['redirect_uri'],
+            redirect_uri=redirect_uri,
             company_id=company.id,
             company_oauth_client_id=company_oauth_client_id,
         )
@@ -1027,6 +1035,13 @@ class SocialLoginView(APIView):
             return Response({'error': oauth_client_err}, status=status.HTTP_400_BAD_REQUEST)
         serializer = ProviderCallbackSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        redirect_uri, rerr = validate_redirect_uri_for_company(
+            company=company,
+            request=request,
+            redirect_uri_raw=serializer.validated_data['redirect_uri'],
+        )
+        if rerr or not redirect_uri:
+            return Response({'error': rerr or 'Invalid redirect_uri.'}, status=status.HTTP_400_BAD_REQUEST)
 
         client_tz = serializer.validated_data.get('client_timezone') or ''
         client_dev = serializer.validated_data.get('client_device_id') or None
@@ -1034,7 +1049,7 @@ class SocialLoginView(APIView):
             access_token = exchange_code_for_token(
                 provider=provider,
                 code=serializer.validated_data['code'],
-                redirect_uri=serializer.validated_data['redirect_uri'],
+                redirect_uri=redirect_uri,
                 company_id=company.id,
                 company_oauth_client_id=company_oauth_client_id,
             )
@@ -1643,7 +1658,13 @@ class ShellUIOAuthExchangeView(APIView):
         validated = serializer.validated_data
         provider = str(validated['provider']).strip().lower()
         code = str(validated['code']).strip()
-        redirect_uri = validated['redirect_uri']
+        redirect_uri, rerr = validate_redirect_uri_for_company(
+            company=company,
+            request=request,
+            redirect_uri_raw=validated['redirect_uri'],
+        )
+        if rerr or not redirect_uri:
+            return Response({'error': rerr or 'Invalid redirect_uri.'}, status=status.HTTP_400_BAD_REQUEST)
         company_oauth_client_id = validated.get('company_oauth_client_id')
         _row, oauth_client_err = _get_company_oauth_client(company, provider, company_oauth_client_id)
         if oauth_client_err:
