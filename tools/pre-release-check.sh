@@ -168,17 +168,22 @@ export SECRET_KEY="${SECRET_KEY:-$(uv run python -c 'from django.core.management
 eval "$(uv run python manage.py generate_jwt_keys --shell)"
 [[ -n "${JWT_PRIVATE_KEY:-}" ]] || fail 'generate_jwt_keys --shell did not set JWT_PRIVATE_KEY'
 
+# Production-like container (DEBUG=false, RS256 JWKS) but plain HTTP for local curl.
+# SECURE_SSL_REDIRECT stays true in real deploys; disable only for this smoke test.
 docker run --rm -d --name "${CONTAINER_NAME}" -p "${HOST_PORT}:8000" \
   -e SECRET_KEY \
   -e JWT_PRIVATE_KEY \
   -e ALLOWED_HOSTS=localhost,127.0.0.1 \
+  -e DEBUG=false \
+  -e SECURE_SSL_REDIRECT=false \
   "${IMAGE_TAG}" >/dev/null
 
 log 'Waiting for Gunicorn…'
 ready=0
 for _ in $(seq 1 60); do
   code="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${HOST_PORT}/api/v1/settings" || true)"
-  if [[ "${code}" != "000" && -n "${code}" ]]; then
+  # 400 = missing company_id (expected); reject redirects (301/302) from misconfigured SSL flags.
+  if [[ "${code}" =~ ^[0-9]+$ && "${code}" != "000" && "${code}" -lt 300 ]]; then
     ready=1
     printf 'OK: /api/v1/settings → HTTP %s\n' "${code}"
     break
@@ -187,7 +192,7 @@ for _ in $(seq 1 60); do
 done
 [[ "${ready}" -eq 1 ]] || fail 'service did not become ready on /api/v1/settings'
 
-curl -s "http://127.0.0.1:${HOST_PORT}/.well-known/jwks.json" | python3 -c '
+curl -fsS "http://127.0.0.1:${HOST_PORT}/.well-known/jwks.json" | python3 -c '
 import json, sys
 doc = json.load(sys.stdin)
 keys = doc.get("keys") or []
