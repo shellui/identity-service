@@ -30,6 +30,11 @@ const sidebars = {
     },
     {
       type: 'doc',
+      id: 'security-hardening',
+      label: 'Security hardening',
+    },
+    {
+      type: 'doc',
       id: 'RELEASES',
       label: 'Releases',
     },
