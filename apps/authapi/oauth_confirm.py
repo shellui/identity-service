@@ -18,6 +18,7 @@ def build_oauth_confirm_token(
     company_oauth_client_id: int | None = None,
     client_timezone: str | None = None,
     client_device_id: str | None = None,
+    token_delivery: str | None = None,
 ) -> str:
     payload: dict = {
         'user_id': int(user_id),
@@ -36,6 +37,9 @@ def build_oauth_confirm_token(
     dev = (client_device_id or '').strip()
     if dev:
         payload['client_device_id'] = dev[:128]
+    delivery = (token_delivery or '').strip().lower()
+    if delivery in {'code', 'fragment'}:
+        payload['token_delivery'] = delivery
     return signing.dumps(payload, salt=OAUTH_CONFIRM_SALT)
 
 
@@ -83,4 +87,7 @@ def parse_oauth_confirm_token(token: str | None) -> tuple[dict | None, str | Non
     dev = str(payload.get('client_device_id') or '').strip()
     if dev:
         out['client_device_id'] = dev[:128]
+    delivery = str(payload.get('token_delivery') or '').strip().lower()
+    if delivery in {'code', 'fragment'}:
+        out['token_delivery'] = delivery
     return out, None

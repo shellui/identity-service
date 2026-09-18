@@ -173,3 +173,71 @@ class PersonalAccessToken(models.Model):
 
     def __str__(self) -> str:
         return f'PersonalAccessToken(id={self.pk}, company_id={self.company_id})'
+
+
+class RefreshTokenSession(models.Model):
+    """
+    Server-side refresh token registry for rotation and logout revocation.
+
+    Each issued refresh JWT ``jti`` maps to one row. Rotation revokes the prior row and
+    issues a new ``jti`` in the same ``family_id``. Presenting a revoked refresh token
+    revokes the entire family (reuse detection).
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='refresh_token_sessions',
+    )
+    company = models.ForeignKey(
+        'companies.Company',
+        on_delete=models.CASCADE,
+        related_name='refresh_token_sessions',
+    )
+    jti = models.CharField(max_length=255, unique=True, db_index=True)
+    family_id = models.UUIDField(db_index=True)
+    expires_at = models.DateTimeField(db_index=True)
+    revoked_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['user', '-created_at']),
+            models.Index(fields=['family_id', 'revoked_at']),
+        ]
+
+    def __str__(self) -> str:
+        return f'RefreshTokenSession(id={self.pk}, user_id={self.user_id})'
+
+
+class OAuthSessionDeliveryCode(models.Model):
+    """
+    One-time OAuth login delivery code exchanged for JWTs via POST /api/v1/oauth/session.
+
+    Replaces URL-fragment token delivery (H-03). Codes are short-lived and single-use.
+    """
+
+    code = models.CharField(max_length=64, unique=True, db_index=True)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='oauth_session_delivery_codes',
+    )
+    company = models.ForeignKey(
+        'companies.Company',
+        on_delete=models.CASCADE,
+        related_name='oauth_session_delivery_codes',
+    )
+    redirect_to = models.CharField(max_length=2048)
+    token_payload = models.JSONField()
+    expires_at = models.DateTimeField(db_index=True)
+    redeemed_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self) -> str:
+        return f'OAuthSessionDeliveryCode(code={self.code[:8]}…)'

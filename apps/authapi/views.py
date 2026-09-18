@@ -49,6 +49,21 @@ from .renderers import PrometheusTextRenderer
 from .login_audit import oauth_provider_redirect_uri, record_login_event
 from .oauth_state import build_oauth_state, parse_oauth_state
 from .oauth_confirm import build_oauth_confirm_token, parse_oauth_confirm_token
+from .oauth_session_code import (
+    OAUTH_SESSION_CODE_PARAM,
+    build_code_redirect_url,
+    create_oauth_session_delivery_code,
+    redeem_oauth_session_code,
+)
+from .refresh_sessions import (
+    bind_access_session,
+    denylist_access_jti,
+    register_refresh_session,
+    revoke_refresh_by_jti,
+    revoke_refresh_session,
+    revoke_session_by_sid,
+    validate_refresh_session,
+)
 from .authentication import ShellUIJWTAuthentication
 from .models import LoginEvent, PersonalAccessToken, UserPreference
 from .user_activity import touch_user_last_seen
@@ -63,6 +78,8 @@ from .serializers import (
     ProviderAuthorizeSerializer,
     ProviderCallbackSerializer,
     ShellUIOAuthExchangeSerializer,
+    ShellUIOAuthSessionExchangeSerializer,
+    ShellUILogoutSerializer,
     ShellUIRefreshTokenSerializer,
     ShellUIOpenAPISerializer,
     ShellUIAdminGroupCreateSerializer,
@@ -226,7 +243,19 @@ def _resolve_auth_provider_for_jwt(
     return 'refresh'
 
 
-def _issue_tokens(user: User, company: Company) -> dict:
+def _resolve_token_delivery(*, request=None, stored: str | None = None) -> str:
+    for candidate in (
+        stored,
+        request.GET.get('token_delivery') if request is not None else None,
+    ):
+        if isinstance(candidate, str):
+            normalized = candidate.strip().lower()
+            if normalized in {'code', 'fragment'}:
+                return normalized
+    return settings.OAUTH_TOKEN_DELIVERY
+
+
+def _issue_tokens(user: User, company: Company, *, family_id: uuid.UUID | None = None) -> dict:
     user_payload = {
         'id': user.id,
         'email': user.email,
@@ -236,9 +265,16 @@ def _issue_tokens(user: User, company: Company) -> dict:
     refresh = ShellUIRefreshToken.for_user(user)
     refresh['user'] = user_payload
     refresh['company_id'] = company.id
+    session = register_refresh_session(
+        user=user,
+        company=company,
+        refresh=refresh,
+        family_id=family_id,
+    )
     access = refresh.access_token
     access['user'] = user_payload
     access['company_id'] = company.id
+    bind_access_session(access=access, session_id=session.id)
     return {
         'refresh': str(refresh),
         'access': str(access),
@@ -354,6 +390,7 @@ def _issue_shellui_tokens(
     *,
     oauth_provider: str | None = None,
     prior_app_metadata: dict | None = None,
+    family_id: uuid.UUID | None = None,
 ) -> dict:
     refresh = ShellUIRefreshToken.for_user(user)
     preferences = _user_preferences_payload(user)
@@ -383,6 +420,13 @@ def _issue_shellui_tokens(
     refresh['user_metadata'] = user_metadata
     refresh['company_id'] = company.id
     refresh['app_metadata'] = app_metadata
+    session = register_refresh_session(
+        user=user,
+        company=company,
+        refresh=refresh,
+        family_id=family_id,
+    )
+    bind_access_session(access=access, session_id=session.id)
     now_ts = int(datetime.now(timezone.utc).timestamp())
     expires_at = int(access['exp'])
     return {
@@ -458,6 +502,26 @@ def _build_callback_redirect(redirect_to: str, payload: dict, provider: str) -> 
         'provider': provider,
     }
     return f"{redirect_to}#{urlencode(params)}"
+
+
+def _build_oauth_login_redirect(
+    *,
+    user: User,
+    company: Company,
+    redirect_to: str,
+    payload: dict,
+    provider: str,
+    token_delivery: str,
+) -> str:
+    if token_delivery == 'fragment':
+        return _build_callback_redirect(redirect_to, payload, provider=provider)
+    delivery = create_oauth_session_delivery_code(
+        user=user,
+        company=company,
+        redirect_to=redirect_to,
+        token_payload={**payload, 'provider': provider},
+    )
+    return build_code_redirect_url(redirect_to, delivery.code)
 
 
 def _provider_display_label(provider: str) -> str:
@@ -572,6 +636,7 @@ def _finalize_shellui_oauth_login(
     avatar_url: str | None,
     client_tz: str = '',
     client_dev: str | None = None,
+    token_delivery: str | None = None,
 ) -> HttpResponseRedirect:
     _notify_user_logged_in_for_oauth(request, user)
     payload = _issue_shellui_tokens(user, company=company, avatar_url=avatar_url, oauth_provider=provider)
@@ -585,7 +650,16 @@ def _finalize_shellui_oauth_login(
         client_timezone=client_tz,
         client_device_id=client_dev,
     )
-    return HttpResponseRedirect(_build_callback_redirect(redirect_to, payload, provider=provider))
+    delivery_mode = _resolve_token_delivery(request=request, stored=token_delivery)
+    location = _build_oauth_login_redirect(
+        user=user,
+        company=company,
+        redirect_to=redirect_to,
+        payload=payload,
+        provider=provider,
+        token_delivery=delivery_mode,
+    )
+    return HttpResponseRedirect(location)
 
 
 def _render_oauth_confirm_page(
@@ -600,6 +674,7 @@ def _render_oauth_confirm_page(
     client_tz: str = '',
     client_dev: str | None = None,
     error_message: str | None = None,
+    token_delivery: str | None = None,
 ):
     confirm_token = build_oauth_confirm_token(
         user_id=user.id,
@@ -610,6 +685,7 @@ def _render_oauth_confirm_page(
         company_oauth_client_id=company_oauth_client_id,
         client_timezone=client_tz or None,
         client_device_id=client_dev,
+        token_delivery=token_delivery,
     )
     confirm_url = request.build_absolute_uri(reverse('shellui-oauth-confirm'))
     switch_account_url = f'{confirm_url}?{urlencode({"action": "switch", "confirm_token": confirm_token})}'
@@ -1327,6 +1403,7 @@ class ShellUIAuthorizeView(APIView):
                 error_code='provider_oauth_misconfigured',
             )
         switch_account = str(request.GET.get('switch_account', '')).strip().lower() in ('1', 'true', 'yes')
+        token_delivery = _resolve_token_delivery(request=request)
         state = build_oauth_state(
             provider=provider,
             redirect_to=redirect_to,
@@ -1334,6 +1411,7 @@ class ShellUIAuthorizeView(APIView):
             company_oauth_client_id=company_oauth_client_id,
             client_timezone=client_tz or None,
             client_device_id=client_dev,
+            token_delivery=token_delivery,
         )
         # Provider always returns to this service; bounce target is in signed state.
         authorize_url = build_authorize_url(
@@ -1531,6 +1609,7 @@ class ShellUIOAuthCallbackView(APIView):
             company_oauth_client_id=company_oauth_client_id,
             client_tz=client_tz,
             client_dev=client_dev,
+            token_delivery=state_payload.get('token_delivery'),
         )
 
 
@@ -1628,7 +1707,43 @@ class ShellUIOAuthConfirmView(APIView):
             avatar_url=payload.get('avatar_url'),
             client_tz=payload.get('client_timezone') or '',
             client_dev=payload.get('client_device_id'),
+            token_delivery=payload.get('token_delivery'),
         )
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=['auth-social'],
+        summary='Exchange one-time OAuth session code for Shellui tokens',
+        description=(
+            'Preferred token delivery after OAuth login (H-03). The browser is redirected to '
+            f'`redirect_to?{OAUTH_SESSION_CODE_PARAM}=…` instead of a URL fragment. '
+            'POST the code with the same `redirect_to` URL; optional Origin header must match when present.'
+        ),
+        auth=[],
+        request=ShellUIOAuthSessionExchangeSerializer,
+        responses={
+            200: OpenApiResponse(description='Shellui token payload'),
+            400: OpenApiResponse(description='Invalid or expired auth code'),
+        },
+    ),
+)
+class ShellUIOAuthSessionView(APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def post(self, request):
+        serializer = ShellUIOAuthSessionExchangeSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        validated = serializer.validated_data
+        payload, err = redeem_oauth_session_code(
+            code=validated['auth_code'],
+            redirect_to=validated['redirect_to'],
+            request_origin=(request.headers.get('Origin') or '').strip() or None,
+        )
+        if err or not payload:
+            return Response({'error': err or 'Invalid auth code.'}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(payload)
 
 
 @extend_schema_view(
@@ -1807,6 +1922,10 @@ class ShellUITokenView(APIView):
         except Exception:
             return Response({'error': 'Invalid refresh token.'}, status=status.HTTP_401_UNAUTHORIZED)
 
+        session, session_err = validate_refresh_session(refresh)
+        if session_err:
+            return Response({'error': session_err}, status=status.HTTP_401_UNAUTHORIZED)
+
         actor = _authenticate_bearer_user(request)
         if actor is not None and int(actor.pk) != int(user.pk):
             return Response(
@@ -1835,11 +1954,14 @@ class ShellUITokenView(APIView):
         prior_app = refresh.get('app_metadata')
         touch_user_last_seen(user)
 
+        assert session is not None
+        revoke_refresh_session(session)
         payload = _issue_shellui_tokens(
             user,
             company=company,
             avatar_url=prior_avatar,
             prior_app_metadata=prior_app if isinstance(prior_app, dict) else None,
+            family_id=session.family_id,
         )
         return Response(payload)
 
@@ -1860,12 +1982,31 @@ class ShellUITokenView(APIView):
 )
 class ShellUILogoutView(APIView):
     permission_classes = [ShellUIPermission]
-    serializer_class = ShellUIOpenAPISerializer
+    serializer_class = ShellUILogoutSerializer
 
     def post(self, request):
         _company, company_err = _required_company_from_request(request, user=request.user)
         if company_err:
             return company_err
+
+        request_auth = getattr(request, 'auth', None)
+        if request_auth is not None and hasattr(request_auth, 'get'):
+            access_jti = request_auth.get('jti')
+            access_exp = request_auth.get('exp')
+            if access_jti and access_exp is not None:
+                denylist_access_jti(str(access_jti), exp_unix=int(access_exp))
+            sid = request_auth.get('sid')
+            if sid:
+                revoke_session_by_sid(sid)
+
+        refresh_token = request.data.get('refresh_token')
+        if isinstance(refresh_token, str) and refresh_token.strip():
+            try:
+                refresh = ShellUIRefreshToken(refresh_token.strip())
+                revoke_refresh_by_jti(str(refresh.get('jti') or ''))
+            except Exception:
+                pass
+
         return Response({'success': True})
 
 
