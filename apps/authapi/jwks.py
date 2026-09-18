@@ -234,7 +234,11 @@ def resolve_jwt_configuration(
             public_pem=public_key_pem,
             kid=key_id,
         )
-        hs256_legacy = accept_hs256_legacy if accept_hs256_legacy is not None else True
+        # RS256 is active: disable HS256 fallback in production by default (H-05).
+        if accept_hs256_legacy is None:
+            hs256_legacy = debug
+        else:
+            hs256_legacy = accept_hs256_legacy
         return {
             'algorithm': 'RS256',
             'signing_key': signing_key.private_pem,
@@ -248,7 +252,7 @@ def resolve_jwt_configuration(
         }
 
     if not debug:
-        hs256_legacy = accept_hs256_legacy if accept_hs256_legacy is not None else True
+        hs256_legacy = accept_hs256_legacy if accept_hs256_legacy is not None else False
         return {
             'algorithm': 'HS256',
             'signing_key': secret_key,

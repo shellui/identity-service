@@ -67,9 +67,9 @@ These are different controls:
 | Concern | Mechanism | Strict? |
 |---------|-----------|---------|
 | **Token delivery** (`redirect_to` after OAuth) | `CompanyOAuthRedirect` allowlist | **Yes** — a malicious bounce origin can steal tokens from the URL fragment |
-| **Browser API calls** (Bearer JWT to `/api/v1/*`) | Permissive CORS (`CORS_ALLOW_ALL_ORIGINS=true` by default) | No — JWT verification and company scoping are the auth boundary (same model as Supabase) |
+| **Browser API calls** (Bearer JWT to `/api/v1/*`) | CORS: allow-all when `DEBUG=true`; explicit `CORS_ALLOWED_ORIGINS` in production | Production locks origins; JWT verification and company scoping remain the auth boundary |
 
-Do **not** add every hosting preview slug to `CORS_ALLOWED_ORIGINS`. Preview login still requires the redirect allowlist (auto-synced by hosting-service). Set `CORS_ALLOW_ALL_ORIGINS=false` only for lock-down installs that intentionally restrict API origins.
+Do **not** add every hosting preview slug to `CORS_ALLOWED_ORIGINS`. Preview login still requires the redirect allowlist (auto-synced by hosting-service). In production, list only trusted front-end origins in `CORS_ALLOWED_ORIGINS`.
 
 ## Related endpoints
 
@@ -98,5 +98,5 @@ If you previously registered `{shell}/login/callback` on GitHub, Google, or Micr
 ### To 0.4.1 (hosting sync + permissive CORS)
 
 1. Deploy identity-service so migration `0014_companyoauthredirect_source` runs (adds `source` on `CompanyOAuthRedirect`; existing rows default to `manual`).
-2. Keep `CORS_ALLOW_ALL_ORIGINS=true` unless you intentionally lock down API origins; do **not** enumerate hosting preview slugs in `CORS_ALLOWED_ORIGINS`.
+2. With `DEBUG=false`, set `CORS_ALLOWED_ORIGINS` to trusted front-end origins; do **not** enumerate hosting preview slugs unless you intentionally allow them.
 3. Ensure hosting-service can reach `PUT`/`DELETE /api/v1/hosting-oauth-redirects` with the deployer's identity JWT so preview origins stay on the redirect allowlist.

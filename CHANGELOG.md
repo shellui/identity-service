@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## [Unreleased] - 2026-09-18
+
+### 🔒 Security
+
+- **Production JWT/CORS/env defaults (H-05, M-01, M-03, M-12):** `JWT_ACCEPT_HS256_LEGACY` defaults to `false` when RS256 is configured and `DEBUG=false`. CORS no longer defaults to allow-all in production — set `CORS_ALLOWED_ORIGINS` explicitly. Production requires `JWT_ISSUER` and `JWT_AUDIENCE` (startup check). `.env.example` uses placeholder secrets only.
+
+### 🚨 Changed
+
+- **CORS:** `CORS_ALLOW_ALL_ORIGINS` defaults to `true` only when `DEBUG=true`; production defaults to explicit origins.
+- **JWT claims:** Tokens include `iss`/`aud` when `JWT_ISSUER` / `JWT_AUDIENCE` are set; both are required at startup when `DEBUG=false`.
+
+### 📚 Documentation
+
+- Document production JWT issuer/audience, HS256 legacy default, and CORS lock-down in [docs/jwks.md](docs/jwks.md), [README.md](README.md), [PUBLISH.md](PUBLISH.md), and [docs/oauth-login.md](docs/oauth-login.md).
+
 <!---
 ## [Unreleased] - yyyy-mm-dd
 
