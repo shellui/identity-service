@@ -106,6 +106,10 @@ SECRET_KEY = _secret_key
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DEBUG', 'false').strip().lower() in {'1', 'true', 'yes', 'on'}
 
+# One-time web bootstrap token for creating the first superuser when DEBUG=false.
+# When unset, use `manage.py createsuperuser` instead of the public form at `/`.
+SETUP_TOKEN = os.getenv('SETUP_TOKEN', '').strip()
+
 # Comma-separated; use * for all hosts only in trusted networks. Example: app.example.com,127.0.0.1
 ALLOWED_HOSTS = _env_csv('ALLOWED_HOSTS', ('localhost', '127.0.0.1'))
 # Full origins with scheme (required for cross-site POST / CSRF). Example: https://app.example.com
