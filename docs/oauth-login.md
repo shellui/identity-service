@@ -34,7 +34,7 @@ After OAuth, identity may bounce tokens only to approved targets for that compan
 
 | Target | Rule |
 |--------|------|
-| Loopback (`127.0.0.1`, `localhost`, `::1`) | Always allowed (CLI / local listeners) |
+| Loopback (`127.0.0.1`, `localhost`, `::1`) | Allowed when `DEBUG=true` or `OAUTH_ALLOW_LOOPBACK_REDIRECTS=true` (CLI / local dev) |
 | Other origins | Must match an active `CompanyOAuthRedirect` row for the company |
 | Hosting previews (`{slug}.{HOSTING_APP_DOMAIN}`) | Synced automatically by hosting-service (`source=hosting`) when a site is created/deleted |
 | Empty allowlist | Non-loopback `redirect_to` is **denied** |
@@ -72,6 +72,10 @@ These are different controls:
 | **Browser API calls** (Bearer JWT to `/api/v1/*`) | CORS: allow-all when `DEBUG=true`; explicit `CORS_ALLOWED_ORIGINS` in production | Production locks origins; JWT verification and company scoping remain the auth boundary |
 
 Do **not** add every hosting preview slug to `CORS_ALLOWED_ORIGINS`. Preview login still requires the redirect allowlist (auto-synced by hosting-service). In production, list only trusted front-end origins in `CORS_ALLOWED_ORIGINS`.
+
+## Security hardening
+
+Rate limits, HTTPS defaults, Postgres SSL, trusted-proxy IP handling, and PAT lifetime are documented in [security-hardening.md](security-hardening.md).
 
 ## Related endpoints
 

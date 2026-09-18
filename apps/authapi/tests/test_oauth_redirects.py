@@ -44,6 +44,8 @@ class OAuthStateTests(TestCase):
 
 @override_settings(
     ALLOWED_HOSTS=['testserver', 'localhost', '127.0.0.1'],
+    OAUTH_ALLOW_LOOPBACK_REDIRECTS=True,
+    AUTH_RATE_LIMIT_ENABLED=False,
     OAUTH_TOKEN_DELIVERY='code',
 )
 class OAuthAuthorizeCallbackTests(TestCase):
@@ -115,6 +117,19 @@ class OAuthAuthorizeCallbackTests(TestCase):
             },
         )
         self.assertEqual(response.status_code, 302)
+
+    @override_settings(OAUTH_ALLOW_LOOPBACK_REDIRECTS=False, DEBUG=False)
+    def test_authorize_rejects_loopback_when_disabled(self):
+        CompanyOAuthRedirect.objects.all().delete()
+        response = self.client.get(
+            '/api/v1/authorize',
+            {
+                'provider': 'github',
+                'company_id': self.company.id,
+                'redirect_to': 'http://127.0.0.1:8765/callback',
+            },
+        )
+        self.assertEqual(response.status_code, 400)
 
     def test_authorize_without_provider_shows_method_picker(self):
         redirect_to = 'http://127.0.0.1:8765/callback'
@@ -327,6 +342,7 @@ class OAuthRedirectCrudTests(TestCase):
 
 @override_settings(
     ALLOWED_HOSTS=['testserver', 'localhost', '127.0.0.1'],
+    AUTH_RATE_LIMIT_ENABLED=False,
 )
 class HostingOAuthRedirectSyncTests(TestCase):
     def setUp(self):
