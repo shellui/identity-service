@@ -13,6 +13,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 import logging
 import os
 import re
+import sys
 import tomllib
 from pathlib import Path
 from datetime import timedelta
@@ -414,7 +415,12 @@ SENTRY_ENVIRONMENT = os.getenv('SENTRY_ENVIRONMENT', '').strip() or (
 SENTRY_RELEASE = os.getenv('SENTRY_RELEASE', '').strip() or VERSION
 SENTRY_TRACES_SAMPLE_RATE = _env_float('SENTRY_TRACES_SAMPLE_RATE', 0.0)
 
-if not DEBUG:
+def _skip_production_config_validation() -> bool:
+    """Allow key-generation tooling before JWT_ISSUER/JWT_AUDIENCE are configured."""
+    return len(sys.argv) > 1 and sys.argv[1] == 'generate_jwt_keys'
+
+
+if not DEBUG and not _skip_production_config_validation():
     _production_config_errors = []
     if not JWT_ISSUER:
         _production_config_errors.append('JWT_ISSUER is required when DEBUG=false.')
