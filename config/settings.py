@@ -347,14 +347,10 @@ SOCIALACCOUNT_PROVIDERS = {
     },
 }
 
-# API auth is Bearer JWT (not cookies). Development defaults to permissive CORS
-# (Supabase-style preview origins). Production requires explicit origins (M-01).
+# API auth is Bearer JWT (not cookies). Multi-tenant shells run on unknown domains,
+# so permissive CORS is intentional when CORS_ALLOW_CREDENTIALS=false (Supabase-style).
 # Token delivery stays strict via CompanyOAuthRedirect (see docs/oauth-login.md).
-_cors_allow_all_raw = os.getenv('CORS_ALLOW_ALL_ORIGINS', '').strip().lower()
-if _cors_allow_all_raw:
-    CORS_ALLOW_ALL_ORIGINS = _cors_allow_all_raw in {'1', 'true', 'yes', 'on'}
-else:
-    CORS_ALLOW_ALL_ORIGINS = DEBUG
+CORS_ALLOW_ALL_ORIGINS = _env_bool('CORS_ALLOW_ALL_ORIGINS', True)
 CORS_ALLOWED_ORIGINS = [
     'http://localhost:4000',
     'http://127.0.0.1:4000',
@@ -373,7 +369,13 @@ for _pattern in os.getenv('CORS_ALLOWED_ORIGIN_REGEXES', '').split(','):
     if _pattern and _pattern not in CORS_ALLOWED_ORIGIN_REGEXES:
         CORS_ALLOWED_ORIGIN_REGEXES.append(_pattern)
 
-CORS_ALLOW_CREDENTIALS = False
+CORS_ALLOW_CREDENTIALS = _env_bool('CORS_ALLOW_CREDENTIALS', False)
+
+if CORS_ALLOW_ALL_ORIGINS and CORS_ALLOW_CREDENTIALS:
+    raise ImproperlyConfigured(
+        'CORS_ALLOW_ALL_ORIGINS=true with CORS_ALLOW_CREDENTIALS=true is unsafe — '
+        'use explicit CORS_ALLOWED_ORIGINS when credentials are enabled.'
+    )
 
 # HTTPS / cookie hardening (production defaults; override via env for local HTTP).
 SECURE_SSL_REDIRECT = _env_bool('SECURE_SSL_REDIRECT', not DEBUG)
@@ -492,11 +494,6 @@ if not DEBUG and not _skip_production_config_validation():
         _production_config_errors.append('JWT_ISSUER is required when DEBUG=false.')
     if not JWT_AUDIENCE:
         _production_config_errors.append('JWT_AUDIENCE is required when DEBUG=false.')
-    if CORS_ALLOW_ALL_ORIGINS:
-        _production_config_errors.append(
-            'CORS_ALLOW_ALL_ORIGINS=true is not allowed when DEBUG=false — '
-            'set CORS_ALLOWED_ORIGINS to trusted browser origins.'
-        )
     if _production_config_errors:
         raise ImproperlyConfigured('\n'.join(_production_config_errors))
 

@@ -59,3 +59,15 @@ Without trusted proxies, clients cannot spoof audit IPs by sending `X-Forwarded-
 ## Personal access token lifetime
 
 New PATs default to **30 days** (`PERSONAL_ACCESS_TOKEN_LIFETIME=30d`). Existing issued JWTs keep their original expiry until they expire or are revoked; shortening the default does not retroactively shorten active tokens.
+
+## CORS (browser API calls)
+
+Shellui customer shells run on unknown domains and call public `/api/v1/*` endpoints from the browser **before** a Bearer token exists. A static `CORS_ALLOWED_ORIGINS` list does not scale for multi-tenant hosting.
+
+**Default (recommended):** `CORS_ALLOW_ALL_ORIGINS=true` with `CORS_ALLOW_CREDENTIALS=false`. API auth is Bearer JWT in the `Authorization` header, not cookies — permissive CORS is intentional (Supabase-style).
+
+**Token delivery** after OAuth login is **not** governed by CORS. The `CompanyOAuthRedirect` allowlist remains the strict boundary for `redirect_to` targets and one-time code exchange.
+
+**Lock-down (optional):** set `CORS_ALLOW_ALL_ORIGINS=false` and list first-party origins in `CORS_ALLOWED_ORIGINS`.
+
+**Blocked:** `CORS_ALLOW_ALL_ORIGINS=true` with `CORS_ALLOW_CREDENTIALS=true` — startup fails because wildcard origins cannot safely carry credentials.

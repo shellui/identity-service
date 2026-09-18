@@ -6,7 +6,7 @@ from rest_framework_simplejwt.exceptions import InvalidToken
 
 from apps.authapi.authentication import ShellUIJWTAuthentication
 from apps.authapi.checks import (
-    cors_allow_all_forbidden_in_production,
+    cors_allow_all_with_credentials_forbidden,
     jwt_hs256_legacy_disabled_in_production,
     jwt_issuer_audience_required_in_production,
 )
@@ -149,11 +149,23 @@ class ProductionChecksTests(SimpleTestCase):
     @override_settings(
         DEBUG=False,
         CORS_ALLOW_ALL_ORIGINS=True,
+        CORS_ALLOW_CREDENTIALS=False,
         JWT_ISSUER='https://auth.example.com',
         JWT_AUDIENCE='shellui',
     )
-    def test_cors_allow_all_fails_in_production(self):
-        errors = cors_allow_all_forbidden_in_production(None)
+    def test_cors_allow_all_ok_in_production_without_credentials(self):
+        errors = cors_allow_all_with_credentials_forbidden(None)
+        self.assertFalse(errors)
+
+    @override_settings(
+        DEBUG=False,
+        CORS_ALLOW_ALL_ORIGINS=True,
+        CORS_ALLOW_CREDENTIALS=True,
+        JWT_ISSUER='https://auth.example.com',
+        JWT_AUDIENCE='shellui',
+    )
+    def test_cors_allow_all_with_credentials_fails(self):
+        errors = cors_allow_all_with_credentials_forbidden(None)
         self.assertTrue(errors)
         self.assertEqual(errors[0].id, 'authapi.E003')
 

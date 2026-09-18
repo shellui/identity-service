@@ -64,7 +64,7 @@ Optional but typical for production:
 
 - `JWT_ISSUER`, `JWT_AUDIENCE` — required when `DEBUG=false`
 - `JWT_ACCEPT_HS256_LEGACY` — default `false` in production with RS256
-- `CORS_ALLOW_ALL_ORIGINS` — defaults to `DEBUG`; production requires `CORS_ALLOWED_ORIGINS`
+- `CORS_ALLOW_ALL_ORIGINS` — default `true` (permissive API CORS). Set `false` + `CORS_ALLOWED_ORIGINS` only for lock-down installs
 - `POSTGRES_DATABASE_URL` — use Postgres instead of SQLite
 - `SENTRY_DSN` — Sentry project DSN for error reporting (see README observability section)
 - `SENTRY_ENVIRONMENT` — Sentry environment tag (e.g. `staging`, `production`)
