@@ -256,6 +256,16 @@ DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@localhost')
 JWT_ACCESS_TOKEN_LIFETIME = _env_duration('JWT_ACCESS_TOKEN_LIFETIME', timedelta(minutes=5))
 JWT_REFRESH_TOKEN_LIFETIME = _env_duration('JWT_REFRESH_TOKEN_LIFETIME', timedelta(days=7))
 
+# OAuth token delivery after login: ``code`` (one-time exchange, default) or ``fragment`` (legacy).
+_oauth_delivery = os.getenv('OAUTH_TOKEN_DELIVERY', 'code').strip().lower()
+if _oauth_delivery not in {'code', 'fragment'}:
+    raise ImproperlyConfigured(
+        'OAUTH_TOKEN_DELIVERY must be "code" or "fragment". '
+        f'Got: {_oauth_delivery!r}'
+    )
+OAUTH_TOKEN_DELIVERY = _oauth_delivery
+OAUTH_SESSION_CODE_TTL_SECONDS = int(os.getenv('OAUTH_SESSION_CODE_TTL_SECONDS', '120') or '120')
+
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': JWT_ACCESS_TOKEN_LIFETIME,
     'REFRESH_TOKEN_LIFETIME': JWT_REFRESH_TOKEN_LIFETIME,

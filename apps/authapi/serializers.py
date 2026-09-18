@@ -30,6 +30,15 @@ class ShellUIRefreshTokenSerializer(serializers.Serializer):
     refresh_token = serializers.CharField(required=True, allow_blank=False)
 
 
+class ShellUIOAuthSessionExchangeSerializer(serializers.Serializer):
+    auth_code = serializers.CharField(max_length=128)
+    redirect_to = serializers.URLField(max_length=2048)
+
+
+class ShellUILogoutSerializer(serializers.Serializer):
+    refresh_token = serializers.CharField(required=False, allow_blank=True, max_length=8192)
+
+
 class UserPreferenceSerializer(serializers.Serializer):
     themeName = serializers.CharField(required=False, allow_blank=False, max_length=100)
     language = serializers.ChoiceField(required=False, choices=['en', 'fr'])
