@@ -53,7 +53,9 @@ uv run python manage.py generate_jwt_keys
 | `JWT_KEY_ID` | No | Key id (`kid`). Defaults to RFC 7638 JWK thumbprint. |
 | `JWT_PREVIOUS_PUBLIC_KEY` | No | Previous public key during rotation (still published in JWKS). |
 | `JWT_PREVIOUS_KEY_ID` | No | `kid` for the previous key (auto-derived if omitted). |
-| `JWT_ACCEPT_HS256_LEGACY` | No | Default `true`. Accept old HS256 tokens signed with `SECRET_KEY` during migration. Set `false` once all clients use RS256. |
+| `JWT_ACCEPT_HS256_LEGACY` | No | Default `false` in production when RS256 is configured. Set `true` only during HS256→RS256 migration while old tokens may still be valid. |
+| `JWT_ISSUER` | Yes (production) | Issuer claim (`iss`) on issued tokens. Example: `https://auth.example.com`. Required when `DEBUG=false`. |
+| `JWT_AUDIENCE` | Yes (production) | Audience claim (`aud`) on issued tokens. Example: `shellui`. Required when `DEBUG=false`. |
 
 `SECRET_KEY` remains required for Django sessions and CSRF. It is **not** used for JWT signing when `JWT_PRIVATE_KEY` is set.
 
@@ -99,7 +101,8 @@ payload = jwt.decode(
     token,
     signing_key.key,
     algorithms=["RS256"],
-    options={"verify_aud": False},
+    audience="shellui",
+    issuer="https://auth.example.com",
 )
 ```
 
@@ -119,5 +122,6 @@ payload = jwt.decode(
 | Private key storage | Use a secret manager or mounted file. Never commit `JWT_PRIVATE_KEY`. |
 | Key size | Minimum 2048-bit RSA; `generate_jwt_keys` defaults to 3072 bits. |
 | JWKS exposure | Only public keys are published. This is expected and safe. |
-| HS256 legacy | Disable with `JWT_ACCEPT_HS256_LEGACY=false` after migration. |
+| HS256 legacy | Defaults off in production after RS256 is configured. Keep `JWT_ACCEPT_HS256_LEGACY=true` only during migration. |
+| `iss` / `aud` | Required in production (`JWT_ISSUER`, `JWT_AUDIENCE`). Verifiers should validate both. |
 | `SECRET_KEY` | Still required; do not share it with token verifiers when using RS256. |

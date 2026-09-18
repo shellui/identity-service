@@ -12,7 +12,7 @@ It supports OAuth login (GitHub/Google/Microsoft), issues JWT tokens, exposes Su
 - JWT access + refresh token issuance (RS256 with JWKS when `JWT_PRIVATE_KEY` is set)
 - Token refresh endpoint (`grant_type=refresh_token`)
 - User metadata endpoint (`/api/v1/user`)
-- Permissive API CORS by default (`CORS_ALLOW_ALL_ORIGINS=true`) so hosted preview origins and custom shells can call JWT APIs without per-origin env edits; auth is Bearer JWT. OAuth token delivery stays strict via the company redirect allowlist (see [docs/oauth-login.md](docs/oauth-login.md))
+- Development uses permissive API CORS (`CORS_ALLOW_ALL_ORIGINS=true` when `DEBUG=true`); production requires explicit `CORS_ALLOWED_ORIGINS`. Auth is Bearer JWT. OAuth token delivery stays strict via the company redirect allowlist (see [docs/oauth-login.md](docs/oauth-login.md))
 - OpenAPI docs with drf-spectacular
 
 ## Project Structure
@@ -179,7 +179,7 @@ docker run --rm -p 8000:8000 \
   shellui/identity-service:local
 ```
 
-API CORS allows all origins by default (Bearer JWT auth). For lock-down installs set `CORS_ALLOW_ALL_ORIGINS=false` and `CORS_ALLOWED_ORIGINS=…`.
+API CORS defaults to allow-all when `DEBUG=true`; production (`DEBUG=false`) requires explicit `CORS_ALLOWED_ORIGINS` (Bearer JWT auth).
 
 The container runs migrations automatically, stores SQLite at `/app/data/db.sqlite3`, then starts with Gunicorn on `0.0.0.0:8000`. Production images run `collectstatic` at build time; [WhiteNoise](https://whitenoise.readthedocs.io/) serves `/admin/` and other collected static files from the app process (no separate static server required).
 
@@ -188,15 +188,16 @@ Runtime env vars:
 - `SECRET_KEY` (required; Django sessions/CSRF — not used for JWT signing when `JWT_PRIVATE_KEY` is set)
 - `JWT_PRIVATE_KEY` (required in production; RS256 private key PEM — generate with `uv run python manage.py generate_jwt_keys`, see [JWT private key](#jwt-private-key-rs256))
 - `JWT_PUBLIC_KEY`, `JWT_KEY_ID`, `JWT_PREVIOUS_PUBLIC_KEY`, `JWT_PREVIOUS_KEY_ID` (optional; see JWKS docs)
-- `JWT_ACCEPT_HS256_LEGACY` (default `true`; set `false` after RS256 migration)
+- `JWT_ACCEPT_HS256_LEGACY` (default `false` in production with RS256; set `true` only during HS256 migration)
+- `JWT_ISSUER`, `JWT_AUDIENCE` (required in production; included on issued tokens)
 - `JWT_ACCESS_TOKEN_LIFETIME` (default `5m`; e.g. `30s`, `5m`, `2h` — bare integer = seconds)
 - `JWT_REFRESH_TOKEN_LIFETIME` (default `7d`)
 - `DEBUG` (default `false`)
 - `ALLOWED_HOSTS` (comma-separated hostnames; empty → `localhost,127.0.0.1`)
 - `CSRF_TRUSTED_ORIGINS` (comma-separated full URLs with scheme; empty → common local dev URLs including Shellui ports)
-- `CORS_ALLOW_ALL_ORIGINS` (default `true`; set `false` for lock-down installs)
-- `CORS_ALLOWED_ORIGINS` (used only when `CORS_ALLOW_ALL_ORIGINS=false`; Shellui / admin front-end origins)
-- `CORS_ALLOWED_ORIGIN_REGEXES` (optional; used only when `CORS_ALLOW_ALL_ORIGINS=false`)
+- `CORS_ALLOW_ALL_ORIGINS` (defaults to `DEBUG`; production must use explicit origins)
+- `CORS_ALLOWED_ORIGINS` (required in production; Shellui / admin front-end origins)
+- `CORS_ALLOWED_ORIGIN_REGEXES` (optional; used when `CORS_ALLOW_ALL_ORIGINS=false`)
 - `POSTGRES_DATABASE_URL` (optional; when set, Postgres is used instead of SQLite)
 - `GUNICORN_WORKERS` (default `2`)
 - `GUNICORN_THREADS` (default `2`)

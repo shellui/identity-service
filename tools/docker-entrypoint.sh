@@ -12,6 +12,7 @@ if [ "${SQLITE_DIR}" = "/app/data" ] && [ -z "${POSTGRES_DATABASE_URL:-}" ]; the
 fi
 
 runuser -u appuser -- python manage.py migrate --noinput
+runuser -u appuser -- python manage.py check --deploy
 exec runuser -u appuser -- gunicorn \
   --bind 0.0.0.0:8000 \
   --workers "${GUNICORN_WORKERS:-2}" \

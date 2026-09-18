@@ -44,6 +44,18 @@ jobs:
       - name: Django system checks
         run: uv run python manage.py check
 
+      - name: Production deployment checks
+        run: |
+          uv run python manage.py generate_jwt_keys --shell > /tmp/jwt_keys.sh
+          # shellcheck disable=SC1091
+          source /tmp/jwt_keys.sh
+          DEBUG=false \
+          JWT_ISSUER=https://auth.example.com \
+          JWT_AUDIENCE=shellui \
+          CORS_ALLOW_ALL_ORIGINS=false \
+          CORS_ALLOWED_ORIGINS=https://app.example.com \
+          uv run python manage.py check --deploy
+
       - name: Run tests
         run: uv run python manage.py test --verbosity=1
 
