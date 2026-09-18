@@ -337,17 +337,31 @@ class HostingOAuthRedirectSyncTests(TestCase):
             email='member@example.com',
             password='x',
         )
+        self.owner = User.objects.create_user(
+            username='owner',
+            email='owner@example.com',
+            password='x',
+        )
+        self.staff = User.objects.create_user(
+            username='staff',
+            email='staff@example.com',
+            password='x',
+            is_staff=True,
+        )
         set_company_access(self.company, self.member, enabled=True)
-        self.company.members.add(self.member)
+        set_company_access(self.company, self.owner, enabled=True)
+        set_company_access(self.company, self.staff, enabled=True)
+        self.company.members.add(self.member, self.owner, self.staff)
+        self.company.owners.add(self.owner)
 
-    def _auth_member(self):
+    def _auth_user(self, user):
         self.client.force_authenticate(
-            user=self.member,
+            user=user,
             token={'company_id': self.company.id},
         )
 
     def test_upsert_and_delete_hosting_redirect(self):
-        self._auth_member()
+        self._auth_user(self.owner)
         created = self.client.put(
             '/api/v1/hosting-oauth-redirects',
             {
@@ -397,9 +411,37 @@ class HostingOAuthRedirectSyncTests(TestCase):
         )
         self.assertIn(response.status_code, (401, 403))
 
-    def test_rejects_disabled_member(self):
-        set_company_access(self.company, self.member, enabled=False)
-        self._auth_member()
+    def test_rejects_regular_member(self):
+        self._auth_user(self.member)
+        put_response = self.client.put(
+            '/api/v1/hosting-oauth-redirects',
+            {'base_url': 'https://abc123.shellui.app'},
+            format='json',
+        )
+        self.assertEqual(put_response.status_code, 403)
+        delete_response = self.client.delete(
+            '/api/v1/hosting-oauth-redirects',
+            {'base_url': 'https://abc123.shellui.app'},
+            format='json',
+        )
+        self.assertEqual(delete_response.status_code, 403)
+        self.assertFalse(
+            CompanyOAuthRedirect.objects.filter(company=self.company).exists(),
+        )
+
+    def test_staff_can_sync_hosting_redirect(self):
+        self._auth_user(self.staff)
+        response = self.client.put(
+            '/api/v1/hosting-oauth-redirects',
+            {'base_url': 'https://staff-preview.shellui.app'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data['source'], 'hosting')
+
+    def test_rejects_disabled_owner(self):
+        set_company_access(self.company, self.owner, enabled=False)
+        self._auth_user(self.owner)
         response = self.client.put(
             '/api/v1/hosting-oauth-redirects',
             {'base_url': 'https://abc123.shellui.app'},
@@ -413,7 +455,7 @@ class HostingOAuthRedirectSyncTests(TestCase):
             base_url='https://abc123.shellui.app',
             source=CompanyOAuthRedirect.SOURCE_MANUAL,
         )
-        self._auth_member()
+        self._auth_user(self.owner)
         deleted = self.client.delete(
             '/api/v1/hosting-oauth-redirects',
             {'base_url': 'https://abc123.shellui.app'},
