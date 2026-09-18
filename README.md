@@ -12,7 +12,7 @@ It supports OAuth login (GitHub/Google/Microsoft), issues JWT tokens, exposes Su
 - JWT access + refresh token issuance (RS256 with JWKS when `JWT_PRIVATE_KEY` is set)
 - Token refresh endpoint (`grant_type=refresh_token`)
 - User metadata endpoint (`/api/v1/user`)
-- Permissive API CORS by default (`CORS_ALLOW_ALL_ORIGINS=true`) so hosted preview origins and custom shells can call JWT APIs without per-origin env edits; auth is Bearer JWT. OAuth token delivery stays strict via the company redirect allowlist (see [docs/oauth-login.md](docs/oauth-login.md))
+- Permissive API CORS by default (`CORS_ALLOW_ALL_ORIGINS=true`, `CORS_ALLOW_CREDENTIALS=false`) so hosted preview origins and custom shells can call JWT APIs without per-origin env edits; auth is Bearer JWT. OAuth token delivery stays strict via the company redirect allowlist (see [docs/oauth-login.md](docs/oauth-login.md))
 - OpenAPI docs with drf-spectacular
 
 ## Project Structure
@@ -26,14 +26,15 @@ It supports OAuth login (GitHub/Google/Microsoft), issues JWT tokens, exposes Su
 - `GET /.well-known/jwks.json` public JWKS for RS256 JWT verification (see [docs/jwks.md](docs/jwks.md))
 - `GET /api/v1/settings` list enabled login methods/providers
 - `GET /api/v1/authorize?provider=github&redirect_to=...&company_id=...` start OAuth (provider `redirect_uri` is always this service’s `/api/v1/oauth/callback`; `redirect_to` is the SPA/CLI bounce target and must be allowlisted or loopback)
-- `GET /api/v1/oauth/callback` provider callback (server-side code exchange + account confirmation + fragment redirect to `redirect_to`)
+- `GET /api/v1/oauth/callback` provider callback (server-side code exchange + account confirmation + redirect to `redirect_to` with one-time `shellui_auth_code`)
+- `POST /api/v1/oauth/session` exchange `shellui_auth_code` for JWT JSON (default delivery; fragment legacy via `token_delivery=fragment`)
 - `POST /api/v1/oauth/confirm` complete sign-in after the confirmation screen (browser form)
 - `GET /api/v1/oauth/confirm?action=switch&confirm_token=…` restart OAuth with account picker (Google/Microsoft)
 - `POST /api/v1/oauth/exchange` deprecated SPA code exchange (older shells that still receive `?code=` on the frontend)
 - `GET/POST /api/v1/oauth-redirects` manage per-company post-OAuth bounce origins (staff or company owner); loopback always allowed; empty list denies non-loopback; `source=hosting` rows are synced from hosting-service
-- `PUT/DELETE /api/v1/hosting-oauth-redirects` hosting-service sync using the caller's identity JWT (enabled company members)
+- `PUT/DELETE /api/v1/hosting-oauth-redirects` hosting-service sync using the caller's identity JWT (staff or company owner)
 - `POST /api/v1/token?grant_type=refresh_token` refresh session using `refresh_token` in the body (Bearer access token optional)
-- `POST /api/v1/logout` logout endpoint
+- `POST /api/v1/logout` logout endpoint (revokes refresh session and denylists access token)
 - `GET /api/v1/user` return authenticated user profile + metadata
 - `PUT /api/v1/user` update user metadata
 
@@ -55,6 +56,12 @@ cp .env.example .env
 # Set SECRET_KEY; generate JWT keys for production (DEBUG=false)
 uv run python manage.py migrate
 uv run python manage.py runserver
+```
+
+With `DEBUG=true` (local default), visiting `/` on an empty database shows a one-time web form to create the first superuser. In production (`DEBUG=false`), that form is disabled unless you set `SETUP_TOKEN` and open `/?setup_token=<token>`. Prefer creating the first admin via CLI:
+
+```bash
+uv run python manage.py createsuperuser
 ```
 
 Dependencies live in `pyproject.toml` and are locked in `uv.lock`. Add a package with `uv add <name>`; refresh the lock with `uv lock`.
@@ -115,13 +122,15 @@ Register a **single** Authorization callback URL on each provider (GitHub / Goog
 
 Homepage / application URL may still be the shell (e.g. `http://localhost:4000`).
 
-Also allowlist each shell **origin** for the company (e.g. `http://localhost:4000`, `https://app.example.com`) via Django admin → Company OAuth redirects, Shellui admin OAuth setup, or `POST /api/v1/oauth-redirects`. Loopback (`127.0.0.1` / `localhost`) is always allowed for `shellui login` / CLI.
+Also allowlist each shell **origin** for the company (e.g. `http://localhost:4000`, `https://app.example.com`) via Django admin → Company OAuth redirects, Shellui admin OAuth setup, or `POST /api/v1/oauth-redirects`. Loopback (`127.0.0.1` / `localhost`) is allowed when `DEBUG=true` or `OAUTH_ALLOW_LOOPBACK_REDIRECTS=true` (local CLI / dev).
 
 Full flow, allowlist rules, hosting sync, and upgrade steps (including **0.4.1**): [docs/oauth-login.md](docs/oauth-login.md).
 
+Production auth abuse controls, HTTPS defaults, Postgres SSL, and trusted-proxy IP handling: [docs/security-hardening.md](docs/security-hardening.md).
+
 ## Notes
 
-- `/api/v1/settings` only enables providers configured for the requested company.
+- `/api/v1/settings` only enables providers configured for the requested company; OAuth client details require an authenticated company member.
 - Avatar URL from provider userinfo is included in JWT metadata (`user_metadata.avatar_url`) for Shellui profile display.
 
 ## Documentation (Docusaurus)
@@ -181,7 +190,8 @@ Runtime env vars:
 - `SECRET_KEY` (required; Django sessions/CSRF — not used for JWT signing when `JWT_PRIVATE_KEY` is set)
 - `JWT_PRIVATE_KEY` (required in production; RS256 private key PEM — generate with `uv run python manage.py generate_jwt_keys`, see [JWT private key](#jwt-private-key-rs256))
 - `JWT_PUBLIC_KEY`, `JWT_KEY_ID`, `JWT_PREVIOUS_PUBLIC_KEY`, `JWT_PREVIOUS_KEY_ID` (optional; see JWKS docs)
-- `JWT_ACCEPT_HS256_LEGACY` (default `true`; set `false` after RS256 migration)
+- `JWT_ACCEPT_HS256_LEGACY` (default `false` in production with RS256; set `true` only during HS256 migration)
+- `JWT_ISSUER`, `JWT_AUDIENCE` (required in production; included on issued tokens)
 - `JWT_ACCESS_TOKEN_LIFETIME` (default `5m`; e.g. `30s`, `5m`, `2h` — bare integer = seconds)
 - `JWT_REFRESH_TOKEN_LIFETIME` (default `7d`)
 - `DEBUG` (default `false`)
@@ -189,6 +199,7 @@ Runtime env vars:
 - `CSRF_TRUSTED_ORIGINS` (comma-separated full URLs with scheme; empty → common local dev URLs including Shellui ports)
 - `CORS_ALLOW_ALL_ORIGINS` (default `true`; set `false` for lock-down installs)
 - `CORS_ALLOWED_ORIGINS` (used only when `CORS_ALLOW_ALL_ORIGINS=false`; Shellui / admin front-end origins)
+- `CORS_ALLOW_CREDENTIALS` (default `false`; must stay `false` with allow-all)
 - `CORS_ALLOWED_ORIGIN_REGEXES` (optional; used only when `CORS_ALLOW_ALL_ORIGINS=false`)
 - `POSTGRES_DATABASE_URL` (optional; when set, Postgres is used instead of SQLite)
 - `GUNICORN_WORKERS` (default `2`)

@@ -12,6 +12,7 @@ from rest_framework_simplejwt.exceptions import InvalidToken, TokenBackendError
 from rest_framework_simplejwt.settings import api_settings
 
 from .models import PersonalAccessToken
+from .refresh_sessions import is_access_jti_denied
 
 
 class ShellUIJWTAuthentication(JWTAuthentication):
@@ -19,6 +20,8 @@ class ShellUIJWTAuthentication(JWTAuthentication):
 
     def get_validated_token(self, raw_token):
         validated = self._decode_with_configured_keys(raw_token)
+        if is_access_jti_denied(validated.get('jti')):
+            raise InvalidToken({'detail': 'Access token revoked.'})
         pat_id = validated.get('pat_id')
         if pat_id is None:
             return validated
@@ -62,10 +65,15 @@ class ShellUIJWTAuthentication(JWTAuthentication):
         except InvalidToken as exc:
             decode_errors.append(exc)
 
+        issuer = getattr(settings, 'JWT_ISSUER', None)
+        audience = getattr(settings, 'JWT_AUDIENCE', None)
+
         for previous_key in getattr(settings, 'JWT_PREVIOUS_VERIFYING_KEYS', []):
             backend = TokenBackend(
                 algorithm='RS256',
                 verifying_key=previous_key.public_pem,
+                audience=audience,
+                issuer=issuer,
             )
             try:
                 return backend.decode(raw_token)
@@ -80,6 +88,8 @@ class ShellUIJWTAuthentication(JWTAuthentication):
                 algorithm='HS256',
                 signing_key=settings.SECRET_KEY,
                 verifying_key=settings.SECRET_KEY,
+                audience=audience,
+                issuer=issuer,
             )
             try:
                 return legacy_backend.decode(raw_token)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
+from django.conf import settings
 from django.db.utils import OperationalError, ProgrammingError
 from django.http import HttpRequest
 
@@ -117,17 +118,22 @@ def is_loopback_redirect_url(absolute_url: str) -> bool:
     return _hostname_is_loopback(urlsplit(canonical_url_no_fragment(absolute_url)).hostname)
 
 
+def loopback_oauth_redirects_allowed() -> bool:
+    """True when loopback OAuth bounce targets are permitted (DEBUG or explicit env)."""
+    return bool(getattr(settings, 'OAUTH_ALLOW_LOOPBACK_REDIRECTS', settings.DEBUG))
+
+
 def redirect_url_allowed_for_company(company: Company, absolute_url: str, request: HttpRequest) -> bool:
     """
-    Allow loopback always. Otherwise require an active company allowlist origin match.
-    Empty allowlist denies non-loopback (operators must add shell origins).
+    Allow loopback when ``OAUTH_ALLOW_LOOPBACK_REDIRECTS`` (default: DEBUG). Otherwise require
+    an active company allowlist origin match. Empty allowlist denies non-loopback.
     """
     _ = request
     candidate = canonical_url_no_fragment(absolute_url)
     if not candidate:
         return False
     if is_loopback_redirect_url(candidate):
-        return True
+        return loopback_oauth_redirects_allowed()
     candidate_origin = origin_of_url(candidate)
     if not candidate_origin:
         return False
@@ -165,7 +171,7 @@ def loopback_client_bounce_url_for_oauth_error(
     if err or not url:
         return None
     host = urlsplit(url).hostname
-    if not _hostname_is_loopback(host):
+    if not _hostname_is_loopback(host) or not loopback_oauth_redirects_allowed():
         return None
     return append_oauth_error_params(url, error_message, error_code)
 
@@ -188,4 +194,28 @@ def validate_redirect_to_for_company(
         return None, err
     if not redirect_url_allowed_for_company(company, url, request):
         return None, 'redirect_to is not allowed for this company.'
+    return url, None
+
+
+def validate_redirect_uri_for_company(
+    *,
+    company: Company,
+    request: HttpRequest,
+    redirect_uri_raw: str | None,
+) -> tuple[str | None, str | None]:
+    """
+    Resolve legacy client `redirect_uri` and validate URL shape + allowlist.
+    Same rules as validate_redirect_to_for_company (loopback + CompanyOAuthRedirect).
+    Returns (absolute_url_without_fragment, error_message).
+    """
+    raw = (redirect_uri_raw or '').strip()
+    if not raw:
+        return None, 'Missing redirect_uri.'
+    url, err = normalize_client_redirect_url(request, raw)
+    if err:
+        if err and 'redirect_to' in err:
+            err = err.replace('redirect_to', 'redirect_uri')
+        return None, err
+    if not redirect_url_allowed_for_company(company, url, request):
+        return None, 'redirect_uri is not allowed for this company.'
     return url, None

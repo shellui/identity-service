@@ -1,10 +1,12 @@
-from django.test import RequestFactory, TestCase
+from django.test import RequestFactory, TestCase, override_settings
 
 from apps.companies.models import Company, CompanyOAuthRedirect
 from apps.companies.redirect_allowlist import (
+    loopback_oauth_redirects_allowed,
     normalize_allowlist_origin,
     redirect_url_allowed_for_company,
     validate_redirect_to_for_company,
+    validate_redirect_uri_for_company,
 )
 
 
@@ -18,7 +20,9 @@ class RedirectAllowlistTests(TestCase):
         self.assertIsNone(err)
         self.assertEqual(origin, 'https://app.example.com')
 
-    def test_loopback_always_allowed_without_rows(self):
+    @override_settings(OAUTH_ALLOW_LOOPBACK_REDIRECTS=True)
+    def test_loopback_allowed_when_explicitly_enabled(self):
+        self.assertTrue(loopback_oauth_redirects_allowed())
         self.assertTrue(
             redirect_url_allowed_for_company(
                 self.company,
@@ -30,6 +34,17 @@ class RedirectAllowlistTests(TestCase):
             redirect_url_allowed_for_company(
                 self.company,
                 'http://localhost:4000/login/callback',
+                self.request,
+            )
+        )
+
+    @override_settings(OAUTH_ALLOW_LOOPBACK_REDIRECTS=False, DEBUG=False)
+    def test_loopback_denied_in_production_without_env(self):
+        self.assertFalse(loopback_oauth_redirects_allowed())
+        self.assertFalse(
+            redirect_url_allowed_for_company(
+                self.company,
+                'http://127.0.0.1:9876/callback',
                 self.request,
             )
         )
@@ -86,3 +101,21 @@ class RedirectAllowlistTests(TestCase):
         )
         self.assertIsNone(url)
         self.assertIn('Missing redirect_to', err or '')
+
+    def test_validate_redirect_uri_requires_value(self):
+        url, err = validate_redirect_uri_for_company(
+            company=self.company,
+            request=self.request,
+            redirect_uri_raw=None,
+        )
+        self.assertIsNone(url)
+        self.assertIn('Missing redirect_uri', err or '')
+
+    def test_validate_redirect_uri_denies_non_allowlisted(self):
+        url, err = validate_redirect_uri_for_company(
+            company=self.company,
+            request=self.request,
+            redirect_uri_raw='https://evil.example.com/login/callback',
+        )
+        self.assertIsNone(url)
+        self.assertIn('not allowed', err or '')

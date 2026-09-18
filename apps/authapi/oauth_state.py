@@ -16,6 +16,7 @@ def build_oauth_state(
     company_oauth_client_id: int | None = None,
     client_timezone: str | None = None,
     client_device_id: str | None = None,
+    token_delivery: str | None = None,
 ) -> str:
     payload: dict = {
         'provider': str(provider).strip().lower(),
@@ -30,6 +31,9 @@ def build_oauth_state(
     dev = (client_device_id or '').strip()
     if dev:
         payload['client_device_id'] = dev[:128]
+    delivery = (token_delivery or '').strip().lower()
+    if delivery in {'code', 'fragment'}:
+        payload['token_delivery'] = delivery
     return signing.dumps(payload, salt=OAUTH_STATE_SALT)
 
 
@@ -75,4 +79,7 @@ def parse_oauth_state(state: str | None) -> tuple[dict | None, str | None]:
     dev = str(payload.get('client_device_id') or '').strip()
     if dev:
         out['client_device_id'] = dev[:128]
+    delivery = str(payload.get('token_delivery') or '').strip().lower()
+    if delivery in {'code', 'fragment'}:
+        out['token_delivery'] = delivery
     return out, None

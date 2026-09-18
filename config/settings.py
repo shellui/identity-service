@@ -13,6 +13,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 import logging
 import os
 import re
+import sys
 import tomllib
 from pathlib import Path
 from datetime import timedelta
@@ -77,6 +78,23 @@ def _env_float(name, default):
         raise ImproperlyConfigured(f'{name} must be a number. Got: {raw!r}') from exc
 
 
+def _env_bool(name, default: bool) -> bool:
+    raw = os.getenv(name, '').strip()
+    if not raw:
+        return default
+    return raw.lower() in {'1', 'true', 'yes', 'on'}
+
+
+def _env_int(name, default: int) -> int:
+    raw = os.getenv(name, '').strip()
+    if not raw:
+        return default
+    try:
+        return int(raw)
+    except ValueError as exc:
+        raise ImproperlyConfigured(f'{name} must be an integer. Got: {raw!r}') from exc
+
+
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
@@ -106,6 +124,10 @@ SECRET_KEY = _secret_key
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DEBUG', 'false').strip().lower() in {'1', 'true', 'yes', 'on'}
 
+# One-time web bootstrap token for creating the first superuser when DEBUG=false.
+# When unset, use `manage.py createsuperuser` instead of the public form at `/`.
+SETUP_TOKEN = os.getenv('SETUP_TOKEN', '').strip()
+
 # Comma-separated; use * for all hosts only in trusted networks. Example: app.example.com,127.0.0.1
 ALLOWED_HOSTS = _env_csv('ALLOWED_HOSTS', ('localhost', '127.0.0.1'))
 # Full origins with scheme (required for cross-site POST / CSRF). Example: https://app.example.com
@@ -122,6 +144,14 @@ CSRF_TRUSTED_ORIGINS = _env_csv(
     ),
 )
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+# Trusted reverse proxies (comma-separated IPs/CIDRs). X-Forwarded-For is honored for audit IP
+# only when REMOTE_ADDR matches one of these entries. See docs/security-hardening.md.
+TRUSTED_PROXY_IPS = _env_csv('TRUSTED_PROXY_IPS', ())
+
+# Loopback OAuth redirect targets (127.0.0.1 / localhost / ::1) are allowed only when DEBUG or
+# OAUTH_ALLOW_LOOPBACK_REDIRECTS=true (local CLI / dev shells).
+OAUTH_ALLOW_LOOPBACK_REDIRECTS = _env_bool('OAUTH_ALLOW_LOOPBACK_REDIRECTS', DEBUG)
 
 
 def _project_version():
@@ -207,6 +237,7 @@ MIDDLEWARE = [
     'allauth.account.middleware.AccountMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'apps.authapi.middleware.AdminLoginRateLimitMiddleware',
 ]
 
 ROOT_URLCONF = 'config.urls'
@@ -256,9 +287,24 @@ DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@localhost')
 JWT_ACCESS_TOKEN_LIFETIME = _env_duration('JWT_ACCESS_TOKEN_LIFETIME', timedelta(minutes=5))
 JWT_REFRESH_TOKEN_LIFETIME = _env_duration('JWT_REFRESH_TOKEN_LIFETIME', timedelta(days=7))
 
+JWT_ISSUER = os.getenv('JWT_ISSUER', '').strip() or None
+JWT_AUDIENCE = os.getenv('JWT_AUDIENCE', '').strip() or None
+
+# OAuth token delivery after login: ``code`` (one-time exchange, default) or ``fragment`` (legacy).
+_oauth_delivery = os.getenv('OAUTH_TOKEN_DELIVERY', 'code').strip().lower()
+if _oauth_delivery not in {'code', 'fragment'}:
+    raise ImproperlyConfigured(
+        'OAUTH_TOKEN_DELIVERY must be "code" or "fragment". '
+        f'Got: {_oauth_delivery!r}'
+    )
+OAUTH_TOKEN_DELIVERY = _oauth_delivery
+OAUTH_SESSION_CODE_TTL_SECONDS = int(os.getenv('OAUTH_SESSION_CODE_TTL_SECONDS', '120') or '120')
+
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': JWT_ACCESS_TOKEN_LIFETIME,
     'REFRESH_TOKEN_LIFETIME': JWT_REFRESH_TOKEN_LIFETIME,
+    'ISSUER': JWT_ISSUER,
+    'AUDIENCE': JWT_AUDIENCE,
 }
 
 _jwt_env = read_jwt_env()
@@ -284,7 +330,7 @@ SIMPLE_JWT.update(
 )
 
 # Personal access tokens (PAT): JWT access token lifetime when creating a PAT (see views._issue_personal_access_token).
-PERSONAL_ACCESS_TOKEN_LIFETIME = timedelta(days=90)
+PERSONAL_ACCESS_TOKEN_LIFETIME = _env_duration('PERSONAL_ACCESS_TOKEN_LIFETIME', timedelta(days=30))
 
 # Optional MaxMind GeoLite2/GeoIP2 City database (.mmdb) for login audit country/city.
 # Install: uv add geoip2  — then set path to your .mmdb file.
@@ -301,16 +347,10 @@ SOCIALACCOUNT_PROVIDERS = {
     },
 }
 
-# API auth is Bearer JWT (not cookies). Permissive CORS matches Supabase-style
-# gateways so random hosting preview origins work without per-slug allowlists.
-# Set CORS_ALLOW_ALL_ORIGINS=false and CORS_ALLOWED_ORIGINS for lock-down installs.
+# API auth is Bearer JWT (not cookies). Multi-tenant shells run on unknown domains,
+# so permissive CORS is intentional when CORS_ALLOW_CREDENTIALS=false (Supabase-style).
 # Token delivery stays strict via CompanyOAuthRedirect (see docs/oauth-login.md).
-CORS_ALLOW_ALL_ORIGINS = os.getenv('CORS_ALLOW_ALL_ORIGINS', 'true').strip().lower() in {
-    '1',
-    'true',
-    'yes',
-    'on',
-}
+CORS_ALLOW_ALL_ORIGINS = _env_bool('CORS_ALLOW_ALL_ORIGINS', True)
 CORS_ALLOWED_ORIGINS = [
     'http://localhost:4000',
     'http://127.0.0.1:4000',
@@ -329,7 +369,38 @@ for _pattern in os.getenv('CORS_ALLOWED_ORIGIN_REGEXES', '').split(','):
     if _pattern and _pattern not in CORS_ALLOWED_ORIGIN_REGEXES:
         CORS_ALLOWED_ORIGIN_REGEXES.append(_pattern)
 
-CORS_ALLOW_CREDENTIALS = False
+CORS_ALLOW_CREDENTIALS = _env_bool('CORS_ALLOW_CREDENTIALS', False)
+
+if CORS_ALLOW_ALL_ORIGINS and CORS_ALLOW_CREDENTIALS:
+    raise ImproperlyConfigured(
+        'CORS_ALLOW_ALL_ORIGINS=true with CORS_ALLOW_CREDENTIALS=true is unsafe — '
+        'use explicit CORS_ALLOWED_ORIGINS when credentials are enabled.'
+    )
+
+# HTTPS / cookie hardening (production defaults; override via env for local HTTP).
+SECURE_SSL_REDIRECT = _env_bool('SECURE_SSL_REDIRECT', not DEBUG)
+SECURE_HSTS_SECONDS = _env_int('SECURE_HSTS_SECONDS', 31536000 if not DEBUG else 0)
+SECURE_HSTS_INCLUDE_SUBDOMAINS = _env_bool('SECURE_HSTS_INCLUDE_SUBDOMAINS', not DEBUG)
+SECURE_HSTS_PRELOAD = _env_bool('SECURE_HSTS_PRELOAD', False)
+SESSION_COOKIE_SECURE = _env_bool('SESSION_COOKIE_SECURE', not DEBUG)
+CSRF_COOKIE_SECURE = _env_bool('CSRF_COOKIE_SECURE', not DEBUG)
+
+# Cache-backed auth rate limits (see apps/authapi/throttling.py).
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'identity-service-auth',
+    }
+}
+AUTH_RATE_LIMIT_ENABLED = _env_bool('AUTH_RATE_LIMIT_ENABLED', True)
+AUTH_RATE_LIMITS = {
+    'default': {'limit': 60, 'window': 60},
+    'oauth': {'limit': _env_int('AUTH_RATE_LIMIT_OAUTH', 30), 'window': 60},
+    'token_refresh': {'limit': _env_int('AUTH_RATE_LIMIT_TOKEN_REFRESH', 60), 'window': 60},
+    'auth_settings': {'limit': _env_int('AUTH_RATE_LIMIT_SETTINGS', 30), 'window': 60},
+    'admin_login': {'limit': _env_int('AUTH_RATE_LIMIT_ADMIN_LOGIN', 10), 'window': 300},
+    'pat': {'limit': _env_int('AUTH_RATE_LIMIT_PAT', 30), 'window': 60},
+}
 
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
@@ -337,11 +408,12 @@ CORS_ALLOW_CREDENTIALS = False
 POSTGRES_DATABASE_URL = os.getenv('POSTGRES_DATABASE_URL', '').strip()
 
 if POSTGRES_DATABASE_URL:
+    _postgres_ssl_require = _env_bool('POSTGRES_SSL_REQUIRE', not DEBUG)
     DATABASES = {
         'default': dj_database_url.parse(
             POSTGRES_DATABASE_URL,
             conn_max_age=600,
-            ssl_require=False,
+            ssl_require=_postgres_ssl_require,
         )
     }
 else:
@@ -410,6 +482,20 @@ SENTRY_ENVIRONMENT = os.getenv('SENTRY_ENVIRONMENT', '').strip() or (
 )
 SENTRY_RELEASE = os.getenv('SENTRY_RELEASE', '').strip() or VERSION
 SENTRY_TRACES_SAMPLE_RATE = _env_float('SENTRY_TRACES_SAMPLE_RATE', 0.0)
+
+def _skip_production_config_validation() -> bool:
+    """Allow key-generation tooling before JWT_ISSUER/JWT_AUDIENCE are configured."""
+    return len(sys.argv) > 1 and sys.argv[1] == 'generate_jwt_keys'
+
+
+if not DEBUG and not _skip_production_config_validation():
+    _production_config_errors = []
+    if not JWT_ISSUER:
+        _production_config_errors.append('JWT_ISSUER is required when DEBUG=false.')
+    if not JWT_AUDIENCE:
+        _production_config_errors.append('JWT_AUDIENCE is required when DEBUG=false.')
+    if _production_config_errors:
+        raise ImproperlyConfigured('\n'.join(_production_config_errors))
 
 if SENTRY_DSN:
     import sentry_sdk
