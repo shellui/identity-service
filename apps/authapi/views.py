@@ -94,9 +94,12 @@ from .serializers import (
     ShellUIHostingOAuthRedirectSyncSerializer,
     ShellUIHostingOAuthRedirectDeleteSerializer,
     ShellUIPersonalAccessTokenCreateSerializer,
+    ShellUIAdminScimTokenCreateSerializer,
     ShellUIAdminUserUpdateSerializer,
     UserPreferenceSerializer,
 )
+from apps.scim.models import CompanyScimToken
+from apps.scim.tokens import generate_scim_token
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -983,6 +986,42 @@ def _require_authenticated_company_member(request):
     if cerr:
         return None, None, cerr
     return user, company, None
+
+
+def _scim_base_url_for_company(request, company: Company) -> str:
+    path = f'/api/v1/companies/{company.slug}/scim/v2/'
+    return request.build_absolute_uri(path)
+
+
+def _active_scim_token_count(company: Company) -> int:
+    return CompanyScimToken.objects.filter(company=company, revoked_at__isnull=True).count()
+
+
+def _scim_status_payload(request, company: Company) -> dict:
+    active_count = _active_scim_token_count(company)
+    configured = active_count > 0
+    return {
+        'enabled': bool(getattr(settings, 'SCIM_ENABLED', False)),
+        'base_url': _scim_base_url_for_company(request, company),
+        'configured': configured,
+        'active_token_count': active_count,
+        'directory_read_only': configured,
+    }
+
+
+def _scim_token_row(row: CompanyScimToken, *, include_token: str | None = None) -> dict:
+    payload = {
+        'id': str(row.id),
+        'name': row.name or '',
+        'token_prefix': row.token_prefix,
+        'created_at': row.created_at,
+        'revoked_at': row.revoked_at,
+        'last_used_at': row.last_used_at,
+        'is_active': row.revoked_at is None,
+    }
+    if include_token:
+        payload['token'] = include_token
+    return payload
 
 
 def _personal_access_token_row(t: PersonalAccessToken, *, include_access_token: str | None = None) -> dict:
@@ -3339,6 +3378,107 @@ class ShellUIPersonalAccessTokenRevokeView(APIView):
         row.revoked_at = datetime.now(timezone.utc)
         row.save(update_fields=['revoked_at'])
         return Response(_personal_access_token_row(row))
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=['scim'],
+        summary='SCIM deployment and company configuration status (staff or company owner)',
+        description=(
+            'Reports whether SCIM is enabled on this identity deployment and whether the current '
+            'company has active (non-revoked) SCIM bearer tokens. Works when SCIM is disabled so '
+            'admin UIs can show deployment state.'
+        ),
+        operation_id='api_v1_scim_status',
+    ),
+)
+class ShellUIAdminScimStatusView(APIView):
+    permission_classes = [ShellUIPermission]
+    serializer_class = ShellUIOpenAPISerializer
+
+    def get(self, request):
+        _actor, company, err = _require_staff_or_company_owner(request)
+        if err:
+            return err
+        return Response(_scim_status_payload(request, company))
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=['scim'],
+        summary='List company SCIM bearer tokens (staff or company owner)',
+        description='Never includes token secrets or hashes. Allowed when SCIM is disabled (cleanup).',
+        operation_id='api_v1_scim_tokens_list',
+    ),
+    post=extend_schema(
+        tags=['scim'],
+        summary='Create company SCIM bearer token (staff or company owner)',
+        request=ShellUIAdminScimTokenCreateSerializer,
+        description=(
+            'Returns the bearer secret once in `token`. Requires `SCIM_ENABLED=true` on the deployment.'
+        ),
+    ),
+)
+class ShellUIAdminScimTokenListCreateView(APIView):
+    permission_classes = [ShellUIPermission]
+    serializer_class = ShellUIOpenAPISerializer
+
+    def get(self, request):
+        _actor, company, err = _require_staff_or_company_owner(request)
+        if err:
+            return err
+        qs = CompanyScimToken.objects.filter(company=company).order_by('-created_at')
+        return Response({'results': [_scim_token_row(t) for t in qs]})
+
+    def post(self, request):
+        _actor, company, err = _require_staff_or_company_owner(request)
+        if err:
+            return err
+        if not getattr(settings, 'SCIM_ENABLED', False):
+            return Response(
+                {'error': 'SCIM is not enabled on this identity deployment.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        serializer = ShellUIAdminScimTokenCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        name = str(serializer.validated_data.get('name') or '').strip()[:200]
+        raw, prefix, digest = generate_scim_token()
+        row = CompanyScimToken.objects.create(
+            company=company,
+            token_prefix=prefix,
+            token_hash=digest,
+            name=name,
+        )
+        return Response(
+            _scim_token_row(row, include_token=raw),
+            status=status.HTTP_201_CREATED,
+        )
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=['scim'],
+        summary='Revoke company SCIM bearer token (staff or company owner)',
+        description='Idempotent: already-revoked tokens return success. Allowed when SCIM is disabled.',
+        operation_id='api_v1_scim_tokens_revoke',
+    ),
+)
+class ShellUIAdminScimTokenRevokeView(APIView):
+    permission_classes = [ShellUIPermission]
+    serializer_class = ShellUIOpenAPISerializer
+
+    def post(self, request, token_id):
+        _actor, company, err = _require_staff_or_company_owner(request)
+        if err:
+            return err
+        try:
+            row = CompanyScimToken.objects.get(pk=token_id, company=company)
+        except CompanyScimToken.DoesNotExist:
+            return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        if row.revoked_at is None:
+            row.revoked_at = datetime.now(timezone.utc)
+            row.save(update_fields=['revoked_at'])
+        return Response(_scim_token_row(row))
 
 
 @extend_schema_view(

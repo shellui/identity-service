@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 ### Added
 
 - **Enterprise SCIM (opt-in):** Per-company SCIM 2.0 **Users and Groups** (including **nested** group members) via [django-scim2](https://pypi.org/project/django-scim2/) at `/api/v1/companies/<slug>/scim/v2/`, bearer tokens (`CompanyScimToken`), and [docs/scim.md](docs/scim.md). `CompanyGroup` uses SCIM vocabulary (`display_name`, `external_id`, `member_groups` for nested groups). Tenant isolation regression tests and filter SQL hardening included.
+- **SCIM admin REST:** `GET /api/v1/scim`, `GET/POST /api/v1/scim/tokens`, and `POST /api/v1/scim/tokens/<uuid>/revoke` for staff or company owners (Shellui admin SCIM setup; bearer secret returned once on create).
 
 ### ✨ Feature
 
