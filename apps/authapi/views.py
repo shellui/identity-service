@@ -32,6 +32,7 @@ from .tokens import ShellUIAccessToken, ShellUIRefreshToken
 
 from . import metrics as auth_metrics
 from apps.companies.group_graph import effective_group_display_names_for_user, effective_group_ids_for_user
+from apps.companies.group_display_name import first_display_name_conflict
 from apps.companies.models import Company, CompanyGroup, CompanyOAuthClient, CompanyOAuthRedirect
 from apps.companies.access import (
     JoinDecision,
@@ -2462,6 +2463,31 @@ def _admin_group_row(g: CompanyGroup) -> dict:
     }
 
 
+def _admin_group_display_name_conflict_response(
+    company: Company,
+    display_name: str,
+    *,
+    exclude_pk: int | None = None,
+) -> Response | None:
+    existing = first_display_name_conflict(company, display_name, exclude_pk=exclude_pk)
+    if existing is None:
+        return None
+    if existing.source == CompanyGroup.SOURCE_SCIM:
+        return Response(
+            {
+                'error': (
+                    'A SCIM-provisioned group already uses this display name. '
+                    'Change or remove it in the IdP, or pick another name for this manual group.'
+                ),
+            },
+            status=status.HTTP_409_CONFLICT,
+        )
+    return Response(
+        {'error': 'A group with this display name already exists.'},
+        status=status.HTTP_409_CONFLICT,
+    )
+
+
 def _forbid_scim_group_admin_mutation(group: CompanyGroup) -> Response | None:
     if group.source == CompanyGroup.SOURCE_SCIM:
         return Response(
@@ -2515,16 +2541,20 @@ class ShellUIAdminGroupListView(APIView):
         display_name = str(serializer.validated_data['display_name']).strip()
         if not display_name:
             return Response({'error': 'Group display name is required.'}, status=status.HTTP_400_BAD_REQUEST)
-        if CompanyGroup.objects.filter(company=company, display_name=display_name).exists():
-            return Response(
-                {'error': 'A group with this display name already exists.'},
-                status=status.HTTP_400_BAD_REQUEST,
+        conflict = _admin_group_display_name_conflict_response(company, display_name)
+        if conflict:
+            return conflict
+        try:
+            g = CompanyGroup.objects.create(
+                company=company,
+                display_name=display_name,
+                source=CompanyGroup.SOURCE_MANUAL,
             )
-        g = CompanyGroup.objects.create(
-            company=company,
-            display_name=display_name,
-            source=CompanyGroup.SOURCE_MANUAL,
-        )
+        except IntegrityError:
+            retry = _admin_group_display_name_conflict_response(company, display_name)
+            if retry:
+                return retry
+            raise
         return Response(_admin_group_row(g), status=status.HTTP_201_CREATED)
 
 
@@ -2579,13 +2609,25 @@ class ShellUIAdminGroupDetailView(APIView):
         display_name = str(serializer.validated_data['display_name']).strip()
         if not display_name:
             return Response({'error': 'Group display name is required.'}, status=status.HTTP_400_BAD_REQUEST)
-        if CompanyGroup.objects.filter(company=company, display_name=display_name).exclude(pk=g.pk).exists():
-            return Response(
-                {'error': 'A group with this display name already exists.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        conflict = _admin_group_display_name_conflict_response(
+            company,
+            display_name,
+            exclude_pk=g.pk,
+        )
+        if conflict:
+            return conflict
         g.display_name = display_name
-        g.save(update_fields=['display_name'])
+        try:
+            g.save(update_fields=['display_name'])
+        except IntegrityError:
+            retry = _admin_group_display_name_conflict_response(
+                company,
+                display_name,
+                exclude_pk=g.pk,
+            )
+            if retry:
+                return retry
+            raise
         g = CompanyGroup.objects.filter(company=company).annotate(user_count=Count('members', distinct=True)).get(pk=g.pk)
         return Response(_admin_group_row(g))
 

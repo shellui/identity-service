@@ -108,3 +108,89 @@ class HybridCompanyGroupTests(TestCase):
             sorted(access['user_metadata']['groups']),
             sorted(['ManualLeaf', 'ScimChild', 'ScimParent']),
         )
+
+    def test_admin_create_conflicts_with_scim_display_name(self):
+        create = self.scim_client.post(
+            f'/api/v1/companies/{self.company.slug}/scim/v2/Groups',
+            data=json.dumps(
+                {
+                    'schemas': ['urn:ietf:params:scim:schemas:core:2.0:Group'],
+                    'displayName': 'Shared Name',
+                }
+            ),
+            content_type='application/scim+json',
+            HTTP_AUTHORIZATION=f'Bearer {self.scim_token}',
+        )
+        self.assertEqual(create.status_code, 201, create.content)
+
+        self._as_owner()
+        response = self.client.post(
+            self._admin_url('/api/v1/groups'),
+            {'display_name': 'Shared Name'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 409, response.data)
+        self.assertIn('SCIM', response.data['error'])
+        self.assertEqual(
+            CompanyGroup.objects.filter(company=self.company, display_name='Shared Name').count(),
+            1,
+        )
+
+    def test_scim_create_conflicts_with_manual_display_name(self):
+        manual = CompanyGroup.objects.create(company=self.company, display_name='Shell Only')
+        response = self.scim_client.post(
+            f'/api/v1/companies/{self.company.slug}/scim/v2/Groups',
+            data=json.dumps(
+                {
+                    'schemas': ['urn:ietf:params:scim:schemas:core:2.0:Group'],
+                    'displayName': 'Shell Only',
+                }
+            ),
+            content_type='application/scim+json',
+            HTTP_AUTHORIZATION=f'Bearer {self.scim_token}',
+        )
+        self.assertEqual(response.status_code, 409, response.content)
+        body = json.loads(response.content)
+        self.assertIn('manual', body['detail'].lower())
+        manual.refresh_from_db()
+        self.assertEqual(manual.source, CompanyGroup.SOURCE_MANUAL)
+        self.assertFalse(
+            CompanyGroup.objects.filter(
+                company=self.company,
+                display_name='Shell Only',
+                source=CompanyGroup.SOURCE_SCIM,
+            ).exists()
+        )
+
+    def test_scim_rename_conflicts_with_manual_display_name(self):
+        CompanyGroup.objects.create(company=self.company, display_name='Taken Manual')
+        create = self.scim_client.post(
+            f'/api/v1/companies/{self.company.slug}/scim/v2/Groups',
+            data=json.dumps(
+                {
+                    'schemas': ['urn:ietf:params:scim:schemas:core:2.0:Group'],
+                    'displayName': 'IdP Rename Me',
+                }
+            ),
+            content_type='application/scim+json',
+            HTTP_AUTHORIZATION=f'Bearer {self.scim_token}',
+        )
+        self.assertEqual(create.status_code, 201, create.content)
+        group_id = json.loads(create.content)['id']
+
+        patch = self.scim_client.patch(
+            f'/api/v1/companies/{self.company.slug}/scim/v2/Groups/{group_id}',
+            data=json.dumps(
+                {
+                    'schemas': ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+                    'Operations': [
+                        {'op': 'replace', 'path': 'displayName', 'value': 'Taken Manual'},
+                    ],
+                }
+            ),
+            content_type='application/scim+json',
+            HTTP_AUTHORIZATION=f'Bearer {self.scim_token}',
+        )
+        self.assertEqual(patch.status_code, 409, patch.content)
+        group = CompanyGroup.objects.get(pk=group_id)
+        self.assertEqual(group.display_name, 'IdP Rename Me')

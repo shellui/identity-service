@@ -78,6 +78,8 @@ When SCIM is first enabled, **existing `CompanyGroup` rows stay `manual`**; noth
 
 **JWT / Shellui login `groups`:** unchanged — **effective** membership includes **both** manual and scim groups (direct + nested ancestors). See below.
 
+**`display_name` uniqueness (one namespace):** `display_name` remains **unique per company across both sources** (required for JWT `groups` / files ACL). SCIM create or rename that collides with an existing **manual** group returns **409 Conflict** with a message that the name is taken by a Shellui-managed group — the manual row is never adopted or overwritten. Admin create/rename that collides with a **scim** group returns **409** with a distinct message. Until the conflict is resolved (rename or delete the manual group in Shellui admin, or change the IdP push name), IdP sync for that display name will keep failing. Automatic adoption of manual groups into SCIM is **not** supported.
+
 ---
 
 ## Nested groups

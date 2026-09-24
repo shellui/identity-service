@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Optional, Union
 from urllib.parse import urljoin
 
+from django.db import IntegrityError as DjangoIntegrityError
 from django.urls import reverse
 from django_scim import constants, exceptions
 from django.contrib.auth import get_user_model
@@ -10,6 +11,7 @@ from django_scim.adapters import SCIMGroup, SCIMUser
 from scim2_filter_parser.attr_paths import AttrPath
 
 from apps.companies.access import is_company_access_enabled, set_company_access
+from apps.companies.group_display_name import first_display_name_conflict
 from apps.companies.group_graph import NestedGroupCycleError, assert_nested_group_link_allowed
 from apps.companies.models import CompanyGroup
 from apps.scim.context import get_scim_company
@@ -226,6 +228,27 @@ class ShellUIScimGroup(_ShellUIResourceTypeMixin, SCIMGroup):
         if members is not None:
             self._pending_members = members
 
+    def _raise_display_name_conflict(self, conflict: CompanyGroup) -> None:
+        if conflict.source == CompanyGroup.SOURCE_MANUAL:
+            raise exceptions.IntegrityError(
+                detail=(
+                    'displayName is already used by a Shellui-managed (manual) group '
+                    'in this company.'
+                ),
+            )
+        raise exceptions.IntegrityError(
+            detail='displayName is already used by another SCIM group in this company.',
+        )
+
+    def _assert_scim_display_name_available(self) -> None:
+        conflict = first_display_name_conflict(
+            self._company,
+            self.obj.display_name,
+            exclude_pk=self.obj.pk,
+        )
+        if conflict is not None:
+            self._raise_display_name_conflict(conflict)
+
     def save(self):
         if not (self.obj.display_name or '').strip():
             raise exceptions.BadRequestError('displayName is required.')
@@ -233,7 +256,20 @@ class ShellUIScimGroup(_ShellUIResourceTypeMixin, SCIMGroup):
             raise exceptions.NotFoundError(str(self.obj.pk))
         self.obj.company = self._company
         self.obj.source = CompanyGroup.SOURCE_SCIM
-        self.obj.save()
+        self._assert_scim_display_name_available()
+        try:
+            self.obj.save()
+        except DjangoIntegrityError as exc:
+            conflict = first_display_name_conflict(
+                self._company,
+                self.obj.display_name,
+                exclude_pk=self.obj.pk,
+            )
+            if conflict is not None:
+                self._raise_display_name_conflict(conflict)
+            raise exceptions.IntegrityError(
+                detail='displayName conflicts with an existing group in this company.',
+            ) from exc
         pending = getattr(self, '_pending_members', None)
         if pending is not None:
             self._set_members(pending)
