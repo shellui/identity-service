@@ -13,7 +13,7 @@ This page mirrors that catalog for operators planning IdP coverage. It does **no
 | Layer | What it does |
 | ----- | ------------ |
 | **django-allauth** | Provider modules, `SocialApp` model, optional vanilla `/accounts/…` routes (not mounted by default in identity-service) |
-| **identity-service OAuth API** | Identity-hosted flow: `GET /api/v1/authorize` → IdP → `GET /api/v1/oauth/callback` → confirmation → `redirect_to?shellui_auth_code=…` — see [OAuth login](oauth-login.md) |
+| **identity-service OAuth API** | Identity-hosted flow: `GET /api/v1/authorize` → IdP → `GET /api/v1/oauth/callback` → confirmation (optional; **Google skips by default**) → `redirect_to?shellui_auth_code=…` — see [OAuth login](oauth-login.md) |
 | **Per-company enablement** | Active `CompanyOAuthClient` rows; `GET /api/v1/settings?company_id=…` lists providers that have credentials for that company |
 
 ### IdP callback URL (Shellui flow)

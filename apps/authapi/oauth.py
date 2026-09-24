@@ -215,3 +215,35 @@ def fetch_provider_userinfo(
     with urllib.request.urlopen(req, timeout=20) as response:
         data = json.loads(response.read().decode('utf-8'))
     return data
+
+
+def oauth_skip_confirm_provider_ids() -> frozenset[str]:
+    from django.conf import settings
+
+    configured = getattr(settings, 'OAUTH_SKIP_CONFIRM_PROVIDERS', ())
+    return frozenset(str(item).strip().lower() for item in configured if str(item).strip())
+
+
+def oauth_identity_sufficient_for_auto_confirm(
+    provider: str,
+    *,
+    email: str,
+    userinfo: dict,
+) -> bool:
+    """True when profile data is safe to finalize login without the confirm step."""
+    normalized_email = (email or '').strip().lower()
+    if not normalized_email or '@' not in normalized_email:
+        return False
+    if normalized_email.endswith(f'@{provider}.local'):
+        return False
+    verified = userinfo.get('email_verified')
+    if verified is False or verified == 'false':
+        return False
+    return True
+
+
+def should_skip_oauth_confirm(provider: str, *, email: str, userinfo: dict) -> bool:
+    key = str(provider).strip().lower()
+    if key not in oauth_skip_confirm_provider_ids():
+        return False
+    return oauth_identity_sufficient_for_auto_confirm(key, email=email, userinfo=userinfo)
