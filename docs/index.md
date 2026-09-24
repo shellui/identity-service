@@ -13,4 +13,5 @@ This backend provides Shellui-compatible authentication endpoints under `/api/v1
 - **[JWKS and JWT verification](jwks.md)** — RS256 signing, `/.well-known/jwks.json`, key rotation.
 - **[Metrics (JWT & personal access tokens)](metrics.md)** — how to call `/api/v1/metrics` and `/api/v1/metrics/all`.
 - **[Releases](RELEASES.md)** — Docker Hub image tags and publish checklist (see also root `PUBLISH.md`).
+- **[Next release priorities](NEXT-RELEASE.md)** — proposed backlog for the release after PR #24 (roadmap review).
 - Extend this docs folder with additional guides as the project evolves.
