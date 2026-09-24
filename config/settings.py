@@ -227,6 +227,7 @@ SPECTACULAR_SETTINGS = {
 }
 
 MIDDLEWARE = [
+    'apps.authapi.middleware.LivenessMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
     'corsheaders.middleware.CorsMiddleware',
@@ -409,6 +410,7 @@ POSTGRES_DATABASE_URL = os.getenv('POSTGRES_DATABASE_URL', '').strip()
 
 if POSTGRES_DATABASE_URL:
     _postgres_ssl_require = _env_bool('POSTGRES_SSL_REQUIRE', not DEBUG)
+    _postgres_connect_timeout = _env_int('POSTGRES_CONNECT_TIMEOUT', 10)
     DATABASES = {
         'default': dj_database_url.parse(
             POSTGRES_DATABASE_URL,
@@ -416,6 +418,9 @@ if POSTGRES_DATABASE_URL:
             ssl_require=_postgres_ssl_require,
         )
     }
+    DATABASES['default']['CONN_HEALTH_CHECKS'] = True
+    DATABASES['default'].setdefault('OPTIONS', {})
+    DATABASES['default']['OPTIONS']['connect_timeout'] = _postgres_connect_timeout
 else:
     DATABASES = {
         'default': {
