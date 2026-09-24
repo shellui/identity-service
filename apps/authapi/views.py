@@ -32,6 +32,7 @@ from .tokens import ShellUIAccessToken, ShellUIRefreshToken
 
 from . import metrics as auth_metrics
 from apps.companies.group_graph import effective_group_display_names_for_user, effective_group_ids_for_user
+from apps.companies.group_display_name import first_display_name_conflict
 from apps.companies.models import Company, CompanyGroup, CompanyOAuthClient, CompanyOAuthRedirect
 from apps.companies.access import (
     JoinDecision,
@@ -99,7 +100,14 @@ from .serializers import (
     ShellUIAdminUserUpdateSerializer,
     UserPreferenceSerializer,
 )
-from apps.scim.models import CompanyScimToken
+from apps.scim.models import CompanyScimToken, ScimProvisioningEvent
+from apps.scim.provisioning_events import (
+    OPERATION_CREATE,
+    OPERATION_RENAME,
+    last_provisioning_error_payload,
+    recent_provisioning_events_payload,
+    record_group_display_name_conflict,
+)
 from apps.scim.tokens import generate_scim_token
 
 User = get_user_model()
@@ -1009,7 +1017,10 @@ def _scim_status_payload(request, company: Company) -> dict:
         'base_url': _scim_base_url_for_company(request, company),
         'configured': configured,
         'active_token_count': active_count,
-        'directory_read_only': configured,
+        'directory_read_only': False,
+        'scim_groups_read_only': configured,
+        'last_provisioning_error': last_provisioning_error_payload(company),
+        'recent_provisioning_events': recent_provisioning_events_payload(company),
     }
 
 
@@ -2452,6 +2463,63 @@ class ShellUIAdminUserDetailView(APIView):
         return Response(_admin_user_payload(target, company))
 
 
+def _admin_group_row(g: CompanyGroup) -> dict:
+    return {
+        'id': g.id,
+        'display_name': g.display_name,
+        'source': g.source,
+        'user_count': getattr(g, 'user_count', g.members.count()),
+    }
+
+
+def _admin_group_display_name_conflict_response(
+    company: Company,
+    display_name: str,
+    *,
+    exclude_pk: int | None = None,
+    operation: str = OPERATION_CREATE,
+) -> Response | None:
+    existing = first_display_name_conflict(company, display_name, exclude_pk=exclude_pk)
+    if existing is None:
+        return None
+    record_group_display_name_conflict(
+        company=company,
+        display_name=display_name,
+        conflict=existing,
+        channel=ScimProvisioningEvent.CHANNEL_ADMIN,
+        operation=operation,
+        scim_token=None,
+    )
+    if existing.source == CompanyGroup.SOURCE_SCIM:
+        return Response(
+            {
+                'error': (
+                    'A SCIM-provisioned group already uses this display name. '
+                    'Change or remove it in the IdP, or pick another name for this manual group.'
+                ),
+            },
+            status=status.HTTP_409_CONFLICT,
+        )
+    return Response(
+        {'error': 'A group with this display name already exists.'},
+        status=status.HTTP_409_CONFLICT,
+    )
+
+
+def _forbid_scim_group_admin_mutation(group: CompanyGroup) -> Response | None:
+    if group.source == CompanyGroup.SOURCE_SCIM:
+        return Response(
+            {
+                'error': (
+                    'This group is managed by SCIM provisioning and cannot be '
+                    'modified or deleted via the admin API.'
+                ),
+            },
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    return None
+
+
 @extend_schema_view(
     get=extend_schema(
         tags=['directory-groups'],
@@ -2477,7 +2545,7 @@ class ShellUIAdminGroupListView(APIView):
         rows = list(
             CompanyGroup.objects.filter(company=company)
             .annotate(user_count=Count('members', distinct=True))
-            .values('id', 'display_name', 'user_count')
+            .values('id', 'display_name', 'source', 'user_count')
             .order_by('display_name')
         )
         return Response(rows)
@@ -2491,13 +2559,29 @@ class ShellUIAdminGroupListView(APIView):
         display_name = str(serializer.validated_data['display_name']).strip()
         if not display_name:
             return Response({'error': 'Group display name is required.'}, status=status.HTTP_400_BAD_REQUEST)
-        if CompanyGroup.objects.filter(company=company, display_name=display_name).exists():
-            return Response(
-                {'error': 'A group with this display name already exists.'},
-                status=status.HTTP_400_BAD_REQUEST,
+        conflict = _admin_group_display_name_conflict_response(
+            company,
+            display_name,
+            operation=OPERATION_CREATE,
+        )
+        if conflict:
+            return conflict
+        try:
+            g = CompanyGroup.objects.create(
+                company=company,
+                display_name=display_name,
+                source=CompanyGroup.SOURCE_MANUAL,
             )
-        g = CompanyGroup.objects.create(company=company, display_name=display_name)
-        return Response({'id': g.id, 'display_name': g.display_name, 'user_count': 0}, status=status.HTTP_201_CREATED)
+        except IntegrityError:
+            retry = _admin_group_display_name_conflict_response(
+                company,
+                display_name,
+                operation=OPERATION_CREATE,
+            )
+            if retry:
+                return retry
+            raise
+        return Response(_admin_group_row(g), status=status.HTTP_201_CREATED)
 
 
 @extend_schema_view(
@@ -2507,6 +2591,11 @@ class ShellUIAdminGroupListView(APIView):
         operation_id='api_v1_groups_retrieve',
     ),
     put=extend_schema(
+        tags=['directory-groups'],
+        summary='Rename auth group (staff or company owner)',
+        request=ShellUIAdminGroupUpdateSerializer,
+    ),
+    patch=extend_schema(
         tags=['directory-groups'],
         summary='Rename auth group (staff or company owner)',
         request=ShellUIAdminGroupUpdateSerializer,
@@ -2528,7 +2617,7 @@ class ShellUIAdminGroupDetailView(APIView):
             g = CompanyGroup.objects.filter(company=company).annotate(user_count=Count('members', distinct=True)).get(pk=pk)
         except CompanyGroup.DoesNotExist:
             return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
-        return Response({'id': g.id, 'display_name': g.display_name, 'user_count': g.user_count})
+        return Response(_admin_group_row(g))
 
     def put(self, request, pk):
         _actor, company, err = _require_staff_or_company_owner(request)
@@ -2538,20 +2627,40 @@ class ShellUIAdminGroupDetailView(APIView):
             g = CompanyGroup.objects.filter(company=company).annotate(user_count=Count('members', distinct=True)).get(pk=pk)
         except CompanyGroup.DoesNotExist:
             return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        blocked = _forbid_scim_group_admin_mutation(g)
+        if blocked:
+            return blocked
         serializer = ShellUIAdminGroupUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         display_name = str(serializer.validated_data['display_name']).strip()
         if not display_name:
             return Response({'error': 'Group display name is required.'}, status=status.HTTP_400_BAD_REQUEST)
-        if CompanyGroup.objects.filter(company=company, display_name=display_name).exclude(pk=g.pk).exists():
-            return Response(
-                {'error': 'A group with this display name already exists.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        conflict = _admin_group_display_name_conflict_response(
+            company,
+            display_name,
+            exclude_pk=g.pk,
+            operation=OPERATION_RENAME,
+        )
+        if conflict:
+            return conflict
         g.display_name = display_name
-        g.save(update_fields=['display_name'])
+        try:
+            g.save(update_fields=['display_name'])
+        except IntegrityError:
+            retry = _admin_group_display_name_conflict_response(
+                company,
+                display_name,
+                exclude_pk=g.pk,
+                operation=OPERATION_RENAME,
+            )
+            if retry:
+                return retry
+            raise
         g = CompanyGroup.objects.filter(company=company).annotate(user_count=Count('members', distinct=True)).get(pk=g.pk)
-        return Response({'id': g.id, 'display_name': g.display_name, 'user_count': g.user_count})
+        return Response(_admin_group_row(g))
+
+    def patch(self, request, pk):
+        return self.put(request, pk)
 
     def delete(self, request, pk):
         _actor, company, err = _require_staff_or_company_owner(request)
@@ -2561,6 +2670,9 @@ class ShellUIAdminGroupDetailView(APIView):
             g = CompanyGroup.objects.filter(company=company).get(pk=pk)
         except CompanyGroup.DoesNotExist:
             return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        blocked = _forbid_scim_group_admin_mutation(g)
+        if blocked:
+            return blocked
         g.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 

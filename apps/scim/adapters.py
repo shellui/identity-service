@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Optional, Union
 from urllib.parse import urljoin
 
+from django.db import IntegrityError as DjangoIntegrityError
 from django.urls import reverse
 from django_scim import constants, exceptions
 from django.contrib.auth import get_user_model
@@ -10,11 +11,14 @@ from django_scim.adapters import SCIMGroup, SCIMUser
 from scim2_filter_parser.attr_paths import AttrPath
 
 from apps.companies.access import is_company_access_enabled, set_company_access
+from apps.companies.group_display_name import first_display_name_conflict
 from apps.companies.group_graph import NestedGroupCycleError, assert_nested_group_link_allowed
 from apps.companies.models import CompanyGroup
 from apps.scim.context import get_scim_company
 from apps.scim.group_members import parse_scim_members
 from apps.scim.filters import ShellUIGroupFilterQuery, ShellUIUserFilterQuery
+from apps.scim.provisioning_events import OPERATION_CREATE, OPERATION_RENAME, record_group_display_name_conflict
+from apps.scim.models import ScimProvisioningEvent
 from apps.scim.user_bridge import ScimUserBridge
 from django_scim.utils import get_base_scim_location_getter
 
@@ -101,7 +105,11 @@ class ShellUIScimUser(_ShellUIResourceTypeMixin, SCIMUser):
         user = self.obj.user
         if user.pk is None:
             return []
-        groups = CompanyGroup.objects.filter(company=company, members=user).order_by('display_name')
+        groups = CompanyGroup.objects.filter(
+            company=company,
+            members=user,
+            source=CompanyGroup.SOURCE_SCIM,
+        ).order_by('display_name')
         refs = []
         for group in groups:
             group_adapter = ShellUIScimGroup(group, request=self.request)
@@ -196,7 +204,10 @@ class ShellUIScimGroup(_ShellUIResourceTypeMixin, SCIMGroup):
                     'type': 'User',
                 }
             )
-        for nested in self.obj.member_groups.filter(company=self._company).order_by('pk'):
+        for nested in self.obj.member_groups.filter(
+            company=self._company,
+            source=CompanyGroup.SOURCE_SCIM,
+        ).order_by('pk'):
             nested_adapter = ShellUIScimGroup(nested, request=self.request)
             dicts.append(
                 {
@@ -219,13 +230,59 @@ class ShellUIScimGroup(_ShellUIResourceTypeMixin, SCIMGroup):
         if members is not None:
             self._pending_members = members
 
+    def _group_name_operation(self) -> str:
+        return OPERATION_RENAME if self.obj.pk is not None else OPERATION_CREATE
+
+    def _raise_display_name_conflict(self, conflict: CompanyGroup) -> None:
+        record_group_display_name_conflict(
+            company=self._company,
+            display_name=self.obj.display_name,
+            conflict=conflict,
+            channel=ScimProvisioningEvent.CHANNEL_SCIM,
+            operation=self._group_name_operation(),
+            scim_token=getattr(self.request, 'scim_token', None),
+        )
+        if conflict.source == CompanyGroup.SOURCE_MANUAL:
+            raise exceptions.IntegrityError(
+                detail=(
+                    'displayName is already used by a Shellui-managed (manual) group '
+                    'in this company.'
+                ),
+            )
+        raise exceptions.IntegrityError(
+            detail='displayName is already used by another SCIM group in this company.',
+        )
+
+    def _assert_scim_display_name_available(self) -> None:
+        conflict = first_display_name_conflict(
+            self._company,
+            self.obj.display_name,
+            exclude_pk=self.obj.pk,
+        )
+        if conflict is not None:
+            self._raise_display_name_conflict(conflict)
+
     def save(self):
         if not (self.obj.display_name or '').strip():
             raise exceptions.BadRequestError('displayName is required.')
         if self.obj.pk is not None and self.obj.company_id != self._company.pk:
             raise exceptions.NotFoundError(str(self.obj.pk))
         self.obj.company = self._company
-        self.obj.save()
+        self.obj.source = CompanyGroup.SOURCE_SCIM
+        self._assert_scim_display_name_available()
+        try:
+            self.obj.save()
+        except DjangoIntegrityError as exc:
+            conflict = first_display_name_conflict(
+                self._company,
+                self.obj.display_name,
+                exclude_pk=self.obj.pk,
+            )
+            if conflict is not None:
+                self._raise_display_name_conflict(conflict)
+            raise exceptions.IntegrityError(
+                detail='displayName conflicts with an existing group in this company.',
+            ) from exc
         pending = getattr(self, '_pending_members', None)
         if pending is not None:
             self._set_members(pending)
@@ -242,9 +299,15 @@ class ShellUIScimGroup(_ShellUIResourceTypeMixin, SCIMGroup):
     def _validated_member_groups(self, group_ids: list[int]):
         if not group_ids:
             return CompanyGroup.objects.none()
-        groups = CompanyGroup.objects.filter(pk__in=group_ids, company=self._company)
+        groups = CompanyGroup.objects.filter(
+            pk__in=group_ids,
+            company=self._company,
+            source=CompanyGroup.SOURCE_SCIM,
+        )
         if groups.count() != len(set(group_ids)):
-            raise exceptions.NotFoundError('One or more nested group members were not found in this company.')
+            raise exceptions.NotFoundError(
+                'One or more nested group members were not found in this company.'
+            )
         for child in groups:
             try:
                 assert_nested_group_link_allowed(self.obj, child)
@@ -281,7 +344,11 @@ class ShellUIScimGroup(_ShellUIResourceTypeMixin, SCIMGroup):
                 for user in users:
                     self.obj.members.remove(user)
             if parsed.group_ids:
-                nested = CompanyGroup.objects.filter(pk__in=parsed.group_ids, company=self._company)
+                nested = CompanyGroup.objects.filter(
+                    pk__in=parsed.group_ids,
+                    company=self._company,
+                    source=CompanyGroup.SOURCE_SCIM,
+                )
                 if nested.count() != len(set(parsed.group_ids)):
                     raise exceptions.NotFoundError('One or more nested group members were not found.')
                 for group in nested:

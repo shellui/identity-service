@@ -57,8 +57,30 @@ Operators and migrations use SCIM-aligned names on the company-scoped group mode
 | `members[]` type **User** | `members` M2M → `User` |
 | `members[]` type **Group** | `member_groups` M2M → `CompanyGroup` (nested, same company) |
 | (tenant) | `company` FK — not exposed in SCIM payloads |
+| (provenance) | `source` — `manual` (Shellui admin) or `scim` (IdP); stored on the row, not in SCIM payloads |
 
 **Rename note:** the former `name` field is now **`display_name`**. Admin REST group APIs use `display_name` in JSON.
+
+### Hybrid groups (`source`)
+
+Companies may hold **both** Shellui-managed and IdP-managed groups at once:
+
+| `source` | Created by | SCIM Groups list/get | Admin REST `/api/v1/groups` |
+| -------- | ---------- | -------------------- | --------------------------- |
+| `manual` | Admin REST (always), legacy rows before SCIM | **Hidden** — not visible to the IdP | Create, rename, delete allowed |
+| `scim` | SCIM create/update adapters | Visible and fully managed by IdP | **403** on PATCH/PUT/DELETE |
+
+When SCIM is first enabled, **existing `CompanyGroup` rows stay `manual`**; nothing is deleted or reclassified. New groups from the IdP get `source=scim`. SCIM adapters never downgrade `scim` → `manual`.
+
+**Nested groups:** SCIM `members` with `type: "Group"` may reference only **`source=scim`** groups in the same company (keeps the IdP graph free of Shellui-only groups).
+
+**User `groups` in SCIM:** only direct membership in **`source=scim`** groups for the token company (manual Shellui groups are omitted from User resources).
+
+**JWT / Shellui login `groups`:** unchanged — **effective** membership includes **both** manual and scim groups (direct + nested ancestors). See below.
+
+**`display_name` uniqueness (one namespace):** `display_name` remains **unique per company across both sources** (required for JWT `groups` / files ACL). SCIM create or rename that collides with an existing **manual** group returns **409 Conflict** with a message that the name is taken by a Shellui-managed group — the manual row is never adopted or overwritten. Admin create/rename that collides with a **scim** group returns **409** with a distinct message. Until the conflict is resolved (rename or delete the manual group in Shellui admin, or change the IdP push name), IdP sync for that display name will keep failing. Automatic adoption of manual groups into SCIM is **not** supported.
+
+**409 observability:** Each collision is written to structured logs and an append-only **`ScimProvisioningEvent`** (`group_display_name_conflict`), and updates **`CompanyScimProvisioningState.last_error_*`** for the company. Shellui admin **`GET /api/v1/scim`** returns `last_provisioning_error` and a short `recent_provisioning_events` list so operators can diagnose name clashes without IdP logs. The IdP may retry provisioning; responses stay **409** until the name clash is fixed.
 
 ---
 
@@ -98,7 +120,7 @@ Company login access still uses `CompanyMembership`, not group membership.
 | `active` | `CompanyMembership.is_enabled` for the token’s company |
 | `externalId` | `UserScimAttributes.scim_external_id` |
 | `id` | Django user pk (string) |
-| `groups[]` | Direct `CompanyGroup` memberships only |
+| `groups[]` | Direct membership in **`source=scim`** groups only |
 
 **Deprovision user:** `DELETE` or `active: false` disables company membership; user row retained.
 
@@ -123,9 +145,11 @@ Company login access still uses `CompanyMembership`, not group membership.
 
 Staff or **company owner** JWT with the usual company scope (`company_id` query/body or `company_id` claim in the access token). Same authorization as `/api/v1/oauth-redirects` and `/api/v1/groups`.
 
+**Directory groups (`/api/v1/groups`):** list/retrieve include `source`. POST always creates `source=manual` (allowed even when SCIM tokens are active). PUT/PATCH/DELETE return **403** when `source=scim`.
+
 | Method | Path | Notes |
 | ------ | ---- | ----- |
-| GET | `/api/v1/scim` | Deployment `enabled` (`SCIM_ENABLED`), company `base_url`, `configured` / `active_token_count`, `directory_read_only` |
+| GET | `/api/v1/scim` | Deployment `enabled` (`SCIM_ENABLED`), company `base_url`, `configured` / `active_token_count`, `directory_read_only` (always `false` under hybrid), `scim_groups_read_only` (`true` when an active token exists — SCIM-sourced rows only), `last_provisioning_error`, `recent_provisioning_events` |
 | GET | `/api/v1/scim/tokens` | List tokens (`results[]`: id, name, token_prefix, timestamps, `is_active`; no secret) |
 | POST | `/api/v1/scim/tokens` | Body `{ "name": optional }`; response includes full `token` **once** (403 when SCIM disabled on deploy) |
 | POST | `/api/v1/scim/tokens/<uuid>/revoke` | Revoke token (idempotent; allowed when SCIM disabled) |
@@ -155,9 +179,9 @@ SCIM is **strictly scoped to one company** per request:
 
 1. **Bearer token binding** — The `CompanyScimToken` row fixes the tenant. The URL segment `<company_slug>` must match that company’s slug; otherwise the response is **401** (no handler logic runs on a mismatched pair).
 2. **Users** — List/get/update paths filter with `companies=<token company>` (and membership post-checks). A user id that exists globally but **not** in the token company returns **404**, not another tenant’s payload.
-3. **Groups** — All queries use `company=<token company>`. Nested group members and user members are resolved only within that company; foreign ids return **404**.
+3. **Groups** — All queries use `company=<token company>` and **`source=scim`**. Manual Shellui groups are invisible on the SCIM surface. Nested group members and user members are resolved only among scim-sourced groups in that company; foreign or manual ids return **404**.
 4. **Multi-company users** — The same Django user may appear in SCIM for company A and B with separate tokens. `active` / deprovision affects **only** `CompanyMembership` for the token’s company; other companies are unchanged and the user row is not deleted.
-5. **User `groups` in SCIM** — Only `CompanyGroup` rows for the **current** SCIM company where the user is a direct member.
+5. **User `groups` in SCIM** — Only **`source=scim`** `CompanyGroup` rows for the **current** SCIM company where the user is a direct member.
 6. **Effective membership helper** — `group_graph.effective_user_ids_for_group()` walks nested groups **only** when `member_groups.company_id` matches the root group’s company (defense in depth).
 7. **Filter / `.search`** — SQL extras append company/membership constraints so raw filter queries cannot bypass ORM scoping.
 

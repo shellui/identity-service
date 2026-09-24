@@ -45,6 +45,7 @@ class ScimAdminApiTests(TestCase):
         self.assertFalse(status.data['configured'])
         self.assertEqual(status.data['active_token_count'], 0)
         self.assertFalse(status.data['directory_read_only'])
+        self.assertFalse(status.data['scim_groups_read_only'])
 
         create = self.client.post(self._url('/api/v1/scim/tokens'), {'name': 'IdP prod'}, format='json')
         self.assertEqual(create.status_code, 201, create.data)
@@ -54,7 +55,8 @@ class ScimAdminApiTests(TestCase):
         status2 = self.client.get(self._url('/api/v1/scim'))
         self.assertTrue(status2.data['configured'])
         self.assertEqual(status2.data['active_token_count'], 1)
-        self.assertTrue(status2.data['directory_read_only'])
+        self.assertFalse(status2.data['directory_read_only'])
+        self.assertTrue(status2.data['scim_groups_read_only'])
 
     def test_member_forbidden(self):
         self.client.force_authenticate(user=self.member)

@@ -234,10 +234,16 @@ class CompanyMembershipAdmin(admin.ModelAdmin):
 
 @admin.register(CompanyGroup)
 class CompanyGroupAdmin(admin.ModelAdmin):
-    list_display = ('id', 'display_name', 'external_id', 'company_id')
+    list_display = ('id', 'display_name', 'source', 'external_id', 'company_id')
     search_fields = ('display_name', 'external_id', 'company__name')
-    list_filter = ('company',)
+    list_filter = ('source', 'company')
     filter_horizontal = ('members', 'member_groups')
+
+    def get_readonly_fields(self, request, obj=None):
+        readonly = list(super().get_readonly_fields(request, obj))
+        if obj is not None and obj.source == CompanyGroup.SOURCE_SCIM:
+            readonly.append('source')
+        return readonly
 
 
 @admin.register(CompanyOAuthClient)

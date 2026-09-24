@@ -150,6 +150,7 @@ class ScimApiTests(TestCase):
         group = CompanyGroup.objects.get(pk=group_id)
         self.assertEqual(group.display_name, 'Engineering')
         self.assertEqual(group.external_id, 'okta-eng')
+        self.assertEqual(group.source, CompanyGroup.SOURCE_SCIM)
         self.assertTrue(group.members.filter(pk=member.pk).exists())
 
         listing = self.client.get(
@@ -158,6 +159,13 @@ class ScimApiTests(TestCase):
         )
         self.assertEqual(listing.status_code, 200)
         self.assertEqual(json.loads(listing.content)['totalResults'], 1)
+
+        CompanyGroup.objects.create(company=self.company, display_name='Manual Shell Group')
+        listing2 = self.client.get(
+            f'{_scim_base(self.company)}/Groups',
+            HTTP_AUTHORIZATION=self.auth_header,
+        )
+        self.assertEqual(json.loads(listing2.content)['totalResults'], 1)
 
         bad_member = self.client.post(
             f'{_scim_base(self.company)}/Groups',
@@ -256,8 +264,16 @@ class ScimApiTests(TestCase):
         self.assertIn(member.pk, effective_user_ids_for_group(parent))
 
     def test_nested_group_cycle_rejected(self):
-        a = CompanyGroup.objects.create(company=self.company, display_name='A')
-        b = CompanyGroup.objects.create(company=self.company, display_name='B')
+        a = CompanyGroup.objects.create(
+            company=self.company,
+            display_name='A',
+            source=CompanyGroup.SOURCE_SCIM,
+        )
+        b = CompanyGroup.objects.create(
+            company=self.company,
+            display_name='B',
+            source=CompanyGroup.SOURCE_SCIM,
+        )
         a.member_groups.add(b)
         response = self.client.patch(
             f'{_scim_base(self.company)}/Groups/{b.pk}',

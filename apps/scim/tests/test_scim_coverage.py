@@ -84,9 +84,17 @@ class ScimCoverageTests(TestCase):
 
     def test_delete_parent_group_keeps_nested_child_group(self):
         user = self._post_user('childuser@acme.com')
-        child = CompanyGroup.objects.create(company=self.company, display_name='Child')
+        child = CompanyGroup.objects.create(
+            company=self.company,
+            display_name='Child',
+            source=CompanyGroup.SOURCE_SCIM,
+        )
         child.members.add(user)
-        parent = CompanyGroup.objects.create(company=self.company, display_name='Parent')
+        parent = CompanyGroup.objects.create(
+            company=self.company,
+            display_name='Parent',
+            source=CompanyGroup.SOURCE_SCIM,
+        )
         parent.member_groups.add(child)
 
         response = self.client.delete(
@@ -100,8 +108,16 @@ class ScimCoverageTests(TestCase):
 
     def test_patch_remove_user_and_nested_group_members(self):
         user = self._post_user('rm@acme.com')
-        child = CompanyGroup.objects.create(company=self.company, display_name='RmChild')
-        group = CompanyGroup.objects.create(company=self.company, display_name='RmParent')
+        child = CompanyGroup.objects.create(
+            company=self.company,
+            display_name='RmChild',
+            source=CompanyGroup.SOURCE_SCIM,
+        )
+        group = CompanyGroup.objects.create(
+            company=self.company,
+            display_name='RmParent',
+            source=CompanyGroup.SOURCE_SCIM,
+        )
         group.members.add(user)
         group.member_groups.add(child)
 
@@ -148,7 +164,11 @@ class ScimCoverageTests(TestCase):
         self.assertFalse(group.member_groups.filter(pk=child.pk).exists())
 
     def test_self_nest_group_via_scim_patch_rejected(self):
-        group = CompanyGroup.objects.create(company=self.company, display_name='Solo')
+        group = CompanyGroup.objects.create(
+            company=self.company,
+            display_name='Solo',
+            source=CompanyGroup.SOURCE_SCIM,
+        )
         response = self.client.patch(
             f'{_scim_base(self.company)}/Groups/{group.pk}',
             data=json.dumps(
@@ -245,7 +265,8 @@ class ScimCoverageTests(TestCase):
 
         group_sql, group_params = ShellUIGroupFilterQuery.get_extras(None, request)
         self.assertIn('company_id', group_sql)
-        self.assertEqual(group_params, [self.company.pk])
+        self.assertIn('source', group_sql)
+        self.assertEqual(group_params, [self.company.pk, CompanyGroup.SOURCE_SCIM])
 
         request.scim_company = None
         blocked_sql, blocked_params = ShellUIUserFilterQuery.get_extras(None, request)
@@ -254,8 +275,14 @@ class ScimCoverageTests(TestCase):
 
     def test_user_get_lists_direct_group_membership(self):
         user = self._post_user('groups@acme.com')
-        group = CompanyGroup.objects.create(company=self.company, display_name='Direct')
-        group.members.add(user)
+        scim_group = CompanyGroup.objects.create(
+            company=self.company,
+            display_name='Direct',
+            source=CompanyGroup.SOURCE_SCIM,
+        )
+        scim_group.members.add(user)
+        manual_group = CompanyGroup.objects.create(company=self.company, display_name='ManualOnly')
+        manual_group.members.add(user)
 
         response = self.client.get(
             f'{_scim_base(self.company)}/Users/{user.pk}',
@@ -264,7 +291,7 @@ class ScimCoverageTests(TestCase):
         self.assertEqual(response.status_code, 200)
         groups = json.loads(response.content)['groups']
         self.assertEqual(len(groups), 1)
-        self.assertEqual(groups[0]['value'], str(group.pk))
+        self.assertEqual(groups[0]['value'], str(scim_group.pk))
         self.assertEqual(groups[0]['display'], 'Direct')
 
     def test_unimplemented_bulk_and_me_return_501_with_auth(self):
