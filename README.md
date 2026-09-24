@@ -24,7 +24,7 @@ Set **`SCIM_ENABLED=true`** on the deployment to expose SCIM 2.0 user provisioni
 /api/v1/companies/<company_slug>/scim/v2/
 ```
 
-Create a **Company SCIM token** in Django admin and configure your IdP with `Authorization: Bearer <token>`. Details, IdP notes, attribute mapping, and limitations: **[docs/scim.md](docs/scim.md)**.
+Create a **Company SCIM token** in Django admin and configure your IdP with `Authorization: Bearer <token>`. Supports SCIM Users, Groups (including nested `type: Group` members), and SCIM-aligned `CompanyGroup` fields (`display_name`, `external_id`). Details: **[docs/scim.md](docs/scim.md)**.
 
 ## Project Structure
 
