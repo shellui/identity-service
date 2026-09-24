@@ -1,6 +1,6 @@
 // @ts-check
 
-/** @type {import('@docusaurus/plugin-content-docs').Config} */
+/** @type {import('@docusaurus/plugin-content-docs').SidebarsConfig} */
 const sidebars = {
   tutorialSidebar: [
     {
@@ -11,7 +11,17 @@ const sidebars = {
     {
       type: 'doc',
       id: 'oauth-login',
-      label: 'OAuth login',
+      label: 'OAuth',
+    },
+    {
+      type: 'doc',
+      id: 'scim',
+      label: 'SCIM',
+    },
+    {
+      type: 'doc',
+      id: 'configuration',
+      label: 'Configuration',
     },
     {
       type: 'doc',
@@ -25,18 +35,13 @@ const sidebars = {
     },
     {
       type: 'doc',
+      id: 'security-hardening',
+      label: 'Security',
+    },
+    {
+      type: 'doc',
       id: 'metrics',
       label: 'Metrics',
-    },
-    {
-      type: 'doc',
-      id: 'scim',
-      label: 'Enterprise SCIM',
-    },
-    {
-      type: 'doc',
-      id: 'security-hardening',
-      label: 'Security hardening',
     },
     {
       type: 'doc',
