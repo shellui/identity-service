@@ -164,7 +164,13 @@ docker run -d \
   shellui/identity-service:0.5.0
 ```
 
-The entrypoint runs migrations on start, then starts Gunicorn as user `appuser`.
+The entrypoint runs migrations on start, then starts **Gunicorn** (`config.wsgi:application`) as user `appuser` — not ASGI/uvicorn. Env vars `GUNICORN_WORKERS`, `GUNICORN_THREADS`, and `GUNICORN_TIMEOUT` are passed through; worker class is **`gthread`** (threaded sync workers).
+
+**Concurrency:** with defaults after this release, up to `workers × threads` requests run at once (e.g. `4 × 4 = 16`). With `GUNICORN_WORKERS=2` and `GUNICORN_THREADS=2` you only get **four** concurrent handlers. OAuth callbacks and token refresh perform several DB writes and up to ~20s outbound HTTP each; when all handlers are busy, **even `GET /` queues** (session middleware + DB) until the client or reverse proxy times out — intermittent “hang then works again”.
+
+**Liveness:** point health checks at `GET /health/live` (no session/DB). Do not use `/` or `/api/v1/settings` as the only probe if traffic is bursty.
+
+**Immediate VPS tuning (no image change):** raise workers/threads (e.g. `GUNICORN_WORKERS=4`, `GUNICORN_THREADS=4`), use `POSTGRES_DATABASE_URL` for production load, and aim health checks at `/health/live`.
 
 ### Post-deploy production config check
 
