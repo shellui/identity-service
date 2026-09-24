@@ -88,8 +88,34 @@ Rate limits, HTTPS defaults, Postgres SSL, trusted-proxy IP handling, and PAT li
 | `GET /api/v1/oauth/confirm?action=switch&confirm_token=…` | Restart OAuth with account picker (Google / Microsoft) |
 | `GET`/`POST`/`PATCH`/`DELETE` `/api/v1/oauth-redirects` | Manage allowlist |
 | `PUT`/`DELETE` `/api/v1/hosting-oauth-redirects` | Hosting-service sync (`source=hosting`, owner/staff JWT) |
+| `DELETE /api/v1/user` | Self-service account deletion (authenticated user only) |
 
 Company join rules (`public` / `domain` / `invite`) still apply after a successful provider login — see [company-access.md](company-access.md).
+
+## Self-service account deletion (GDPR / RGPD erasure)
+
+Authenticated users may permanently delete **their own** Django user account:
+
+```http
+DELETE /api/v1/user?company_id=<id>
+Authorization: Bearer <access_token>
+Content-Type: application/json
+
+{"confirm": true, "refresh_token": "<optional>"}
+```
+
+| Item | Behavior |
+|------|----------|
+| **Auth** | Bearer JWT (or session) for the subject only — there is no user id in the path |
+| **Confirmation** | JSON body must include `"confirm": true` |
+| **Response** | `204 No Content` on success |
+| **Sessions** | Revokes all refresh sessions and personal access tokens; optional `refresh_token` in the body is revoked like logout; the current access token is denylisted |
+| **Data removal** | Hard-deletes the `User` row (same as Django admin delete). Cascades remove company memberships, OAuth `SocialAccount` links, preferences, PAT metadata, refresh session rows, and SCIM bridge fields tied to the user |
+| **Action events** | Emits [`identity.user.deleted`](actions.md) **once per company membership** with `data.source: "self"` so Action rules (email, webhooks) can run |
+
+This endpoint supports product workflows for **right-to-erasure** requests. It is not legal advice: operators may still retain data under billing, security, or legal-hold policies (for example anonymized **login audit** rows where the user FK is nulled).
+
+Configure Action rules on `identity.user.deleted` to notify the user (`include_payload_email`) or call automation (n8n webhooks). Admin-initiated deletes use the same event type with `data.source: "admin"`.
 
 ## JWT `user_metadata.groups`
 

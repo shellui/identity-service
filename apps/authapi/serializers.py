@@ -39,6 +39,13 @@ class ShellUILogoutSerializer(serializers.Serializer):
     refresh_token = serializers.CharField(required=False, allow_blank=True, max_length=8192)
 
 
+class ShellUIUserDeleteSerializer(serializers.Serializer):
+    confirm = serializers.BooleanField(
+        required=True,
+        help_text='Must be true to permanently delete the authenticated user account.',
+    )
+
+
 class UserPreferenceSerializer(serializers.Serializer):
     themeName = serializers.CharField(required=False, allow_blank=False, max_length=100)
     language = serializers.ChoiceField(required=False, choices=['en', 'fr'])

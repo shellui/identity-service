@@ -98,6 +98,7 @@ from .serializers import (
     ShellUIPersonalAccessTokenCreateSerializer,
     ShellUIAdminScimTokenCreateSerializer,
     ShellUIAdminUserUpdateSerializer,
+    ShellUIUserDeleteSerializer,
     UserPreferenceSerializer,
 )
 from apps.scim.models import CompanyScimToken, ScimProvisioningEvent
@@ -110,6 +111,7 @@ from apps.scim.provisioning_events import (
 )
 from apps.scim.tokens import generate_scim_token
 from apps.actions.user_hooks import emit_oauth_user_created_if_new
+from .account_lifecycle import delete_user_account
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -2102,6 +2104,21 @@ class ShellUILogoutView(APIView):
             401: OpenApiResponse(description='Missing or invalid bearer token'),
         },
     ),
+    delete=extend_schema(
+        tags=['auth-profile'],
+        summary='Delete current user account (self-service)',
+        description=(
+            'Permanently delete the authenticated user account (GDPR/RGPD erasure support). '
+            'Requires JSON body `{"confirm": true}`. Emits `identity.user.deleted` once per '
+            'company membership with `source: self`. Revokes refresh sessions and personal access tokens.'
+        ),
+        request=ShellUIUserDeleteSerializer,
+        responses={
+            204: OpenApiResponse(description='Account deleted'),
+            400: OpenApiResponse(description='Missing or false confirm flag'),
+            401: OpenApiResponse(description='Missing or invalid bearer token'),
+        },
+    ),
 )
 class ShellUIUserView(APIView):
     permission_classes = [ShellUIPermission]
@@ -2188,6 +2205,41 @@ class ShellUIUserView(APIView):
                 'user_metadata': merged,
             }
         )
+
+    def delete(self, request):
+        user = _authenticate_bearer_user(request)
+        if not user:
+            return Response({'error': 'Unauthorized'}, status=status.HTTP_401_UNAUTHORIZED)
+        _company, company_err = _required_company_from_request(request, user=user)
+        if company_err:
+            return company_err
+
+        serializer = ShellUIUserDeleteSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        if not serializer.validated_data['confirm']:
+            return Response(
+                {'error': 'Set confirm to true to delete your account.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        request_auth = getattr(request, 'auth', None)
+        if request_auth is not None and hasattr(request_auth, 'get'):
+            access_jti = request_auth.get('jti')
+            access_exp = request_auth.get('exp')
+            if access_jti and access_exp is not None:
+                denylist_access_jti(str(access_jti), exp_unix=int(access_exp))
+
+        refresh_token = request.data.get('refresh_token')
+        if isinstance(refresh_token, str) and refresh_token.strip():
+            try:
+                refresh = ShellUIRefreshToken(refresh_token.strip())
+                revoke_refresh_by_jti(str(refresh.get('jti') or ''))
+            except Exception:
+                pass
+
+        delete_user_account(user, source='self')
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 @extend_schema_view(
