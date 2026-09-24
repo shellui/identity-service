@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.db import models
+from django.db.models import Q
 from django.utils.text import slugify
 from allauth.socialaccount.models import SocialApp
 
@@ -101,21 +102,55 @@ class CompanyGroup(models.Model):
         on_delete=models.CASCADE,
         related_name='groups',
     )
-    name = models.CharField(max_length=150)
+    display_name = models.CharField(
+        max_length=150,
+        help_text='SCIM displayName (unique per company).',
+    )
+    external_id = models.CharField(
+        max_length=254,
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text='SCIM externalId from the provisioning client (unique per company when set).',
+    )
     members = models.ManyToManyField(
         settings.AUTH_USER_MODEL,
         related_name='company_groups',
         blank=True,
+        help_text='Direct user members (SCIM members with type User).',
+    )
+    member_groups = models.ManyToManyField(
+        'self',
+        symmetrical=False,
+        related_name='parent_groups',
+        blank=True,
+        help_text='Nested SCIM group members (type Group). Same company only; cycles rejected.',
     )
 
     class Meta:
-        ordering = ['name']
+        ordering = ['display_name']
         constraints = [
-            models.UniqueConstraint(fields=['company', 'name'], name='company_group_unique_name_per_company'),
+            models.UniqueConstraint(
+                fields=['company', 'display_name'],
+                name='company_group_unique_display_name_per_company',
+            ),
+            models.UniqueConstraint(
+                fields=['company', 'external_id'],
+                name='company_group_unique_external_id_per_company',
+                condition=Q(external_id__isnull=False) & ~Q(external_id=''),
+            ),
         ]
 
+    @property
+    def scim_external_id(self):
+        return self.external_id
+
+    @scim_external_id.setter
+    def scim_external_id(self, value):
+        self.external_id = (value or '').strip() or None
+
     def __str__(self) -> str:
-        return f'{self.company_id}:{self.name}'
+        return f'{self.company_id}:{self.display_name}'
 
 
 class CompanyOAuthClient(models.Model):

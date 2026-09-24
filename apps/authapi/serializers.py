@@ -71,11 +71,11 @@ class ShellUIAdminUserUpdateSerializer(serializers.Serializer):
 
 
 class ShellUIAdminGroupCreateSerializer(serializers.Serializer):
-    name = serializers.CharField(max_length=150)
+    display_name = serializers.CharField(max_length=150)
 
 
 class ShellUIAdminGroupUpdateSerializer(serializers.Serializer):
-    name = serializers.CharField(max_length=150)
+    display_name = serializers.CharField(max_length=150)
 
 
 class ShellUIAdminLoginEventSerializer(serializers.Serializer):

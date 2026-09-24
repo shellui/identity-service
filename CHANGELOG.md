@@ -5,21 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
-<!---
-## [Unreleased] - yyyy-mm-dd
+## [Unreleased]
 
-### ✨ Feature – for new features
-### 🛠 Improvements – for general improvements
-### 🚨 Changed – for changes in existing functionality
-### ⚠️ Deprecated – for soon-to-be removed features
-### 📚 Documentation – for documentation update
-### 🗑 Removed – for removed features
-### 🐛 Bug Fixes – for any bug fixes
-### 🔒 Security – in case of vulnerabilities
-### 🏗 Chore – for tidying code
+### Added
 
-See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
--->
+- **Enterprise SCIM (opt-in):** Per-company SCIM 2.0 **Users and Groups** (including **nested** group members) via [django-scim2](https://pypi.org/project/django-scim2/) at `/api/v1/companies/<slug>/scim/v2/`, bearer tokens (`CompanyScimToken`), and [docs/scim.md](docs/scim.md). `CompanyGroup` uses SCIM vocabulary (`display_name`, `external_id`, `member_groups` for nested groups).
 
 ## [0.5.1] - 2026-09-24
 

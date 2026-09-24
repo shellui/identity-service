@@ -45,4 +45,8 @@ urlpatterns = [
         xframe_options_exempt(SpectacularRedocView.as_view(url_name='schema')),
         name='redoc',
     ),
+    path(
+        'api/v1/companies/<slug:company_slug>/scim/v2/',
+        include(('apps.scim.urls', 'scim'), namespace='scim'),
+    ),
 ]

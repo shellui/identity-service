@@ -152,13 +152,13 @@ def _user_preferences_payload(user: User) -> dict:
 
 def _user_group_names(user: User, company: Company) -> list[str]:
     return list(
-        CompanyGroup.objects.filter(company=company, members=user).values_list('name', flat=True).order_by('name')
+        CompanyGroup.objects.filter(company=company, members=user).values_list('display_name', flat=True).order_by('display_name')
     )
 
 
 def _admin_user_group_rows(user: User, company: Company) -> list[dict]:
     return list(
-        CompanyGroup.objects.filter(company=company, members=user).values('id', 'name').order_by('name')
+        CompanyGroup.objects.filter(company=company, members=user).values('id', 'display_name').order_by('display_name')
     )
 
 
@@ -1033,7 +1033,7 @@ def _admin_user_payload(user: User, company: Company) -> dict:
     user_metadata['is_company_owner'] = _is_user_company_owner(user, company)
     user_metadata['shelluiPreferences'] = _user_preferences_payload(user)
     group_rows = _admin_user_group_rows(user, company)
-    user_metadata['groups'] = [row['name'] for row in group_rows]
+    user_metadata['groups'] = [row['display_name'] for row in group_rows]
     user_metadata['last_seen_at'] = _last_seen_at_for_user(user)
     _enrich_user_metadata_avatar(user, user_metadata)
     # `is_active` here means company membership access for this tenant (not User.is_active).
@@ -2434,8 +2434,8 @@ class ShellUIAdminGroupListView(APIView):
         rows = list(
             CompanyGroup.objects.filter(company=company)
             .annotate(user_count=Count('members', distinct=True))
-            .values('id', 'name', 'user_count')
-            .order_by('name')
+            .values('id', 'display_name', 'user_count')
+            .order_by('display_name')
         )
         return Response(rows)
 
@@ -2445,16 +2445,16 @@ class ShellUIAdminGroupListView(APIView):
             return err
         serializer = ShellUIAdminGroupCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        name = str(serializer.validated_data['name']).strip()
-        if not name:
-            return Response({'error': 'Group name is required.'}, status=status.HTTP_400_BAD_REQUEST)
-        if CompanyGroup.objects.filter(company=company, name=name).exists():
+        display_name = str(serializer.validated_data['display_name']).strip()
+        if not display_name:
+            return Response({'error': 'Group display name is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        if CompanyGroup.objects.filter(company=company, display_name=display_name).exists():
             return Response(
-                {'error': 'A group with this name already exists.'},
+                {'error': 'A group with this display name already exists.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        g = CompanyGroup.objects.create(company=company, name=name)
-        return Response({'id': g.id, 'name': g.name, 'user_count': 0}, status=status.HTTP_201_CREATED)
+        g = CompanyGroup.objects.create(company=company, display_name=display_name)
+        return Response({'id': g.id, 'display_name': g.display_name, 'user_count': 0}, status=status.HTTP_201_CREATED)
 
 
 @extend_schema_view(
@@ -2485,7 +2485,7 @@ class ShellUIAdminGroupDetailView(APIView):
             g = CompanyGroup.objects.filter(company=company).annotate(user_count=Count('members', distinct=True)).get(pk=pk)
         except CompanyGroup.DoesNotExist:
             return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
-        return Response({'id': g.id, 'name': g.name, 'user_count': g.user_count})
+        return Response({'id': g.id, 'display_name': g.display_name, 'user_count': g.user_count})
 
     def put(self, request, pk):
         _actor, company, err = _require_staff_or_company_owner(request)
@@ -2497,18 +2497,18 @@ class ShellUIAdminGroupDetailView(APIView):
             return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
         serializer = ShellUIAdminGroupUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        name = str(serializer.validated_data['name']).strip()
-        if not name:
-            return Response({'error': 'Group name is required.'}, status=status.HTTP_400_BAD_REQUEST)
-        if CompanyGroup.objects.filter(company=company, name=name).exclude(pk=g.pk).exists():
+        display_name = str(serializer.validated_data['display_name']).strip()
+        if not display_name:
+            return Response({'error': 'Group display name is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        if CompanyGroup.objects.filter(company=company, display_name=display_name).exclude(pk=g.pk).exists():
             return Response(
-                {'error': 'A group with this name already exists.'},
+                {'error': 'A group with this display name already exists.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        g.name = name
-        g.save(update_fields=['name'])
+        g.display_name = display_name
+        g.save(update_fields=['display_name'])
         g = CompanyGroup.objects.filter(company=company).annotate(user_count=Count('members', distinct=True)).get(pk=g.pk)
-        return Response({'id': g.id, 'name': g.name, 'user_count': g.user_count})
+        return Response({'id': g.id, 'display_name': g.display_name, 'user_count': g.user_count})
 
     def delete(self, request, pk):
         _actor, company, err = _require_staff_or_company_owner(request)
