@@ -2,7 +2,8 @@ from django.contrib import admin
 from django.contrib.auth import get_user_model
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 
-from apps.actions.user_hooks import emit_user_account_created, emit_user_deleted_for_all_companies
+from apps.actions.user_hooks import emit_user_account_created
+from apps.authapi.account_lifecycle import delete_user_account
 
 from .models import LoginEvent, PersonalAccessToken, UserActivity, UserPreference
 
@@ -99,13 +100,11 @@ class UserAdmin(DjangoUserAdmin):
             emit_user_account_created(company, user, source='admin')
 
     def delete_model(self, request, obj):
-        emit_user_deleted_for_all_companies(obj, source='admin')
-        super().delete_model(request, obj)
+        delete_user_account(obj, source='admin')
 
     def delete_queryset(self, request, queryset):
         for obj in queryset:
-            emit_user_deleted_for_all_companies(obj, source='admin')
-        super().delete_queryset(request, queryset)
+            delete_user_account(obj, source='admin')
 
 
 @admin.register(PersonalAccessToken)

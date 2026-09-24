@@ -6,7 +6,7 @@ _USER = (
     EventFieldDoc('user_id', 'Internal user primary key', 42),
     EventFieldDoc('email', 'Primary email when available', 'ada@acme.com'),
     EventFieldDoc('username', 'Login username', 'ada@acme.com'),
-    EventFieldDoc('source', 'Channel: oauth, admin, scim, …', 'oauth'),
+    EventFieldDoc('source', 'Channel: oauth, admin, self, scim, …', 'oauth'),
 )
 
 _ACCOUNT_USER = _USER + (

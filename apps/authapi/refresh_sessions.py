@@ -102,6 +102,14 @@ def revoke_refresh_family(family_id: uuid.UUID) -> None:
     ).update(revoked_at=timezone.now())
 
 
+def revoke_all_refresh_sessions_for_user(user) -> int:
+    """Revoke every active refresh session for ``user`` (logout-all / account deletion)."""
+    return RefreshTokenSession.objects.filter(
+        user=user,
+        revoked_at__isnull=True,
+    ).update(revoked_at=timezone.now())
+
+
 def revoke_session_by_sid(session_id: str | uuid.UUID) -> bool:
     try:
         parsed = uuid.UUID(str(session_id))
