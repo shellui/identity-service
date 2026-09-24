@@ -3,6 +3,8 @@
 from django.conf import settings
 from django.core.checks import Error, Warning, register
 
+from config.settings import _env_int
+
 
 @register()
 def jwt_rs256_required_in_production(app_configs, **kwargs):
@@ -61,6 +63,29 @@ def cors_allow_all_with_credentials_forbidden(app_configs, **kwargs):
                 'trusted browser origins in CORS_ALLOWED_ORIGINS.'
             ),
             id='authapi.E003',
+        )
+    ]
+
+
+@register(deploy=True, tags='security')
+def shared_cache_recommended_for_multi_worker(app_configs, **kwargs):
+    if settings.DEBUG:
+        return []
+    backend = settings.CACHES.get('default', {}).get('BACKEND', '')
+    if 'locmem' not in backend.lower():
+        return []
+    workers = _env_int('GUNICORN_WORKERS', 2)
+    if workers <= 1:
+        return []
+    return [
+        Warning(
+            'LocMemCache is not shared across Gunicorn workers — auth rate limits and '
+            'logout access-token denylist are per-worker.',
+            hint=(
+                'Add a Redis service and set REDIS_URL (e.g. redis://redis:6379/0) on the '
+                'identity-service container. LocMem is fine for single-worker or local dev.'
+            ),
+            id='authapi.W002',
         )
     ]
 

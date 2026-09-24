@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## [Unreleased]
+
+### ✨ Feature
+
+- **Shared Redis cache:** set `REDIS_URL` to use Django's Redis cache backend for auth rate limits, logout access-token denylist, and last-seen throttling. When unset, behavior stays on in-process LocMem (local dev / single worker).
+
+### 🛠 Improvements
+
+- Deploy check `authapi.W002` warns when `DEBUG=false`, LocMem is in use, and `GUNICORN_WORKERS` > 1.
+
+### 📚 Documentation
+
+- Document `REDIS_URL` in `.env.example`, [README.md](README.md), and [PUBLISH.md](PUBLISH.md) (including Coolify Redis steps).
+
 ## [0.5.0] - 2026-09-18
 
 ### 🛠 Improvements
