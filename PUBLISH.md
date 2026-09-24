@@ -212,6 +212,7 @@ Full OAuth login (fragment vs code delivery) cannot be verified without a config
 | `CORS_ALLOWED_ORIGINS`       | Used when `CORS_ALLOW_ALL_ORIGINS=false`; Shellui / admin front-end origins.                   |
 | `CORS_ALLOW_CREDENTIALS`     | Default `false`; must stay `false` when allow-all is enabled.                                  |
 | `POSTGRES_DATABASE_URL`      | Use Postgres instead of SQLite.                                                                |
+| `REDIS_URL`                  | Shared Redis cache (recommended when `GUNICORN_WORKERS` > 1). Example: `redis://redis:6379/0`. Without it, LocMem is per-worker. |
 | `SENTRY_DSN`                 | Sentry error reporting.                                                                        |
 | `SENTRY_ENVIRONMENT`         | e.g. `staging`, `production`.                                                                  |
 | `JWT_ACCESS_TOKEN_LIFETIME`  | Default `5m`.                                                                                  |
@@ -224,6 +225,18 @@ With Postgres:
 ```bash
 -e POSTGRES_DATABASE_URL='postgres://user:pass@host:5432/dbname'
 ```
+
+### Redis (Coolify / multi-worker Gunicorn)
+
+When `GUNICORN_WORKERS` is greater than 1 (Docker default), auth rate limits and the logout access-token denylist rely on Django cache. In-process LocMem is **not** shared between workers.
+
+1. Add a **Redis** service in Coolify (or run Redis on the VPS).
+2. On the identity-service container, set **`REDIS_URL`** to the Redis connection URL, for example:
+   - Same Coolify project, internal hostname: `redis://redis:6379/0`
+   - Managed Redis with password: `redis://:password@host:6379/0`
+3. Redeploy identity-service. `manage.py check --deploy` warns (`authapi.W002`) if production still uses LocMem with multiple workers.
+
+Local dev and single-worker installs can leave `REDIS_URL` unset.
 
 ## Security notes
 
