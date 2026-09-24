@@ -21,6 +21,12 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
 -->
 
+## [0.6.0] - 2026-09-24
+
+### 📚 Documentation
+
+- Add README **Current release** line and align [PUBLISH.md](PUBLISH.md) and [docs/RELEASES.md](docs/RELEASES.md) Docker Hub tag and `VERSION=` examples with shipping semver.
+
 ## [0.5.1] - 2026-09-24
 
 ### 🛠 Improvements
