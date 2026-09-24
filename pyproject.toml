@@ -24,6 +24,7 @@ dependencies = [
     "cryptography==50.0.0",
     "django-scim2==0.23.0",
     "redis==8.1.0",
+    "html2text>=2025.4.15",
 ]
 
 [dependency-groups]

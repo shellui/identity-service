@@ -26,6 +26,12 @@ Set **`SCIM_ENABLED=true`** on the deployment to expose SCIM 2.0 user provisioni
 
 Create a **Company SCIM token** via Shellui admin (`GET/POST /api/v1/scim/tokens`, staff or company owner) or Django admin and configure your IdP with `Authorization: Bearer <token>`. Supports SCIM Users, Groups (including nested `type: Group` members), and SCIM-aligned `CompanyGroup` fields (`display_name`, `external_id`). Details: **[docs/scim.md](docs/scim.md)**.
 
+## Action triggers (email / webhook)
+
+Company **Action rules** in Django admin map catalog events (`identity.scim.user.provisioned`, `identity.user.created`, group changes, SCIM conflicts, …) to **email** or **signed webhooks** (n8n-friendly). Delivery uses a DB outbox and `transaction.on_commit` — no Celery or Redis required. Retry with `python manage.py drain_action_outbox`. See **[docs/actions.md](docs/actions.md)**.
+
+**Try locally:** set `EMAIL_BACKEND=django.core.mail.backends.console.EmailBackend`, create an Action rule for `identity.scim.user.provisioned`, then provision a user via SCIM.
+
 ## Project Structure
 
 - `src/config/` Django project settings and URL routing

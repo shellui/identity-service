@@ -7,6 +7,7 @@ import logging
 from django.db import transaction
 from django.utils import timezone
 
+from apps.actions.scim_hooks import emit_scim_provisioning_conflict
 from apps.companies.models import Company, CompanyGroup
 from apps.scim.models import CompanyScimProvisioningState, CompanyScimToken, ScimProvisioningEvent
 
@@ -80,6 +81,7 @@ def record_group_display_name_conflict(
                 'last_error_detail',
             ]
         )
+        emit_scim_provisioning_conflict(company, detail=detail, channel=channel)
     return event
 
 

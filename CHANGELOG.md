@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Action triggers:** Company-scoped domain events (`identity.*`) → email or webhook via `apps/actions` (ActionRule, ActionOutbox, DeliveryAttempt). Transactional outbox, `transaction.on_commit` delivery, `manage.py drain_action_outbox`, Django admin CRUD, default email templates per event, SCIM/group/token/conflict emitters, and [docs/actions.md](docs/actions.md). Closes [#35](https://github.com/shellui/identity-service/issues/35).
+- **Action catalog (users):** SCIM company-access events renamed to `identity.scim.user.provisioned` / `identity.scim.user.deprovisioned`; added account lifecycle `identity.user.created` (OAuth/admin) and `identity.user.deleted` (admin delete, per company membership).
+
 ### Changed
 
 - **Company group source provenance:** Django admin no longer exposes `CompanyGroup.source` on create and shows it read-only on edit; admin creates always persist `manual`. Model `save()` rejects setting `scim` outside the SCIM adapter (`scim_source=True`) and still blocks demoting SCIM groups to `manual`.

@@ -109,6 +109,7 @@ from apps.scim.provisioning_events import (
     record_group_display_name_conflict,
 )
 from apps.scim.tokens import generate_scim_token
+from apps.actions.user_hooks import emit_oauth_user_created_if_new
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -1225,6 +1226,7 @@ class SocialLoginView(APIView):
             if not user.last_name and ' ' in full_name:
                 user.last_name = ' '.join(full_name.split(' ')[1:])
             user.save(update_fields=['first_name', 'last_name'])
+        emit_oauth_user_created_if_new(company, user, created=created, oauth_provider=provider)
         join = apply_company_join(company, user, email=email)
         _link_social_account(user=user, provider=provider, provider_id=provider_id, userinfo=userinfo)
 
@@ -1634,6 +1636,7 @@ class ShellUIOAuthCallbackView(APIView):
             if not user.last_name and ' ' in full_name:
                 user.last_name = ' '.join(full_name.split(' ')[1:])
             user.save(update_fields=['first_name', 'last_name'])
+        emit_oauth_user_created_if_new(company, user, created=created, oauth_provider=provider)
         join = apply_company_join(company, user, email=email)
         _link_social_account(user=user, provider=provider, provider_id=provider_id, userinfo=userinfo)
 
@@ -1891,6 +1894,7 @@ class ShellUIOAuthExchangeView(APIView):
             if not user.last_name and ' ' in full_name:
                 user.last_name = ' '.join(full_name.split(' ')[1:])
             user.save(update_fields=['first_name', 'last_name'])
+        emit_oauth_user_created_if_new(company, user, created=created, oauth_provider=provider)
         join = apply_company_join(company, user, email=email)
         _link_social_account(user=user, provider=provider, provider_id=provider_id, userinfo=userinfo)
 
@@ -3565,6 +3569,9 @@ class ShellUIAdminScimTokenListCreateView(APIView):
             token_hash=digest,
             name=name,
         )
+        from apps.actions.token_hooks import emit_scim_token_created
+
+        emit_scim_token_created(company, row)
         return Response(
             _scim_token_row(row, include_token=raw),
             status=status.HTTP_201_CREATED,
@@ -3594,6 +3601,9 @@ class ShellUIAdminScimTokenRevokeView(APIView):
         if row.revoked_at is None:
             row.revoked_at = datetime.now(timezone.utc)
             row.save(update_fields=['revoked_at'])
+            from apps.actions.token_hooks import emit_scim_token_revoked
+
+            emit_scim_token_revoked(company, row)
         return Response(_scim_token_row(row))
 
 

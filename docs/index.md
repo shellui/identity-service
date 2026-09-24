@@ -14,6 +14,7 @@ Live site: [https://identity.docs.shellui.com](https://identity.docs.shellui.com
 | ---- | ------- |
 | **[OAuth login](oauth-login.md)** | Identity-hosted authorize/callback, session-code vs legacy fragment delivery, redirect allowlist, company OAuth clients, hosting sync |
 | **[SCIM](scim.md)** | Opt-in enterprise provisioning (Users + Groups + nested groups), per-company bearer tokens |
+| **[Action triggers](actions.md)** | Domain events → email / webhook (n8n-friendly), DB outbox + drain command |
 | **[Configuration](configuration.md)** | JWT (`iss`/`aud`, RS256, HS256 legacy), CORS, `REDIS_URL`, Postgres timeouts, Gunicorn, `/health/live`, `SCIM_ENABLED`, `TRUSTED_PROXY_IPS`, token delivery |
 | **[Company access](company-access.md)** | Public, domain, and invitation-only join modes after OAuth |
 | **[JWKS](jwks.md)** | RS256 signing and `/.well-known/jwks.json` |

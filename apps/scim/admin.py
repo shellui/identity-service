@@ -1,5 +1,7 @@
 from django.contrib import admin, messages
 
+from apps.actions.token_hooks import emit_scim_token_created, emit_scim_token_revoked
+
 from .models import CompanyScimProvisioningState, CompanyScimToken, ScimProvisioningEvent
 from .tokens import generate_scim_token
 
@@ -15,11 +17,14 @@ class CompanyScimTokenAdmin(admin.ModelAdmin):
     def save_model(self, request, obj, form, change):
         if change:
             super().save_model(request, obj, form, change)
+            if 'revoked_at' in form.changed_data and obj.revoked_at is not None:
+                emit_scim_token_revoked(obj.company, obj)
             return
         raw, prefix, digest = generate_scim_token()
         obj.token_prefix = prefix
         obj.token_hash = digest
         super().save_model(request, obj, form, change)
+        emit_scim_token_created(obj.company, obj)
         messages.warning(
             request,
             f'SCIM bearer token (copy now — shown once): {raw}',
