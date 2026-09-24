@@ -234,10 +234,10 @@ class CompanyMembershipAdmin(admin.ModelAdmin):
 
 @admin.register(CompanyGroup)
 class CompanyGroupAdmin(admin.ModelAdmin):
-    list_display = ('id', 'name', 'company_id')
-    search_fields = ('name', 'company__name')
+    list_display = ('id', 'display_name', 'external_id', 'company_id')
+    search_fields = ('display_name', 'external_id', 'company__name')
     list_filter = ('company',)
-    filter_horizontal = ('members',)
+    filter_horizontal = ('members', 'member_groups')
 
 
 @admin.register(CompanyOAuthClient)

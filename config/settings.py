@@ -188,6 +188,8 @@ def _project_version():
 
 VERSION = _project_version()
 
+SCIM_ENABLED = _env_bool('SCIM_ENABLED', False)
+
 # Application definition
 
 INSTALLED_APPS = [
@@ -209,6 +211,8 @@ INSTALLED_APPS = [
     'drf_spectacular',
     'apps.authapi',
     'apps.companies',
+    'apps.scim',
+    'django_scim',
 ]
 
 REST_FRAMEWORK = {
@@ -262,6 +266,9 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'apps.authapi.middleware.AdminLoginRateLimitMiddleware',
 ]
+
+_auth_middleware_index = MIDDLEWARE.index('django.contrib.auth.middleware.AuthenticationMiddleware')
+MIDDLEWARE.insert(_auth_middleware_index + 1, 'apps.scim.middleware.ScimBearerAuthMiddleware')
 
 ROOT_URLCONF = 'config.urls'
 
@@ -519,6 +526,8 @@ if not DEBUG and not _skip_production_config_validation():
         _production_config_errors.append('JWT_AUDIENCE is required when DEBUG=false.')
     if _production_config_errors:
         raise ImproperlyConfigured('\n'.join(_production_config_errors))
+
+from config.scim_settings import SCIM_SERVICE_PROVIDER
 
 if SENTRY_DSN:
     import sentry_sdk

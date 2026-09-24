@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Enterprise SCIM (opt-in):** Per-company SCIM 2.0 **Users and Groups** (including **nested** group members) via [django-scim2](https://pypi.org/project/django-scim2/) at `/api/v1/companies/<slug>/scim/v2/`, bearer tokens (`CompanyScimToken`), and [docs/scim.md](docs/scim.md). `CompanyGroup` uses SCIM vocabulary (`display_name`, `external_id`, `member_groups` for nested groups). Tenant isolation regression tests and filter SQL hardening included.
+
 ### ✨ Feature
 
 - **Shared Redis cache:** set `REDIS_URL` to use Django's Redis cache backend for auth rate limits, logout access-token denylist, and last-seen throttling. When unset, behavior stays on in-process LocMem (local dev / single worker).

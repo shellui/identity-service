@@ -30,6 +30,11 @@ const sidebars = {
     },
     {
       type: 'doc',
+      id: 'scim',
+      label: 'Enterprise SCIM',
+    },
+    {
+      type: 'doc',
       id: 'security-hardening',
       label: 'Security hardening',
     },

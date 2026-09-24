@@ -14,6 +14,17 @@ It supports OAuth login (GitHub/Google/Microsoft), issues JWT tokens, exposes Su
 - User metadata endpoint (`/api/v1/user`)
 - Permissive API CORS by default (`CORS_ALLOW_ALL_ORIGINS=true`, `CORS_ALLOW_CREDENTIALS=false`) so hosted preview origins and custom shells can call JWT APIs without per-origin env edits; auth is Bearer JWT. OAuth token delivery stays strict via the company redirect allowlist (see [docs/oauth-login.md](docs/oauth-login.md))
 - OpenAPI docs with drf-spectacular
+- **Enterprise SCIM** (opt-in): per-company user and **nested group** provisioning for Okta / Entra ID / similar IdPs — see [docs/scim.md](docs/scim.md)
+
+## Enterprise SCIM (optional)
+
+Set **`SCIM_ENABLED=true`** on the deployment to expose SCIM 2.0 user provisioning at:
+
+```text
+/api/v1/companies/<company_slug>/scim/v2/
+```
+
+Create a **Company SCIM token** in Django admin and configure your IdP with `Authorization: Bearer <token>`. Supports SCIM Users, Groups (including nested `type: Group` members), and SCIM-aligned `CompanyGroup` fields (`display_name`, `external_id`). Details: **[docs/scim.md](docs/scim.md)**.
 
 ## Project Structure
 
