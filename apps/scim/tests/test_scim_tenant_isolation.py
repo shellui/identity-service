@@ -48,15 +48,13 @@ class ScimTenantIsolationTests(TestCase):
         set_company_access(self.company_a, self.user_both, enabled=True)
         set_company_access(self.company_b, self.user_both, enabled=True)
 
-        self.group_b = CompanyGroup.objects.create(
+        self.group_b = CompanyGroup.create_scim_provisioned(
             company=self.company_b,
             display_name='B Group',
-            source=CompanyGroup.SOURCE_SCIM,
         )
-        self.group_a = CompanyGroup.objects.create(
+        self.group_a = CompanyGroup.create_scim_provisioned(
             company=self.company_a,
             display_name='A Group',
-            source=CompanyGroup.SOURCE_SCIM,
         )
 
     def test_token_slug_mismatch_is_401(self):

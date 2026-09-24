@@ -264,16 +264,8 @@ class ScimApiTests(TestCase):
         self.assertIn(member.pk, effective_user_ids_for_group(parent))
 
     def test_nested_group_cycle_rejected(self):
-        a = CompanyGroup.objects.create(
-            company=self.company,
-            display_name='A',
-            source=CompanyGroup.SOURCE_SCIM,
-        )
-        b = CompanyGroup.objects.create(
-            company=self.company,
-            display_name='B',
-            source=CompanyGroup.SOURCE_SCIM,
-        )
+        a = CompanyGroup.create_scim_provisioned(company=self.company, display_name='A')
+        b = CompanyGroup.create_scim_provisioned(company=self.company, display_name='B')
         a.member_groups.add(b)
         response = self.client.patch(
             f'{_scim_base(self.company)}/Groups/{b.pk}',

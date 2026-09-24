@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ### Changed
 
+- **Company group source provenance:** Django admin no longer exposes `CompanyGroup.source` on create and shows it read-only on edit; admin creates always persist `manual`. Model `save()` rejects setting `scim` outside the SCIM adapter (`scim_source=True`) and still blocks demoting SCIM groups to `manual`.
+
 - **Hybrid company groups:** `CompanyGroup.source` (`manual` | `scim`) with migration defaulting existing rows to `manual`. SCIM exposes only `scim` groups; admin REST can still create/edit `manual` groups when SCIM is configured; SCIM-sourced rows are admin read-only. SCIM status adds `scim_groups_read_only` and keeps `directory_read_only: false`. Shared `display_name` per company returns **409** on cross-source collisions (SCIM vs manual). Collisions are logged and stored as `ScimProvisioningEvent` / `last_provisioning_error` on `GET /api/v1/scim`. See [docs/scim.md](docs/scim.md).
 
 - **JWT / user `groups` claim:** `user_metadata.groups` (OAuth tokens, `GET /api/v1/user`, Shellui admin user payloads) now lists **effective** company groups — direct membership plus ancestor groups via nested `member_groups`. SCIM User `groups` remain **direct** only. See [docs/scim.md](docs/scim.md) and [docs/oauth-login.md](docs/oauth-login.md).

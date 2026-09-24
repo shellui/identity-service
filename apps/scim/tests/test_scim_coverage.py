@@ -84,17 +84,9 @@ class ScimCoverageTests(TestCase):
 
     def test_delete_parent_group_keeps_nested_child_group(self):
         user = self._post_user('childuser@acme.com')
-        child = CompanyGroup.objects.create(
-            company=self.company,
-            display_name='Child',
-            source=CompanyGroup.SOURCE_SCIM,
-        )
+        child = CompanyGroup.create_scim_provisioned(company=self.company, display_name='Child')
         child.members.add(user)
-        parent = CompanyGroup.objects.create(
-            company=self.company,
-            display_name='Parent',
-            source=CompanyGroup.SOURCE_SCIM,
-        )
+        parent = CompanyGroup.create_scim_provisioned(company=self.company, display_name='Parent')
         parent.member_groups.add(child)
 
         response = self.client.delete(
@@ -108,16 +100,8 @@ class ScimCoverageTests(TestCase):
 
     def test_patch_remove_user_and_nested_group_members(self):
         user = self._post_user('rm@acme.com')
-        child = CompanyGroup.objects.create(
-            company=self.company,
-            display_name='RmChild',
-            source=CompanyGroup.SOURCE_SCIM,
-        )
-        group = CompanyGroup.objects.create(
-            company=self.company,
-            display_name='RmParent',
-            source=CompanyGroup.SOURCE_SCIM,
-        )
+        child = CompanyGroup.create_scim_provisioned(company=self.company, display_name='RmChild')
+        group = CompanyGroup.create_scim_provisioned(company=self.company, display_name='RmParent')
         group.members.add(user)
         group.member_groups.add(child)
 
@@ -164,11 +148,7 @@ class ScimCoverageTests(TestCase):
         self.assertFalse(group.member_groups.filter(pk=child.pk).exists())
 
     def test_self_nest_group_via_scim_patch_rejected(self):
-        group = CompanyGroup.objects.create(
-            company=self.company,
-            display_name='Solo',
-            source=CompanyGroup.SOURCE_SCIM,
-        )
+        group = CompanyGroup.create_scim_provisioned(company=self.company, display_name='Solo')
         response = self.client.patch(
             f'{_scim_base(self.company)}/Groups/{group.pk}',
             data=json.dumps(
@@ -275,10 +255,9 @@ class ScimCoverageTests(TestCase):
 
     def test_user_get_lists_direct_group_membership(self):
         user = self._post_user('groups@acme.com')
-        scim_group = CompanyGroup.objects.create(
+        scim_group = CompanyGroup.create_scim_provisioned(
             company=self.company,
             display_name='Direct',
-            source=CompanyGroup.SOURCE_SCIM,
         )
         scim_group.members.add(user)
         manual_group = CompanyGroup.objects.create(company=self.company, display_name='ManualOnly')

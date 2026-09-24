@@ -232,18 +232,46 @@ class CompanyMembershipAdmin(admin.ModelAdmin):
     ordering = ('company__name', 'user__email')
 
 
+class CompanyGroupAdminForm(forms.ModelForm):
+    class Meta:
+        model = CompanyGroup
+        fields = '__all__'
+
+    def clean_source(self):
+        if self.instance and self.instance.pk:
+            return self.instance.source
+        return CompanyGroup.SOURCE_MANUAL
+
+
 @admin.register(CompanyGroup)
 class CompanyGroupAdmin(admin.ModelAdmin):
+    form = CompanyGroupAdminForm
     list_display = ('id', 'display_name', 'source', 'external_id', 'company_id')
     search_fields = ('display_name', 'external_id', 'company__name')
     list_filter = ('source', 'company')
     filter_horizontal = ('members', 'member_groups')
 
+    def get_fields(self, request, obj=None):
+        fields = list(super().get_fields(request, obj))
+        if obj is None and 'source' in fields:
+            return [name for name in fields if name != 'source']
+        return fields
+
     def get_readonly_fields(self, request, obj=None):
         readonly = list(super().get_readonly_fields(request, obj))
-        if obj is not None and obj.source == CompanyGroup.SOURCE_SCIM:
+        if obj is not None:
             readonly.append('source')
         return readonly
+
+    def save_model(self, request, obj, form, change):
+        if change:
+            obj.source = (
+                CompanyGroup.objects.filter(pk=obj.pk).values_list('source', flat=True).first()
+                or obj.source
+            )
+        else:
+            obj.source = CompanyGroup.SOURCE_MANUAL
+        super().save_model(request, obj, form, change)
 
 
 @admin.register(CompanyOAuthClient)

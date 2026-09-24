@@ -271,7 +271,7 @@ class ShellUIScimGroup(_ShellUIResourceTypeMixin, SCIMGroup):
         self.obj.source = CompanyGroup.SOURCE_SCIM
         self._assert_scim_display_name_available()
         try:
-            self.obj.save()
+            self.obj.save(scim_source=True)
         except DjangoIntegrityError as exc:
             conflict = first_display_name_conflict(
                 self._company,

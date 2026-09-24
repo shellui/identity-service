@@ -89,15 +89,13 @@ class HybridCompanyGroupTests(TestCase):
     def test_jwt_lists_manual_and_scim_effective_groups(self):
         manual = CompanyGroup.objects.create(company=self.company, display_name='ManualLeaf')
         manual.members.add(self.user)
-        scim_child = CompanyGroup.objects.create(
+        scim_child = CompanyGroup.create_scim_provisioned(
             company=self.company,
             display_name='ScimChild',
-            source=CompanyGroup.SOURCE_SCIM,
         )
-        scim_parent = CompanyGroup.objects.create(
+        scim_parent = CompanyGroup.create_scim_provisioned(
             company=self.company,
             display_name='ScimParent',
-            source=CompanyGroup.SOURCE_SCIM,
         )
         scim_child.members.add(self.user)
         scim_parent.member_groups.add(scim_child)
