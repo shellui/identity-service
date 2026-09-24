@@ -28,6 +28,21 @@ Homepage / application URL may still point at the shell (e.g. `http://localhost:
 
 Do **not** register the shell `/login/callback` URL on the IdP. That path only receives tokens after identity redirects with a fragment.
 
+## Social login providers
+
+identity-service uses **[django-allauth](https://docs.allauth.org/en/latest/)** for `SocialApp` storage and provider modules. **Stock releases** wire the identity-hosted OAuth flow (`/api/v1/authorize` → `/api/v1/oauth/callback`) for **GitHub**, **Google**, and **Microsoft** only. Every other provider in the allauth catalog is **available in the library** once you enable its module, satisfy any extra dependencies from the provider page, create per-company `SocialApp` credentials, and extend OAuth wiring in your deploy — see the full checklist and catalog in **[Social login providers (django-allauth)](oauth-providers.md)**.
+
+Quick reference:
+
+| Tier | Examples | Stock Shellui OAuth wired? |
+| ---- | -------- | -------------------------- |
+| **Primary / common starters** | Google, Microsoft, GitHub, Apple, GitLab, Slack, Okta, Auth0, Keycloak (OIDC), OpenID Connect, SAML, Discord, Facebook, LinkedIn, Amazon Cognito | GitHub, Google, Microsoft only |
+| **Also available** | Full django-allauth **65.14.1** module list (X/Twitter OAuth 1+2, Twitch, Steam, …) | Requires custom enablement |
+
+Upstream source of truth: [django-allauth socialaccount providers](https://docs.allauth.org/en/latest/socialaccount/providers/index.html).
+
+Configuring a provider does **not** mean Shellui pre-registers IdP clients — operators still create OAuth/SAML apps with each vendor. Listing a provider is not a security certification.
+
 ## Redirect allowlist
 
 After OAuth, identity may bounce tokens only to approved targets for that company.

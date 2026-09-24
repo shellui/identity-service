@@ -15,6 +15,11 @@ const sidebars = {
     },
     {
       type: 'doc',
+      id: 'oauth-providers',
+      label: 'OAuth providers',
+    },
+    {
+      type: 'doc',
       id: 'scim',
       label: 'SCIM',
     },
