@@ -4,7 +4,7 @@ from typing import Optional, Union
 from urllib.parse import urljoin
 
 from django.urls import reverse
-from django_scim import exceptions
+from django_scim import constants, exceptions
 from django.contrib.auth import get_user_model
 from django_scim.adapters import SCIMGroup, SCIMUser
 from scim2_filter_parser.attr_paths import AttrPath
@@ -19,7 +19,36 @@ from apps.scim.user_bridge import ScimUserBridge
 from django_scim.utils import get_base_scim_location_getter
 
 
-class ShellUIScimUser(SCIMUser):
+class _ShellUIResourceTypeMixin:
+    @classmethod
+    def resource_type_dict(cls, request=None):
+        company = get_scim_company(request)
+        if company is None:
+            raise exceptions.BadRequestError('SCIM company context is missing.')
+        id_ = cls.resource_type
+        path = reverse(
+            'scim:resource-types',
+            kwargs={'uuid': id_, 'company_slug': company.slug},
+        )
+        location = urljoin(get_base_scim_location_getter()(request), path)
+        endpoint_name = 'scim:users' if id_ == 'User' else 'scim:groups'
+        endpoint = reverse(endpoint_name, kwargs={'company_slug': company.slug})
+        schema = constants.SchemaURI.USER if id_ == 'User' else constants.SchemaURI.GROUP
+        return {
+            'schemas': [constants.SchemaURI.RESOURCE_TYPE],
+            'id': id_,
+            'name': id_,
+            'endpoint': endpoint,
+            'description': 'User Account' if id_ == 'User' else 'Group',
+            'schema': schema,
+            'meta': {
+                'location': location,
+                'resourceType': 'ResourceType',
+            },
+        }
+
+
+class ShellUIScimUser(_ShellUIResourceTypeMixin, SCIMUser):
     """
     Map SCIM User resources to Django users scoped by ``request.scim_company``.
 
@@ -128,7 +157,7 @@ class ShellUIScimUser(SCIMUser):
 UserModel = get_user_model()
 
 
-class ShellUIScimGroup(SCIMGroup):
+class ShellUIScimGroup(_ShellUIResourceTypeMixin, SCIMGroup):
     """Map SCIM Group resources to ``CompanyGroup`` for ``request.scim_company``."""
 
     id_field = 'pk'

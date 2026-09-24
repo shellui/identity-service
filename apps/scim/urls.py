@@ -43,7 +43,7 @@ urlpatterns = [
     ),
     re_path(
         r'^ServiceProviderConfig$',
-        django_scim_views.ServiceProviderConfigView.as_view(),
+        shellui_scim_views.ShellUIServiceProviderConfigView.as_view(),
         name='service-provider-config',
     ),
     re_path(

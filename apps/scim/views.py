@@ -1,5 +1,13 @@
-from django_scim.utils import get_group_adapter, get_user_adapter
 from django_scim.views import ResourceTypesView as DjangoResourceTypesView
+from django_scim.views import ServiceProviderConfigView as DjangoServiceProviderConfigView
+from django_scim.utils import get_group_adapter, get_user_adapter
+
+
+class ShellUIServiceProviderConfigView(DjangoServiceProviderConfigView):
+    """Accept company_slug from the company-scoped URL include."""
+
+    def get(self, request, company_slug=None, *args, **kwargs):
+        return super().get(request)
 
 
 class ShellUIResourceTypesView(DjangoResourceTypesView):
