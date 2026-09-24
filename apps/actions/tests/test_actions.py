@@ -74,6 +74,31 @@ class EmitEventTests(TestCase):
         emit_event('identity.user.provisioned', self.company_b, {'user_id': 1})
         self.assertEqual(ActionOutbox.objects.count(), 0)
 
+    def test_emit_by_default_false_skips_without_force(self):
+        ActionRule.objects.create(
+            company=self.company_a,
+            name='Updated',
+            event_type='identity.user.updated',
+            action_kind=ActionRule.ACTION_EMAIL,
+            config={'recipients': ['ops@a.test']},
+        )
+        rows = emit_event('identity.user.updated', self.company_a, {'user_id': 1})
+        self.assertEqual(rows, [])
+        self.assertEqual(ActionOutbox.objects.count(), 0)
+
+    @override_settings(**LOC_MEM_EMAIL)
+    def test_include_payload_email_adds_recipient(self):
+        ActionRule.objects.filter(company=self.company_a).update(
+            config={'recipients': ['ops@a.test'], 'include_payload_email': True},
+        )
+        with self.captureOnCommitCallbacks(execute=True):
+            emit_event(
+                'identity.user.provisioned',
+                self.company_a,
+                {'user_id': 3, 'email': 'user@a.test', 'source': 'scim'},
+            )
+        self.assertEqual(mail.outbox[-1].to, ['ops@a.test', 'user@a.test'])
+
 
 @override_settings(**LOC_MEM_EMAIL)
 class WebhookHandlerTests(TestCase):
@@ -91,9 +116,8 @@ class WebhookHandlerTests(TestCase):
             },
         )
 
-    @patch('apps.actions.handlers.webhook.requests.post')
+    @patch('apps.actions.handlers.webhook.post_webhook_url', return_value=200)
     def test_webhook_posts_signed_json(self, mock_post):
-        mock_post.return_value.status_code = 200
         envelope = {
             'id': 'evt-1',
             'type': 'identity.user.provisioned',
@@ -110,16 +134,15 @@ class WebhookHandlerTests(TestCase):
         deliver_outbox_row(row.pk)
         mock_post.assert_called_once()
         _args, kwargs = mock_post.call_args
-        self.assertEqual(kwargs['data'], json.dumps(envelope, separators=(',', ':'), sort_keys=True).encode())
+        self.assertEqual(kwargs['body'], json.dumps(envelope, separators=(',', ':'), sort_keys=True).encode())
         headers = kwargs['headers']
         self.assertIn('webhook-signature', headers)
         self.assertIn('webhook-id', headers)
         row.refresh_from_db()
         self.assertEqual(row.status, ActionOutbox.STATUS_DELIVERED)
 
-    @patch('apps.actions.handlers.webhook.requests.post')
+    @patch('apps.actions.handlers.webhook.post_webhook_url', return_value=500)
     def test_webhook_failure_records_attempt(self, mock_post):
-        mock_post.return_value.status_code = 500
         row = ActionOutbox.objects.create(
             company=self.company,
             action_rule=self.rule,
@@ -236,6 +259,65 @@ class ScimActionIntegrationTests(TestCase):
         self.assertEqual(mail.outbox[0].to, ['admin@acme.test'])
 
 
+class ActionAdminFormTests(TestCase):
+    def test_blank_secret_keeps_existing_on_edit(self):
+        from apps.actions.admin_forms import ActionRuleAdminForm
+
+        company = Company.objects.create(name='F', slug='form-co')
+        rule = ActionRule.objects.create(
+            company=company,
+            name='Hook',
+            event_type='identity.user.provisioned',
+            action_kind=ActionRule.ACTION_WEBHOOK,
+            config={'url': 'https://example.com/h', 'secret': 'keep-me', 'authorization_header': 'Bearer x'},
+        )
+        class SuperuserForm(ActionRuleAdminForm):
+            is_superuser = True
+
+        form = SuperuserForm(
+            data={
+                'company': company.pk,
+                'name': 'Hook',
+                'description': '',
+                'enabled': True,
+                'event_type': 'identity.user.provisioned',
+                'action_kind': ActionRule.ACTION_WEBHOOK,
+                'webhook_url': 'https://example.com/h',
+                'webhook_secret': '',
+                'webhook_authorization_header': '',
+            },
+            instance=rule,
+        )
+        self.assertTrue(form.is_valid(), form.errors)
+        saved = form.save()
+        self.assertEqual(saved.config['secret'], 'keep-me')
+        self.assertEqual(saved.config['authorization_header'], 'Bearer x')
+
+    def test_non_superuser_cannot_persist_allow_private_urls(self):
+        from apps.actions.admin_forms import ActionRuleAdminForm
+
+        company = Company.objects.create(name='G', slug='gate-co')
+        class StaffForm(ActionRuleAdminForm):
+            is_superuser = False
+
+        form = StaffForm(
+            data={
+                'company': company.pk,
+                'name': 'Hook',
+                'description': '',
+                'enabled': True,
+                'event_type': 'identity.user.provisioned',
+                'action_kind': ActionRule.ACTION_WEBHOOK,
+                'webhook_url': 'https://example.com/h',
+                'webhook_secret': 'secret123',
+            },
+            instance=None,
+        )
+        self.assertTrue(form.is_valid(), form.errors)
+        saved = form.save()
+        self.assertNotIn('allow_private_urls', saved.config)
+
+
 class ActionAdminTests(TestCase):
     def setUp(self):
         self.company = Company.objects.create(name='Admin Co', slug='admin-co')
@@ -253,3 +335,52 @@ class ActionAdminTests(TestCase):
         url = reverse('admin:actions_actionrule_add')
         response = client.get(url)
         self.assertEqual(response.status_code, 200)
+
+    def test_change_form_does_not_echo_webhook_secret(self):
+        from django.test import Client
+
+        rule = ActionRule.objects.create(
+            company=self.company,
+            name='Hook',
+            event_type='identity.user.provisioned',
+            action_kind=ActionRule.ACTION_WEBHOOK,
+            config={'url': 'https://example.com/h', 'secret': 'super-secret-value'},
+        )
+        client = Client()
+        client.force_login(self.staff)
+        url = reverse('admin:actions_actionrule_change', args=[rule.pk])
+        response = client.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn(b'super-secret-value', response.content)
+
+    @patch('apps.actions.admin.messages.success')
+    @patch('apps.actions.delivery.deliver_outbox_row')
+    def test_retry_admin_action_requeues_without_inline_delivery(self, mock_deliver, _mock_msg):
+        from django.contrib.admin.sites import AdminSite
+        from django.test import RequestFactory
+
+        from apps.actions.admin import ActionOutboxAdmin
+
+        rule = ActionRule.objects.create(
+            company=self.company,
+            name='Mail',
+            event_type='identity.user.provisioned',
+            action_kind=ActionRule.ACTION_EMAIL,
+            config={'recipients': ['a@test.com']},
+        )
+        row = ActionOutbox.objects.create(
+            company=self.company,
+            action_rule=rule,
+            event_type='identity.user.provisioned',
+            envelope={'id': '1', 'type': 'identity.user.provisioned', 'data': {}},
+            status=ActionOutbox.STATUS_FAILED,
+            last_error='nope',
+        )
+        request = RequestFactory().get('/admin/')
+        request.user = self.staff
+        admin = ActionOutboxAdmin(ActionOutbox, AdminSite())
+        admin.retry_selected_deliveries(request, ActionOutbox.objects.filter(pk=row.pk))
+        mock_deliver.assert_not_called()
+        row.refresh_from_db()
+        self.assertEqual(row.status, ActionOutbox.STATUS_PENDING)
+        self.assertEqual(row.last_error, '')

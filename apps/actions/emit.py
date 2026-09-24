@@ -4,12 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from django.db import transaction
-
 from apps.actions.delivery import schedule_outbox_delivery
 from apps.actions.envelope import build_envelope
 from apps.actions.models import ActionOutbox, ActionRule
-from apps.actions.registry import get_event_type, is_registered_event
+from apps.actions.registry import get_event_type
 from apps.companies.models import Company
 
 
@@ -19,15 +17,16 @@ def emit_event(
     payload: dict[str, Any],
     *,
     actor: dict[str, Any] | None = None,
+    force: bool = False,
 ) -> list[ActionOutbox]:
     """
     Validate ``event_type``, match enabled ``ActionRule`` rows for ``company``, write outbox rows.
 
     Schedules a best-effort delivery attempt after the surrounding database transaction commits.
     """
-    if not is_registered_event(event_type):
-        raise ValueError(f'Unknown event type: {event_type!r}')
-    get_event_type(event_type)  # ensure full registration
+    event = get_event_type(event_type)
+    if not event.emit_by_default and not force:
+        return []
 
     rules = list(
         ActionRule.objects.filter(
@@ -65,9 +64,10 @@ def emit_event_if_rules(
     payload: dict[str, Any],
     *,
     actor: dict[str, Any] | None = None,
+    force: bool = False,
 ) -> list[ActionOutbox]:
     """Like ``emit_event`` but skips unknown types and swallows errors (for hot paths)."""
     try:
-        return emit_event(event_type, company, payload, actor=actor)
+        return emit_event(event_type, company, payload, actor=actor, force=force)
     except ValueError:
         return []

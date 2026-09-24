@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from django.conf import settings
 from django.core.mail import EmailMultiAlternatives
-from django.template import Context, Engine
-from django.template.loader import render_to_string
+from django.template.loader import engines, render_to_string
 
 from apps.actions.html_plain import html_to_plain_text
 from apps.actions.registry import get_event_type
@@ -32,11 +31,28 @@ def _resolve_recipients(config: dict, envelope: dict) -> list[str]:
     return unique
 
 
+_SUBJECT_TEMPLATE_CACHE: dict[str, object] = {}
+
+
+def _subject_template(subject_template: str):
+    cached = _SUBJECT_TEMPLATE_CACHE.get(subject_template)
+    if cached is not None:
+        return cached
+    engine = engines['django']
+    compiled = engine.from_string(subject_template)
+    _SUBJECT_TEMPLATE_CACHE[subject_template] = compiled
+    return compiled
+
+
 def _render_subject(event_type: str, envelope: dict) -> str:
     event = get_event_type(event_type)
-    engine = Engine(string_if_invalid='')
-    template = engine.from_string(event.email_subject_template)
-    return template.render(Context({'data': envelope.get('data') or {}, 'envelope': envelope})).strip()
+    template = _subject_template(event.email_subject_template)
+    return template.render(
+        {
+            'data': envelope.get('data') or {},
+            'envelope': envelope,
+        }
+    ).strip()
 
 
 def deliver_email_action(*, config: dict, envelope: dict) -> None:

@@ -170,8 +170,8 @@ class ShellUIScimUser(_ShellUIResourceTypeMixin, SCIMUser):
     def delete(self):
         company = self._company
         user = self.obj.user
-        emit_user_deprovisioned(company, user)
         set_company_access(company, user, enabled=False)
+        emit_user_deprovisioned(company, user)
 
     def handle_replace(
         self,

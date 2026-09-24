@@ -3,6 +3,7 @@ from django.contrib.auth import get_user_model
 from django.test import Client, RequestFactory, TestCase
 from django.urls import reverse
 
+from apps.actions.models import ActionOutbox, ActionRule
 from apps.companies.admin import CompanyGroupAdmin, CompanyGroupAdminForm
 from apps.companies.models import Company, CompanyGroup
 
@@ -85,3 +86,38 @@ class CompanyGroupAdminTests(TestCase):
             display_name='IdP',
         )
         self.assertEqual(group.source, CompanyGroup.SOURCE_SCIM)
+
+    def test_admin_create_emits_group_created_action(self):
+        ActionRule.objects.create(
+            company=self.company,
+            name='Groups',
+            event_type='identity.group.created',
+            action_kind=ActionRule.ACTION_EMAIL,
+            config={'recipients': ['ops@acme.com']},
+        )
+        url = reverse('admin:companies_companygroup_add')
+        with self.captureOnCommitCallbacks(execute=False):
+            response = self.client.post(
+                url,
+                {
+                    'company': self.company.pk,
+                    'display_name': 'Ops Team',
+                },
+            )
+        self.assertEqual(response.status_code, 302, response.content)
+        self.assertEqual(ActionOutbox.objects.filter(event_type='identity.group.created').count(), 1)
+
+    def test_admin_delete_emits_group_deleted_action(self):
+        ActionRule.objects.create(
+            company=self.company,
+            name='Groups',
+            event_type='identity.group.deleted',
+            action_kind=ActionRule.ACTION_EMAIL,
+            config={'recipients': ['ops@acme.com']},
+        )
+        group = CompanyGroup.objects.create(company=self.company, display_name='Gone')
+        url = reverse('admin:companies_companygroup_delete', args=[group.pk])
+        with self.captureOnCommitCallbacks(execute=False):
+            response = self.client.post(url, {'post': 'yes'})
+        self.assertEqual(response.status_code, 302, response.content)
+        self.assertEqual(ActionOutbox.objects.filter(event_type='identity.group.deleted').count(), 1)

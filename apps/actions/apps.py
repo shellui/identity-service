@@ -7,4 +7,5 @@ class ActionsConfig(AppConfig):
     verbose_name = 'Action triggers'
 
     def ready(self) -> None:
+        # Side-effect import: registers identity.* domain events in the global catalog.
         from apps.actions import identity_events  # noqa: F401

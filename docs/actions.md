@@ -36,7 +36,7 @@ DeliveryAttempt audit log; retries via manage.py drain_action_outbox
 | ---------- | ------------- | ----- |
 | `identity.user.provisioned` | SCIM user create or re-enable | |
 | `identity.user.deprovisioned` | SCIM deprovision / `active: false` | User is not deleted |
-| `identity.user.updated` | — | Registered; **not emitted by default** (noisy) |
+| `identity.user.updated` | — | Registered; **`emit_by_default=false`** — no call sites; use `emit_event(..., force=True)` if added later |
 | `identity.group.created` | SCIM or Django admin group create | |
 | `identity.group.updated` | Display name / external id change | |
 | `identity.group.deleted` | Group removed | |
@@ -98,18 +98,21 @@ Default **HTML** templates ship under `apps/actions/templates/actions/emails/<ev
 
 ### Webhook config
 
+Django admin uses structured fields (not raw JSON) so secrets are write-only. Stored JSON shape:
+
 ```json
 {
   "url": "https://your-n8n.example.com/webhook/abc",
   "secret": "whsec_…",
-  "authorization_header": "Bearer optional-static-token",
-  "allow_private_urls": false
+  "authorization_header": "Bearer optional-static-token"
 }
 ```
 
-- `url` — HTTPS (or HTTP) endpoint; must be public unless `allow_private_urls` is true (local/self-host only).
-- `secret` — HMAC signing key (stored in DB; treat as sensitive).
+- `url` — HTTPS (or HTTP) endpoint; must resolve to a public address (see SSRF below).
+- `secret` — HMAC signing key (stored in DB; treat as sensitive). Blank on edit in admin = unchanged.
 - `authorization_header` — optional full `Authorization` header value for tools that require static bearer tokens.
+
+**Private / localhost webhooks:** Per-rule `allow_private_urls` is **not** available to regular staff — only a **superuser** can enable it in Django admin, or operators set deployment-wide `ACTIONS_WEBHOOK_ALLOW_PRIVATE=true` in the environment. This prevents SSRF bypass via rule config alone.
 
 ---
 
@@ -126,6 +129,12 @@ Each POST includes:
 Signed content: `{webhook-id}.{webhook-timestamp}.{raw_body}` (UTF-8), HMAC-SHA256 with your `secret`.
 
 Verify in n8n or a small function node before trusting the body. Reject requests with timestamps too far from clock skew if you enforce replay protection.
+
+### SSRF protections
+
+Before delivery, identity **resolves the webhook hostname once**, rejects private/link-local/reserved targets (unless private URLs are explicitly allowed), and opens the TCP connection to that resolved address while sending the original hostname in the `Host` header and TLS SNI. Validation and connect therefore use the same IP for that resolution.
+
+**Residual limits:** DNS could in theory change between resolve and connect if a record’s TTL expires in that window (we do not re-resolve on connect). Redirect-following is not performed. Prefer HTTPS endpoints with stable public DNS.
 
 ---
 

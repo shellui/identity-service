@@ -5,10 +5,13 @@
   <p style="color: #666; font-size: 13px; margin: 0 0 16px;">Shellui identity</p>
   <h1 style="font-size: 18px; font-weight: 600; margin: 0 0 12px;">SCIM token revoked</h1>
   <p style="margin: 0 0 16px;">A SCIM bearer token was revoked.</p>
-  <p style="font-size: 14px;"><strong>Company:</strong> {{ envelope.company.name }} ({{ envelope.company.slug }})</p>
-  <p style="font-size: 14px;"><strong>Event:</strong> {{ envelope.type }}</p>
-  <p style="font-size: 14px;"><strong>Time:</strong> {{ envelope.time }}</p>
-  <p style="font-size: 13px; color: #444;">Refer to the event payload in your action rule documentation for field meanings.</p>
+  <table style="border-collapse: collapse; font-size: 14px; width: 100%; margin-bottom: 16px;">
+    <tr><td style="padding: 4px 12px 4px 0; color: #666; vertical-align: top;">Company</td><td>{{ envelope.company.name }} ({{ envelope.company.slug }})</td></tr>
+    <tr><td style="padding: 4px 12px 4px 0; color: #666;">Event</td><td>{{ envelope.type }}</td></tr>
+    <tr><td style="padding: 4px 12px 4px 0; color: #666;">Time</td><td>{{ envelope.time }}</td></tr>
+    <tr><td style="padding: 4px 12px 4px 0; color: #666;">Name</td><td>{{ data.name|default:"—" }}</td></tr>
+    <tr><td style="padding: 4px 12px 4px 0; color: #666;">Prefix</td><td>{{ data.token_prefix }}</td></tr>
+  </table>
   <p style="color: #888; font-size: 12px; margin-top: 24px;">Event id: {{ envelope.id }}</p>
 </body>
 </html>

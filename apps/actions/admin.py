@@ -1,32 +1,43 @@
 from __future__ import annotations
 
 from django.contrib import admin, messages
+from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 
-from apps.actions.delivery import deliver_outbox_row
+from apps.actions.admin_forms import ActionRuleAdminForm
 from apps.actions.models import ActionOutbox, ActionRule, DeliveryAttempt
-class WebhookSecretWidgetMixin:
-    """Mask webhook signing secrets in admin list/detail views."""
 
-    @staticmethod
-    def _mask_secret(config: dict) -> dict:
-        if not isinstance(config, dict):
-            return {}
-        masked = dict(config)
-        if masked.get('secret'):
-            masked['secret'] = '••••••••'
-        if masked.get('authorization_header'):
-            masked['authorization_header'] = '••••••••'
-        return masked
+
+def _config_summary(obj: ActionRule) -> str:
+    cfg = obj.config or {}
+    if obj.action_kind == ActionRule.ACTION_EMAIL:
+        count = len(cfg.get('recipients') or [])
+        return f'{count} recipient(s)'
+    if obj.action_kind == ActionRule.ACTION_WEBHOOK:
+        url = (cfg.get('url') or '').strip()
+        if not url:
+            return '—'
+        secret_set = 'secret set' if cfg.get('secret') else 'no secret'
+        return f'{url} ({secret_set})'
+    return '—'
 
 
 @admin.register(ActionRule)
-class ActionRuleAdmin(WebhookSecretWidgetMixin, admin.ModelAdmin):
-    list_display = ('name', 'company', 'event_type', 'action_kind', 'enabled', 'updated_at')
+class ActionRuleAdmin(admin.ModelAdmin):
+    form = ActionRuleAdminForm
+    list_display = (
+        'name',
+        'company',
+        'event_type',
+        'action_kind',
+        'enabled',
+        'config_summary_display',
+        'updated_at',
+    )
     list_filter = ('enabled', 'action_kind', 'event_type', 'company')
     search_fields = ('name', 'description', 'company__name', 'company__slug')
     autocomplete_fields = ('company',)
-    readonly_fields = ('created_at', 'updated_at')
+    readonly_fields = ('created_at', 'updated_at', 'masked_config_preview')
 
     fieldsets = (
         (
@@ -51,25 +62,56 @@ class ActionRuleAdmin(WebhookSecretWidgetMixin, admin.ModelAdmin):
             },
         ),
         (
-            'Configuration (JSON)',
+            'Email configuration',
             {
-                'fields': ('config',),
+                'fields': ('email_recipients', 'email_include_payload_email'),
+                'description': 'Used when action kind is Email.',
+            },
+        ),
+        (
+            'Webhook configuration',
+            {
+                'fields': (
+                    'webhook_url',
+                    'webhook_secret',
+                    'webhook_authorization_header',
+                    'webhook_allow_private_urls',
+                ),
                 'description': mark_safe(
-                    '<p><strong>Email:</strong> '
-                    '<code>{"recipients": ["ops@example.com"], "include_payload_email": false}</code></p>'
-                    '<p><strong>Webhook:</strong> '
-                    '<code>{"url": "https://…", "secret": "…", '
-                    '"authorization_header": "Bearer …", "allow_private_urls": false}</code></p>'
-                    '<p>See docs/actions.md for payload fields and n8n verification.</p>'
+                    'Used when action kind is Webhook. Secrets are write-only in this form '
+                    '(leave blank to keep existing values). '
+                    '<code>allow_private_urls</code> is honored only when saved by a superuser, '
+                    'or set deployment-wide via <code>ACTIONS_WEBHOOK_ALLOW_PRIVATE</code>.'
                 ),
             },
+        ),
+        (
+            'Stored config (preview)',
+            {'fields': ('masked_config_preview',)},
         ),
         ('Timestamps', {'fields': ('created_at', 'updated_at')}),
     )
 
-    def get_readonly_fields(self, request, obj=None):
-        fields = list(super().get_readonly_fields(request, obj))
-        return fields
+    def get_form(self, request, obj=None, **kwargs):
+        base_form = super().get_form(request, obj, **kwargs)
+
+        class RequestForm(base_form):
+            is_superuser = request.user.is_superuser
+
+        return RequestForm
+
+    @admin.display(description='Config')
+    def config_summary_display(self, obj: ActionRule) -> str:
+        return _config_summary(obj)
+
+    @admin.display(description='Config preview (secrets redacted)')
+    def masked_config_preview(self, obj: ActionRule) -> str:
+        cfg = dict(obj.config or {})
+        if cfg.get('secret'):
+            cfg['secret'] = '••••••••'
+        if cfg.get('authorization_header'):
+            cfg['authorization_header'] = '••••••••'
+        return format_html('<pre style="margin:0">{}</pre>', cfg)
 
     def save_model(self, request, obj, form, change):
         super().save_model(request, obj, form, change)
@@ -78,7 +120,7 @@ class ActionRuleAdmin(WebhookSecretWidgetMixin, admin.ModelAdmin):
             if not cfg.get('url') or not cfg.get('secret'):
                 messages.warning(
                     request,
-                    'Webhook rules need both config.url and config.secret before delivery succeeds.',
+                    'Webhook rules need both URL and signing secret before delivery succeeds.',
                 )
 
 
@@ -102,17 +144,17 @@ class ActionOutboxAdmin(admin.ModelAdmin):
     )
     actions = ['retry_selected_deliveries']
 
-    @admin.action(description='Retry delivery for selected outbox rows')
+    @admin.action(description='Re-queue selected outbox rows for delivery')
     def retry_selected_deliveries(self, request, queryset):
-        count = 0
-        for row in queryset:
-            ActionOutbox.objects.filter(pk=row.pk).update(
-                status=ActionOutbox.STATUS_PENDING,
-                next_attempt_at=None,
-            )
-            deliver_outbox_row(row.pk)
-            count += 1
-        messages.success(request, f'Retried delivery for {count} outbox row(s).')
+        updated = queryset.update(
+            status=ActionOutbox.STATUS_PENDING,
+            next_attempt_at=None,
+            last_error='',
+        )
+        messages.success(
+            request,
+            f'Re-queued {updated} outbox row(s). Run manage.py drain_action_outbox to deliver.',
+        )
 
     def has_add_permission(self, request):
         return False
