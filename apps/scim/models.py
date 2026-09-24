@@ -62,3 +62,64 @@ class CompanyScimToken(models.Model):
     def __str__(self) -> str:
         label = self.name or self.token_prefix
         return f'CompanyScimToken({self.company_id}, {label})'
+
+
+class ScimProvisioningEvent(models.Model):
+    """Append-only SCIM/admin provisioning signals for operator visibility."""
+
+    TYPE_GROUP_DISPLAY_NAME_CONFLICT = 'group_display_name_conflict'
+
+    TYPE_CHOICES = [
+        (TYPE_GROUP_DISPLAY_NAME_CONFLICT, 'Group display name conflict'),
+    ]
+
+    CHANNEL_SCIM = 'scim'
+    CHANNEL_ADMIN = 'admin'
+    CHANNEL_CHOICES = [
+        (CHANNEL_SCIM, 'SCIM'),
+        (CHANNEL_ADMIN, 'Admin REST'),
+    ]
+
+    company = models.ForeignKey(
+        'companies.Company',
+        on_delete=models.CASCADE,
+        related_name='scim_provisioning_events',
+    )
+    event_type = models.CharField(max_length=64, choices=TYPE_CHOICES, db_index=True)
+    channel = models.CharField(max_length=16, choices=CHANNEL_CHOICES)
+    scim_token = models.ForeignKey(
+        CompanyScimToken,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='provisioning_events',
+    )
+    detail = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['company', '-created_at']),
+            models.Index(fields=['company', 'event_type', '-created_at']),
+        ]
+
+    def __str__(self) -> str:
+        return f'ScimProvisioningEvent({self.company_id}, {self.event_type}, {self.created_at})'
+
+
+class CompanyScimProvisioningState(models.Model):
+    """Latest provisioning error snapshot for admin SCIM status (one row per company)."""
+
+    company = models.OneToOneField(
+        'companies.Company',
+        on_delete=models.CASCADE,
+        related_name='scim_provisioning_state',
+    )
+    last_error_at = models.DateTimeField(null=True, blank=True)
+    last_error_code = models.PositiveSmallIntegerField(null=True, blank=True)
+    last_error_type = models.CharField(max_length=64, blank=True, default='')
+    last_error_detail = models.JSONField(default=dict, blank=True)
+
+    def __str__(self) -> str:
+        return f'CompanyScimProvisioningState(company_id={self.company_id})'

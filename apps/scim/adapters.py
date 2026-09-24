@@ -17,6 +17,8 @@ from apps.companies.models import CompanyGroup
 from apps.scim.context import get_scim_company
 from apps.scim.group_members import parse_scim_members
 from apps.scim.filters import ShellUIGroupFilterQuery, ShellUIUserFilterQuery
+from apps.scim.provisioning_events import OPERATION_CREATE, OPERATION_RENAME, record_group_display_name_conflict
+from apps.scim.models import ScimProvisioningEvent
 from apps.scim.user_bridge import ScimUserBridge
 from django_scim.utils import get_base_scim_location_getter
 
@@ -228,7 +230,18 @@ class ShellUIScimGroup(_ShellUIResourceTypeMixin, SCIMGroup):
         if members is not None:
             self._pending_members = members
 
+    def _group_name_operation(self) -> str:
+        return OPERATION_RENAME if self.obj.pk is not None else OPERATION_CREATE
+
     def _raise_display_name_conflict(self, conflict: CompanyGroup) -> None:
+        record_group_display_name_conflict(
+            company=self._company,
+            display_name=self.obj.display_name,
+            conflict=conflict,
+            channel=ScimProvisioningEvent.CHANNEL_SCIM,
+            operation=self._group_name_operation(),
+            scim_token=getattr(self.request, 'scim_token', None),
+        )
         if conflict.source == CompanyGroup.SOURCE_MANUAL:
             raise exceptions.IntegrityError(
                 detail=(

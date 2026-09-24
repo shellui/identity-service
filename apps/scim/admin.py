@@ -1,6 +1,6 @@
 from django.contrib import admin, messages
 
-from .models import CompanyScimToken
+from .models import CompanyScimProvisioningState, CompanyScimToken, ScimProvisioningEvent
 from .tokens import generate_scim_token
 
 
@@ -24,3 +24,43 @@ class CompanyScimTokenAdmin(admin.ModelAdmin):
             request,
             f'SCIM bearer token (copy now — shown once): {raw}',
         )
+
+
+@admin.register(ScimProvisioningEvent)
+class ScimProvisioningEventAdmin(admin.ModelAdmin):
+    list_display = ('id', 'company', 'event_type', 'channel', 'created_at')
+    list_filter = ('event_type', 'channel', 'company')
+    search_fields = ('company__name', 'company__slug')
+    readonly_fields = (
+        'company',
+        'event_type',
+        'channel',
+        'scim_token',
+        'detail',
+        'created_at',
+    )
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(CompanyScimProvisioningState)
+class CompanyScimProvisioningStateAdmin(admin.ModelAdmin):
+    list_display = ('company', 'last_error_at', 'last_error_code', 'last_error_type')
+    search_fields = ('company__name', 'company__slug')
+    readonly_fields = (
+        'company',
+        'last_error_at',
+        'last_error_code',
+        'last_error_type',
+        'last_error_detail',
+    )
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False

@@ -8,7 +8,7 @@ from apps.authapi.tokens import ShellUIAccessToken
 from apps.authapi.views import _issue_shellui_tokens
 from apps.companies.access import set_company_access
 from apps.companies.models import Company, CompanyGroup
-from apps.scim.models import CompanyScimToken
+from apps.scim.models import CompanyScimToken, ScimProvisioningEvent
 from apps.scim.tokens import generate_scim_token
 
 User = get_user_model()
@@ -194,3 +194,65 @@ class HybridCompanyGroupTests(TestCase):
         self.assertEqual(patch.status_code, 409, patch.content)
         group = CompanyGroup.objects.get(pk=group_id)
         self.assertEqual(group.display_name, 'IdP Rename Me')
+
+    def test_scim_manual_name_collision_records_provisioning_event_and_status(self):
+        CompanyGroup.objects.create(company=self.company, display_name='Audit Manual')
+        response = self.scim_client.post(
+            f'/api/v1/companies/{self.company.slug}/scim/v2/Groups',
+            data=json.dumps(
+                {
+                    'schemas': ['urn:ietf:params:scim:schemas:core:2.0:Group'],
+                    'displayName': 'Audit Manual',
+                }
+            ),
+            content_type='application/scim+json',
+            HTTP_AUTHORIZATION=f'Bearer {self.scim_token}',
+        )
+        self.assertEqual(response.status_code, 409, response.content)
+
+        event = ScimProvisioningEvent.objects.get(company=self.company)
+        self.assertEqual(event.event_type, ScimProvisioningEvent.TYPE_GROUP_DISPLAY_NAME_CONFLICT)
+        self.assertEqual(event.channel, ScimProvisioningEvent.CHANNEL_SCIM)
+        self.assertEqual(event.detail['display_name'], 'Audit Manual')
+        self.assertEqual(event.detail['conflicting_group_source'], CompanyGroup.SOURCE_MANUAL)
+        self.assertEqual(event.detail['operation'], 'create')
+        self.assertEqual(event.detail['http_status'], 409)
+        self.assertIsNotNone(event.scim_token_id)
+
+        self._as_owner()
+        status = self.client.get(self._admin_url('/api/v1/scim'))
+        self.assertEqual(status.status_code, 200, status.data)
+        self.assertIsNotNone(status.data['last_provisioning_error'])
+        self.assertEqual(status.data['last_provisioning_error']['code'], 409)
+        self.assertEqual(
+            status.data['last_provisioning_error']['type'],
+            ScimProvisioningEvent.TYPE_GROUP_DISPLAY_NAME_CONFLICT,
+        )
+        self.assertEqual(len(status.data['recent_provisioning_events']), 1)
+
+    def test_admin_scim_name_collision_records_provisioning_event(self):
+        create = self.scim_client.post(
+            f'/api/v1/companies/{self.company.slug}/scim/v2/Groups',
+            data=json.dumps(
+                {
+                    'schemas': ['urn:ietf:params:scim:schemas:core:2.0:Group'],
+                    'displayName': 'Admin Audit Clash',
+                }
+            ),
+            content_type='application/scim+json',
+            HTTP_AUTHORIZATION=f'Bearer {self.scim_token}',
+        )
+        self.assertEqual(create.status_code, 201, create.content)
+
+        self._as_owner()
+        response = self.client.post(
+            self._admin_url('/api/v1/groups'),
+            {'display_name': 'Admin Audit Clash'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 409, response.data)
+
+        event = ScimProvisioningEvent.objects.filter(company=self.company).latest('created_at')
+        self.assertEqual(event.channel, ScimProvisioningEvent.CHANNEL_ADMIN)
+        self.assertEqual(event.detail['operation'], 'create')
+        self.assertEqual(event.detail['conflicting_group_source'], CompanyGroup.SOURCE_SCIM)

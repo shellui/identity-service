@@ -56,6 +56,7 @@ class ScimBearerAuthMiddleware:
 
         CompanyScimToken.objects.filter(pk=row.pk).update(last_used_at=timezone.now())
         request.scim_company = row.company
+        request.scim_token = row
         request.user = get_scim_provisioner_user()
         return self.get_response(request)
 

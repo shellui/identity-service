@@ -100,7 +100,14 @@ from .serializers import (
     ShellUIAdminUserUpdateSerializer,
     UserPreferenceSerializer,
 )
-from apps.scim.models import CompanyScimToken
+from apps.scim.models import CompanyScimToken, ScimProvisioningEvent
+from apps.scim.provisioning_events import (
+    OPERATION_CREATE,
+    OPERATION_RENAME,
+    last_provisioning_error_payload,
+    recent_provisioning_events_payload,
+    record_group_display_name_conflict,
+)
 from apps.scim.tokens import generate_scim_token
 
 User = get_user_model()
@@ -1012,6 +1019,8 @@ def _scim_status_payload(request, company: Company) -> dict:
         'active_token_count': active_count,
         'directory_read_only': False,
         'scim_groups_read_only': configured,
+        'last_provisioning_error': last_provisioning_error_payload(company),
+        'recent_provisioning_events': recent_provisioning_events_payload(company),
     }
 
 
@@ -2468,10 +2477,19 @@ def _admin_group_display_name_conflict_response(
     display_name: str,
     *,
     exclude_pk: int | None = None,
+    operation: str = OPERATION_CREATE,
 ) -> Response | None:
     existing = first_display_name_conflict(company, display_name, exclude_pk=exclude_pk)
     if existing is None:
         return None
+    record_group_display_name_conflict(
+        company=company,
+        display_name=display_name,
+        conflict=existing,
+        channel=ScimProvisioningEvent.CHANNEL_ADMIN,
+        operation=operation,
+        scim_token=None,
+    )
     if existing.source == CompanyGroup.SOURCE_SCIM:
         return Response(
             {
@@ -2541,7 +2559,11 @@ class ShellUIAdminGroupListView(APIView):
         display_name = str(serializer.validated_data['display_name']).strip()
         if not display_name:
             return Response({'error': 'Group display name is required.'}, status=status.HTTP_400_BAD_REQUEST)
-        conflict = _admin_group_display_name_conflict_response(company, display_name)
+        conflict = _admin_group_display_name_conflict_response(
+            company,
+            display_name,
+            operation=OPERATION_CREATE,
+        )
         if conflict:
             return conflict
         try:
@@ -2551,7 +2573,11 @@ class ShellUIAdminGroupListView(APIView):
                 source=CompanyGroup.SOURCE_MANUAL,
             )
         except IntegrityError:
-            retry = _admin_group_display_name_conflict_response(company, display_name)
+            retry = _admin_group_display_name_conflict_response(
+                company,
+                display_name,
+                operation=OPERATION_CREATE,
+            )
             if retry:
                 return retry
             raise
@@ -2613,6 +2639,7 @@ class ShellUIAdminGroupDetailView(APIView):
             company,
             display_name,
             exclude_pk=g.pk,
+            operation=OPERATION_RENAME,
         )
         if conflict:
             return conflict
@@ -2624,6 +2651,7 @@ class ShellUIAdminGroupDetailView(APIView):
                 company,
                 display_name,
                 exclude_pk=g.pk,
+                operation=OPERATION_RENAME,
             )
             if retry:
                 return retry

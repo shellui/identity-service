@@ -80,6 +80,8 @@ When SCIM is first enabled, **existing `CompanyGroup` rows stay `manual`**; noth
 
 **`display_name` uniqueness (one namespace):** `display_name` remains **unique per company across both sources** (required for JWT `groups` / files ACL). SCIM create or rename that collides with an existing **manual** group returns **409 Conflict** with a message that the name is taken by a Shellui-managed group — the manual row is never adopted or overwritten. Admin create/rename that collides with a **scim** group returns **409** with a distinct message. Until the conflict is resolved (rename or delete the manual group in Shellui admin, or change the IdP push name), IdP sync for that display name will keep failing. Automatic adoption of manual groups into SCIM is **not** supported.
 
+**409 observability:** Each collision is written to structured logs and an append-only **`ScimProvisioningEvent`** (`group_display_name_conflict`), and updates **`CompanyScimProvisioningState.last_error_*`** for the company. Shellui admin **`GET /api/v1/scim`** returns `last_provisioning_error` and a short `recent_provisioning_events` list so operators can diagnose name clashes without IdP logs. The IdP may retry provisioning; responses stay **409** until the name clash is fixed.
+
 ---
 
 ## Nested groups
@@ -147,7 +149,7 @@ Staff or **company owner** JWT with the usual company scope (`company_id` query/
 
 | Method | Path | Notes |
 | ------ | ---- | ----- |
-| GET | `/api/v1/scim` | Deployment `enabled` (`SCIM_ENABLED`), company `base_url`, `configured` / `active_token_count`, `directory_read_only` (always `false` under hybrid), `scim_groups_read_only` (`true` when an active token exists — SCIM-sourced rows only) |
+| GET | `/api/v1/scim` | Deployment `enabled` (`SCIM_ENABLED`), company `base_url`, `configured` / `active_token_count`, `directory_read_only` (always `false` under hybrid), `scim_groups_read_only` (`true` when an active token exists — SCIM-sourced rows only), `last_provisioning_error`, `recent_provisioning_events` |
 | GET | `/api/v1/scim/tokens` | List tokens (`results[]`: id, name, token_prefix, timestamps, `is_active`; no secret) |
 | POST | `/api/v1/scim/tokens` | Body `{ "name": optional }`; response includes full `token` **once** (403 when SCIM disabled on deploy) |
 | POST | `/api/v1/scim/tokens/<uuid>/revoke` | Revoke token (idempotent; allowed when SCIM disabled) |
