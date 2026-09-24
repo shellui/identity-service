@@ -22,6 +22,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 ### 📚 Documentation
 
 - Document `REDIS_URL` in `.env.example`, [README.md](README.md), and [PUBLISH.md](PUBLISH.md) (including Coolify Redis steps).
+- Align identity-service Docusaurus chrome with [shellui/shellui](https://github.com/shellui/shellui) (`tools/docusaurus/` theme, navbar, footer, assets); production URL `https://identity.docs.shellui.com`.
+- v0.6.0 docs on `develop`: [Configuration](docs/configuration.md), [SCIM](docs/scim.md), refreshed introduction and sidebar IA.
 
 ## [0.6.0] - 2026-09-24
 

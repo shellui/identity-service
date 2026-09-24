@@ -18,6 +18,16 @@ For day-to-day local runs, see the **Docker (local run)** section in the reposit
 
 The image contains application code and collected static files only. Secrets and runtime configuration are supplied via environment variables at container start (see `.env.example` in the repository root).
 
+## v0.6.0 release notes (`develop`)
+
+Operator-facing changes on the **0.6.0** line (see `CHANGELOG.md`):
+
+- **OAuth** — session-code delivery, redirect allowlist, company OAuth clients ([oauth-login.md](oauth-login.md)).
+- **Configuration** — consolidated env reference ([configuration.md](configuration.md)).
+- **Redis** — optional `REDIS_URL` shared cache for multi-worker Gunicorn (#26 on `develop`).
+- **SCIM** — enterprise user/group provisioning ([scim.md](scim.md)); set `SCIM_ENABLED=true` after deploy/migrations.
+- **Docs site** — Shellui-branded Docusaurus chrome; browse at [identity.docs.shellui.com](https://identity.docs.shellui.com) after tagging.
+
 ## Pre-release checklist
 
 Run the automated checklist (same script as PRs to `main`):
@@ -36,6 +46,7 @@ Ensure these match the release version (e.g. `0.6.0`):
 - `CHANGELOG.md` entry with date
 - CI + pre-release workflows green on the release commit
 - Git tag `v0.6.0` (optional but recommended; not enforced by the script)
+- Docs at [identity.docs.shellui.com](https://identity.docs.shellui.com) deploy from release tags via GitHub Pages (see `.github/workflows/deploy-docs.yml`)
 
 ### 2. No secrets in the build context
 

@@ -146,9 +146,15 @@ Production auth abuse controls, HTTPS defaults, Postgres SSL, and trusted-proxy 
 
 ## Documentation (Docusaurus)
 
-Project docs live in `docs/` and are built with Docusaurus config in `tools/docusaurus/`.
+Project docs live in `docs/` and are built with Docusaurus in `tools/docusaurus/` (Shellui-branded chrome aligned with [shellui/shellui](https://github.com/shellui/shellui)). Published at [https://identity.docs.shellui.com](https://identity.docs.shellui.com) on release tags.
 
-Generate docs:
+Preview locally:
+
+```bash
+cd tools/docusaurus && npm install && npm start
+```
+
+Production build:
 
 ```bash
 ./tools/generate-docs.sh

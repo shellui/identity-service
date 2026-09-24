@@ -16,6 +16,8 @@ eggs/
 .eggs/
 lib/
 lib64/
+!tools/docusaurus/src/lib/
+!tools/docusaurus/src/lib/**
 parts/
 sdist/
 var/

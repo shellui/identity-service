@@ -19,7 +19,7 @@ This feature is **opt-in**: set `SCIM_ENABLED=true` on the deployment. When disa
 
 ## Enable on Coolify / Docker
 
-1. Set **`SCIM_ENABLED=true`** on the identity-service container.
+1. Set **`SCIM_ENABLED=true`** on the identity-service container (see [Configuration](configuration.md)).
 2. Run migrations (`apps.scim`, `CompanyGroup` SCIM fields, nested `member_groups`).
 3. **Django admin → Company SCIM tokens** — create a token; copy the bearer secret once.
 4. Configure IdP with base URL + `Authorization: Bearer <token>`.
@@ -134,5 +134,6 @@ Cross-tenant access attempts are covered by regression tests in `apps/scim/tests
 
 ## Related
 
+- [Configuration](configuration.md) — `SCIM_ENABLED` and runtime env
 - [Company access modes](company-access.md)
 - [Security hardening](security-hardening.md)
