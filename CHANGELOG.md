@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ### Added
 
+- **OAuth provider catalog:** Document django-allauth social providers (primary starters + full 65.14.1 module list), enablement checklist, and links to the [upstream provider index](https://docs.allauth.org/en/latest/socialaccount/providers/index.html) — [docs/oauth-providers.md](docs/oauth-providers.md), cross-linked from [docs/oauth-login.md](docs/oauth-login.md).
+
 - **Action triggers:** Company-scoped domain events (`identity.*`) → email or webhook via `apps/actions` (ActionRule, ActionOutbox, DeliveryAttempt). Transactional outbox, `transaction.on_commit` delivery, `manage.py drain_action_outbox`, Django admin CRUD, default email templates per event, SCIM/group/token/conflict emitters, and [docs/actions.md](docs/actions.md). Closes [#35](https://github.com/shellui/identity-service/issues/35).
 - **Action catalog (users):** SCIM company-access events renamed to `identity.scim.user.provisioned` / `identity.scim.user.deprovisioned`; added account lifecycle `identity.user.created` (OAuth/admin) and `identity.user.deleted` (admin delete, per company membership).
 - **Self-service account deletion:** `DELETE /api/v1/user` with `{"confirm": true}` lets the authenticated user permanently delete their account (GDPR/RGPD erasure workflows). Emits `identity.user.deleted` per company membership with `source: self`, revokes sessions/PATs, and hard-deletes the user like Django admin. Documented in [docs/oauth-login.md](docs/oauth-login.md).

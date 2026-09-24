@@ -2,12 +2,12 @@
 
 `identity-service` is a Django backend that provides authentication endpoints compatible with Shellui (`backend.type = "shellui"`).
 
-It supports OAuth login (GitHub/Google/Microsoft), issues JWT tokens, exposes Supabase-like auth routes under `/api/v1/*`, and returns user metadata that Shellui can use (including avatar URL).
+It supports OAuth login (stock: GitHub, Google, Microsoft; additional IdPs via django-allauth — see [docs/oauth-providers.md](docs/oauth-providers.md)), issues JWT tokens, exposes Supabase-like auth routes under `/api/v1/*`, and returns user metadata that Shellui can use (including avatar URL).
 
 ## Features
 
 - Shellui-compatible auth API at `/api/v1/*`
-- OAuth login flow for GitHub, Google, Microsoft (identity-hosted callback — see [docs/oauth-login.md](docs/oauth-login.md))
+- OAuth login via django-allauth (stock wired: GitHub, Google, Microsoft; full provider catalog — [docs/oauth-providers.md](docs/oauth-providers.md); flow — [docs/oauth-login.md](docs/oauth-login.md))
 - Company join modes: **public**, **domain** allow-list, or **invitation-only** (see [docs/company-access.md](docs/company-access.md))
 - JWT access + refresh token issuance (RS256 with JWKS when `JWT_PRIVATE_KEY` is set)
 - Token refresh endpoint (`grant_type=refresh_token`)
@@ -131,7 +131,7 @@ backend: {
 
 ## OAuth provider apps
 
-Register a **single** Authorization callback URL on each provider (GitHub / Google / Microsoft) pointing at **identity-service** — not the shell. No query string:
+Register a **single** Authorization callback URL on each IdP app pointing at **identity-service** — not the shell. Stock demos use GitHub, Google, and Microsoft; other providers follow the same callback pattern once enabled ([docs/oauth-providers.md](docs/oauth-providers.md)). No query string:
 
 | Environment | Callback URL |
 |-------------|--------------|
