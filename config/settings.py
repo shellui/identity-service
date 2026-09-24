@@ -95,6 +95,28 @@ def _env_int(name, default: int) -> int:
         raise ImproperlyConfigured(f'{name} must be an integer. Got: {raw!r}') from exc
 
 
+def _caches_config(redis_url: str) -> dict:
+    """
+    Shared cache for auth rate limits, access-token denylist, and activity throttles.
+
+    When ``REDIS_URL`` is set, use Django's Redis backend (requires the ``redis`` package).
+    Otherwise use in-process LocMem (fine for single-process dev; not shared across Gunicorn workers).
+    """
+    if redis_url:
+        return {
+            'default': {
+                'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+                'LOCATION': redis_url,
+            }
+        }
+    return {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+            'LOCATION': 'identity-service-auth',
+        }
+    }
+
+
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
@@ -394,12 +416,8 @@ SESSION_COOKIE_SECURE = _env_bool('SESSION_COOKIE_SECURE', not DEBUG)
 CSRF_COOKIE_SECURE = _env_bool('CSRF_COOKIE_SECURE', not DEBUG)
 
 # Cache-backed auth rate limits (see apps/authapi/throttling.py).
-CACHES = {
-    'default': {
-        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
-        'LOCATION': 'identity-service-auth',
-    }
-}
+REDIS_URL = os.getenv('REDIS_URL', '').strip()
+CACHES = _caches_config(REDIS_URL)
 AUTH_RATE_LIMIT_ENABLED = _env_bool('AUTH_RATE_LIMIT_ENABLED', True)
 AUTH_RATE_LIMITS = {
     'default': {'limit': 60, 'window': 60},

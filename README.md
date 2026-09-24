@@ -172,7 +172,7 @@ Pull requests **to `main`** also run the pre-release checklist ([`.github/workfl
 
 ## Releases (Docker Hub)
 
-Current release: `0.5.1` (`shellui/identity-service:0.5.1`).
+Current release: `0.6.0` (`shellui/identity-service:0.6.0`).
 
 See [PUBLISH.md](PUBLISH.md) for the pre-release checklist (automated via `./tools/pre-release-check.sh`), tagging conventions, and steps to build, push, and deploy `shellui/identity-service` on Docker Hub.
 
@@ -234,6 +234,7 @@ Runtime env vars:
 - `CORS_ALLOW_CREDENTIALS` (default `false`; must stay `false` with allow-all)
 - `CORS_ALLOWED_ORIGIN_REGEXES` (optional; used only when `CORS_ALLOW_ALL_ORIGINS=false`)
 - `POSTGRES_DATABASE_URL` (optional; when set, Postgres is used instead of SQLite)
+- `REDIS_URL` (optional; when set, Django uses Redis for shared cache — auth rate limits, logout access-token denylist, last-seen throttling). Unset uses in-process LocMem (single Gunicorn worker or local dev only; with multiple workers each process has its own cache)
 - `GUNICORN_WORKERS` (default `4`)
 - `GUNICORN_THREADS` (default `4`)
 - `GET /health/live` — DB-free liveness probe (configure load balancers to use this instead of `/`)
