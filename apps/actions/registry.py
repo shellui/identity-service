@@ -54,4 +54,11 @@ def all_event_types() -> list[DomainEventType]:
 
 
 def event_choices() -> list[tuple[str, str]]:
-    return [(e.id, f'{e.label} ({e.id})') for e in all_event_types()]
+    return [
+        (
+            e.id,
+            f'{e.label} ({e.id})'
+            + (' — not emitted yet' if not e.emit_by_default else ''),
+        )
+        for e in all_event_types()
+    ]

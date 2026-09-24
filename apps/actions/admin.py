@@ -6,6 +6,7 @@ from django.utils.safestring import mark_safe
 
 from apps.actions.admin_forms import ActionRuleAdminForm
 from apps.actions.models import ActionOutbox, ActionRule, DeliveryAttempt
+from apps.actions.registry import get_event_type
 
 
 def _config_summary(obj: ActionRule) -> str:
@@ -115,6 +116,16 @@ class ActionRuleAdmin(admin.ModelAdmin):
 
     def save_model(self, request, obj, form, change):
         super().save_model(request, obj, form, change)
+        try:
+            event = get_event_type(obj.event_type)
+        except ValueError:
+            event = None
+        if event is not None and not event.emit_by_default:
+            messages.warning(
+                request,
+                f"'{event.label}' is registered but not emitted by any code path yet "
+                '(rules will not fire until emit_event is wired).',
+            )
         if obj.action_kind == ActionRule.ACTION_WEBHOOK:
             cfg = obj.config or {}
             if not cfg.get('url') or not cfg.get('secret'):

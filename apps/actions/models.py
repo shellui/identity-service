@@ -8,6 +8,7 @@ from apps.actions.registry import event_choices
 
 
 def _event_type_field_choices():
+    # Side-effect import: register identity.* events if this runs before AppConfig.ready().
     from apps.actions import identity_events  # noqa: F401
 
     return event_choices()

@@ -14,7 +14,6 @@ from apps.actions.handlers.webhook import WebhookDeliveryError
 from apps.actions.models import ActionOutbox, ActionRule, DeliveryAttempt
 from apps.actions.ssrf import SSRFError, validate_webhook_url
 from apps.actions.webhook_signing import sign_webhook_body
-from apps.companies.access import set_company_access
 from apps.companies.models import Company
 
 User = get_user_model()
