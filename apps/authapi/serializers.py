@@ -52,6 +52,10 @@ class ShellUIPersonalAccessTokenCreateSerializer(serializers.Serializer):
     name = serializers.CharField(required=False, allow_blank=True, max_length=200)
 
 
+class ShellUIAdminScimTokenCreateSerializer(serializers.Serializer):
+    name = serializers.CharField(required=False, allow_blank=True, max_length=200)
+
+
 class ShellUIAdminUserUpdateSerializer(serializers.Serializer):
     """Partial update for Django user fields plus optional Shellui user_metadata merge (`data`).
 

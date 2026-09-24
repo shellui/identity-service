@@ -21,7 +21,7 @@ This feature is **opt-in**: set `SCIM_ENABLED=true` on the deployment. When disa
 
 1. Set **`SCIM_ENABLED=true`** on the identity-service container (see [Configuration](configuration.md)).
 2. Run migrations (`apps.scim`, `CompanyGroup` SCIM fields, nested `member_groups`).
-3. **Django admin → Company SCIM tokens** — create a token; copy the bearer secret once.
+3. Create a **Company SCIM token** (Shellui admin **SCIM** setup or Django admin); copy the bearer secret once.
 4. Configure IdP with base URL + `Authorization: Bearer <token>`.
 
 ---
@@ -110,9 +110,33 @@ SCIM Group **`members`** may include:
 
 ---
 
+## Admin REST (Shellui admin)
+
+Staff or **company owner** JWT with the usual company scope (`company_id` query/body or `company_id` claim in the access token). Same authorization as `/api/v1/oauth-redirects` and `/api/v1/groups`.
+
+| Method | Path | Notes |
+| ------ | ---- | ----- |
+| GET | `/api/v1/scim` | Deployment `enabled` (`SCIM_ENABLED`), company `base_url`, `configured` / `active_token_count`, `directory_read_only` |
+| GET | `/api/v1/scim/tokens` | List tokens (`results[]`: id, name, token_prefix, timestamps, `is_active`; no secret) |
+| POST | `/api/v1/scim/tokens` | Body `{ "name": optional }`; response includes full `token` **once** (403 when SCIM disabled on deploy) |
+| POST | `/api/v1/scim/tokens/<uuid>/revoke` | Revoke token (idempotent; allowed when SCIM disabled) |
+
+Example (owner JWT):
+
+```bash
+curl -s -H "Authorization: Bearer $ACCESS" \
+  "https://auth.example.com/api/v1/scim?company_id=1"
+
+curl -s -X POST -H "Authorization: Bearer $ACCESS" -H "Content-Type: application/json" \
+  -d '{"name":"Okta prod"}' \
+  "https://auth.example.com/api/v1/scim/tokens?company_id=1"
+```
+
+---
+
 ## Token rotation
 
-Create a new Company SCIM token, update IdP, revoke the old row in admin.
+Create a new Company SCIM token (admin REST or Django admin), update IdP, revoke the old row.
 
 ---
 
