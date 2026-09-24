@@ -1,0 +1,9 @@
+Shellui identity — Group created
+
+A company group was created.
+
+Company: {{ envelope.company.name }} ({{ envelope.company.slug }})
+Event: {{ envelope.type }}
+Time: {{ envelope.time }}
+
+Event id: {{ envelope.id }}

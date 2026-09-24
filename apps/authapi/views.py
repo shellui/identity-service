@@ -3565,6 +3565,9 @@ class ShellUIAdminScimTokenListCreateView(APIView):
             token_hash=digest,
             name=name,
         )
+        from apps.actions.token_hooks import emit_scim_token_created
+
+        emit_scim_token_created(company, row)
         return Response(
             _scim_token_row(row, include_token=raw),
             status=status.HTTP_201_CREATED,
@@ -3594,6 +3597,9 @@ class ShellUIAdminScimTokenRevokeView(APIView):
         if row.revoked_at is None:
             row.revoked_at = datetime.now(timezone.utc)
             row.save(update_fields=['revoked_at'])
+            from apps.actions.token_hooks import emit_scim_token_revoked
+
+            emit_scim_token_revoked(company, row)
         return Response(_scim_token_row(row))
 
 

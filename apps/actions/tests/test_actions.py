@@ -1,0 +1,238 @@
+import json
+from unittest.mock import patch
+
+from django.contrib.auth import get_user_model
+from django.core import mail
+from django.core.management import call_command
+from django.test import TestCase, override_settings
+from django.urls import reverse
+
+from apps.actions.delivery import deliver_outbox_row
+from apps.actions.emit import emit_event
+from apps.actions.handlers.webhook import WebhookDeliveryError
+from apps.actions.models import ActionOutbox, ActionRule, DeliveryAttempt
+from apps.actions.ssrf import SSRFError, validate_webhook_url
+from apps.actions.webhook_signing import sign_webhook_body
+from apps.companies.access import set_company_access
+from apps.companies.models import Company
+
+User = get_user_model()
+
+LOC_MEM_EMAIL = {
+    'EMAIL_BACKEND': 'django.core.mail.backends.locmem.EmailBackend',
+}
+
+
+class EmitEventTests(TestCase):
+    def setUp(self):
+        self.company_a = Company.objects.create(name='A', slug='co-a')
+        self.company_b = Company.objects.create(name='B', slug='co-b')
+        ActionRule.objects.create(
+            company=self.company_a,
+            name='Notify',
+            event_type='identity.user.provisioned',
+            action_kind=ActionRule.ACTION_EMAIL,
+            config={'recipients': ['ops@a.test']},
+        )
+
+    def test_unknown_event_type_raises(self):
+        with self.assertRaises(ValueError):
+            emit_event('not.real', self.company_a, {})
+
+    def test_no_rules_returns_empty(self):
+        rows = emit_event(
+            'identity.user.provisioned',
+            self.company_b,
+            {'user_id': 1},
+        )
+        self.assertEqual(rows, [])
+        self.assertEqual(ActionOutbox.objects.count(), 0)
+
+    @override_settings(**LOC_MEM_EMAIL)
+    def test_emit_creates_outbox_and_delivers_on_commit(self):
+        with self.captureOnCommitCallbacks(execute=True):
+            rows = emit_event(
+                'identity.user.provisioned',
+                self.company_a,
+                {'user_id': 9, 'email': 'ada@a.test', 'source': 'scim'},
+            )
+        self.assertEqual(len(rows), 1)
+        row = ActionOutbox.objects.get(pk=rows[0].pk)
+        self.assertEqual(row.status, ActionOutbox.STATUS_DELIVERED)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn('ada@a.test', mail.outbox[0].subject)
+        self.assertEqual(mail.outbox[0].to, ['ops@a.test'])
+
+    def test_company_isolation(self):
+        emit_event('identity.user.provisioned', self.company_b, {'user_id': 1})
+        self.assertEqual(ActionOutbox.objects.count(), 0)
+
+
+@override_settings(**LOC_MEM_EMAIL)
+class WebhookHandlerTests(TestCase):
+    def setUp(self):
+        self.company = Company.objects.create(name='Hook Co', slug='hook-co')
+        self.rule = ActionRule.objects.create(
+            company=self.company,
+            name='n8n',
+            event_type='identity.user.provisioned',
+            action_kind=ActionRule.ACTION_WEBHOOK,
+            enabled=True,
+            config={
+                'url': 'https://example.com/hook',
+                'secret': 'whsec_test',
+            },
+        )
+
+    @patch('apps.actions.handlers.webhook.requests.post')
+    def test_webhook_posts_signed_json(self, mock_post):
+        mock_post.return_value.status_code = 200
+        envelope = {
+            'id': 'evt-1',
+            'type': 'identity.user.provisioned',
+            'time': '2026-01-01T00:00:00+00:00',
+            'company': {'id': self.company.pk, 'slug': 'hook-co', 'name': 'Hook Co'},
+            'data': {'user_id': 1},
+        }
+        row = ActionOutbox.objects.create(
+            company=self.company,
+            action_rule=self.rule,
+            event_type=envelope['type'],
+            envelope=envelope,
+        )
+        deliver_outbox_row(row.pk)
+        mock_post.assert_called_once()
+        _args, kwargs = mock_post.call_args
+        self.assertEqual(kwargs['data'], json.dumps(envelope, separators=(',', ':'), sort_keys=True).encode())
+        headers = kwargs['headers']
+        self.assertIn('webhook-signature', headers)
+        self.assertIn('webhook-id', headers)
+        row.refresh_from_db()
+        self.assertEqual(row.status, ActionOutbox.STATUS_DELIVERED)
+
+    @patch('apps.actions.handlers.webhook.requests.post')
+    def test_webhook_failure_records_attempt(self, mock_post):
+        mock_post.return_value.status_code = 500
+        row = ActionOutbox.objects.create(
+            company=self.company,
+            action_rule=self.rule,
+            event_type='identity.user.provisioned',
+            envelope={'id': 'x', 'type': 'identity.user.provisioned', 'data': {}},
+        )
+        deliver_outbox_row(row.pk)
+        row.refresh_from_db()
+        self.assertEqual(row.status, ActionOutbox.STATUS_FAILED)
+        self.assertEqual(DeliveryAttempt.objects.filter(outbox=row).count(), 1)
+
+    def test_ssrf_blocks_private_ip(self):
+        with self.assertRaises(SSRFError):
+            validate_webhook_url('http://127.0.0.1/hook')
+        with self.assertRaises(WebhookDeliveryError):
+            from apps.actions.handlers.webhook import deliver_webhook_action
+
+            deliver_webhook_action(
+                config={'url': 'http://127.0.0.1/hook', 'secret': 'x'},
+                envelope={'id': '1', 'type': 't', 'data': {}},
+            )
+
+
+class DrainCommandTests(TestCase):
+    def setUp(self):
+        self.company = Company.objects.create(name='Drain', slug='drain-co')
+        self.rule = ActionRule.objects.create(
+            company=self.company,
+            name='mail',
+            event_type='identity.user.provisioned',
+            action_kind=ActionRule.ACTION_EMAIL,
+            config={'recipients': ['d@drain.test']},
+        )
+
+    @override_settings(**LOC_MEM_EMAIL, ACTIONS_OUTBOX_MAX_ATTEMPTS=3)
+    @patch('apps.actions.delivery.deliver_email_action', side_effect=RuntimeError('boom'))
+    def test_drain_retries_until_dead(self, _mock):
+        row = ActionOutbox.objects.create(
+            company=self.company,
+            action_rule=self.rule,
+            event_type='identity.user.provisioned',
+            envelope={'id': '1', 'type': 'identity.user.provisioned', 'data': {}},
+        )
+        for _ in range(3):
+            deliver_outbox_row(row.pk)
+            row.refresh_from_db()
+        self.assertEqual(row.status, ActionOutbox.STATUS_DEAD)
+        call_command('drain_action_outbox', batch_size=10)
+
+
+class WebhookSigningTests(TestCase):
+    def test_signature_format(self):
+        body = b'{"ok":true}'
+        headers = sign_webhook_body(secret='secret', body=body, webhook_id='id-1')
+        self.assertTrue(headers['webhook-signature'].startswith('v1,'))
+
+
+@override_settings(
+    **LOC_MEM_EMAIL,
+    SCIM_ENABLED=True,
+    ALLOWED_HOSTS=['testserver'],
+)
+class ScimActionIntegrationTests(TestCase):
+    def setUp(self):
+        from django.test import Client
+
+        from apps.scim.models import CompanyScimToken
+        from apps.scim.tokens import generate_scim_token
+
+        self.client = Client()
+        self.company = Company.objects.create(name='Acme', slug='acme')
+        ActionRule.objects.create(
+            company=self.company,
+            name='Provision email',
+            event_type='identity.user.provisioned',
+            action_kind=ActionRule.ACTION_EMAIL,
+            config={'recipients': ['admin@acme.test']},
+        )
+        raw, prefix, digest = generate_scim_token()
+        self.scim_token = raw
+        CompanyScimToken.objects.create(
+            company=self.company,
+            token_prefix=prefix,
+            token_hash=digest,
+        )
+
+    def test_scim_user_create_triggers_action(self):
+        payload = {
+            'schemas': ['urn:ietf:params:scim:schemas:core:2.0:User'],
+            'userName': 'scim-user@acme.com',
+            'emails': [{'value': 'scim-user@acme.com', 'primary': True}],
+            'active': True,
+        }
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(
+                '/api/v1/companies/acme/scim/v2/Users',
+                data=json.dumps(payload),
+                content_type='application/scim+json',
+                HTTP_AUTHORIZATION=f'Bearer {self.scim_token}',
+            )
+        self.assertEqual(response.status_code, 201, response.content)
+        self.assertEqual(ActionOutbox.objects.filter(company=self.company).count(), 1)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ['admin@acme.test'])
+
+
+class ActionAdminTests(TestCase):
+    def setUp(self):
+        self.company = Company.objects.create(name='Admin Co', slug='admin-co')
+        self.staff = User.objects.create_superuser(
+            username='staff',
+            email='staff@test.com',
+            password='secret',
+        )
+
+    def test_action_rule_admin_loads(self):
+        from django.test import Client
+
+        client = Client()
+        client.force_login(self.staff)
+        url = reverse('admin:actions_actionrule_add')
+        response = client.get(url)
+        self.assertEqual(response.status_code, 200)

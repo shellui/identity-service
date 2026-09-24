@@ -1,0 +1,9 @@
+Shellui identity — SCIM token revoked
+
+A SCIM bearer token was revoked.
+
+Company: {{ envelope.company.name }} ({{ envelope.company.slug }})
+Event: {{ envelope.type }}
+Time: {{ envelope.time }}
+
+Event id: {{ envelope.id }}

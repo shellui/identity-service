@@ -1,0 +1,9 @@
+Shellui identity — User provisioned
+
+A user was added or enabled for the company (for example via SCIM).
+
+Company: {{ envelope.company.name }} ({{ envelope.company.slug }})
+Event: {{ envelope.type }}
+Time: {{ envelope.time }}
+
+Event id: {{ envelope.id }}

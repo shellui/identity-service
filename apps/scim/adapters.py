@@ -17,6 +17,14 @@ from apps.companies.models import CompanyGroup
 from apps.scim.context import get_scim_company
 from apps.scim.group_members import parse_scim_members
 from apps.scim.filters import ShellUIGroupFilterQuery, ShellUIUserFilterQuery
+from apps.actions.scim_hooks import (
+    emit_group_created,
+    emit_group_deleted,
+    emit_group_membership_changed,
+    emit_group_updated,
+    emit_user_deprovisioned,
+    emit_user_provisioned,
+)
 from apps.scim.provisioning_events import OPERATION_CREATE, OPERATION_RENAME, record_group_display_name_conflict
 from apps.scim.models import ScimProvisioningEvent
 from apps.scim.user_bridge import ScimUserBridge
@@ -130,10 +138,19 @@ class ShellUIScimUser(_ShellUIResourceTypeMixin, SCIMUser):
             self._pending_membership_active = bool(active)
         super().from_dict(body)
 
+    def _emit_membership_change(self, company, user, *, was_enabled: bool, enabled: bool) -> None:
+        if was_enabled == enabled:
+            return
+        if enabled:
+            emit_user_provisioned(company, user)
+        else:
+            emit_user_deprovisioned(company, user)
+
     def save(self):
         company = self._company
         user = self.obj.user
         is_new = user.pk is None
+        was_enabled = False if is_new else is_company_access_enabled(company, user)
         if is_new:
             if not user.username:
                 user.username = (user.email or self.obj.scim_username or '').strip()
@@ -145,9 +162,16 @@ class ShellUIScimUser(_ShellUIResourceTypeMixin, SCIMUser):
         self.obj.save_scim_fields()
         enabled = True if self._pending_membership_active is None else self._pending_membership_active
         set_company_access(company, user, enabled=enabled)
+        if is_new:
+            emit_user_provisioned(company, user)
+        else:
+            self._emit_membership_change(company, user, was_enabled=was_enabled, enabled=enabled)
 
     def delete(self):
-        set_company_access(self._company, self.obj.user, enabled=False)
+        company = self._company
+        user = self.obj.user
+        emit_user_deprovisioned(company, user)
+        set_company_access(company, user, enabled=False)
 
     def handle_replace(
         self,
@@ -156,8 +180,13 @@ class ShellUIScimUser(_ShellUIResourceTypeMixin, SCIMUser):
         operation: dict,
     ):
         if path and path.first_path == ('active', None, None):
-            set_company_access(self._company, self.obj.user, enabled=bool(value))
-            self._pending_membership_active = bool(value)
+            company = self._company
+            user = self.obj.user
+            was_enabled = is_company_access_enabled(company, user)
+            enabled = bool(value)
+            set_company_access(company, user, enabled=enabled)
+            self._pending_membership_active = enabled
+            self._emit_membership_change(company, user, was_enabled=was_enabled, enabled=enabled)
             return
         super().handle_replace(path, value, operation)
 
@@ -267,6 +296,10 @@ class ShellUIScimGroup(_ShellUIResourceTypeMixin, SCIMGroup):
             raise exceptions.BadRequestError('displayName is required.')
         if self.obj.pk is not None and self.obj.company_id != self._company.pk:
             raise exceptions.NotFoundError(str(self.obj.pk))
+        is_new = self.obj.pk is None
+        previous = None
+        if not is_new:
+            previous = CompanyGroup.objects.filter(pk=self.obj.pk).first()
         self.obj.company = self._company
         self.obj.source = CompanyGroup.SOURCE_SCIM
         self._assert_scim_display_name_available()
@@ -287,6 +320,22 @@ class ShellUIScimGroup(_ShellUIResourceTypeMixin, SCIMGroup):
         if pending is not None:
             self._set_members(pending)
             del self._pending_members
+        company = self._company
+        if is_new:
+            emit_group_created(company, self.obj)
+        elif previous is not None:
+            changed: list[str] = []
+            if previous.display_name != self.obj.display_name:
+                changed.append('display_name')
+            if previous.scim_external_id != self.obj.scim_external_id:
+                changed.append('external_id')
+            if changed:
+                emit_group_updated(company, self.obj, changed_fields=changed)
+
+    def delete(self):
+        company = self._company
+        emit_group_deleted(company, self.obj)
+        self.obj.delete()
 
     def _validated_users(self, user_ids: list[int]):
         if not user_ids:
@@ -318,6 +367,7 @@ class ShellUIScimGroup(_ShellUIResourceTypeMixin, SCIMGroup):
     def _apply_member_parsed(self, parsed, *, replace: bool):
         users = self._validated_users(parsed.user_ids)
         nested = self._validated_member_groups(parsed.group_ids)
+        change = 'members_replaced' if replace else 'members_added'
         if replace:
             self.obj.members.set(users)
             self.obj.member_groups.set(nested)
@@ -326,6 +376,13 @@ class ShellUIScimGroup(_ShellUIResourceTypeMixin, SCIMGroup):
                 self.obj.members.add(user)
             for group in nested:
                 self.obj.member_groups.add(group)
+        emit_group_membership_changed(
+            self._company,
+            self.obj,
+            change=change,
+            user_ids=parsed.user_ids,
+            nested_group_ids=parsed.group_ids,
+        )
 
     def _set_members(self, members):
         self._apply_member_parsed(parse_scim_members(members), replace=True)
@@ -353,6 +410,13 @@ class ShellUIScimGroup(_ShellUIResourceTypeMixin, SCIMGroup):
                     raise exceptions.NotFoundError('One or more nested group members were not found.')
                 for group in nested:
                     self.obj.member_groups.remove(group)
+            emit_group_membership_changed(
+                self._company,
+                self.obj,
+                change='members_removed',
+                user_ids=parsed.user_ids,
+                nested_group_ids=parsed.group_ids,
+            )
             return
         raise exceptions.NotImplementedError
 

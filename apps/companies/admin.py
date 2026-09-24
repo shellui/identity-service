@@ -5,6 +5,7 @@ from django.template.response import TemplateResponse
 from django.urls import path, reverse
 from django.utils.html import format_html
 
+from apps.actions.scim_hooks import emit_group_created, emit_group_deleted, emit_group_updated
 from apps.authapi.oauth import SUPPORTED_OAUTH_PROVIDERS
 from .access import normalize_allowed_domains
 from .models import Company, CompanyGroup, CompanyMembership, CompanyOAuthClient, CompanyOAuthRedirect
@@ -264,7 +265,9 @@ class CompanyGroupAdmin(admin.ModelAdmin):
         return readonly
 
     def save_model(self, request, obj, form, change):
+        previous = None
         if change:
+            previous = CompanyGroup.objects.filter(pk=obj.pk).first()
             obj.source = (
                 CompanyGroup.objects.filter(pk=obj.pk).values_list('source', flat=True).first()
                 or obj.source
@@ -272,6 +275,21 @@ class CompanyGroupAdmin(admin.ModelAdmin):
         else:
             obj.source = CompanyGroup.SOURCE_MANUAL
         super().save_model(request, obj, form, change)
+        if not change:
+            emit_group_created(obj.company, obj)
+        elif previous is not None:
+            changed: list[str] = []
+            if previous.display_name != obj.display_name:
+                changed.append('display_name')
+            if previous.external_id != obj.external_id:
+                changed.append('external_id')
+            if changed:
+                emit_group_updated(obj.company, obj, changed_fields=changed)
+
+    def delete_model(self, request, obj):
+        company = obj.company
+        emit_group_deleted(company, obj)
+        super().delete_model(request, obj)
 
 
 @admin.register(CompanyOAuthClient)

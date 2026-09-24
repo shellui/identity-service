@@ -20,6 +20,11 @@ const sidebars = {
     },
     {
       type: 'doc',
+      id: 'actions',
+      label: 'Action triggers',
+    },
+    {
+      type: 'doc',
       id: 'configuration',
       label: 'Configuration',
     },

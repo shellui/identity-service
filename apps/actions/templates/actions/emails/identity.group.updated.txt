@@ -1,0 +1,9 @@
+Shellui identity — Group updated
+
+Group metadata (display name, external id) changed.
+
+Company: {{ envelope.company.name }} ({{ envelope.company.slug }})
+Event: {{ envelope.type }}
+Time: {{ envelope.time }}
+
+Event id: {{ envelope.id }}

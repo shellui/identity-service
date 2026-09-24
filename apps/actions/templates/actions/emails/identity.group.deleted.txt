@@ -1,0 +1,9 @@
+Shellui identity — Group deleted
+
+A company group was removed.
+
+Company: {{ envelope.company.name }} ({{ envelope.company.slug }})
+Event: {{ envelope.type }}
+Time: {{ envelope.time }}
+
+Event id: {{ envelope.id }}
