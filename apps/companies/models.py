@@ -163,13 +163,31 @@ class CompanyGroup(models.Model):
     def scim_external_id(self, value):
         self.external_id = (value or '').strip() or None
 
+    @classmethod
+    def create_scim_provisioned(cls, *, company, display_name, **fields):
+        group = cls(
+            company=company,
+            display_name=display_name,
+            source=cls.SOURCE_SCIM,
+            **fields,
+        )
+        group.save(scim_source=True)
+        return group
+
     def save(self, *args, **kwargs):
+        scim_source = kwargs.pop('scim_source', False)
+        previous = None
         if self.pk:
             previous = (
                 CompanyGroup.objects.filter(pk=self.pk).values_list('source', flat=True).first()
             )
-            if previous == self.SOURCE_SCIM and self.source == self.SOURCE_MANUAL:
-                raise ValueError('SCIM-provisioned groups cannot be changed to manual source.')
+        if self.source == self.SOURCE_SCIM and not scim_source:
+            if not self.pk or previous != self.SOURCE_SCIM:
+                raise ValueError(
+                    'Company group source scim may only be set via SCIM provisioning.'
+                )
+        if previous == self.SOURCE_SCIM and self.source == self.SOURCE_MANUAL:
+            raise ValueError('SCIM-provisioned groups cannot be changed to manual source.')
         super().save(*args, **kwargs)
 
     def __str__(self) -> str:
