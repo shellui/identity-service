@@ -30,11 +30,13 @@ def _user_filter_kwargs_getter():
 
 
 def _group_filter_kwargs_getter():
+    from apps.companies.models import CompanyGroup
+
     def get_extra_filter_kwargs(request, uuid=None, *args, **kwargs):
         company = get_scim_company(request)
         if company is None:
             return {'pk__in': []}
-        filters = {'company': company}
+        filters = {'company': company, 'source': CompanyGroup.SOURCE_SCIM}
         if uuid:
             filters['pk'] = uuid
         return filters
@@ -70,7 +72,7 @@ def shellui_model_queryset_post_processor_getter(model):
         company = get_scim_company(request)
         if company is None:
             return CompanyGroup.objects.none()
-        return qs.filter(company=company)
+        return qs.filter(company=company, source=CompanyGroup.SOURCE_SCIM)
 
     if model is User:
         return _user_post_processor
@@ -94,7 +96,11 @@ def shellui_model_object_post_processor_getter(model):
 
     def _group_post_processor(request, obj, *args, **kwargs):
         company = get_scim_company(request)
-        if company is None or obj.company_id != company.pk:
+        if (
+            company is None
+            or obj.company_id != company.pk
+            or obj.source != CompanyGroup.SOURCE_SCIM
+        ):
             raise NotFoundError(str(obj.pk))
         return obj
 

@@ -101,7 +101,11 @@ class ShellUIScimUser(_ShellUIResourceTypeMixin, SCIMUser):
         user = self.obj.user
         if user.pk is None:
             return []
-        groups = CompanyGroup.objects.filter(company=company, members=user).order_by('display_name')
+        groups = CompanyGroup.objects.filter(
+            company=company,
+            members=user,
+            source=CompanyGroup.SOURCE_SCIM,
+        ).order_by('display_name')
         refs = []
         for group in groups:
             group_adapter = ShellUIScimGroup(group, request=self.request)
@@ -196,7 +200,10 @@ class ShellUIScimGroup(_ShellUIResourceTypeMixin, SCIMGroup):
                     'type': 'User',
                 }
             )
-        for nested in self.obj.member_groups.filter(company=self._company).order_by('pk'):
+        for nested in self.obj.member_groups.filter(
+            company=self._company,
+            source=CompanyGroup.SOURCE_SCIM,
+        ).order_by('pk'):
             nested_adapter = ShellUIScimGroup(nested, request=self.request)
             dicts.append(
                 {
@@ -225,6 +232,7 @@ class ShellUIScimGroup(_ShellUIResourceTypeMixin, SCIMGroup):
         if self.obj.pk is not None and self.obj.company_id != self._company.pk:
             raise exceptions.NotFoundError(str(self.obj.pk))
         self.obj.company = self._company
+        self.obj.source = CompanyGroup.SOURCE_SCIM
         self.obj.save()
         pending = getattr(self, '_pending_members', None)
         if pending is not None:
@@ -242,9 +250,15 @@ class ShellUIScimGroup(_ShellUIResourceTypeMixin, SCIMGroup):
     def _validated_member_groups(self, group_ids: list[int]):
         if not group_ids:
             return CompanyGroup.objects.none()
-        groups = CompanyGroup.objects.filter(pk__in=group_ids, company=self._company)
+        groups = CompanyGroup.objects.filter(
+            pk__in=group_ids,
+            company=self._company,
+            source=CompanyGroup.SOURCE_SCIM,
+        )
         if groups.count() != len(set(group_ids)):
-            raise exceptions.NotFoundError('One or more nested group members were not found in this company.')
+            raise exceptions.NotFoundError(
+                'One or more nested group members were not found in this company.'
+            )
         for child in groups:
             try:
                 assert_nested_group_link_allowed(self.obj, child)
@@ -281,7 +295,11 @@ class ShellUIScimGroup(_ShellUIResourceTypeMixin, SCIMGroup):
                 for user in users:
                     self.obj.members.remove(user)
             if parsed.group_ids:
-                nested = CompanyGroup.objects.filter(pk__in=parsed.group_ids, company=self._company)
+                nested = CompanyGroup.objects.filter(
+                    pk__in=parsed.group_ids,
+                    company=self._company,
+                    source=CompanyGroup.SOURCE_SCIM,
+                )
                 if nested.count() != len(set(parsed.group_ids)):
                     raise exceptions.NotFoundError('One or more nested group members were not found.')
                 for group in nested:

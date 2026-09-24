@@ -1,5 +1,6 @@
 from django_scim.filters import GroupFilterQuery, UserFilterQuery
 
+from apps.companies.models import CompanyGroup
 from apps.scim.context import get_scim_company
 
 
@@ -36,4 +37,7 @@ class ShellUIGroupFilterQuery(GroupFilterQuery):
         if company is None:
             return ' AND 1=0', []
         table = cls.table_name()
-        return f' AND {table}.company_id = %s', [company.pk]
+        return (
+            f' AND {table}.company_id = %s AND {table}.source = %s',
+            [company.pk, CompanyGroup.SOURCE_SCIM],
+        )

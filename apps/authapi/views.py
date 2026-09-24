@@ -1009,7 +1009,8 @@ def _scim_status_payload(request, company: Company) -> dict:
         'base_url': _scim_base_url_for_company(request, company),
         'configured': configured,
         'active_token_count': active_count,
-        'directory_read_only': configured,
+        'directory_read_only': False,
+        'scim_groups_read_only': configured,
     }
 
 
@@ -2452,6 +2453,29 @@ class ShellUIAdminUserDetailView(APIView):
         return Response(_admin_user_payload(target, company))
 
 
+def _admin_group_row(g: CompanyGroup) -> dict:
+    return {
+        'id': g.id,
+        'display_name': g.display_name,
+        'source': g.source,
+        'user_count': getattr(g, 'user_count', g.members.count()),
+    }
+
+
+def _forbid_scim_group_admin_mutation(group: CompanyGroup) -> Response | None:
+    if group.source == CompanyGroup.SOURCE_SCIM:
+        return Response(
+            {
+                'error': (
+                    'This group is managed by SCIM provisioning and cannot be '
+                    'modified or deleted via the admin API.'
+                ),
+            },
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    return None
+
+
 @extend_schema_view(
     get=extend_schema(
         tags=['directory-groups'],
@@ -2477,7 +2501,7 @@ class ShellUIAdminGroupListView(APIView):
         rows = list(
             CompanyGroup.objects.filter(company=company)
             .annotate(user_count=Count('members', distinct=True))
-            .values('id', 'display_name', 'user_count')
+            .values('id', 'display_name', 'source', 'user_count')
             .order_by('display_name')
         )
         return Response(rows)
@@ -2496,8 +2520,12 @@ class ShellUIAdminGroupListView(APIView):
                 {'error': 'A group with this display name already exists.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        g = CompanyGroup.objects.create(company=company, display_name=display_name)
-        return Response({'id': g.id, 'display_name': g.display_name, 'user_count': 0}, status=status.HTTP_201_CREATED)
+        g = CompanyGroup.objects.create(
+            company=company,
+            display_name=display_name,
+            source=CompanyGroup.SOURCE_MANUAL,
+        )
+        return Response(_admin_group_row(g), status=status.HTTP_201_CREATED)
 
 
 @extend_schema_view(
@@ -2507,6 +2535,11 @@ class ShellUIAdminGroupListView(APIView):
         operation_id='api_v1_groups_retrieve',
     ),
     put=extend_schema(
+        tags=['directory-groups'],
+        summary='Rename auth group (staff or company owner)',
+        request=ShellUIAdminGroupUpdateSerializer,
+    ),
+    patch=extend_schema(
         tags=['directory-groups'],
         summary='Rename auth group (staff or company owner)',
         request=ShellUIAdminGroupUpdateSerializer,
@@ -2528,7 +2561,7 @@ class ShellUIAdminGroupDetailView(APIView):
             g = CompanyGroup.objects.filter(company=company).annotate(user_count=Count('members', distinct=True)).get(pk=pk)
         except CompanyGroup.DoesNotExist:
             return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
-        return Response({'id': g.id, 'display_name': g.display_name, 'user_count': g.user_count})
+        return Response(_admin_group_row(g))
 
     def put(self, request, pk):
         _actor, company, err = _require_staff_or_company_owner(request)
@@ -2538,6 +2571,9 @@ class ShellUIAdminGroupDetailView(APIView):
             g = CompanyGroup.objects.filter(company=company).annotate(user_count=Count('members', distinct=True)).get(pk=pk)
         except CompanyGroup.DoesNotExist:
             return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        blocked = _forbid_scim_group_admin_mutation(g)
+        if blocked:
+            return blocked
         serializer = ShellUIAdminGroupUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         display_name = str(serializer.validated_data['display_name']).strip()
@@ -2551,7 +2587,10 @@ class ShellUIAdminGroupDetailView(APIView):
         g.display_name = display_name
         g.save(update_fields=['display_name'])
         g = CompanyGroup.objects.filter(company=company).annotate(user_count=Count('members', distinct=True)).get(pk=g.pk)
-        return Response({'id': g.id, 'display_name': g.display_name, 'user_count': g.user_count})
+        return Response(_admin_group_row(g))
+
+    def patch(self, request, pk):
+        return self.put(request, pk)
 
     def delete(self, request, pk):
         _actor, company, err = _require_staff_or_company_owner(request)
@@ -2561,6 +2600,9 @@ class ShellUIAdminGroupDetailView(APIView):
             g = CompanyGroup.objects.filter(company=company).get(pk=pk)
         except CompanyGroup.DoesNotExist:
             return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        blocked = _forbid_scim_group_admin_mutation(g)
+        if blocked:
+            return blocked
         g.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 

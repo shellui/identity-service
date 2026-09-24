@@ -97,10 +97,24 @@ class Company(models.Model):
 
 
 class CompanyGroup(models.Model):
+    SOURCE_MANUAL = 'manual'
+    SOURCE_SCIM = 'scim'
+    SOURCE_CHOICES = [
+        (SOURCE_MANUAL, 'Manual'),
+        (SOURCE_SCIM, 'SCIM'),
+    ]
+
     company = models.ForeignKey(
         Company,
         on_delete=models.CASCADE,
         related_name='groups',
+    )
+    source = models.CharField(
+        max_length=20,
+        choices=SOURCE_CHOICES,
+        default=SOURCE_MANUAL,
+        db_index=True,
+        help_text='manual = Shellui admin; scim = IdP provisioning (read-only in admin REST).',
     )
     display_name = models.CharField(
         max_length=150,
@@ -148,6 +162,15 @@ class CompanyGroup(models.Model):
     @scim_external_id.setter
     def scim_external_id(self, value):
         self.external_id = (value or '').strip() or None
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            previous = (
+                CompanyGroup.objects.filter(pk=self.pk).values_list('source', flat=True).first()
+            )
+            if previous == self.SOURCE_SCIM and self.source == self.SOURCE_MANUAL:
+                raise ValueError('SCIM-provisioned groups cannot be changed to manual source.')
+        super().save(*args, **kwargs)
 
     def __str__(self) -> str:
         return f'{self.company_id}:{self.display_name}'

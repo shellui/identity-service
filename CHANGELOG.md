@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ### Changed
 
+- **Hybrid company groups:** `CompanyGroup.source` (`manual` | `scim`) with migration defaulting existing rows to `manual`. SCIM exposes only `scim` groups; admin REST can still create/edit `manual` groups when SCIM is configured; SCIM-sourced rows are admin read-only. SCIM status adds `scim_groups_read_only` and keeps `directory_read_only: false`. See [docs/scim.md](docs/scim.md).
+
 - **JWT / user `groups` claim:** `user_metadata.groups` (OAuth tokens, `GET /api/v1/user`, Shellui admin user payloads) now lists **effective** company groups — direct membership plus ancestor groups via nested `member_groups`. SCIM User `groups` remain **direct** only. See [docs/scim.md](docs/scim.md) and [docs/oauth-login.md](docs/oauth-login.md).
 
 ### Added
