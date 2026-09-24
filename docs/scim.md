@@ -116,6 +116,22 @@ Create a new Company SCIM token, update IdP, revoke the old row in admin.
 
 ---
 
+## Tenant isolation (security)
+
+SCIM is **strictly scoped to one company** per request:
+
+1. **Bearer token binding** — The `CompanyScimToken` row fixes the tenant. The URL segment `<company_slug>` must match that company’s slug; otherwise the response is **401** (no handler logic runs on a mismatched pair).
+2. **Users** — List/get/update paths filter with `companies=<token company>` (and membership post-checks). A user id that exists globally but **not** in the token company returns **404**, not another tenant’s payload.
+3. **Groups** — All queries use `company=<token company>`. Nested group members and user members are resolved only within that company; foreign ids return **404**.
+4. **Multi-company users** — The same Django user may appear in SCIM for company A and B with separate tokens. `active` / deprovision affects **only** `CompanyMembership` for the token’s company; other companies are unchanged and the user row is not deleted.
+5. **User `groups` in SCIM** — Only `CompanyGroup` rows for the **current** SCIM company where the user is a direct member.
+6. **Effective membership helper** — `group_graph.effective_user_ids_for_group()` walks nested groups **only** when `member_groups.company_id` matches the root group’s company (defense in depth).
+7. **Filter / `.search`** — SQL extras append company/membership constraints so raw filter queries cannot bypass ORM scoping.
+
+Cross-tenant access attempts are covered by regression tests in `apps/scim/tests/test_scim_tenant_isolation.py`.
+
+---
+
 ## Related
 
 - [Company access modes](company-access.md)

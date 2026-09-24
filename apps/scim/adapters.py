@@ -193,6 +193,8 @@ class ShellUIScimGroup(SCIMGroup):
     def save(self):
         if not (self.obj.display_name or '').strip():
             raise exceptions.BadRequestError('displayName is required.')
+        if self.obj.pk is not None and self.obj.company_id != self._company.pk:
+            raise exceptions.NotFoundError(str(self.obj.pk))
         self.obj.company = self._company
         self.obj.save()
         pending = getattr(self, '_pending_members', None)
@@ -205,7 +207,7 @@ class ShellUIScimGroup(SCIMGroup):
             return UserModel.objects.none()
         users = UserModel.objects.filter(pk__in=user_ids, companies=self._company).distinct()
         if users.count() != len(set(user_ids)):
-            raise exceptions.BadRequestError('Can not add a user who is not a member of this company.')
+            raise exceptions.NotFoundError('User member not found in this company.')
         return users
 
     def _validated_member_groups(self, group_ids: list[int]):

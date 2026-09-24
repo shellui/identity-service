@@ -171,7 +171,7 @@ class ScimApiTests(TestCase):
             content_type='application/scim+json',
             HTTP_AUTHORIZATION=self.auth_header,
         )
-        self.assertEqual(bad_member.status_code, 400)
+        self.assertEqual(bad_member.status_code, 404)
 
         patch = self.client.patch(
             f'{_scim_base(self.company)}/Groups/{group_id}',

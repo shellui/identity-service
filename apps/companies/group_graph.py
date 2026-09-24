@@ -25,16 +25,19 @@ def would_create_group_cycle(parent: CompanyGroup, child: CompanyGroup) -> bool:
     if parent.pk is None or child.pk is None:
         return parent is child
 
-    stack = list(child.member_groups.all())
+    company_id = child.company_id
+    stack = list(child.member_groups.filter(company_id=company_id))
     seen: set[int] = set()
     while stack:
         nested = stack.pop()
         if nested.pk in seen:
             continue
         seen.add(nested.pk)
+        if nested.company_id != company_id:
+            continue
         if nested.pk == parent.pk:
             return True
-        stack.extend(nested.member_groups.all())
+        stack.extend(nested.member_groups.filter(company_id=company_id))
     return False
 
 
@@ -49,16 +52,19 @@ def effective_user_ids_for_group(group: CompanyGroup) -> set[int]:
     """
     All user ids in ``group`` including users in nested member groups (transitive, cycle-safe).
     """
+    company_id = group.company_id
     user_ids: set[int] = set(group.members.values_list('pk', flat=True))
     seen_groups: set[int] = set()
-    stack = list(group.member_groups.all())
+    stack = list(group.member_groups.filter(company_id=company_id))
     while stack:
         nested = stack.pop()
         if nested.pk in seen_groups:
             continue
+        if nested.company_id != company_id:
+            continue
         seen_groups.add(nested.pk)
         user_ids.update(nested.members.values_list('pk', flat=True))
-        stack.extend(nested.member_groups.all())
+        stack.extend(nested.member_groups.filter(company_id=company_id))
     return user_ids
 
 
