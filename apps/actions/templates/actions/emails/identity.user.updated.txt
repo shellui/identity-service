@@ -1,9 +1,0 @@
-Shellui identity — User updated
-
-User profile or SCIM attributes changed. Noisy; not emitted by default.
-
-Company: {{ envelope.company.name }} ({{ envelope.company.slug }})
-Event: {{ envelope.type }}
-Time: {{ envelope.time }}
-
-Event id: {{ envelope.id }}

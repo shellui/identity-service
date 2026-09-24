@@ -1,9 +1,0 @@
-Shellui identity — User deprovisioned
-
-Company access was disabled for a user (SCIM deprovision; user is not deleted).
-
-Company: {{ envelope.company.name }} ({{ envelope.company.slug }})
-Event: {{ envelope.type }}
-Time: {{ envelope.time }}
-
-Event id: {{ envelope.id }}

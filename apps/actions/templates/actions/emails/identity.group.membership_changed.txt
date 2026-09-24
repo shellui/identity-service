@@ -1,9 +1,0 @@
-Shellui identity — Group membership changed
-
-Direct members or nested groups on a group were added or removed.
-
-Company: {{ envelope.company.name }} ({{ envelope.company.slug }})
-Event: {{ envelope.type }}
-Time: {{ envelope.time }}
-
-Event id: {{ envelope.id }}

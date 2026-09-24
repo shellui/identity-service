@@ -8,6 +8,7 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from apps.actions.delivery import deliver_outbox_row
+from apps.actions.html_plain import html_to_plain_text
 from apps.actions.emit import emit_event
 from apps.actions.handlers.webhook import WebhookDeliveryError
 from apps.actions.models import ActionOutbox, ActionRule, DeliveryAttempt
@@ -60,8 +61,14 @@ class EmitEventTests(TestCase):
         row = ActionOutbox.objects.get(pk=rows[0].pk)
         self.assertEqual(row.status, ActionOutbox.STATUS_DELIVERED)
         self.assertEqual(len(mail.outbox), 1)
-        self.assertIn('ada@a.test', mail.outbox[0].subject)
-        self.assertEqual(mail.outbox[0].to, ['ops@a.test'])
+        msg = mail.outbox[0]
+        self.assertIn('ada@a.test', msg.subject)
+        self.assertEqual(msg.to, ['ops@a.test'])
+        self.assertTrue(msg.body.strip())
+        self.assertEqual(len(msg.alternatives), 1)
+        html_part, mime = msg.alternatives[0]
+        self.assertEqual(mime, 'text/html')
+        self.assertIn('Shellui identity', html_part)
 
     def test_company_isolation(self):
         emit_event('identity.user.provisioned', self.company_b, {'user_id': 1})
@@ -161,6 +168,16 @@ class DrainCommandTests(TestCase):
             row.refresh_from_db()
         self.assertEqual(row.status, ActionOutbox.STATUS_DEAD)
         call_command('drain_action_outbox', batch_size=10)
+
+
+class HtmlPlainTextTests(TestCase):
+    def test_html_to_plain_preserves_link_text(self):
+        plain = html_to_plain_text(
+            '<p>See <a href="https://example.com/docs">the docs</a> for details.</p>'
+        )
+        self.assertIn('the docs', plain)
+        self.assertIn('https://example.com/docs', plain)
+        self.assertNotIn('<p>', plain)
 
 
 class WebhookSigningTests(TestCase):

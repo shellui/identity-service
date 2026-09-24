@@ -1,9 +1,0 @@
-Shellui identity — SCIM token created
-
-A new SCIM bearer token was issued for the company.
-
-Company: {{ envelope.company.name }} ({{ envelope.company.slug }})
-Event: {{ envelope.type }}
-Time: {{ envelope.time }}
-
-Event id: {{ envelope.id }}

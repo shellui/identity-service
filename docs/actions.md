@@ -94,7 +94,7 @@ Payloads never include secrets, bearer tokens, or password hashes.
 - `recipients` — required list of addresses.
 - `include_payload_email` — when `true`, also sends to the event’s documented email field (for user events, `data.email`) when present.
 
-Default **HTML and plain-text** templates ship under `apps/actions/templates/actions/emails/<event_type>.{html,txt}`.
+Default **HTML** templates ship under `apps/actions/templates/actions/emails/<event_type>.html`. Plain text is generated from the rendered HTML at send time (multipart `alternative` still includes both parts).
 
 ### Webhook config
 
@@ -160,7 +160,7 @@ View **Action outbox** and **Delivery attempts** in Django admin; use the admin 
 ## Adding a new event type (developers)
 
 1. Register the type in `apps/actions/identity_events.py` (or a sibling module imported from `AppsConfig.ready()`).
-2. Add HTML + `.txt` templates under `apps/actions/templates/actions/emails/`.
+2. Add one HTML template under `apps/actions/templates/actions/emails/<event_type>.html`.
 3. Call `emit_event(...)` or `emit_event_if_rules(...)` from the business path inside a transaction when appropriate.
 4. Document the payload in this file and add tests under `apps/actions/tests/`.
 

@@ -5,6 +5,7 @@ from django.core.mail import EmailMultiAlternatives
 from django.template import Context, Engine
 from django.template.loader import render_to_string
 
+from apps.actions.html_plain import html_to_plain_text
 from apps.actions.registry import get_event_type
 
 
@@ -46,10 +47,7 @@ def deliver_email_action(*, config: dict, envelope: dict) -> None:
         f'actions/emails/{event_type}.html',
         {'envelope': envelope, 'data': envelope.get('data') or {}},
     )
-    text_body = render_to_string(
-        f'actions/emails/{event_type}.txt',
-        {'envelope': envelope, 'data': envelope.get('data') or {}},
-    )
+    text_body = html_to_plain_text(html_body)
     message = EmailMultiAlternatives(
         subject=subject,
         body=text_body,
