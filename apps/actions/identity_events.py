@@ -6,34 +6,53 @@ _USER = (
     EventFieldDoc('user_id', 'Internal user primary key', 42),
     EventFieldDoc('email', 'Primary email when available', 'ada@acme.com'),
     EventFieldDoc('username', 'Login username', 'ada@acme.com'),
-    EventFieldDoc('source', 'Provisioning channel', 'scim'),
+    EventFieldDoc('source', 'Channel: oauth, admin, scim, …', 'oauth'),
 )
 
-_GROUP = (
-    EventFieldDoc('group_id', 'CompanyGroup primary key', 7),
-    EventFieldDoc('display_name', 'Group display name', 'Engineering'),
-    EventFieldDoc('source', 'Group source (manual or scim)', 'scim'),
-    EventFieldDoc('external_id', 'SCIM externalId when set', None),
+_ACCOUNT_USER = _USER + (
+    EventFieldDoc('oauth_provider', 'OAuth provider id when source=oauth', 'github'),
 )
 
 register_event(
     DomainEventType(
-        id='identity.user.provisioned',
-        label='User provisioned',
-        description='A user was added or enabled for the company (for example via SCIM).',
+        id='identity.scim.user.provisioned',
+        label='SCIM user provisioned',
+        description='Company access was enabled for a user via SCIM (create or re-enable). The user account may already exist.',
         payload_fields=_USER,
-        email_subject_template='[Shellui] User provisioned: {{ data.email|default:"user" }}',
+        email_subject_template='[Shellui] SCIM access enabled: {{ data.email|default:"user" }}',
         email_payload_email_field='email',
     )
 )
 
 register_event(
     DomainEventType(
-        id='identity.user.deprovisioned',
-        label='User deprovisioned',
-        description='Company access was disabled for a user (SCIM deprovision; user is not deleted).',
+        id='identity.scim.user.deprovisioned',
+        label='SCIM user deprovisioned',
+        description='Company access was disabled via SCIM (deprovision). The user account is not deleted.',
         payload_fields=_USER,
-        email_subject_template='[Shellui] User deprovisioned: {{ data.email|default:"user" }}',
+        email_subject_template='[Shellui] SCIM access disabled: {{ data.email|default:"user" }}',
+        email_payload_email_field='email',
+    )
+)
+
+register_event(
+    DomainEventType(
+        id='identity.user.created',
+        label='User account created',
+        description='A new Django user row was created (OAuth first sign-in or admin), scoped to the company in context.',
+        payload_fields=_ACCOUNT_USER,
+        email_subject_template='[Shellui] New user account: {{ data.email|default:"user" }}',
+        email_payload_email_field='email',
+    )
+)
+
+register_event(
+    DomainEventType(
+        id='identity.user.deleted',
+        label='User account deleted',
+        description='The user account was permanently deleted. Emitted once per company membership before removal.',
+        payload_fields=_USER,
+        email_subject_template='[Shellui] User account deleted: {{ data.email|default:"user" }}',
         email_payload_email_field='email',
     )
 )
@@ -49,6 +68,13 @@ register_event(
         email_subject_template='[Shellui] User updated: {{ data.email|default:"user" }}',
         email_payload_email_field='email',
     )
+)
+
+_GROUP = (
+    EventFieldDoc('group_id', 'CompanyGroup primary key', 7),
+    EventFieldDoc('display_name', 'Group display name', 'Engineering'),
+    EventFieldDoc('source', 'Group source (manual or scim)', 'scim'),
+    EventFieldDoc('external_id', 'SCIM externalId when set', None),
 )
 
 register_event(

@@ -13,7 +13,7 @@ from apps.companies.models import Company
 
 def emit_user_provisioned(company, user) -> None:
     emit_event_if_rules(
-        'identity.user.provisioned',
+        'identity.scim.user.provisioned',
         company,
         user_event_payload(user, source='scim'),
     )
@@ -21,7 +21,7 @@ def emit_user_provisioned(company, user) -> None:
 
 def emit_user_deprovisioned(company, user) -> None:
     emit_event_if_rules(
-        'identity.user.deprovisioned',
+        'identity.scim.user.deprovisioned',
         company,
         user_event_payload(user, source='scim'),
     )

@@ -30,7 +30,7 @@ class EmitEventTests(TestCase):
         ActionRule.objects.create(
             company=self.company_a,
             name='Notify',
-            event_type='identity.user.provisioned',
+            event_type='identity.scim.user.provisioned',
             action_kind=ActionRule.ACTION_EMAIL,
             config={'recipients': ['ops@a.test']},
         )
@@ -41,7 +41,7 @@ class EmitEventTests(TestCase):
 
     def test_no_rules_returns_empty(self):
         rows = emit_event(
-            'identity.user.provisioned',
+            'identity.scim.user.provisioned',
             self.company_b,
             {'user_id': 1},
         )
@@ -52,7 +52,7 @@ class EmitEventTests(TestCase):
     def test_emit_creates_outbox_and_delivers_on_commit(self):
         with self.captureOnCommitCallbacks(execute=True):
             rows = emit_event(
-                'identity.user.provisioned',
+                'identity.scim.user.provisioned',
                 self.company_a,
                 {'user_id': 9, 'email': 'ada@a.test', 'source': 'scim'},
             )
@@ -70,7 +70,7 @@ class EmitEventTests(TestCase):
         self.assertIn('Shellui identity', html_part)
 
     def test_company_isolation(self):
-        emit_event('identity.user.provisioned', self.company_b, {'user_id': 1})
+        emit_event('identity.scim.user.provisioned', self.company_b, {'user_id': 1})
         self.assertEqual(ActionOutbox.objects.count(), 0)
 
     def test_emit_by_default_false_skips_without_force(self):
@@ -92,7 +92,7 @@ class EmitEventTests(TestCase):
         )
         with self.captureOnCommitCallbacks(execute=True):
             emit_event(
-                'identity.user.provisioned',
+                'identity.scim.user.provisioned',
                 self.company_a,
                 {'user_id': 3, 'email': 'user@a.test', 'source': 'scim'},
             )
@@ -106,7 +106,7 @@ class WebhookHandlerTests(TestCase):
         self.rule = ActionRule.objects.create(
             company=self.company,
             name='n8n',
-            event_type='identity.user.provisioned',
+            event_type='identity.scim.user.provisioned',
             action_kind=ActionRule.ACTION_WEBHOOK,
             enabled=True,
             config={
@@ -119,7 +119,7 @@ class WebhookHandlerTests(TestCase):
     def test_webhook_posts_signed_json(self, mock_post):
         envelope = {
             'id': 'evt-1',
-            'type': 'identity.user.provisioned',
+            'type': 'identity.scim.user.provisioned',
             'time': '2026-01-01T00:00:00+00:00',
             'company': {'id': self.company.pk, 'slug': 'hook-co', 'name': 'Hook Co'},
             'data': {'user_id': 1},
@@ -145,8 +145,8 @@ class WebhookHandlerTests(TestCase):
         row = ActionOutbox.objects.create(
             company=self.company,
             action_rule=self.rule,
-            event_type='identity.user.provisioned',
-            envelope={'id': 'x', 'type': 'identity.user.provisioned', 'data': {}},
+            event_type='identity.scim.user.provisioned',
+            envelope={'id': 'x', 'type': 'identity.scim.user.provisioned', 'data': {}},
         )
         deliver_outbox_row(row.pk)
         row.refresh_from_db()
@@ -171,7 +171,7 @@ class DrainCommandTests(TestCase):
         self.rule = ActionRule.objects.create(
             company=self.company,
             name='mail',
-            event_type='identity.user.provisioned',
+            event_type='identity.scim.user.provisioned',
             action_kind=ActionRule.ACTION_EMAIL,
             config={'recipients': ['d@drain.test']},
         )
@@ -182,8 +182,8 @@ class DrainCommandTests(TestCase):
         row = ActionOutbox.objects.create(
             company=self.company,
             action_rule=self.rule,
-            event_type='identity.user.provisioned',
-            envelope={'id': '1', 'type': 'identity.user.provisioned', 'data': {}},
+            event_type='identity.scim.user.provisioned',
+            envelope={'id': '1', 'type': 'identity.scim.user.provisioned', 'data': {}},
         )
         for _ in range(3):
             deliver_outbox_row(row.pk)
@@ -226,7 +226,7 @@ class ScimActionIntegrationTests(TestCase):
         ActionRule.objects.create(
             company=self.company,
             name='Provision email',
-            event_type='identity.user.provisioned',
+            event_type='identity.scim.user.provisioned',
             action_kind=ActionRule.ACTION_EMAIL,
             config={'recipients': ['admin@acme.test']},
         )
@@ -266,7 +266,7 @@ class ActionAdminFormTests(TestCase):
         rule = ActionRule.objects.create(
             company=company,
             name='Hook',
-            event_type='identity.user.provisioned',
+            event_type='identity.scim.user.provisioned',
             action_kind=ActionRule.ACTION_WEBHOOK,
             config={'url': 'https://example.com/h', 'secret': 'keep-me', 'authorization_header': 'Bearer x'},
         )
@@ -279,7 +279,7 @@ class ActionAdminFormTests(TestCase):
                 'name': 'Hook',
                 'description': '',
                 'enabled': True,
-                'event_type': 'identity.user.provisioned',
+                'event_type': 'identity.scim.user.provisioned',
                 'action_kind': ActionRule.ACTION_WEBHOOK,
                 'webhook_url': 'https://example.com/h',
                 'webhook_secret': '',
@@ -305,7 +305,7 @@ class ActionAdminFormTests(TestCase):
                 'name': 'Hook',
                 'description': '',
                 'enabled': True,
-                'event_type': 'identity.user.provisioned',
+                'event_type': 'identity.scim.user.provisioned',
                 'action_kind': ActionRule.ACTION_WEBHOOK,
                 'webhook_url': 'https://example.com/h',
                 'webhook_secret': 'secret123',
@@ -341,7 +341,7 @@ class ActionAdminTests(TestCase):
         rule = ActionRule.objects.create(
             company=self.company,
             name='Hook',
-            event_type='identity.user.provisioned',
+            event_type='identity.scim.user.provisioned',
             action_kind=ActionRule.ACTION_WEBHOOK,
             config={'url': 'https://example.com/h', 'secret': 'super-secret-value'},
         )
@@ -363,15 +363,15 @@ class ActionAdminTests(TestCase):
         rule = ActionRule.objects.create(
             company=self.company,
             name='Mail',
-            event_type='identity.user.provisioned',
+            event_type='identity.scim.user.provisioned',
             action_kind=ActionRule.ACTION_EMAIL,
             config={'recipients': ['a@test.com']},
         )
         row = ActionOutbox.objects.create(
             company=self.company,
             action_rule=rule,
-            event_type='identity.user.provisioned',
-            envelope={'id': '1', 'type': 'identity.user.provisioned', 'data': {}},
+            event_type='identity.scim.user.provisioned',
+            envelope={'id': '1', 'type': 'identity.scim.user.provisioned', 'data': {}},
             status=ActionOutbox.STATUS_FAILED,
             last_error='nope',
         )

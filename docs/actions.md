@@ -1,6 +1,6 @@
 # Action triggers (domain events → email / webhook)
 
-Company admins can react when identity events happen (user provisioned, group changes, SCIM conflicts, token lifecycle) using **Action rules** configured in **Django admin**. Each rule maps a **catalog event type** (for example `identity.user.provisioned`) to either **email** or **webhook** delivery.
+Company admins can react when identity events happen (SCIM access changes, account create/delete, group changes, SCIM conflicts, token lifecycle) using **Action rules** configured in **Django admin**. Each rule maps a **catalog event type** (for example `identity.scim.user.provisioned`) to either **email** or **webhook** delivery.
 
 Shellui identity stays the source of truth for domain events. Automation (n8n, Make, custom workers) consumes **outbound webhooks**; identity does not run a central action microservice.
 
@@ -34,8 +34,10 @@ DeliveryAttempt audit log; retries via manage.py drain_action_outbox
 
 | Event type | When it fires | Notes |
 | ---------- | ------------- | ----- |
-| `identity.user.provisioned` | SCIM user create or re-enable | |
-| `identity.user.deprovisioned` | SCIM deprovision / `active: false` | User is not deleted |
+| `identity.scim.user.provisioned` | SCIM user create or re-enable (`active: true`) | Company **access** only; not account creation |
+| `identity.scim.user.deprovisioned` | SCIM deprovision / `active: false` | Disables membership; user row remains |
+| `identity.user.created` | First OAuth sign-in creates a User, or Django admin adds a user with company membership | **Company-scoped** — see below |
+| `identity.user.deleted` | Django admin deletes a User | One emit **per company membership** before delete |
 | `identity.user.updated` | — | Registered; **`emit_by_default=false`** — no call sites; use `emit_event(..., force=True)` if added later |
 | `identity.group.created` | SCIM or Django admin group create | |
 | `identity.group.updated` | Display name / external id change | |
@@ -52,7 +54,7 @@ CloudEvents-inspired JSON:
 ```json
 {
   "id": "550e8400-e29b-41d4-a716-446655440000",
-  "type": "identity.user.provisioned",
+  "type": "identity.scim.user.provisioned",
   "time": "2026-09-24T13:30:00+00:00",
   "company": { "id": 1, "slug": "acme", "name": "Acme" },
   "data": {
@@ -66,9 +68,18 @@ CloudEvents-inspired JSON:
 
 Payloads never include secrets, bearer tokens, or password hashes.
 
+### SCIM access vs account lifecycle
+
+- **`identity.scim.user.*`** — IdP-driven **company access** (membership enable/disable). SCIM may create a Django user on first provision; that still emits `identity.scim.user.provisioned`, not `identity.user.created`.
+- **`identity.user.created` / `deleted`** — **Account** lifecycle (OAuth registration, admin user CRUD). There is no self-service delete API in identity today; admin delete is wired in Django admin.
+
+**When `identity.user.created` fires:** OAuth flows are always company-scoped (`company_id`). Identity emits when `User.objects.get_or_create` creates a **new** user row for that OAuth company (even if company join is later denied). It does **not** fire when an existing user joins another company. Django admin emits after a new user is saved **if** at least one company membership exists on save (via the admin M2M step); users created without a company are skipped until membership is added manually (no retroactive emit).
+
+**When `identity.user.deleted` fires:** Before the user row is removed, identity emits once per `CompanyMembership` (source `admin` today).
+
 #### Example `data` fields by type
 
-- **User events:** `user_id`, `email`, `username`, `source`
+- **User / SCIM user events:** `user_id`, `email`, `username`, `source` (`scim`, `oauth`, `admin`, …); OAuth create may include `oauth_provider`
 - **Group events:** `group_id`, `display_name`, `source`, `external_id`; updates add `changed_fields`
 - **Membership:** above plus `change`, `user_ids`, `nested_group_ids`
 - **SCIM token:** `token_id`, `name`, `token_prefix` (not the bearer secret)

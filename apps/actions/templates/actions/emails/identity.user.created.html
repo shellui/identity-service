@@ -1,16 +1,18 @@
 <!DOCTYPE html>
 <html lang="en">
-<head><meta charset="utf-8"><title>User deprovisioned</title></head>
+<head><meta charset="utf-8"><title>User account created</title></head>
 <body style="font-family: system-ui, -apple-system, Segoe UI, sans-serif; color: #1a1a1a; line-height: 1.5; max-width: 560px; margin: 0 auto; padding: 24px;">
   <p style="color: #666; font-size: 13px; margin: 0 0 16px;">Shellui identity</p>
-  <h1 style="font-size: 18px; font-weight: 600; margin: 0 0 12px;">User deprovisioned</h1>
-  <p style="margin: 0 0 16px;">Company access was disabled for this user.</p>
+  <h1 style="font-size: 18px; font-weight: 600; margin: 0 0 12px;">User account created</h1>
+  <p style="margin: 0 0 16px;">A new user account was registered for this company (OAuth or admin).</p>
   <table style="border-collapse: collapse; font-size: 14px; width: 100%; margin-bottom: 16px;">
     <tr><td style="padding: 4px 12px 4px 0; color: #666; vertical-align: top;">Company</td><td>{{ envelope.company.name }} ({{ envelope.company.slug }})</td></tr>
     <tr><td style="padding: 4px 12px 4px 0; color: #666;">Event</td><td>{{ envelope.type }}</td></tr>
     <tr><td style="padding: 4px 12px 4px 0; color: #666;">Time</td><td>{{ envelope.time }}</td></tr>
     <tr><td style="padding: 4px 12px 4px 0; color: #666;">Email</td><td>{{ data.email|default:"—" }}</td></tr>
     <tr><td style="padding: 4px 12px 4px 0; color: #666;">User id</td><td>{{ data.user_id }}</td></tr>
+    <tr><td style="padding: 4px 12px 4px 0; color: #666;">Source</td><td>{{ data.source }}</td></tr>
+    {% if data.oauth_provider %}<tr><td style="padding: 4px 12px 4px 0; color: #666;">OAuth provider</td><td>{{ data.oauth_provider }}</td></tr>{% endif %}
   </table>
   <p style="color: #888; font-size: 12px; margin-top: 24px;">Event id: {{ envelope.id }}</p>
 </body>
