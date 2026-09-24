@@ -84,3 +84,36 @@ def effective_users_for_company_groups(company: Company, groups: QuerySet[Compan
     if not all_ids:
         return User.objects.none()
     return User.objects.filter(pk__in=all_ids)
+
+
+def effective_group_ids_for_user(user: User, company: Company) -> set[int]:
+    """
+    All group ids in ``company`` where ``user`` is an effective member: direct ``members``
+    plus any ancestor via ``parent_groups`` (transitive, cycle-safe).
+    """
+    company_id = company.pk
+    group_ids: set[int] = set()
+    seen: set[int] = set()
+    stack = list(CompanyGroup.objects.filter(company_id=company_id, members=user))
+    while stack:
+        group = stack.pop()
+        if group.pk in seen:
+            continue
+        if group.company_id != company_id:
+            continue
+        seen.add(group.pk)
+        group_ids.add(group.pk)
+        stack.extend(group.parent_groups.filter(company_id=company_id))
+    return group_ids
+
+
+def effective_group_display_names_for_user(user: User, company: Company) -> list[str]:
+    """Sorted unique ``display_name`` values for groups returned by ``effective_group_ids_for_user``."""
+    group_ids = effective_group_ids_for_user(user, company)
+    if not group_ids:
+        return []
+    return list(
+        CompanyGroup.objects.filter(company=company, pk__in=group_ids)
+        .values_list('display_name', flat=True)
+        .order_by('display_name')
+    )

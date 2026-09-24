@@ -75,7 +75,16 @@ SCIM Group **`members`** may include:
 
 **User `groups` in SCIM:** lists groups where the user is a **direct** `members` M2M member (not groups inferred only via nesting). IdPs may flatten or nest on their side.
 
-**Effective membership:** `apps.companies.group_graph.effective_user_ids_for_group()` (and `effective_users_for_group()`) returns all users in a group including users in nested member groups, transitively and cycle-safe. OAuth/login access today still uses direct company membership; the expander is available for tests and future access rules.
+**JWT / Shellui login `groups` (OAuth tokens, `GET /api/v1/user`, admin user payloads):** **effective** company groups — every group where the user is a direct member **plus** every ancestor reached via nested `member_groups` (walk `parent_groups` upward, same company, cycle-safe). Downstream services (for example files-backend authorization) should treat this claim as transitive membership.
+
+**Effective membership helpers** (`apps.companies.group_graph`):
+
+| Direction | Functions |
+| --------- | --------- |
+| Group → users | `effective_user_ids_for_group()`, `effective_users_for_group()` |
+| User → groups | `effective_group_ids_for_user()`, `effective_group_display_names_for_user()` |
+
+Company login access still uses `CompanyMembership`, not group membership.
 
 ---
 

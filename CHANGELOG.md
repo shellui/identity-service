@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **JWT / user `groups` claim:** `user_metadata.groups` (OAuth tokens, `GET /api/v1/user`, Shellui admin user payloads) now lists **effective** company groups — direct membership plus ancestor groups via nested `member_groups`. SCIM User `groups` remain **direct** only. See [docs/scim.md](docs/scim.md) and [docs/oauth-login.md](docs/oauth-login.md).
+
 ### Added
 
 - **Enterprise SCIM (opt-in):** Per-company SCIM 2.0 **Users and Groups** (including **nested** group members) via [django-scim2](https://pypi.org/project/django-scim2/) at `/api/v1/companies/<slug>/scim/v2/`, bearer tokens (`CompanyScimToken`), and [docs/scim.md](docs/scim.md). `CompanyGroup` uses SCIM vocabulary (`display_name`, `external_id`, `member_groups` for nested groups). Tenant isolation regression tests and filter SQL hardening included.

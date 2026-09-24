@@ -91,6 +91,12 @@ Rate limits, HTTPS defaults, Postgres SSL, trusted-proxy IP handling, and PAT li
 
 Company join rules (`public` / `domain` / `invite`) still apply after a successful provider login — see [company-access.md](company-access.md).
 
+## JWT `user_metadata.groups`
+
+Access and refresh tokens (and `GET /api/v1/user`) include `user_metadata.groups`: a sorted list of **effective** company group `display_name` values for the token’s `company_id`. That includes groups where the user is a **direct** member and every **ancestor** group linked via nested SCIM group members (`member_groups` / `parent_groups`), transitively and cycle-safe within the same company.
+
+SCIM **User** resources still expose **direct** group membership only — see [scim.md](scim.md).
+
 ## Upgrading
 
 ### To session-code token delivery (H-03)

@@ -31,6 +31,7 @@ from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from .tokens import ShellUIAccessToken, ShellUIRefreshToken
 
 from . import metrics as auth_metrics
+from apps.companies.group_graph import effective_group_display_names_for_user, effective_group_ids_for_user
 from apps.companies.models import Company, CompanyGroup, CompanyOAuthClient, CompanyOAuthRedirect
 from apps.companies.access import (
     JoinDecision,
@@ -151,14 +152,17 @@ def _user_preferences_payload(user: User) -> dict:
 
 
 def _user_group_names(user: User, company: Company) -> list[str]:
-    return list(
-        CompanyGroup.objects.filter(company=company, members=user).values_list('display_name', flat=True).order_by('display_name')
-    )
+    return effective_group_display_names_for_user(user, company)
 
 
 def _admin_user_group_rows(user: User, company: Company) -> list[dict]:
+    group_ids = effective_group_ids_for_user(user, company)
+    if not group_ids:
+        return []
     return list(
-        CompanyGroup.objects.filter(company=company, members=user).values('id', 'display_name').order_by('display_name')
+        CompanyGroup.objects.filter(company=company, pk__in=group_ids)
+        .values('id', 'display_name')
+        .order_by('display_name')
     )
 
 
