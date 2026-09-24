@@ -6,7 +6,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
-from django.http import HttpResponseForbidden
+from django.http import HttpResponse, HttpResponseForbidden
 from django.shortcuts import redirect, render
 from django.urls import reverse
 
@@ -69,6 +69,11 @@ def _bootstrap_allowed(request):
     if not provided:
         return False
     return secrets.compare_digest(provided, setup_token)
+
+
+def health_live(_request):
+    """Process liveness probe: no DB/session work (use for load balancer health checks)."""
+    return HttpResponse('ok', content_type='text/plain')
 
 
 def root(request):

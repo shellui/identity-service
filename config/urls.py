@@ -28,6 +28,7 @@ from apps.authapi.jwks_views import ShellUIJwksView
 from . import views
 
 urlpatterns = [
+    path('health/live', views.health_live, name='health-live'),
     path('', views.root, name='root'),
     path('admin/', admin.site.urls),
     path('.well-known/jwks.json', ShellUIJwksView.as_view(), name='jwks'),

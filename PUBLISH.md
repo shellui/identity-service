@@ -37,11 +37,11 @@ Manual equivalents (if you are not using the script):
 
 ### 1. Version alignment
 
-Ensure these match the release version (e.g. `0.5.0`):
+Ensure these match the release version (e.g. `0.5.1`):
 
 - `version` in `pyproject.toml` (OpenAPI / API metadata via `config.settings.VERSION`)
 - `CHANGELOG.md` entry with date
-- Git tag `v0.5.0` (optional but recommended; not enforced by the script)
+- Git tag `v0.5.1` (optional but recommended; not enforced by the script)
 - CI green on the release commit (`.github/workflows/ci.yml` + pre-release workflow)
 
 ### 2. No secrets in the build context
@@ -65,7 +65,7 @@ Covered by `./tools/pre-release-check.sh`. Manual form:
 export SECRET_KEY="$(uv run python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())")"
 eval "$(uv run python manage.py generate_jwt_keys --shell)"
 
-VERSION=0.5.0
+VERSION=0.5.1
 docker build -t "shellui/identity-service:${VERSION}" .
 
 docker run --rm -d --name identity-release-smoke -p 18000:8000 \
@@ -95,11 +95,11 @@ docker login
 
 ### Tagging
 
-For semver release `0.5.0`, typical Docker Hub tags:
+For semver release `0.5.1`, typical Docker Hub tags:
 
 | Tag      | Purpose                                  |
 | -------- | ---------------------------------------- |
-| `0.5.0`  | Exact release (pin in production)        |
+| `0.5.1`  | Exact release (pin in production)        |
 | `0.5`    | Latest patch in the 0.5 line             |
 | `latest` | Newest published release (use with care) |
 
@@ -108,7 +108,7 @@ For semver release `0.5.0`, typical Docker Hub tags:
 From the repository root:
 
 ```bash
-VERSION=0.5.0
+VERSION=0.5.1
 IMAGE=shellui/identity-service
 
 docker build -t "${IMAGE}:${VERSION}" .
@@ -126,7 +126,7 @@ docker push "${IMAGE}:latest"
 If you build on Apple Silicon, a plain `docker build` may produce `linux/arm64` only. Most cloud VMs expect `linux/amd64`. Publish both with buildx:
 
 ```bash
-VERSION=0.5.0
+VERSION=0.5.1
 IMAGE=shellui/identity-service
 
 docker buildx create --use --name multi 2>/dev/null || docker buildx use multi
@@ -141,7 +141,7 @@ docker buildx build \
 ### Git tag (recommended)
 
 ```bash
-VERSION=0.5.0
+VERSION=0.5.1
 git tag -a "v${VERSION}" -m "Release ${VERSION}"
 git push origin "v${VERSION}"
 ```
@@ -161,14 +161,20 @@ docker run -d \
   -e JWT_PRIVATE_KEY='replace-with-pem-from-generate_jwt_keys' \
   -e ALLOWED_HOSTS='auth.example.com' \
   -e CSRF_TRUSTED_ORIGINS='https://auth.example.com,https://app.example.com' \
-  shellui/identity-service:0.5.0
+  shellui/identity-service:0.5.1
 ```
 
-The entrypoint runs migrations on start, then starts Gunicorn as user `appuser`.
+The entrypoint runs migrations on start, then starts **Gunicorn** (`config.wsgi:application`) as user `appuser` — not ASGI/uvicorn. Env vars `GUNICORN_WORKERS`, `GUNICORN_THREADS`, and `GUNICORN_TIMEOUT` are passed through; worker class is **`gthread`** (threaded sync workers).
+
+**Concurrency:** with defaults after this release, up to `workers × threads` requests run at once (e.g. `4 × 4 = 16`). With `GUNICORN_WORKERS=2` and `GUNICORN_THREADS=2` you only get **four** concurrent handlers. OAuth callbacks and token refresh perform several DB writes and up to ~20s outbound HTTP each; when all handlers are busy, **even `GET /` queues** (session middleware + DB) until the client or reverse proxy times out — intermittent “hang then works again”.
+
+**Liveness:** point health checks at `GET /health/live` (no session/DB). Do not use `/` or `/api/v1/settings` as the only probe if traffic is bursty.
+
+**Immediate VPS tuning (no image change):** raise workers/threads (e.g. `GUNICORN_WORKERS=4`, `GUNICORN_THREADS=4`), use `POSTGRES_DATABASE_URL` for production load, and aim health checks at `/health/live`.
 
 ### Post-deploy production config check
 
-After deploying a release (e.g. `0.5.0`), run the smoke script against the live HTTPS URL:
+After deploying a release (e.g. `0.5.1`), run the smoke script against the live HTTPS URL:
 
 ```bash
 ./tools/prod-config-check.sh https://id.shellui.com

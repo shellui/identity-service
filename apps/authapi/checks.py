@@ -74,7 +74,7 @@ def shared_cache_recommended_for_multi_worker(app_configs, **kwargs):
     backend = settings.CACHES.get('default', {}).get('BACKEND', '')
     if 'locmem' not in backend.lower():
         return []
-    workers = _env_int('GUNICORN_WORKERS', 2)
+    workers = _env_int('GUNICORN_WORKERS', 4)
     if workers <= 1:
         return []
     return [
