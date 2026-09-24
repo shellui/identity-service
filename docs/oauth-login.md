@@ -8,8 +8,19 @@ identity-service owns the OAuth authorize and callback endpoints. Provider apps 
 2. Without `provider`, identity shows a **sign-in method picker** (even when only one provider is enabled), then continues.
 3. Identity redirects to the IdP using `redirect_uri={identity}/api/v1/oauth/callback` and a signed `state` that carries `redirect_to` and company context.
 4. The provider returns to `/api/v1/oauth/callback`. Identity exchanges the code server-side.
-5. The user sees an **account confirmation** page (confirm, switch provider, or switch account on the same provider).
-6. On confirm, identity redirects to `redirect_to?shellui_auth_code=…` (default). The shell `/login/callback` route POSTs the code to `POST /api/v1/oauth/session` with the same `redirect_to` URL and stores the returned JSON tokens.
+5. For most providers, the user sees an **account confirmation** page (confirm, switch provider, or switch account on the same provider). **Google skips this step by default** — Google’s own consent and account picker already cover the same UX, so identity completes login immediately when profile data is sufficient (verified email, no synthetic placeholder address).
+6. After confirmation (or when skipped), identity redirects to `redirect_to?shellui_auth_code=…` (default). The shell `/login/callback` route POSTs the code to `POST /api/v1/oauth/session` with the same `redirect_to` URL and stores the returned JSON tokens.
+
+### Skip account confirmation (`OAUTH_SKIP_CONFIRM_PROVIDERS`)
+
+| Setting | Default | Behavior |
+| ------- | ------- | -------- |
+| `OAUTH_SKIP_CONFIRM_PROVIDERS` | `google` (when the variable is **unset**) | Comma-separated provider slugs (`github`, `google`, `microsoft`, …) that bypass the confirmation HTML and finalize login like clicking **Continue** |
+| Explicit empty value | — | `OAUTH_SKIP_CONFIRM_PROVIDERS=` requires confirmation for **all** providers |
+
+Providers not in the list keep the confirmation step. Typos in the list are ignored safely (no match → confirm still shown). If the IdP profile is insufficient (missing email, synthetic `{id}@{provider}.local` placeholder, or `email_verified: false` from OIDC userinfo), identity **falls back** to the confirmation page instead of auto-completing.
+
+To require confirmation for Google again, set `OAUTH_SKIP_CONFIRM_PROVIDERS=` or omit `google` from the list. To skip for additional IdPs later, add their slugs: `OAUTH_SKIP_CONFIRM_PROVIDERS=google,microsoft`.
 
 **Legacy fragment delivery:** set `token_delivery=fragment` on `/api/v1/authorize` (or `OAUTH_TOKEN_DELIVERY=fragment`) to receive `redirect_to#access_token=…&refresh_token=…` instead. Fragment mode is deprecated and will be removed in a future release.
 

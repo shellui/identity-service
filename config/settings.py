@@ -336,6 +336,16 @@ if _oauth_delivery not in {'code', 'fragment'}:
 OAUTH_TOKEN_DELIVERY = _oauth_delivery
 OAUTH_SESSION_CODE_TTL_SECONDS = int(os.getenv('OAUTH_SESSION_CODE_TTL_SECONDS', '120') or '120')
 
+# OAuth providers that skip the identity-hosted account confirmation page after callback.
+# Unset env → ``google`` only. Set to empty string to require confirmation for all providers.
+_skip_confirm_raw = os.getenv('OAUTH_SKIP_CONFIRM_PROVIDERS')
+if _skip_confirm_raw is None:
+    OAUTH_SKIP_CONFIRM_PROVIDERS = ['google']
+else:
+    OAUTH_SKIP_CONFIRM_PROVIDERS = [
+        item.strip().lower() for item in _skip_confirm_raw.split(',') if item.strip()
+    ]
+
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': JWT_ACCESS_TOKEN_LIFETIME,
     'REFRESH_TOKEN_LIFETIME': JWT_REFRESH_TOKEN_LIFETIME,

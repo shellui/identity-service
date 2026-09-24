@@ -76,6 +76,7 @@ from .oauth import (
     exchange_code_for_token,
     fetch_provider_userinfo,
     get_provider_config,
+    should_skip_oauth_confirm,
 )
 from .serializers import (
     ProviderAuthorizeSerializer,
@@ -1663,6 +1664,27 @@ class ShellUIOAuthCallbackView(APIView):
                 client_device_id=client_dev,
             )
             return _join_denied_response(decision=join, redirect_to=redirect_to)
+        if should_skip_oauth_confirm(provider, email=email, userinfo=userinfo):
+            if not is_company_access_enabled(company, user):
+                return _join_denied_response(
+                    decision=JoinDecision(
+                        allowed=False,
+                        error_code='access_denied',
+                        message='Access denied for this company.',
+                    ),
+                    redirect_to=redirect_to,
+                )
+            return _finalize_shellui_oauth_login(
+                request,
+                user=user,
+                company=company,
+                provider=provider,
+                redirect_to=redirect_to,
+                avatar_url=avatar_url,
+                client_tz=client_tz,
+                client_dev=client_dev,
+                token_delivery=state_payload.get('token_delivery'),
+            )
         return _render_oauth_confirm_page(
             request,
             user=user,

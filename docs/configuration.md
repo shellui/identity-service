@@ -46,6 +46,7 @@ Details: [JWKS and JWT verification](jwks.md), [Security hardening](security-har
 | `OAUTH_TOKEN_DELIVERY` | `code` | `code` = one-time `shellui_auth_code` + `POST /api/v1/oauth/session`; `fragment` = legacy URL hash tokens |
 | `OAUTH_SESSION_CODE_TTL_SECONDS` | `120` | Lifetime of the one-time auth code |
 | `OAUTH_ALLOW_LOOPBACK_REDIRECTS` | follows `DEBUG` | Allow `redirect_to` to loopback for CLI/local shells when `true` |
+| `OAUTH_SKIP_CONFIRM_PROVIDERS` | `google` when unset | Provider slugs that skip the identity-hosted account confirmation page after callback (comma-separated; empty env disables skips) |
 
 Flow and allowlist: [OAuth login](oauth-login.md).
 
