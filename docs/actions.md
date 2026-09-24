@@ -91,19 +91,23 @@ Payloads never include secrets, bearer tokens, or password hashes.
 
 1. Run migrations (`apps.actions` is in `INSTALLED_APPS`).
 2. Open **Action rules** in Django admin.
-3. Create a rule: company, **event type** from the catalog, **email** or **webhook**, JSON **config**.
+3. Create a rule: company, **event type** from the catalog, **email** or **webhook**, then fill the structured email or webhook fields.
 
 ### Email config
+
+The admin form exposes:
+
+- **Also send to email from event payload** — maps to `include_payload_email` in stored config. When checked, delivery also goes to the catalog’s payload email field (usually `data.email` on user / SCIM user events). Help text updates when the selected event type supports this. Has no effect for event types without a payload email field.
+- **Fixed email recipients (To:)** — comma-separated addresses always included; optional if payload email alone is enough for your event type.
+
+Stored JSON shape:
 
 ```json
 {
   "recipients": ["ops@example.com", "security@example.com"],
-  "include_payload_email": false
+  "include_payload_email": true
 }
 ```
-
-- `recipients` — required list of addresses.
-- `include_payload_email` — when `true`, also sends to the event’s documented email field (for user events, `data.email`) when present.
 
 Default **HTML** templates ship under `apps/actions/templates/actions/emails/<event_type>.html`. Plain text is generated from the rendered HTML at send time (multipart `alternative` still includes both parts).
 

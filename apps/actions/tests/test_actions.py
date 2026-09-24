@@ -316,6 +316,56 @@ class ActionAdminFormTests(TestCase):
         saved = form.save()
         self.assertNotIn('allow_private_urls', saved.config)
 
+    def test_email_payload_only_valid_for_user_events(self):
+        from apps.actions.admin_forms import ActionRuleAdminForm
+
+        company = Company.objects.create(name='Mail', slug='mail-co')
+
+        class StaffForm(ActionRuleAdminForm):
+            is_superuser = False
+
+        form = StaffForm(
+            data={
+                'company': company.pk,
+                'name': 'Notify user',
+                'description': '',
+                'enabled': True,
+                'event_type': 'identity.user.created',
+                'action_kind': ActionRule.ACTION_EMAIL,
+                'email_recipients': '',
+                'email_include_payload_email': True,
+            },
+            instance=None,
+        )
+        self.assertTrue(form.is_valid(), form.errors)
+        saved = form.save()
+        self.assertTrue(saved.config['include_payload_email'])
+        self.assertEqual(saved.config['recipients'], [])
+
+    def test_email_requires_recipient_without_payload_field(self):
+        from apps.actions.admin_forms import ActionRuleAdminForm
+
+        company = Company.objects.create(name='Grp', slug='grp-co')
+
+        class StaffForm(ActionRuleAdminForm):
+            is_superuser = False
+
+        form = StaffForm(
+            data={
+                'company': company.pk,
+                'name': 'Group mail',
+                'description': '',
+                'enabled': True,
+                'event_type': 'identity.group.created',
+                'action_kind': ActionRule.ACTION_EMAIL,
+                'email_recipients': '',
+                'email_include_payload_email': True,
+            },
+            instance=None,
+        )
+        self.assertFalse(form.is_valid())
+        self.assertIn('email_recipients', form.errors)
+
 
 class ActionAdminTests(TestCase):
     def setUp(self):

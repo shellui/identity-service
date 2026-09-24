@@ -3,22 +3,46 @@ from __future__ import annotations
 from django import forms
 
 from apps.actions.models import ActionRule
+from apps.actions.registry import get_event_type
+
+
+_PAYLOAD_EMAIL_HELP = (
+    'When checked, also send to the email address in the event payload (usually '
+    'data.email for user lifecycle and SCIM access events). '
+    'You can combine this with fixed recipients below. '
+    'If the selected event type has no payload email field, this option has no effect.'
+)
+
+_PAYLOAD_EMAIL_HELP_ACTIVE = (
+    'Recommended for this event type: also deliver to {field} from the event payload '
+    'when present. Combine with fixed recipients or use alone if every event includes an email.'
+)
+
+_PAYLOAD_EMAIL_HELP_INACTIVE = (
+    'The selected event type does not define a payload email field — '
+    'leave this unchecked and use fixed recipients only.'
+)
+
 
 class ActionRuleAdminForm(forms.ModelForm):
     """Structured config editing; webhook secrets are write-only (blank = keep existing)."""
 
     is_superuser = False
 
-    email_recipients = forms.CharField(
-        required=False,
-        label='Email recipients',
-        help_text='Comma-separated addresses (email actions).',
-        widget=forms.TextInput(attrs={'size': 60, 'placeholder': 'ops@example.com, security@example.com'}),
-    )
     email_include_payload_email = forms.BooleanField(
         required=False,
-        label='Include payload email',
-        help_text='Also send to the event payload email field when documented (e.g. user email).',
+        label='Also send to email from event payload',
+        help_text=_PAYLOAD_EMAIL_HELP,
+    )
+    email_recipients = forms.CharField(
+        required=False,
+        label='Fixed email recipients (To:)',
+        help_text=(
+            'Comma-separated addresses always included when this rule fires. '
+            'Optional if “Also send to email from event payload” is checked and the event '
+            'type supplies an email (for example user events).'
+        ),
+        widget=forms.TextInput(attrs={'size': 60, 'placeholder': 'ops@example.com, security@example.com'}),
     )
     webhook_url = forms.URLField(
         required=False,
@@ -54,6 +78,23 @@ class ActionRuleAdminForm(forms.ModelForm):
             'action_kind',
         )
 
+    def _selected_event_type(self) -> str | None:
+        if self.data:
+            raw = self.data.get('event_type')
+            if raw:
+                return str(raw)
+        if self.instance and self.instance.pk:
+            return self.instance.event_type
+        return self.initial.get('event_type')
+
+    def _payload_email_field_for_event(self, event_type: str | None) -> str | None:
+        if not event_type:
+            return None
+        try:
+            return get_event_type(event_type).email_payload_email_field
+        except ValueError:
+            return None
+
     def __init__(self, *args, **kwargs):
         self.is_superuser = getattr(self.__class__, 'is_superuser', False)
         super().__init__(*args, **kwargs)
@@ -83,6 +124,13 @@ class ActionRuleAdminForm(forms.ModelForm):
                     'webhook_allow_private_urls',
                     bool(cfg.get('allow_private_urls')),
                 )
+        payload_field = self._payload_email_field_for_event(self._selected_event_type())
+        include_field = self.fields['email_include_payload_email']
+        if payload_field:
+            include_field.help_text = _PAYLOAD_EMAIL_HELP_ACTIVE.format(field=payload_field)
+            include_field.widget.attrs.setdefault('class', 'email-payload-toggle')
+        else:
+            include_field.help_text = _PAYLOAD_EMAIL_HELP_INACTIVE
 
     def clean(self):
         cleaned = super().clean()
@@ -93,8 +141,14 @@ class ActionRuleAdminForm(forms.ModelForm):
                 for part in (cleaned.get('email_recipients') or '').split(',')
                 if part.strip()
             ]
-            if not recipients:
-                self.add_error('email_recipients', 'Add at least one recipient for email actions.')
+            include_payload = bool(cleaned.get('email_include_payload_email'))
+            payload_field = self._payload_email_field_for_event(cleaned.get('event_type'))
+            if not recipients and not (include_payload and payload_field):
+                self.add_error(
+                    'email_recipients',
+                    'Add at least one fixed recipient, or enable payload email for an event '
+                    'type that provides an email address.',
+                )
         elif kind == ActionRule.ACTION_WEBHOOK:
             if not (cleaned.get('webhook_url') or '').strip():
                 self.add_error('webhook_url', 'Webhook URL is required.')

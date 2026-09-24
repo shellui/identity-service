@@ -13,7 +13,10 @@ def _config_summary(obj: ActionRule) -> str:
     cfg = obj.config or {}
     if obj.action_kind == ActionRule.ACTION_EMAIL:
         count = len(cfg.get('recipients') or [])
-        return f'{count} recipient(s)'
+        parts = [f'{count} fixed recipient(s)']
+        if cfg.get('include_payload_email'):
+            parts.append('+ payload email')
+        return ' '.join(parts)
     if obj.action_kind == ActionRule.ACTION_WEBHOOK:
         url = (cfg.get('url') or '').strip()
         if not url:
@@ -65,8 +68,11 @@ class ActionRuleAdmin(admin.ModelAdmin):
         (
             'Email configuration',
             {
-                'fields': ('email_recipients', 'email_include_payload_email'),
-                'description': 'Used when action kind is Email.',
+                'fields': ('email_include_payload_email', 'email_recipients'),
+                'description': (
+                    'Used when action kind is Email. For user and SCIM user events, '
+                    'enable “Also send to email from event payload” to notify the subject user.'
+                ),
             },
         ),
         (
