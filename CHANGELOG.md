@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+<!---
+## [Unreleased] - yyyy-mm-dd
+
+### ✨ Feature – for new features
+### 🛠 Improvements – for general improvements
+### 🚨 Changed – for changes in existing functionality
+### ⚠️ Deprecated – for soon-to-be removed features
+### 📚 Documentation – for documentation update
+### 🗑 Removed – for removed features
+### 🐛 Bug Fixes – for any bug fixes
+### 🔒 Security – in case of vulnerabilities
+### 🏗 Chore – for tidying code
+
+See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
+-->
+
+## [0.5.1] - 2026-09-24
+
+### 🛠 Improvements
+
+- **Runtime concurrency:** Default Gunicorn workers/threads increased to 4/4 to reduce request queueing when OAuth or token refresh holds workers (symptom: even `GET /` hangs with no response).
+- **Liveness probe:** `GET /health/live` bypasses session/DB middleware — point load balancers at this path instead of `/`.
+- **SQLite:** Enable WAL journal mode on connect for better read/write concurrency on default single-file SQLite deploys.
+- **Postgres:** `POSTGRES_CONNECT_TIMEOUT` (default 10s) and `CONN_HEALTH_CHECKS` so stuck DB TCP does not hold workers indefinitely.
+
 ## [0.5.0] - 2026-09-18
 
 ### 🛠 Improvements
@@ -37,31 +62,6 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 - Document production JWT issuer/audience, HS256 legacy default, and CORS lock-down in [docs/jwks.md](docs/jwks.md), [README.md](README.md), [PUBLISH.md](PUBLISH.md), and [docs/oauth-login.md](docs/oauth-login.md).
 - Updated [docs/oauth-login.md](docs/oauth-login.md) with session-code flow and migration notes.
 - Add [docs/security-hardening.md](docs/security-hardening.md); update `.env.example` and [docs/oauth-login.md](docs/oauth-login.md).
-
-## [Unreleased] - 2026-09-24
-
-### 🛠 Improvements
-
-- **Runtime concurrency:** Default Gunicorn workers/threads increased to 4/4 to reduce request queueing when OAuth or token refresh holds workers (symptom: even `GET /` hangs with no response).
-- **Liveness probe:** `GET /health/live` bypasses session/DB middleware — point load balancers at this path instead of `/`.
-- **SQLite:** Enable WAL journal mode on connect for better read/write concurrency on default single-file SQLite deploys.
-- **Postgres:** `POSTGRES_CONNECT_TIMEOUT` (default 10s) and `CONN_HEALTH_CHECKS` so stuck DB TCP does not hold workers indefinitely.
-
-<!---
-## [Unreleased] - yyyy-mm-dd
-
-### ✨ Feature – for new features
-### 🛠 Improvements – for general improvements
-### 🚨 Changed – for changes in existing functionality
-### ⚠️ Deprecated – for soon-to-be removed features
-### 📚 Documentation – for documentation update
-### 🗑 Removed – for removed features
-### 🐛 Bug Fixes – for any bug fixes
-### 🔒 Security – in case of vulnerabilities
-### 🏗 Chore – for tidying code
-
-See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
--->
 
 ## [0.4.1] - 2026-09-07
 
