@@ -27,6 +27,9 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ### Changed
 
+- **Homepage:** Root landing uses Shellui brand favicons and a simpler layout aligned with sibling service sites (hero wash, hosting-style footer, circular dark-mode transition). Title and meta describe **Shellui Identity** (OAuth, JWT, SCIM) instead of the vague “Shellui Auth” product name. Tailwind v4 builds `static/css/site.css` from `templates/` (same pattern as hosting-service); `runserver` rebuilds CSS locally when `DEBUG=true`.
+
+
 - **Company group source provenance:** Django admin no longer exposes `CompanyGroup.source` on create and shows it read-only on edit; admin creates always persist `manual`. Model `save()` rejects setting `scim` outside the SCIM adapter (`scim_source=True`) and still blocks demoting SCIM groups to `manual`.
 
 - **Hybrid company groups:** `CompanyGroup.source` (`manual` | `scim`) with migration defaulting existing rows to `manual`. SCIM exposes only `scim` groups; admin REST can still create/edit `manual` groups when SCIM is configured; SCIM-sourced rows are admin read-only. SCIM status adds `scim_groups_read_only` and keeps `directory_read_only: false`. Shared `display_name` per company returns **409** on cross-source collisions (SCIM vs manual). Collisions are logged and stored as `ScimProvisioningEvent` / `last_provisioning_error` on `GET /api/v1/scim`. See [docs/scim.md](docs/scim.md).

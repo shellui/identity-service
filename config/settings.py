@@ -214,6 +214,7 @@ INSTALLED_APPS = [
     'apps.scim',
     'apps.actions',
     'django_scim',
+    'config.apps.ConfigConfig',
 ]
 
 REST_FRAMEWORK = {
@@ -519,6 +520,13 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
+STATICFILES_DIRS = [BASE_DIR / 'static']
+
+if DEBUG:
+    # Local dev: serve assets from STATICFILES_DIRS without collectstatic.
+    WHITENOISE_USE_FINDERS = True
+    WHITENOISE_AUTOREFRESH = True
+
 STORAGES = {
     'default': {
         'BACKEND': 'django.core.files.storage.FileSystemStorage',
