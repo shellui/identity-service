@@ -21,7 +21,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ### Changed
 
-- **Homepage:** Root landing uses Shellui brand favicons and a simpler layout aligned with sibling service sites. Title and meta describe **Shellui Identity** (OAuth, JWT, SCIM) instead of the vague “Shellui Auth” product name.
+- **Homepage:** Root landing uses Shellui brand favicons and a simpler layout aligned with sibling service sites. Title and meta describe **Shellui Identity** (OAuth, JWT, SCIM) instead of the vague “Shellui Auth” product name. Tailwind v4 builds `static/css/site.css` from `templates/` (same pattern as hosting-service); `runserver` rebuilds CSS locally when `DEBUG=true`.
+
 
 - **Company group source provenance:** Django admin no longer exposes `CompanyGroup.source` on create and shows it read-only on edit; admin creates always persist `manual`. Model `save()` rejects setting `scim` outside the SCIM adapter (`scim_source=True`) and still blocks demoting SCIM groups to `manual`.
 

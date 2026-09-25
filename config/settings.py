@@ -214,6 +214,7 @@ INSTALLED_APPS = [
     'apps.scim',
     'apps.actions',
     'django_scim',
+    'config.apps.ConfigConfig',
 ]
 
 REST_FRAMEWORK = {

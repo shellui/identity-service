@@ -72,9 +72,12 @@ These routes require a valid JWT whose user has `is_staff=true` (`user_metadata.
 uv sync
 cp .env.example .env
 # Set SECRET_KEY; generate JWT keys for production (DEBUG=false)
+npm ci && npm run build:css   # first run only (or skip — runserver rebuilds when DEBUG=true)
 uv run python manage.py migrate
 uv run python manage.py runserver
 ```
+
+The root landing page (`templates/home.html`) uses Tailwind utilities compiled into `static/css/site.css`. With `DEBUG=true`, **`runserver` runs `npm run build:css` once at startup** (and runs `npm ci` if `node_modules` is missing). For live template/CSS edits, use a second terminal: `npm run watch:css`. Production images and CI build minified CSS before `collectstatic`; Node is not required at runtime.
 
 With `DEBUG=true` (local default), visiting `/` on an empty database shows a one-time web form to create the first superuser. In production (`DEBUG=false`), that form is disabled unless you set `SETUP_TOKEN` and open `/?setup_token=<token>`. Prefer creating the first admin via CLI:
 
