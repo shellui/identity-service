@@ -127,8 +127,22 @@ def root(request):
         "redoc_url": reverse("redoc"),
         "schema_url": reverse("schema"),
         "jwks_url": reverse("jwks"),
+        "health_live_url": reverse("health-live"),
+        "admin_url": reverse("admin:index"),
         "version": settings.VERSION,
         "setup_done": request.GET.get("setup") == "done",
         "setup_token": _provided_setup_token(request) if bootstrap_allowed and not has_users else "",
+        "website_url": getattr(settings, "SHELLUI_WEBSITE_URL", "https://shellui.com"),
+        "docs_url": getattr(settings, "SHELLUI_DOCS_URL", "https://docs.shellui.com"),
+        "identity_docs_url": getattr(
+            settings,
+            "SHELLUI_IDENTITY_DOCS_URL",
+            "https://identity.docs.shellui.com",
+        ),
+        "github_url": getattr(
+            settings,
+            "SHELLUI_GITHUB_IDENTITY_URL",
+            "https://github.com/shellui/identity-service",
+        ),
     }
     return render(request, "home.html", context)
