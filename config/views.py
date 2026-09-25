@@ -144,5 +144,6 @@ def root(request):
             "SHELLUI_GITHUB_IDENTITY_URL",
             "https://github.com/shellui/identity-service",
         ),
+        "ai_url": getattr(settings, "SHELLUI_AI_URL", "https://shellui.ai"),
     }
     return render(request, "home.html", context)

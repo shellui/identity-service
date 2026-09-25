@@ -165,7 +165,36 @@
         </div>
       </div>
       {% else %}
-      <div class="page-x page-top">
+      <div class="relative isolate page-x page-top">
+        <div
+          class="pointer-events-none absolute inset-x-0 -top-40 -z-10 transform-gpu overflow-hidden blur-3xl sm:-top-80"
+          aria-hidden="true"
+        >
+          <div
+            class="relative left-[calc(50%-11rem)] aspect-[1155/678] w-[36.125rem] -translate-x-1/2 rotate-30 bg-linear-to-tr from-primary to-amber-200 opacity-30 sm:left-[calc(50%-30rem)] sm:w-[72.1875rem] dark:opacity-20"
+            style="
+              clip-path: polygon(
+                74.1% 44.1%,
+                100% 61.6%,
+                97.5% 26.9%,
+                85.5% 0.1%,
+                80.7% 2%,
+                72.5% 32.5%,
+                60.2% 62.4%,
+                52.4% 68.1%,
+                47.5% 58.3%,
+                45.2% 34.5%,
+                27.5% 76.7%,
+                0.1% 64.9%,
+                17.9% 100%,
+                27.6% 76.8%,
+                76.1% 97.7%,
+                74.1% 44.1%
+              );
+            "
+          ></div>
+        </div>
+
         <div class="mx-auto max-w-3xl pb-12 sm:pb-16">
           {% if setup_done %}
           <div class="mb-6 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800 dark:border-green-800 dark:bg-green-950/40 dark:text-green-200">
@@ -218,7 +247,6 @@
                 <span class="text-muted-foreground">for operators</span>
               </li>
             </ul>
-            <p class="mt-4 text-xs text-muted-foreground">Version {{ version }}</p>
           </section>
         </div>
       </div>
@@ -228,22 +256,35 @@
     <footer class="relative z-10 border-t border-border bg-muted page-x py-10">
       <div class="mx-auto flex max-w-5xl flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <a href="/" class="inline-flex items-center text-foreground" aria-label="Shellui" translate="no">
-            <svg class="h-5 w-auto" viewBox="0 0 1024 270" role="img" aria-hidden="true">
+          <a href="/" class="inline-flex items-center text-foreground" aria-label="Shellui Identity" translate="no">
+            <svg class="h-5 w-auto text-foreground" viewBox="0 0 1024 270" role="img" aria-hidden="true">
               <use href="#logo-shellui"></use>
             </svg>
           </a>
           <p class="mt-2 max-w-xs text-sm text-muted-foreground">
-            OAuth, JWT, and SCIM for Shellui apps and shells.
+            Authentication and identity for Shellui apps — OAuth, JWT, and SCIM.
           </p>
           <p class="mt-4 text-xs text-muted-foreground">© 2026 Shellui</p>
         </div>
-        <nav class="flex flex-wrap gap-x-5 gap-y-2 text-sm text-muted-foreground sm:justify-end" aria-label="Footer">
-          <a href="{{ website_url }}" class="transition-colors hover:text-foreground" target="_blank" rel="noopener noreferrer">shellui.com</a>
-          <a href="{{ docs_url }}" class="transition-colors hover:text-foreground" target="_blank" rel="noopener noreferrer">Docs</a>
-          <a href="{{ identity_docs_url }}" class="transition-colors hover:text-foreground" target="_blank" rel="noopener noreferrer">Identity docs</a>
-          <a href="{{ github_url }}" class="transition-colors hover:text-foreground" target="_blank" rel="noopener noreferrer">GitHub</a>
-        </nav>
+        <div class="sm:text-right md:pt-4 md:space-y-3">
+          <nav
+            class="flex flex-wrap gap-x-5 gap-y-2 text-sm text-muted-foreground sm:justify-end"
+            aria-label="Footer"
+          >
+            <a href="{{ website_url }}" class="transition-colors hover:text-foreground" target="_blank" rel="noopener noreferrer">Website</a>
+            <a href="{{ docs_url }}" class="transition-colors hover:text-foreground" target="_blank" rel="noopener noreferrer">Docs</a>
+            <a href="{{ identity_docs_url }}" class="transition-colors hover:text-foreground" target="_blank" rel="noopener noreferrer">Identity docs</a>
+            <a href="{{ github_url }}" class="transition-colors hover:text-foreground" target="_blank" rel="noopener noreferrer">GitHub</a>
+            <a href="{{ ai_url }}" class="transition-colors hover:text-foreground" target="_blank" rel="noopener noreferrer">AI Agents</a>
+          </nav>
+          <nav
+            class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground sm:justify-end"
+            aria-label="Platform"
+          >
+            <a href="{{ schema_url }}" class="transition-colors hover:text-foreground">OpenAPI</a>
+            <span>v{{ version }}</span>
+          </nav>
+        </div>
       </div>
     </footer>
 
@@ -262,9 +303,26 @@
             );
           });
         }
+        function setTheme(theme, event) {
+          var prefersReduced = window.matchMedia(
+            "(prefers-reduced-motion: reduce)",
+          ).matches;
+          var apply = function () {
+            applyTheme(theme);
+          };
+          if (!document.startViewTransition || prefersReduced) {
+            apply();
+            return;
+          }
+          if (event) {
+            html.style.setProperty("--x", event.clientX + "px");
+            html.style.setProperty("--y", event.clientY + "px");
+          }
+          document.startViewTransition(apply);
+        }
         toggles.forEach(function (toggle) {
-          toggle.addEventListener("click", function () {
-            applyTheme(html.classList.contains("dark") ? "light" : "dark");
+          toggle.addEventListener("click", function (event) {
+            setTheme(html.classList.contains("dark") ? "light" : "dark", event);
           });
         });
       })();
