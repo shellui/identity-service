@@ -1,0 +1,1 @@
+[Shellui] Group membership changed: {{ data.display_name }}

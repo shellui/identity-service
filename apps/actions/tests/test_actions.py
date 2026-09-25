@@ -96,7 +96,9 @@ class EmitEventTests(TestCase):
                 self.company_a,
                 {'user_id': 3, 'email': 'user@a.test', 'source': 'scim'},
             )
-        self.assertEqual(mail.outbox[-1].to, ['ops@a.test', 'user@a.test'])
+        self.assertEqual(len(mail.outbox), 2)
+        self.assertEqual(mail.outbox[-2].to, ['ops@a.test'])
+        self.assertEqual(mail.outbox[-1].to, ['user@a.test'])
 
 
 @override_settings(**LOC_MEM_EMAIL)

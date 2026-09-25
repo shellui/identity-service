@@ -2,33 +2,55 @@ from __future__ import annotations
 
 from django.conf import settings
 from django.core.mail import EmailMultiAlternatives
-from django.template.loader import engines, render_to_string
+from django.template.loader import engines, get_template, render_to_string
 
+from apps.actions.email_i18n import (
+    resolve_body_template,
+    resolve_subject_template_name,
+    user_preferred_language_from_envelope,
+)
 from apps.actions.html_plain import html_to_plain_text
 from apps.actions.registry import get_event_type
 
 
-def _resolve_recipients(config: dict, envelope: dict) -> list[str]:
-    recipients: list[str] = []
+def _split_recipient_batches(config: dict, envelope: dict) -> list[tuple[list[str], bool]]:
+    """
+    Return delivery batches as ``(recipients, use_user_preference)``.
+
+    Fixed ops addresses use deployment/company default language; payload email uses the
+    subject user's preferred language from ``data.language`` when present.
+    """
+    event = get_event_type(envelope['type'])
+    fixed: list[str] = []
     for raw in config.get('recipients') or []:
         if isinstance(raw, str) and raw.strip():
-            recipients.append(raw.strip())
-    event = get_event_type(envelope['type'])
+            fixed.append(raw.strip())
+
+    payload_email: str | None = None
     if config.get('include_payload_email') and event.email_payload_email_field:
-        payload_email = (envelope.get('data') or {}).get(event.email_payload_email_field)
-        if isinstance(payload_email, str) and payload_email.strip():
-            recipients.append(payload_email.strip())
-    # De-dupe while preserving order
+        payload_raw = (envelope.get('data') or {}).get(event.email_payload_email_field)
+        if isinstance(payload_raw, str) and payload_raw.strip():
+            payload_email = payload_raw.strip()
+
     seen: set[str] = set()
-    unique: list[str] = []
-    for addr in recipients:
+    unique_fixed: list[str] = []
+    for addr in fixed:
         key = addr.lower()
         if key not in seen:
             seen.add(key)
-            unique.append(addr)
-    if not unique:
+            unique_fixed.append(addr)
+
+    batches: list[tuple[list[str], bool]] = []
+    if unique_fixed:
+        batches.append((unique_fixed, False))
+    if payload_email and payload_email.lower() not in seen:
+        batches.append(([payload_email], True))
+    elif payload_email and not unique_fixed:
+        batches.append(([payload_email], True))
+
+    if not batches:
         raise ValueError('Email action has no recipients configured.')
-    return unique
+    return batches
 
 
 _SUBJECT_TEMPLATE_CACHE: dict[str, object] = {}
@@ -44,25 +66,31 @@ def _subject_template(subject_template: str):
     return compiled
 
 
-def _render_subject(event_type: str, envelope: dict) -> str:
+def _render_subject(
+    event_type: str,
+    envelope: dict,
+    *,
+    use_user_preference: bool,
+) -> str:
+    context = {
+        'data': envelope.get('data') or {},
+        'envelope': envelope,
+    }
+    preferred = user_preferred_language_from_envelope(envelope)
+    subject_template_name, _resolved = resolve_subject_template_name(
+        event_type,
+        preferred=preferred,
+        use_user_preference=use_user_preference,
+    )
+    if subject_template_name:
+        return get_template(subject_template_name).render(context).strip()
+
     event = get_event_type(event_type)
     template = _subject_template(event.email_subject_template)
-    return template.render(
-        {
-            'data': envelope.get('data') or {},
-            'envelope': envelope,
-        }
-    ).strip()
+    return template.render(context).strip()
 
 
-def deliver_email_action(*, config: dict, envelope: dict) -> None:
-    event_type = envelope['type']
-    recipients = _resolve_recipients(config, envelope)
-    subject = _render_subject(event_type, envelope)
-    html_body = render_to_string(
-        f'actions/emails/{event_type}.html',
-        {'envelope': envelope, 'data': envelope.get('data') or {}},
-    )
+def _send_html_email(*, recipients: list[str], subject: str, html_body: str) -> None:
     text_body = html_to_plain_text(html_body)
     message = EmailMultiAlternatives(
         subject=subject,
@@ -72,3 +100,23 @@ def deliver_email_action(*, config: dict, envelope: dict) -> None:
     )
     message.attach_alternative(html_body, 'text/html')
     message.send(fail_silently=False)
+
+
+def deliver_email_action(*, config: dict, envelope: dict) -> None:
+    event_type = envelope['type']
+    preferred = user_preferred_language_from_envelope(envelope)
+    context = {'envelope': envelope, 'data': envelope.get('data') or {}}
+
+    for recipients, use_user_preference in _split_recipient_batches(config, envelope):
+        subject = _render_subject(
+            event_type,
+            envelope,
+            use_user_preference=use_user_preference,
+        )
+        template_name, _lang = resolve_body_template(
+            event_type,
+            preferred=preferred,
+            use_user_preference=use_user_preference,
+        )
+        html_body = render_to_string(template_name, context)
+        _send_html_email(recipients=recipients, subject=subject, html_body=html_body)

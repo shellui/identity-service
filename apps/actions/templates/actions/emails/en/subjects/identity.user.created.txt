@@ -1,0 +1,1 @@
+[Shellui] New user account: {{ data.email|default:"user" }}

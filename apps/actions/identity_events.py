@@ -7,6 +7,16 @@ _USER = (
     EventFieldDoc('email', 'Primary email when available', 'ada@acme.com'),
     EventFieldDoc('username', 'Login username', 'ada@acme.com'),
     EventFieldDoc('source', 'Channel: oauth, admin, self, scim, …', 'oauth'),
+    EventFieldDoc(
+        'language',
+        'User UI language from UserPreference (e.g. en, fr)',
+        'en',
+    ),
+    EventFieldDoc(
+        'region',
+        'User region / timezone preference from UserPreference',
+        'Europe/Paris',
+    ),
 )
 
 _ACCOUNT_USER = _USER + (
