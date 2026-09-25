@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ### Added
 
-- **Action email i18n:** Locale-aware HTML and subject templates under `apps/actions/templates/actions/emails/<lang>/` with deployment default `ACTIONS_EMAIL_DEFAULT_LANGUAGE` (fallback `en`). User event payloads and webhook `data` include `language` and `region` from `UserPreference`. Ops fixed recipients and payload-email recipients can receive separate localized messages. Documented in [docs/actions.md](docs/actions.md).
+- **Action email i18n:** Locale-aware HTML and subject templates under `apps/actions/templates/actions/emails/<lang>/` with deployment default `ACTIONS_EMAIL_DEFAULT_LANGUAGE` (fallback `en`). Shipped default template sets: **English (`en`)** and **French (`fr`)** for all catalog events. User event payloads and webhook `data` include `language` and `region` from `UserPreference`. Ops fixed recipients and payload-email recipients can receive separate localized messages. Documented in [docs/actions.md](docs/actions.md).
 
 - **OAuth skip confirm:** `OAUTH_SKIP_CONFIRM_PROVIDERS` (default `google`) lets configured IdPs bypass the identity account confirmation page after callback when profile data is sufficient; documented in [docs/oauth-login.md](docs/oauth-login.md).
 

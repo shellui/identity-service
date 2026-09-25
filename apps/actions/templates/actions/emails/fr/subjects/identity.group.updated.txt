@@ -1,0 +1,1 @@
+[Shellui] Groupe mis à jour : {{ data.display_name }}

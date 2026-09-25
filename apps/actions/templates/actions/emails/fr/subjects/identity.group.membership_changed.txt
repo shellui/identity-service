@@ -1,0 +1,1 @@
+[Shellui] Adhésion au groupe modifiée : {{ data.display_name }}

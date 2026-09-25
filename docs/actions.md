@@ -113,7 +113,7 @@ Stored JSON shape:
 
 #### Email language (i18n)
 
-Action emails are **locale-aware** but only **English (`en`)** templates ship fully in this repository today.
+Action emails are **locale-aware**. **English (`en`)** and **French (`fr`)** template sets ship in this repository for every catalog event; additional locales follow the same directory layout.
 
 - **HTML body:** `apps/actions/templates/actions/emails/<language>/<event_type>.html`
 - **Subject line:** `apps/actions/templates/actions/emails/<language>/subjects/<event_type>.txt` (Django template syntax; same context as the body: `data`, `envelope`)
@@ -130,7 +130,7 @@ Legacy flat paths `apps/actions/templates/actions/emails/<event_type>.html` are 
 
 Plain text is generated from the rendered HTML at send time (multipart `alternative` still includes both parts).
 
-An example French template for `identity.scim.user.provisioned` lives under `…/emails/fr/` to show how to add locales; copy the `en` set when translating additional events.
+Add further locales by copying the `en` (or `fr`) tree under `…/emails/<language>/` with matching `subjects/` files.
 
 ### Webhook config
 

@@ -1,7 +1,11 @@
+from pathlib import Path
+
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core import mail
 from django.test import TestCase, override_settings
 
+from apps.actions.email_i18n import resolve_body_template, resolve_subject_template_name
 from apps.actions.emit import emit_event
 from apps.actions.handlers.email import deliver_email_action
 from apps.actions.models import ActionRule
@@ -102,3 +106,49 @@ class ActionEmailI18nTests(TestCase):
         envelope = ActionOutbox.objects.get(pk=rows[0].pk).envelope
         self.assertEqual(envelope['data']['language'], 'fr')
         self.assertEqual(envelope['data']['region'], 'Europe/Paris')
+
+    def test_french_templates_match_english_set(self):
+        base = Path(settings.BASE_DIR) / 'apps/actions/templates/actions/emails'
+        en_html = {p.name for p in (base / 'en').glob('*.html')}
+        fr_html = {p.name for p in (base / 'fr').glob('*.html')}
+        self.assertEqual(en_html, fr_html)
+        en_subjects = {p.name for p in (base / 'en' / 'subjects').glob('*.txt')}
+        fr_subjects = {p.name for p in (base / 'fr' / 'subjects').glob('*.txt')}
+        self.assertEqual(en_subjects, fr_subjects)
+
+    def test_french_user_created_template_resolves(self):
+        event_type = 'identity.user.created'
+        body_name, lang = resolve_body_template(
+            event_type,
+            preferred='fr',
+            use_user_preference=True,
+        )
+        self.assertEqual(lang, 'fr')
+        self.assertEqual(body_name, 'actions/emails/fr/identity.user.created.html')
+        subject_name, subject_lang = resolve_subject_template_name(
+            event_type,
+            preferred='fr',
+            use_user_preference=True,
+        )
+        self.assertEqual(subject_lang, 'fr')
+        self.assertEqual(subject_name, 'actions/emails/fr/subjects/identity.user.created.txt')
+
+        envelope = {
+            'id': 'evt-fr-created',
+            'type': event_type,
+            'time': '2026-01-01T00:00:00+00:00',
+            'company': {'id': self.company.pk, 'slug': 'i18n-co', 'name': 'I18n Co'},
+            'data': {
+                'user_id': 3,
+                'email': 'new@i18n.test',
+                'language': 'fr',
+                'source': 'oauth',
+            },
+        }
+        deliver_email_action(
+            config={'recipients': [], 'include_payload_email': True},
+            envelope=envelope,
+        )
+        msg = mail.outbox[-1]
+        self.assertIn('Compte utilisateur créé', msg.alternatives[0][0])
+        self.assertIn('Nouveau compte utilisateur', msg.subject)

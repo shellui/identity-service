@@ -1,0 +1,1 @@
+[Shellui] Utilisateur mis à jour : {{ data.email|default:"utilisateur" }}
