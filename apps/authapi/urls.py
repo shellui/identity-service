@@ -13,6 +13,7 @@ from .views import (
     ShellUIAdminOAuthSocialAppDetailView,
     ShellUIAdminOAuthSocialAppListView,
     ShellUIHostingOAuthRedirectSyncView,
+    ShellUIAdminAuthMethodsView,
     ShellUIAdminScimStatusView,
     ShellUIAdminScimTokenListCreateView,
     ShellUIAdminScimTokenRevokeView,
@@ -80,6 +81,7 @@ urlpatterns = [
         ShellUIPersonalAccessTokenListCreateView.as_view(),
         name='shellui-personal-access-tokens',
     ),
+    path('auth-methods', ShellUIAdminAuthMethodsView.as_view(), name='shellui-admin-auth-methods'),
     path('scim', ShellUIAdminScimStatusView.as_view(), name='shellui-admin-scim-status'),
     path(
         'scim/tokens/<uuid:token_id>/revoke',

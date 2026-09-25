@@ -98,6 +98,7 @@ from .serializers import (
     ShellUIHostingOAuthRedirectDeleteSerializer,
     ShellUIPersonalAccessTokenCreateSerializer,
     ShellUIAdminScimTokenCreateSerializer,
+    ShellUIAdminAuthMethodsUpdateSerializer,
     ShellUIAdminUserUpdateSerializer,
     ShellUIUserDeleteSerializer,
     UserPreferenceSerializer,
@@ -1017,6 +1018,28 @@ def _scim_base_url_for_company(request, company: Company) -> str:
 
 def _active_scim_token_count(company: Company) -> int:
     return CompanyScimToken.objects.filter(company=company, revoked_at__isnull=True).count()
+
+
+def _auth_methods_admin_payload(company: Company) -> dict:
+    from apps.authapi.magic_link import magic_link_enabled_for_company, magic_link_globally_enabled
+
+    providers = _enabled_oauth_providers(company)
+    company_magic = bool(getattr(company, 'enable_magic_link', True))
+    effective_magic = magic_link_enabled_for_company(company)
+    oauth_on = bool(providers)
+    methods: list[str] = []
+    if effective_magic:
+        methods.append('magic_link')
+    if oauth_on:
+        methods.append('oauth')
+    return {
+        'enable_magic_link': company_magic,
+        'magic_link_effective': effective_magic,
+        'magic_link_globally_enabled': magic_link_globally_enabled(),
+        'enable_oauth': oauth_on,
+        'oauth_providers': providers,
+        'methods': methods,
+    }
 
 
 def _scim_status_payload(request, company: Company) -> dict:
@@ -3693,6 +3716,63 @@ class ShellUIAdminScimTokenRevokeView(APIView):
 
             emit_scim_token_revoked(company, row)
         return Response(_scim_token_row(row))
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=['auth-admin'],
+        summary='Company auth methods (staff or company owner)',
+        description=(
+            'Read magic-link and OAuth capability flags for the company. '
+            '`magic_link_effective` is false when the company or deployment disables magic link.'
+        ),
+        operation_id='api_v1_auth_methods_retrieve',
+    ),
+    patch=extend_schema(
+        tags=['auth-admin'],
+        summary='Update company auth methods (staff or company owner)',
+        request=ShellUIAdminAuthMethodsUpdateSerializer,
+        description='Toggle `enable_magic_link` for the company (fully disables magic-link request/verify when false).',
+        operation_id='api_v1_auth_methods_partial_update',
+    ),
+    put=extend_schema(
+        tags=['auth-admin'],
+        summary='Update company auth methods (staff or company owner)',
+        request=ShellUIAdminAuthMethodsUpdateSerializer,
+        description='Same as PATCH — set `enable_magic_link` for the company.',
+        operation_id='api_v1_auth_methods_update',
+    ),
+)
+class ShellUIAdminAuthMethodsView(APIView):
+    permission_classes = [ShellUIPermission]
+    serializer_class = ShellUIOpenAPISerializer
+
+    def get(self, request):
+        _actor, company, err = _require_staff_or_company_owner(request)
+        if err:
+            return err
+        return Response(_auth_methods_admin_payload(company))
+
+    def _update(self, request):
+        _actor, company, err = _require_staff_or_company_owner(request)
+        if err:
+            return err
+        serializer = ShellUIAdminAuthMethodsUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        if 'enable_magic_link' not in serializer.validated_data:
+            return Response(
+                {'error': 'Provide enable_magic_link (boolean).'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        company.enable_magic_link = bool(serializer.validated_data['enable_magic_link'])
+        company.save(update_fields=['enable_magic_link'])
+        return Response(_auth_methods_admin_payload(company))
+
+    def patch(self, request):
+        return self._update(request)
+
+    def put(self, request):
+        return self._update(request)
 
 
 @extend_schema_view(

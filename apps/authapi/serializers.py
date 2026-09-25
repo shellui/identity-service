@@ -48,6 +48,10 @@ class ShellUIMagicLinkConsumeSerializer(serializers.Serializer):
     company_id = serializers.IntegerField(min_value=1)
 
 
+class ShellUIAdminAuthMethodsUpdateSerializer(serializers.Serializer):
+    enable_magic_link = serializers.BooleanField(required=False)
+
+
 class ShellUILogoutSerializer(serializers.Serializer):
     refresh_token = serializers.CharField(required=False, allow_blank=True, max_length=8192)
 

@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ### Added
 
-- **Magic link login:** Company-scoped passwordless email sign-in (`POST /api/v1/magic-link/request`, `GET|POST /api/v1/magic-link/verify`). Enabled by default for new companies (`Company.enable_magic_link`); deployment kill switch `MAGIC_LINK_ENABLED`. Emits `identity.auth.magic_link.requested` with en/fr Action email templates (link injected at email send time, not in webhook payloads). Documented in [docs/magic-link.md](docs/magic-link.md).
+- **Magic link login:** Company-scoped passwordless email sign-in (`POST /api/v1/magic-link/request`, `GET|POST /api/v1/magic-link/verify`). Enabled by default for new companies (`Company.enable_magic_link`); deployment kill switch `MAGIC_LINK_ENABLED`. Admin REST `GET|PATCH|PUT /api/v1/auth-methods` (staff or company owner) toggles magic link for shellui/admin integrators. Emits `identity.auth.magic_link.requested` with en/fr Action email templates (link injected at email send time, not in webhook payloads). Documented in [docs/magic-link.md](docs/magic-link.md).
 
 - **Action email i18n:** Locale-aware HTML and subject templates under `apps/actions/templates/actions/emails/<lang>/` with deployment default `ACTIONS_EMAIL_DEFAULT_LANGUAGE` (fallback `en`). Shipped default template sets: **English (`en`)** and **French (`fr`)** for all catalog events. User event payloads and webhook `data` include `language` and `region` from `UserPreference`. Ops fixed recipients and payload-email recipients can receive separate localized messages. Documented in [docs/actions.md](docs/actions.md).
 

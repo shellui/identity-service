@@ -9,7 +9,7 @@ Company-scoped **magic link** sign-in complements OAuth. Users request a one-tim
 | Layer | Control |
 | ----- | ------- |
 | **Deployment** | `MAGIC_LINK_ENABLED=true` (default). Set `false` to disable all magic-link endpoints globally. |
-| **Company** | `Company.enable_magic_link` (default **true** for new companies). Turn off in Django admin → Company. |
+| **Company** | `Company.enable_magic_link` (default **true** for new companies). Toggle via **Admin REST** (below) or Django admin → Company. |
 | **Capabilities API** | `GET /api/v1/settings?company_id=…` returns `enable_magic_link` and includes `magic_link` in `methods` when enabled. |
 
 OAuth providers remain independent — a company can use magic link only, OAuth only, or both.
@@ -72,12 +72,38 @@ Returns the same JWT payload as `POST /api/v1/token` / OAuth finalize on success
 
 ---
 
+## Admin REST (Shellui admin)
+
+Staff or **company owner** JWT with the usual company scope (`company_id` query/body or `company_id` claim in the access token). Same authorization as `/api/v1/scim` and `/api/v1/oauth-clients`. The **shellui/admin** SPA can call these endpoints; a settings UI may ship later — this API is the contract.
+
+| Method | Path | Notes |
+| ------ | ---- | ----- |
+| GET | `/api/v1/auth-methods` | Company magic-link + OAuth flags: `enable_magic_link`, `magic_link_effective`, `magic_link_globally_enabled`, `enable_oauth`, `oauth_providers`, `methods` |
+| PATCH, PUT | `/api/v1/auth-methods` | Body `{ "enable_magic_link": true \| false }` — persists on the company; when `false`, magic-link request/verify return **403** (`magic_link_disabled`) |
+
+Example GET response:
+
+```json
+{
+  "enable_magic_link": true,
+  "magic_link_effective": true,
+  "magic_link_globally_enabled": true,
+  "enable_oauth": true,
+  "oauth_providers": ["github"],
+  "methods": ["magic_link", "oauth"]
+}
+```
+
+When `MAGIC_LINK_ENABLED=false` on the deployment, `magic_link_globally_enabled` and `magic_link_effective` are false even if the company flag stays true (company setting is preserved for when the kill switch is lifted).
+
+---
+
 ## Disabling for a company
 
-1. Django admin → **Companies** → open the company → uncheck **Enable magic link**.
+1. **Admin REST:** `PATCH /api/v1/auth-methods?company_id=…` with `{ "enable_magic_link": false }`, or Django admin → **Companies** → uncheck **Enable magic link**.
 2. Optionally remove `magic_link` Action rules.
 
-New companies created in Django admin default to magic link **enabled**. To default off globally for new rows, set the model default in your fork or uncheck after create.
+New companies default to magic link **enabled** (`enable_magic_link=true`).
 
 ---
 
