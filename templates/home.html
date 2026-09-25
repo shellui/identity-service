@@ -6,14 +6,14 @@
     {% load static %}
     {% include "includes/shellui_favicons.html" %}
     <link rel="stylesheet" href="{% static 'css/site.css' %}" />
-    {% with page_title="Shellui Identity" page_description="Authentication and identity for Shellui apps — OAuth login, JWT tokens, company groups, and optional SCIM provisioning." %}
+    {% with page_title="Shellui Identity" page_description="OAuth login, JWT tokens, company groups, and SCIM for Shellui apps." %}
     <title>{% if show_setup_form %}Setup · {% endif %}{{ page_title }}</title>
     <meta name="description" content="{{ page_description }}" />
     <meta property="og:type" content="website" />
-    <meta property="og:title" content="{{ page_title }} · authentication for Shellui apps" />
+    <meta property="og:title" content="{{ page_title }} - authentication for Shellui apps" />
     <meta property="og:description" content="{{ page_description }}" />
     <meta name="twitter:card" content="summary" />
-    <meta name="twitter:title" content="{{ page_title }} · authentication for Shellui apps" />
+    <meta name="twitter:title" content="{{ page_title }} - authentication for Shellui apps" />
     <meta name="twitter:description" content="{{ page_description }}" />
     {% endwith %}
     <script>
@@ -89,7 +89,7 @@
         <div class="mx-auto w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-sm hosting-form">
           <h1 class="text-xl font-semibold tracking-tight text-foreground">Shellui Identity setup</h1>
           <p class="mt-3 text-sm leading-relaxed text-muted-foreground">
-            Create the initial administrator account. This setup is available only once and disappears permanently after the first user is created.
+            Create the first administrator account. You can run this setup once. After an account exists, this form goes away.
           </p>
 
           {% if form.non_field_errors %}
@@ -198,7 +198,7 @@
         <div class="mx-auto max-w-3xl pb-12 sm:pb-16">
           {% if setup_done %}
           <div class="mb-6 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800 dark:border-green-800 dark:bg-green-950/40 dark:text-green-200">
-            Initial user created successfully. Setup is now locked.
+            You created the initial user. Setup is now locked.
           </div>
           {% endif %}
 
@@ -207,7 +207,7 @@
             Shellui Identity
           </h1>
           <p class="mt-6 max-w-xl text-lg/7 text-muted-foreground">
-            Authentication and identity for Shellui applications — OAuth login, JWT issuance, company groups, and optional SCIM provisioning for enterprise directories.
+            Shellui Identity runs OAuth login and JWT issuance for apps in the Shellui shell. You get company groups and optional SCIM provisioning for your organization.
           </p>
 
           <div class="mt-8 flex flex-wrap items-center gap-4">
@@ -216,7 +216,7 @@
               class="inline-flex min-h-11 items-center justify-center rounded-md bg-foreground px-5 py-2.5 text-sm font-semibold text-background transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
               target="_blank"
               rel="noopener noreferrer"
-              >Read the documentation</a
+              >Read the docs</a
             >
             <a
               href="{{ swagger_url }}"
@@ -245,7 +245,7 @@
               {% if user.is_authenticated %}
               <li>
                 <a href="{{ admin_url }}" class="font-medium text-primary-ink hover:underline dark:text-primary">Django admin</a>
-                <span class="text-muted-foreground">for operators</span>
+                <span class="text-muted-foreground">(operators)</span>
               </li>
               {% endif %}
             </ul>
@@ -264,7 +264,7 @@
             </svg>
           </a>
           <p class="mt-2 max-w-xs text-sm text-muted-foreground">
-            Authentication and identity for Shellui apps — OAuth, JWT, and SCIM.
+            OAuth, JWT, and SCIM for Shellui apps.
           </p>
           <p class="mt-4 text-xs text-muted-foreground">© 2026 Shellui</p>
         </div>
