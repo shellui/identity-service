@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
 
+### Documentation
+
+- Root [AGENTS.md](AGENTS.md) with Shellui writing and design guidelines for coding agents.
+
 ### Added
 
 - **Action email i18n:** Locale-aware HTML and subject templates under `apps/actions/templates/actions/emails/<lang>/` with deployment default `ACTIONS_EMAIL_DEFAULT_LANGUAGE` (fallback `en`). Shipped default template sets: **English (`en`)** and **French (`fr`)** for all catalog events. User event payloads and webhook `data` include `language` and `region` from `UserPreference`. Ops fixed recipients and payload-email recipients can receive separate localized messages. Documented in [docs/actions.md](docs/actions.md).
