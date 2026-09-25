@@ -113,10 +113,12 @@ Stored JSON shape:
 
 #### Email language (i18n)
 
-Action emails are **locale-aware**. **English (`en`)** and **French (`fr`)** template sets ship in this repository for every catalog event; additional locales follow the same directory layout.
+Action emails are **locale-aware**. **English (`en`)** and **French (`fr`)** ship for **every catalog event**, each with a **full HTML body** plus a subject line. Subject `.txt` files alone are not sufficient — the HTML template is the content source of truth.
 
-- **HTML body:** `apps/actions/templates/actions/emails/<language>/<event_type>.html`
+- **HTML body (required):** `apps/actions/templates/actions/emails/<language>/<event_type>.html` — multipart emails attach this as `text/html`.
 - **Subject line:** `apps/actions/templates/actions/emails/<language>/subjects/<event_type>.txt` (Django template syntax; same context as the body: `data`, `envelope`)
+
+Additional locales follow the same layout (HTML body + subject per event).
 
 Legacy flat paths `apps/actions/templates/actions/emails/<event_type>.html` are still tried as a last resort for custom deployments.
 
@@ -128,7 +130,7 @@ Legacy flat paths `apps/actions/templates/actions/emails/<event_type>.html` are 
 
 **Fixed ops recipients** (the comma-separated **To:** list) always use the deployment default language chain (steps 2 → 3), not the end user’s preference. When both fixed recipients and payload email are configured, identity sends **separate messages** so each audience gets the correct locale.
 
-Plain text is generated from the rendered HTML at send time (multipart `alternative` still includes both parts).
+**Plain text** is not authored separately: it is generated from the rendered HTML at send time via `html2text` (`apps/actions/html_plain.py`). Multipart `alternative` delivery includes both the derived plain part and the HTML part.
 
 Add further locales by copying the `en` (or `fr`) tree under `…/emails/<language>/` with matching `subjects/` files.
 

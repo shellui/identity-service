@@ -5,9 +5,12 @@ from django.contrib.auth import get_user_model
 from django.core import mail
 from django.test import TestCase, override_settings
 
+from django.template.loader import get_template
+
 from apps.actions.email_i18n import resolve_body_template, resolve_subject_template_name
 from apps.actions.emit import emit_event
 from apps.actions.handlers.email import deliver_email_action
+from apps.actions.registry import all_event_types
 from apps.actions.models import ActionRule
 from apps.authapi.models import UserPreference
 from apps.companies.models import Company
@@ -107,6 +110,22 @@ class ActionEmailI18nTests(TestCase):
         self.assertEqual(envelope['data']['language'], 'fr')
         self.assertEqual(envelope['data']['region'], 'Europe/Paris')
 
+    def test_catalog_events_have_en_fr_html_bodies(self):
+        """Every registered identity event ships full HTML bodies in en and fr."""
+        catalog_ids = {event.id for event in all_event_types()}
+        base = Path(settings.BASE_DIR) / 'apps/actions/templates/actions/emails'
+        for lang in ('en', 'fr'):
+            html_events = {p.stem for p in (base / lang).glob('*.html')}
+            self.assertEqual(
+                catalog_ids,
+                html_events,
+                f'missing or extra {lang} HTML templates vs event catalog',
+            )
+            for event_id in catalog_ids:
+                template_name = f'actions/emails/{lang}/{event_id}.html'
+                with self.subTest(lang=lang, event=event_id):
+                    get_template(template_name)
+
     def test_french_templates_match_english_set(self):
         base = Path(settings.BASE_DIR) / 'apps/actions/templates/actions/emails'
         en_html = {p.name for p in (base / 'en').glob('*.html')}
@@ -150,5 +169,24 @@ class ActionEmailI18nTests(TestCase):
             envelope=envelope,
         )
         msg = mail.outbox[-1]
-        self.assertIn('Compte utilisateur créé', msg.alternatives[0][0])
+        html_part, mime = msg.alternatives[0]
+        self.assertEqual(mime, 'text/html')
+        self.assertIn('Compte utilisateur créé', html_part)
         self.assertIn('Nouveau compte utilisateur', msg.subject)
+        self.assertNotIn('<h1', msg.body)
+        self.assertIn('Compte utilisateur créé', msg.body)
+
+    def test_plain_text_part_derived_from_html_via_html2text(self):
+        envelope = {
+            'id': 'evt-plain',
+            'type': 'identity.scim.user.provisioned',
+            'time': '2026-01-01T00:00:00+00:00',
+            'company': {'id': self.company.pk, 'slug': 'i18n-co', 'name': 'I18n Co'},
+            'data': {'user_id': 1, 'email': 'plain@i18n.test', 'source': 'scim'},
+        }
+        deliver_email_action(config={'recipients': ['ops@i18n.test']}, envelope=envelope)
+        msg = mail.outbox[-1]
+        html_part, _mime = msg.alternatives[0]
+        self.assertIn('<html', html_part.lower())
+        self.assertNotIn('<p', msg.body)
+        self.assertIn('SCIM access enabled', msg.body)
