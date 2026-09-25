@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
 
+### Documentation
+
+- Root [AGENTS.md](AGENTS.md) with Shellui writing and design guidelines for coding agents.
+
 ### Added
 
 - **Magic link login:** Company-scoped passwordless email sign-in (`POST /api/v1/magic-link/request`, `GET|POST /api/v1/magic-link/verify`). Enabled by default for new companies (`Company.enable_magic_link`); deployment kill switch `MAGIC_LINK_ENABLED`. Admin REST `GET|PATCH|PUT /api/v1/auth-methods` (staff or company owner) toggles magic link for shellui/admin integrators. Emits `identity.auth.magic_link.requested` with en/fr Action email templates (link injected at email send time, not in webhook payloads). Documented in [docs/magic-link.md](docs/magic-link.md).
