@@ -35,6 +35,23 @@ class ShellUIOAuthSessionExchangeSerializer(serializers.Serializer):
     redirect_to = serializers.URLField(max_length=2048)
 
 
+class ShellUIMagicLinkRequestSerializer(serializers.Serializer):
+    email = serializers.EmailField(max_length=254)
+    redirect_to = serializers.URLField(max_length=2048)
+    company_id = serializers.IntegerField(required=False, min_value=1)
+    client_timezone = serializers.CharField(required=False, allow_blank=True, max_length=64)
+    client_device_id = serializers.CharField(required=False, allow_blank=True, max_length=128)
+
+
+class ShellUIMagicLinkConsumeSerializer(serializers.Serializer):
+    token = serializers.CharField(max_length=128)
+    company_id = serializers.IntegerField(min_value=1)
+
+
+class ShellUIAdminAuthMethodsUpdateSerializer(serializers.Serializer):
+    enable_magic_link = serializers.BooleanField(required=False)
+
+
 class ShellUILogoutSerializer(serializers.Serializer):
     refresh_token = serializers.CharField(required=False, allow_blank=True, max_length=8192)
 

@@ -98,6 +98,7 @@ from .serializers import (
     ShellUIHostingOAuthRedirectDeleteSerializer,
     ShellUIPersonalAccessTokenCreateSerializer,
     ShellUIAdminScimTokenCreateSerializer,
+    ShellUIAdminAuthMethodsUpdateSerializer,
     ShellUIAdminUserUpdateSerializer,
     ShellUIUserDeleteSerializer,
     UserPreferenceSerializer,
@@ -816,7 +817,10 @@ def _jwt_bearer_company_id(request) -> int | None:
 
 
 def _required_company_from_request(request, user: User | None = None) -> tuple[Company | None, Response | None]:
-    raw = (request.GET.get('company_id') or request.data.get('company_id') or '').strip()
+    raw_candidate = request.GET.get('company_id')
+    if raw_candidate is None and hasattr(request, 'data'):
+        raw_candidate = request.data.get('company_id')
+    raw = str(raw_candidate).strip() if raw_candidate not in (None, '') else ''
     token_company_id = _jwt_bearer_company_id(request)
 
     company_id: int | None = None
@@ -866,7 +870,10 @@ def _required_company_for_token_refresh(
     user: User,
 ) -> tuple[Company | None, Response | None]:
     """Resolve company for refresh grant from body/query, refresh JWT, or optional access JWT."""
-    raw = (request.GET.get('company_id') or request.data.get('company_id') or '').strip()
+    raw_candidate = request.GET.get('company_id')
+    if raw_candidate is None and hasattr(request, 'data'):
+        raw_candidate = request.data.get('company_id')
+    raw = str(raw_candidate).strip() if raw_candidate not in (None, '') else ''
     refresh_company_id = _token_claim_int(refresh, 'company_id')
     access_company_id = _jwt_bearer_company_id(request)
 
@@ -1011,6 +1018,28 @@ def _scim_base_url_for_company(request, company: Company) -> str:
 
 def _active_scim_token_count(company: Company) -> int:
     return CompanyScimToken.objects.filter(company=company, revoked_at__isnull=True).count()
+
+
+def _auth_methods_admin_payload(company: Company) -> dict:
+    from apps.authapi.magic_link import magic_link_enabled_for_company, magic_link_globally_enabled
+
+    providers = _enabled_oauth_providers(company)
+    company_magic = bool(getattr(company, 'enable_magic_link', True))
+    effective_magic = magic_link_enabled_for_company(company)
+    oauth_on = bool(providers)
+    methods: list[str] = []
+    if effective_magic:
+        methods.append('magic_link')
+    if oauth_on:
+        methods.append('oauth')
+    return {
+        'enable_magic_link': company_magic,
+        'magic_link_effective': effective_magic,
+        'magic_link_globally_enabled': magic_link_globally_enabled(),
+        'enable_oauth': oauth_on,
+        'oauth_providers': providers,
+        'methods': methods,
+    }
 
 
 def _scim_status_payload(request, company: Company) -> dict:
@@ -1304,13 +1333,21 @@ class ShellUIAuthSettingsView(APIView):
         company, company_err = _required_company_from_request(request)
         if company_err:
             return company_err
+        from apps.authapi.magic_link import magic_link_enabled_for_company
+
         clients = _company_oauth_clients(company)
         providers = sorted({str(row.social_app.provider).lower() for row in clients})
+        magic_on = magic_link_enabled_for_company(company)
+        methods: list[str] = []
+        if magic_on:
+            methods.append('magic_link')
+        if providers:
+            methods.append('oauth')
         payload = {
-            'methods': ['oauth'] if providers else [],
+            'methods': methods,
             'oauthProviders': providers,
             'enable_oauth': bool(providers),
-            'enable_magic_link': False,
+            'enable_magic_link': magic_on,
         }
         actor = _authenticate_bearer_user(request)
         if actor is not None and company.members.filter(pk=actor.pk).exists():
@@ -3679,6 +3716,63 @@ class ShellUIAdminScimTokenRevokeView(APIView):
 
             emit_scim_token_revoked(company, row)
         return Response(_scim_token_row(row))
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=['auth-admin'],
+        summary='Company auth methods (staff or company owner)',
+        description=(
+            'Read magic-link and OAuth capability flags for the company. '
+            '`magic_link_effective` is false when the company or deployment disables magic link.'
+        ),
+        operation_id='api_v1_auth_methods_retrieve',
+    ),
+    patch=extend_schema(
+        tags=['auth-admin'],
+        summary='Update company auth methods (staff or company owner)',
+        request=ShellUIAdminAuthMethodsUpdateSerializer,
+        description='Toggle `enable_magic_link` for the company (fully disables magic-link request/verify when false).',
+        operation_id='api_v1_auth_methods_partial_update',
+    ),
+    put=extend_schema(
+        tags=['auth-admin'],
+        summary='Update company auth methods (staff or company owner)',
+        request=ShellUIAdminAuthMethodsUpdateSerializer,
+        description='Same as PATCH — set `enable_magic_link` for the company.',
+        operation_id='api_v1_auth_methods_update',
+    ),
+)
+class ShellUIAdminAuthMethodsView(APIView):
+    permission_classes = [ShellUIPermission]
+    serializer_class = ShellUIOpenAPISerializer
+
+    def get(self, request):
+        _actor, company, err = _require_staff_or_company_owner(request)
+        if err:
+            return err
+        return Response(_auth_methods_admin_payload(company))
+
+    def _update(self, request):
+        _actor, company, err = _require_staff_or_company_owner(request)
+        if err:
+            return err
+        serializer = ShellUIAdminAuthMethodsUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        if 'enable_magic_link' not in serializer.validated_data:
+            return Response(
+                {'error': 'Provide enable_magic_link (boolean).'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        company.enable_magic_link = bool(serializer.validated_data['enable_magic_link'])
+        company.save(update_fields=['enable_magic_link'])
+        return Response(_auth_methods_admin_payload(company))
+
+    def patch(self, request):
+        return self._update(request)
+
+    def put(self, request):
+        return self._update(request)
 
 
 @extend_schema_view(

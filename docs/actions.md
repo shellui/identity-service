@@ -46,6 +46,7 @@ DeliveryAttempt audit log; retries via manage.py drain_action_outbox
 | `identity.scim.token.created` | Admin REST or Django admin token create | No secret in payload |
 | `identity.scim.token.revoked` | Token revoke | |
 | `identity.scim.provisioning_conflict` | SCIM 409 / displayName collision | Ties to `ScimProvisioningEvent` |
+| `identity.auth.magic_link.requested` | User requested a passwordless email sign-in link | Webhook payload has `request_id`, `email`, `expires_at` — no secret; email templates get `magic_link_url` at send time |
 
 ### Envelope shape (webhooks and email context)
 

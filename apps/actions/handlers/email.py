@@ -102,10 +102,21 @@ def _send_html_email(*, recipients: list[str], subject: str, html_body: str) -> 
     message.send(fail_silently=False)
 
 
+def _email_action_data(envelope: dict) -> dict:
+    data = dict(envelope.get('data') or {})
+    if envelope.get('type') == 'identity.auth.magic_link.requested':
+        from apps.authapi.magic_link import magic_link_url_for_request
+
+        url = magic_link_url_for_request(data.get('request_id'))
+        if url:
+            data = {**data, 'magic_link_url': url}
+    return data
+
+
 def deliver_email_action(*, config: dict, envelope: dict) -> None:
     event_type = envelope['type']
     preferred = user_preferred_language_from_envelope(envelope)
-    context = {'envelope': envelope, 'data': envelope.get('data') or {}}
+    context = {'envelope': envelope, 'data': _email_action_data(envelope)}
 
     for recipients, use_user_preference in _split_recipient_batches(config, envelope):
         subject = _render_subject(

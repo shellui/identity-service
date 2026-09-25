@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Callable, TypeVar
 from django.conf import settings
 from django.core.cache import cache
 from rest_framework import status
+from rest_framework.renderers import JSONRenderer
 from rest_framework.response import Response
 
 from .login_audit import get_client_ip
@@ -84,6 +85,10 @@ def rate_limit(scope: str, *, identity: Callable[[HttpRequest], str | None] | No
             bucket = identity(request) if identity is not None else None
             limited = check_rate_limit(request, scope=scope, identity=bucket)
             if limited is not None:
+                renderer = JSONRenderer()
+                limited.accepted_renderer = renderer
+                limited.accepted_media_type = 'application/json'
+                limited.renderer_context = self.get_renderer_context()
                 return limited
             return original_dispatch(self, request, *args, **kwargs)
 

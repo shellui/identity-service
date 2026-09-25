@@ -1,5 +1,6 @@
 from django.urls import path
 
+from .magic_link_views import ShellUIMagicLinkRequestView, ShellUIMagicLinkVerifyView
 from .views import (
     ShellUIAdminGroupDetailView,
     ShellUIAdminGroupListView,
@@ -12,6 +13,7 @@ from .views import (
     ShellUIAdminOAuthSocialAppDetailView,
     ShellUIAdminOAuthSocialAppListView,
     ShellUIHostingOAuthRedirectSyncView,
+    ShellUIAdminAuthMethodsView,
     ShellUIAdminScimStatusView,
     ShellUIAdminScimTokenListCreateView,
     ShellUIAdminScimTokenRevokeView,
@@ -37,6 +39,8 @@ from .views import (
 
 urlpatterns = [
     path('settings', ShellUIAuthSettingsView.as_view(), name='shellui-settings'),
+    path('magic-link/request', ShellUIMagicLinkRequestView.as_view(), name='shellui-magic-link-request'),
+    path('magic-link/verify', ShellUIMagicLinkVerifyView.as_view(), name='shellui-magic-link-verify'),
     path('authorize', ShellUIAuthorizeView.as_view(), name='shellui-authorize'),
     path('oauth/callback', ShellUIOAuthCallbackView.as_view(), name='shellui-oauth-callback'),
     path('oauth/confirm', ShellUIOAuthConfirmView.as_view(), name='shellui-oauth-confirm'),
@@ -77,6 +81,7 @@ urlpatterns = [
         ShellUIPersonalAccessTokenListCreateView.as_view(),
         name='shellui-personal-access-tokens',
     ),
+    path('auth-methods', ShellUIAdminAuthMethodsView.as_view(), name='shellui-admin-auth-methods'),
     path('scim', ShellUIAdminScimStatusView.as_view(), name='shellui-admin-scim-status'),
     path(
         'scim/tokens/<uuid:token_id>/revoke',
