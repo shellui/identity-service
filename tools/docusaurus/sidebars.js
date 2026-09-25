@@ -15,6 +15,11 @@ const sidebars = {
     },
     {
       type: 'doc',
+      id: 'magic-link',
+      label: 'Magic link',
+    },
+    {
+      type: 'doc',
       id: 'oauth-providers',
       label: 'OAuth providers',
     },

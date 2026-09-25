@@ -816,7 +816,10 @@ def _jwt_bearer_company_id(request) -> int | None:
 
 
 def _required_company_from_request(request, user: User | None = None) -> tuple[Company | None, Response | None]:
-    raw = (request.GET.get('company_id') or request.data.get('company_id') or '').strip()
+    raw_candidate = request.GET.get('company_id')
+    if raw_candidate is None and hasattr(request, 'data'):
+        raw_candidate = request.data.get('company_id')
+    raw = str(raw_candidate).strip() if raw_candidate not in (None, '') else ''
     token_company_id = _jwt_bearer_company_id(request)
 
     company_id: int | None = None
@@ -866,7 +869,10 @@ def _required_company_for_token_refresh(
     user: User,
 ) -> tuple[Company | None, Response | None]:
     """Resolve company for refresh grant from body/query, refresh JWT, or optional access JWT."""
-    raw = (request.GET.get('company_id') or request.data.get('company_id') or '').strip()
+    raw_candidate = request.GET.get('company_id')
+    if raw_candidate is None and hasattr(request, 'data'):
+        raw_candidate = request.data.get('company_id')
+    raw = str(raw_candidate).strip() if raw_candidate not in (None, '') else ''
     refresh_company_id = _token_claim_int(refresh, 'company_id')
     access_company_id = _jwt_bearer_company_id(request)
 
@@ -1304,13 +1310,21 @@ class ShellUIAuthSettingsView(APIView):
         company, company_err = _required_company_from_request(request)
         if company_err:
             return company_err
+        from apps.authapi.magic_link import magic_link_enabled_for_company
+
         clients = _company_oauth_clients(company)
         providers = sorted({str(row.social_app.provider).lower() for row in clients})
+        magic_on = magic_link_enabled_for_company(company)
+        methods: list[str] = []
+        if magic_on:
+            methods.append('magic_link')
+        if providers:
+            methods.append('oauth')
         payload = {
-            'methods': ['oauth'] if providers else [],
+            'methods': methods,
             'oauthProviders': providers,
             'enable_oauth': bool(providers),
-            'enable_magic_link': False,
+            'enable_magic_link': magic_on,
         }
         actor = _authenticate_bearer_user(request)
         if actor is not None and company.members.filter(pk=actor.pk).exists():

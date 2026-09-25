@@ -163,6 +163,24 @@ register_event(
 
 register_event(
     DomainEventType(
+        id='identity.auth.magic_link.requested',
+        label='Magic link requested',
+        description=(
+            'A user requested a passwordless email sign-in link for this company. '
+            'Webhook payloads omit the secret; email templates receive magic_link_url at send time.'
+        ),
+        payload_fields=_USER
+        + (
+            EventFieldDoc('request_id', 'Magic link request UUID', '00000000-0000-0000-0000-000000000001'),
+            EventFieldDoc('expires_at', 'ISO8601 expiry for the link', '2026-09-25T10:00:00+00:00'),
+        ),
+        email_subject_template='[Shellui] Sign in to {{ envelope.company.name }}',
+        email_payload_email_field='email',
+    )
+)
+
+register_event(
+    DomainEventType(
         id='identity.scim.provisioning_conflict',
         label='SCIM provisioning conflict',
         description='SCIM returned HTTP 409 (for example displayName collision).',

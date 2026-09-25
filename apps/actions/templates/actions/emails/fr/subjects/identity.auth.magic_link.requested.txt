@@ -1,0 +1,1 @@
+[Shellui] Connexion à {{ envelope.company.name }}

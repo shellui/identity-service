@@ -49,6 +49,7 @@ class CompanyAdminForm(forms.ModelForm):
             'slug',
             'access_mode',
             'allowed_email_domains',
+            'enable_magic_link',
             'owners',
         )
 

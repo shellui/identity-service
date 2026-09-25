@@ -1,5 +1,7 @@
 # Identity-hosted OAuth login
 
+For **passwordless email (magic link)** sign-in, see [magic-link.md](magic-link.md). OAuth and magic link can both be enabled per company.
+
 identity-service owns the OAuth authorize and callback endpoints. Provider apps register a **fixed** redirect URI on the identity host. The shell or CLI bounce target (`redirect_to`) travels in signed OAuth `state`, not in the provider callback URL.
 
 ## Flow

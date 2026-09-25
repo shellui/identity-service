@@ -77,6 +77,13 @@ class Company(models.Model):
         blank=True,
         help_text='Lowercase domains without @ (e.g. ["acme.com"]). Used when access mode is Domain.',
     )
+    enable_magic_link = models.BooleanField(
+        default=True,
+        help_text=(
+            'When true (default for new companies), users can request passwordless email magic links '
+            'for this company. Requires deployment MAGIC_LINK_ENABLED.'
+        ),
+    )
 
     class Meta:
         ordering = ['name']

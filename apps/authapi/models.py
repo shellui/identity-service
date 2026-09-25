@@ -241,3 +241,42 @@ class OAuthSessionDeliveryCode(models.Model):
 
     def __str__(self) -> str:
         return f'OAuthSessionDeliveryCode(code={self.code[:8]}…)'
+
+
+class MagicLinkToken(models.Model):
+    """
+    One-time company-scoped magic link for passwordless email login.
+
+    The raw ``token`` is stored for lookup (same pattern as OAuth session delivery codes).
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    company = models.ForeignKey(
+        'companies.Company',
+        on_delete=models.CASCADE,
+        related_name='magic_link_tokens',
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='magic_link_tokens',
+    )
+    email = models.EmailField(max_length=254, db_index=True)
+    token = models.CharField(max_length=64, unique=True, db_index=True)
+    redirect_to = models.CharField(max_length=2048)
+    expires_at = models.DateTimeField(db_index=True)
+    consumed_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    client_timezone = models.CharField(max_length=64, blank=True)
+    client_device_id = models.CharField(max_length=128, blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['company', 'email', '-created_at']),
+        ]
+
+    def __str__(self) -> str:
+        return f'MagicLinkToken(id={self.pk}, email={self.email})'

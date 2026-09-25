@@ -339,6 +339,9 @@ if _oauth_delivery not in {'code', 'fragment'}:
 OAUTH_TOKEN_DELIVERY = _oauth_delivery
 OAUTH_SESSION_CODE_TTL_SECONDS = int(os.getenv('OAUTH_SESSION_CODE_TTL_SECONDS', '120') or '120')
 
+MAGIC_LINK_ENABLED = _env_bool('MAGIC_LINK_ENABLED', True)
+MAGIC_LINK_TTL_SECONDS = int(os.getenv('MAGIC_LINK_TTL_SECONDS', '1800') or '1800')
+
 # OAuth providers that skip the identity-hosted account confirmation page after callback.
 # Unset env → ``google`` only. Set to empty string to require confirmation for all providers.
 _skip_confirm_raw = os.getenv('OAUTH_SKIP_CONFIRM_PROVIDERS')
@@ -445,6 +448,7 @@ AUTH_RATE_LIMITS = {
     'auth_settings': {'limit': _env_int('AUTH_RATE_LIMIT_SETTINGS', 30), 'window': 60},
     'admin_login': {'limit': _env_int('AUTH_RATE_LIMIT_ADMIN_LOGIN', 10), 'window': 300},
     'pat': {'limit': _env_int('AUTH_RATE_LIMIT_PAT', 30), 'window': 60},
+    'magic_link': {'limit': _env_int('AUTH_RATE_LIMIT_MAGIC_LINK', 10), 'window': 60},
 }
 
 # Database
