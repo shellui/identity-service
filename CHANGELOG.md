@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ### Added
 
+- **Action email i18n:** Locale-aware HTML and subject templates under `apps/actions/templates/actions/emails/<lang>/` with deployment default `ACTIONS_EMAIL_DEFAULT_LANGUAGE` (fallback `en`). Shipped default template sets: **English (`en`)** and **French (`fr`)** for all catalog events. User event payloads and webhook `data` include `language` and `region` from `UserPreference`. Ops fixed recipients and payload-email recipients can receive separate localized messages. Documented in [docs/actions.md](docs/actions.md).
+
 - **OAuth skip confirm:** `OAUTH_SKIP_CONFIRM_PROVIDERS` (default `google`) lets configured IdPs bypass the identity account confirmation page after callback when profile data is sufficient; documented in [docs/oauth-login.md](docs/oauth-login.md).
 
 - **OAuth provider catalog:** Document django-allauth social providers (primary starters + full 65.14.1 module list), enablement checklist, and links to the [upstream provider index](https://docs.allauth.org/en/latest/socialaccount/providers/index.html) — [docs/oauth-providers.md](docs/oauth-providers.md), cross-linked from [docs/oauth-login.md](docs/oauth-login.md).

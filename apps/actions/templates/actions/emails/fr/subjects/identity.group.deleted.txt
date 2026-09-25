@@ -1,0 +1,1 @@
+[Shellui] Groupe supprimé : {{ data.display_name }}

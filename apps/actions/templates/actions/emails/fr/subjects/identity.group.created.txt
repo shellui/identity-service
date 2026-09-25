@@ -1,0 +1,1 @@
+[Shellui] Groupe créé : {{ data.display_name }}

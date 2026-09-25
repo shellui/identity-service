@@ -1,0 +1,1 @@
+[Shellui] User updated: {{ data.email|default:"user" }}

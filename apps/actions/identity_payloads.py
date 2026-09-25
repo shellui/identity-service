@@ -4,20 +4,39 @@ from __future__ import annotations
 
 from django.contrib.auth import get_user_model
 
+from apps.authapi.models import UserPreference
 from apps.companies.models import CompanyGroup
 from apps.scim.models import CompanyScimToken
 
 User = get_user_model()
 
 
+def _user_preference_fields(user) -> dict[str, str]:
+    """Shellui user preferences (``UserPreference``), with model defaults when unset."""
+    try:
+        preference = user.preference
+    except UserPreference.DoesNotExist:
+        return {
+            'language': UserPreference.LANGUAGE_EN,
+            'region': 'UTC',
+        }
+    return {
+        'language': preference.language,
+        'region': preference.region,
+    }
+
+
 def user_event_payload(user, *, source: str = 'scim') -> dict:
     email = (getattr(user, 'email', None) or '').strip()
     username = (getattr(user, 'username', None) or '').strip()
+    prefs = _user_preference_fields(user)
     return {
         'user_id': user.pk,
         'email': email or None,
         'username': username or None,
         'source': source,
+        'language': prefs['language'],
+        'region': prefs['region'],
     }
 
 

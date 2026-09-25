@@ -1,0 +1,1 @@
+[Shellui] Compte utilisateur supprimé : {{ data.email|default:"utilisateur" }}

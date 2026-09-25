@@ -61,7 +61,9 @@ CloudEvents-inspired JSON:
     "user_id": 42,
     "email": "ada@acme.com",
     "username": "ada@acme.com",
-    "source": "scim"
+    "source": "scim",
+    "language": "en",
+    "region": "UTC"
   }
 }
 ```
@@ -79,7 +81,7 @@ Payloads never include secrets, bearer tokens, or password hashes.
 
 #### Example `data` fields by type
 
-- **User / SCIM user events:** `user_id`, `email`, `username`, `source` (`scim`, `oauth`, `admin`, `self`, …); OAuth create may include `oauth_provider`
+- **User / SCIM user events:** `user_id`, `email`, `username`, `source` (`scim`, `oauth`, `admin`, `self`, …), `language` and `region` from the user’s `UserPreference` (defaults `en` / `UTC` when unset); OAuth create may include `oauth_provider`
 - **Group events:** `group_id`, `display_name`, `source`, `external_id`; updates add `changed_fields`
 - **Membership:** above plus `change`, `user_ids`, `nested_group_ids`
 - **SCIM token:** `token_id`, `name`, `token_prefix` (not the bearer secret)
@@ -109,7 +111,28 @@ Stored JSON shape:
 }
 ```
 
-Default **HTML** templates ship under `apps/actions/templates/actions/emails/<event_type>.html`. Plain text is generated from the rendered HTML at send time (multipart `alternative` still includes both parts).
+#### Email language (i18n)
+
+Action emails are **locale-aware**. **English (`en`)** and **French (`fr`)** ship for **every catalog event**, each with a **full HTML body** plus a subject line. Subject `.txt` files alone are not sufficient — the HTML template is the content source of truth.
+
+- **HTML body (required):** `apps/actions/templates/actions/emails/<language>/<event_type>.html` — multipart emails attach this as `text/html`.
+- **Subject line:** `apps/actions/templates/actions/emails/<language>/subjects/<event_type>.txt` (Django template syntax; same context as the body: `data`, `envelope`)
+
+Additional locales follow the same layout (HTML body + subject per event).
+
+Legacy flat paths `apps/actions/templates/actions/emails/<event_type>.html` are still tried as a last resort for custom deployments.
+
+**Resolution order** (body and subject use the same chain):
+
+1. **Recipient user’s preferred language** — from `data.language` on the event payload (`UserPreference.language`), when the message is sent to the address from **Also send to email from event payload** (`include_payload_email`).
+2. **Deployment default language** — `ACTIONS_EMAIL_DEFAULT_LANGUAGE` (default `en`).
+3. **`en`** — always the final fallback when a template file is missing for the preferred language.
+
+**Fixed ops recipients** (the comma-separated **To:** list) always use the deployment default language chain (steps 2 → 3), not the end user’s preference. When both fixed recipients and payload email are configured, identity sends **separate messages** so each audience gets the correct locale.
+
+**Plain text** is not authored separately: it is generated from the rendered HTML at send time via `html2text` (`apps/actions/html_plain.py`). Multipart `alternative` delivery includes both the derived plain part and the HTML part.
+
+Add further locales by copying the `en` (or `fr`) tree under `…/emails/<language>/` with matching `subjects/` files.
 
 ### Webhook config
 
@@ -176,6 +199,7 @@ Optional settings (see [configuration.md](configuration.md)):
 - `ACTIONS_WEBHOOK_TIMEOUT_SECONDS` (default `10`)
 - `ACTIONS_OUTBOX_MAX_ATTEMPTS` (default `5`)
 - `ACTIONS_WEBHOOK_ALLOW_PRIVATE` (default `false`)
+- `ACTIONS_EMAIL_DEFAULT_LANGUAGE` (default `en`) — fallback locale for ops recipients and when a user’s preferred template is missing
 
 View **Action outbox** and **Delivery attempts** in Django admin; use the admin action **Retry delivery** on failed rows.
 
@@ -184,7 +208,7 @@ View **Action outbox** and **Delivery attempts** in Django admin; use the admin 
 ## Adding a new event type (developers)
 
 1. Register the type in `apps/actions/identity_events.py` (or a sibling module imported from `AppsConfig.ready()`).
-2. Add one HTML template under `apps/actions/templates/actions/emails/<event_type>.html`.
+2. Add HTML and subject templates under `apps/actions/templates/actions/emails/en/<event_type>.html` and `…/en/subjects/<event_type>.txt` (plus other locales as needed).
 3. Call `emit_event(...)` or `emit_event_if_rules(...)` from the business path inside a transaction when appropriate.
 4. Document the payload in this file and add tests under `apps/actions/tests/`.
 

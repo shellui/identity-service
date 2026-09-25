@@ -1,0 +1,1 @@
+[Shellui] SCIM token revoked: {{ data.name|default:data.token_prefix }}
