@@ -242,10 +242,12 @@
                 <a href="{{ health_live_url }}" class="font-medium text-primary-ink hover:underline dark:text-primary">Liveness</a>
                 <span class="text-muted-foreground">(<code class="font-mono text-xs">GET /health/live</code>)</span>
               </li>
+              {% if user.is_authenticated %}
               <li>
                 <a href="{{ admin_url }}" class="font-medium text-primary-ink hover:underline dark:text-primary">Django admin</a>
                 <span class="text-muted-foreground">for operators</span>
               </li>
+              {% endif %}
             </ul>
           </section>
         </div>
