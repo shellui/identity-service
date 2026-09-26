@@ -43,6 +43,7 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 ### 🛠 Improvements
 
+- **Action delivery admin:** Richer Django admin for **Action deliveries** and **Delivery attempts** (filters, search, inline attempts on outbox, recent deliveries on rules). Operator notes in [docs/actions.md](docs/actions.md).
 - Deploy check `authapi.W002` warns when `DEBUG=false`, LocMem is in use, and `GUNICORN_WORKERS` > 1.
 
 ### 📚 Documentation
