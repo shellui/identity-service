@@ -50,6 +50,26 @@ class ActionsAdminApiTests(TestCase):
         self.assertEqual(row['payload_email_field'], 'email')
         self.assertIn('email', row['supported_action_kinds'])
         self.assertIn('webhook', row['supported_action_kinds'])
+        self.assertTrue(any(f['name'] == 'email' for f in row['payload_fields']))
+        self.assertEqual(row['email_context_fields'], [])
+        self.assertTrue(
+            any(f['name'] == 'envelope.company.name' for f in response.data['email_envelope_fields'])
+        )
+
+    def test_events_catalog_magic_link_email_context_fields(self):
+        self._as_owner()
+        response = self.client.get(self._url('/api/v1/actions/events'))
+        row = next(
+            r for r in response.data['results'] if r['type'] == 'identity.auth.magic_link.requested'
+        )
+        self.assertTrue(any(f['name'] == 'request_id' for f in row['payload_fields']))
+        magic = next(f for f in row['email_context_fields'] if f['name'] == 'magic_link_url')
+        self.assertIn('send time', magic['description'].lower())
+        self.assertIn('https://', str(magic['example']))
+        self.assertNotIn(
+            'magic_link_url',
+            [f['name'] for f in row['payload_fields']],
+        )
 
     def test_member_forbidden(self):
         self.client.force_authenticate(user=self.member)
@@ -125,6 +145,29 @@ class ActionsAdminApiTests(TestCase):
         )
         missing = self.client.get(self._url(f'/api/v1/actions/rules/{other_rule.pk}'))
         self.assertEqual(missing.status_code, 404)
+
+    def test_event_default_email_template_en_and_fr(self):
+        self._as_owner()
+        for lang in ('en', 'fr'):
+            response = self.client.get(
+                self._url(
+                    f'/api/v1/actions/events/identity.user.created/email-template?language={lang}'
+                )
+            )
+            self.assertEqual(response.status_code, 200, response.data)
+            self.assertEqual(response.data['source'], 'filesystem')
+            self.assertEqual(response.data['language'], lang)
+            self.assertIn('{{ data.email', response.data['html'])
+            self.assertIn('{{ data.email', response.data['subject'])
+            self.assertEqual(response.data['body_html'], response.data['html'])
+            self.assertNotIn(self.company.name, response.data['html'])
+
+    def test_event_default_email_template_unknown_event(self):
+        self._as_owner()
+        response = self.client.get(
+            self._url('/api/v1/actions/events/identity.not.a.real.event/email-template?language=en')
+        )
+        self.assertEqual(response.status_code, 404)
 
     def test_email_template_effective_and_override_delivery(self):
         self._as_owner()

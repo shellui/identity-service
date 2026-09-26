@@ -14,6 +14,12 @@ from apps.actions.registry import EventFieldDoc, get_event_type
 from apps.companies.models import Company
 
 
+def _read_template_source(template_name: str) -> str:
+    engine = engines['django']
+    template = engine.get_template(template_name)
+    return template.template.source
+
+
 def _sample_data_from_event(event_type: str) -> dict:
     try:
         event = get_event_type(event_type)
@@ -82,4 +88,43 @@ def effective_email_template(
         'source': 'filesystem',
         'subject': subject,
         'html': html,
+    }
+
+
+def default_event_email_template(
+    *,
+    event_type: str,
+    language: str | None,
+) -> dict:
+    """
+    Raw filesystem defaults for admin create/edit (unrendered Django template source).
+
+    Raises ``ValueError`` when ``event_type`` is not in the catalog.
+    Raises ``TemplateDoesNotExist`` when no body template file exists.
+    """
+    get_event_type(event_type)
+    lang = normalize_language_code(language) or default_email_language()
+    # Admin passes an explicit locale; treat it like a preferred language in the resolution chain.
+    template_name, resolved_lang = resolve_body_template(
+        event_type,
+        preferred=lang,
+        use_user_preference=True,
+    )
+    html = _read_template_source(template_name)
+    subject_template_name, _sub_lang = resolve_subject_template_name(
+        event_type,
+        preferred=lang,
+        use_user_preference=True,
+    )
+    if subject_template_name:
+        subject = _read_template_source(subject_template_name).strip()
+    else:
+        event = get_event_type(event_type)
+        subject = (event.email_subject_template or '').strip()
+    return {
+        'language': resolved_lang,
+        'source': 'filesystem',
+        'subject': subject,
+        'html': html,
+        'body_html': html,
     }

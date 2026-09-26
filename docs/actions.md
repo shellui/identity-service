@@ -71,6 +71,8 @@ CloudEvents-inspired JSON:
 
 Payloads never include secrets, bearer tokens, or password hashes.
 
+**Email templates vs webhook payloads:** Django email bodies and subjects render with `data` (the envelope payload) and `envelope` (full envelope). Some values exist only at email send time and are **not** in webhook JSON. Example: `identity.auth.magic_link.requested` webhooks include `request_id` and `expires_at` but omit the sign-in URL; the email handler injects `data.magic_link_url` when delivering email. Shellui admin loads insertable field metadata from `GET /api/v1/actions/events` (`payload_fields`, `email_context_fields`, and shared `email_envelope_fields`).
+
 ### SCIM access vs account lifecycle
 
 - **`identity.scim.user.*`** — IdP-driven **company access** (membership enable/disable). SCIM may create a Django user on first provision; that still emits `identity.scim.user.provisioned`, not `identity.user.created`.
@@ -217,13 +219,14 @@ Same authentication as other Shellui admin endpoints: Bearer JWT (or PAT) plus `
 
 | Method | Path | Purpose |
 | ------ | ---- | ------- |
-| `GET` | `/api/v1/actions/events` | Registered event catalog (`type`, `label`, `description`, `emit_by_default`, `payload_email_field`, `supported_action_kinds`). |
+| `GET` | `/api/v1/actions/events` | Registered event catalog plus template variable docs: per-event `payload_fields` (webhook `data.*`), `email_context_fields` (email-only, e.g. `magic_link_url`), and top-level `email_envelope_fields` (`envelope.*` shared by all templates). |
+| `GET` | `/api/v1/actions/events/<event_type>/email-template?language=en` | Default filesystem subject and HTML for create/edit (`source`: `filesystem`; unrendered template source, not sample data). |
 | `GET` | `/api/v1/actions/rules` | List action rules for the company (webhook secrets redacted). |
 | `POST` | `/api/v1/actions/rules` | Create a rule. |
 | `GET` | `/api/v1/actions/rules/<id>` | Rule detail. |
 | `PATCH` | `/api/v1/actions/rules/<id>` | Update fields or config. Blank webhook `secret` or `authorization_header` keeps existing values. |
 | `DELETE` | `/api/v1/actions/rules/<id>` | Delete a rule. |
-| `GET` | `/api/v1/actions/rules/<id>/email-template?language=en` | Effective subject and HTML for the editor (`source`: `override` or `filesystem`). |
+| `GET` | `/api/v1/actions/rules/<id>/email-template?language=en` | Effective subject and HTML for an existing rule (`source`: `override` or rendered `filesystem` preview). |
 | `GET` | `/api/v1/actions/deliveries` | Paginated delivery log (`status`, `event_type`, `action_rule_id`, `created_after`, `created_before`, `page`, `page_size`). |
 | `GET` | `/api/v1/actions/deliveries/<uuid>` | Delivery detail with `envelope` and `attempts`. |
 | `POST` | `/api/v1/actions/deliveries/<uuid>/requeue` | Re-queue a row (same as Django admin re-queue). |

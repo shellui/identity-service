@@ -1,15 +1,21 @@
 from __future__ import annotations
 
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.template import TemplateDoesNotExist
 from django.utils.dateparse import parse_datetime
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema, extend_schema_view
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.actions.email_template_preview import effective_email_template
+from apps.actions.email_template_preview import default_event_email_template, effective_email_template
 from apps.actions.models import ActionOutbox, ActionRule, DeliveryAttempt
-from apps.actions.registry import all_event_types
+from apps.actions.registry import (
+    SHARED_EMAIL_ENVELOPE_FIELDS,
+    all_event_types,
+    event_field_doc_dict,
+    get_event_type,
+)
 from apps.actions.rule_config import (
     build_email_config,
     build_webhook_config,
@@ -147,9 +153,56 @@ class ShellUIAdminActionEventsView(APIView):
                     'emit_by_default': event.emit_by_default,
                     'payload_email_field': event.email_payload_email_field,
                     'supported_action_kinds': list(SUPPORTED_ACTION_KINDS),
+                    'payload_fields': [event_field_doc_dict(f) for f in event.payload_fields],
+                    'email_context_fields': [
+                        event_field_doc_dict(f) for f in event.email_context_fields
+                    ],
                 }
             )
-        return Response({'results': results})
+        return Response(
+            {
+                'results': results,
+                'email_envelope_fields': [
+                    event_field_doc_dict(f) for f in SHARED_EMAIL_ENVELOPE_FIELDS
+                ],
+            }
+        )
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=['actions-admin'],
+        summary='Default filesystem email template for an event type (staff or company owner)',
+        parameters=[
+            OpenApiParameter(
+                name='language',
+                type=str,
+                location=OpenApiParameter.QUERY,
+                required=False,
+                description='Locale code (e.g. en, fr). Defaults to deployment email language.',
+            ),
+        ],
+        operation_id='api_v1_actions_events_email_template',
+    ),
+)
+class ShellUIAdminActionEventEmailTemplateView(APIView):
+    permission_classes = [ShellUIPermission]
+    serializer_class = ShellUIOpenAPISerializer
+
+    def get(self, request, event_type):
+        _actor, _company, err = _require_staff_or_company_owner(request)
+        if err:
+            return err
+        try:
+            get_event_type(event_type)
+        except ValueError:
+            return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        language = (request.GET.get('language') or '').strip() or None
+        try:
+            payload = default_event_email_template(event_type=event_type, language=language)
+        except TemplateDoesNotExist:
+            return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        return Response(payload)
 
 
 @extend_schema_view(
