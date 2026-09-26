@@ -218,12 +218,13 @@ Same authentication as other Shellui admin endpoints: Bearer JWT (or PAT) plus `
 | Method | Path | Purpose |
 | ------ | ---- | ------- |
 | `GET` | `/api/v1/actions/events` | Registered event catalog (`type`, `label`, `description`, `emit_by_default`, `payload_email_field`, `supported_action_kinds`). |
+| `GET` | `/api/v1/actions/events/<event_type>/email-template?language=en` | Default filesystem subject and HTML for create/edit (`source`: `filesystem`; unrendered template source, not sample data). |
 | `GET` | `/api/v1/actions/rules` | List action rules for the company (webhook secrets redacted). |
 | `POST` | `/api/v1/actions/rules` | Create a rule. |
 | `GET` | `/api/v1/actions/rules/<id>` | Rule detail. |
 | `PATCH` | `/api/v1/actions/rules/<id>` | Update fields or config. Blank webhook `secret` or `authorization_header` keeps existing values. |
 | `DELETE` | `/api/v1/actions/rules/<id>` | Delete a rule. |
-| `GET` | `/api/v1/actions/rules/<id>/email-template?language=en` | Effective subject and HTML for the editor (`source`: `override` or `filesystem`). |
+| `GET` | `/api/v1/actions/rules/<id>/email-template?language=en` | Effective subject and HTML for an existing rule (`source`: `override` or rendered `filesystem` preview). |
 | `GET` | `/api/v1/actions/deliveries` | Paginated delivery log (`status`, `event_type`, `action_rule_id`, `created_after`, `created_before`, `page`, `page_size`). |
 | `GET` | `/api/v1/actions/deliveries/<uuid>` | Delivery detail with `envelope` and `attempts`. |
 | `POST` | `/api/v1/actions/deliveries/<uuid>/requeue` | Re-queue a row (same as Django admin re-queue). |
