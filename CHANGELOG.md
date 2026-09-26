@@ -7,43 +7,26 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
 
-### Documentation
-
-- Root [AGENTS.md](AGENTS.md) with Shellui writing and design guidelines for coding agents.
-
-### Added
-
-- **Magic link login:** Company-scoped passwordless email sign-in (`POST /api/v1/magic-link/request`, `GET|POST /api/v1/magic-link/verify`). Enabled by default for new companies (`Company.enable_magic_link`); deployment kill switch `MAGIC_LINK_ENABLED`. Admin REST `GET|PATCH|PUT /api/v1/auth-methods` (staff or company owner) toggles magic link for shellui/admin integrators. Emits `identity.auth.magic_link.requested` with en/fr Action email templates (link injected at email send time, not in webhook payloads). Documented in [docs/magic-link.md](docs/magic-link.md).
-
-- **Action email i18n:** Locale-aware HTML and subject templates under `apps/actions/templates/actions/emails/<lang>/` with deployment default `ACTIONS_EMAIL_DEFAULT_LANGUAGE` (fallback `en`). Shipped default template sets: **English (`en`)** and **French (`fr`)** for all catalog events. User event payloads and webhook `data` include `language` and `region` from `UserPreference`. Ops fixed recipients and payload-email recipients can receive separate localized messages. Documented in [docs/actions.md](docs/actions.md).
-
-- **OAuth skip confirm:** `OAUTH_SKIP_CONFIRM_PROVIDERS` (default `google`) lets configured IdPs bypass the identity account confirmation page after callback when profile data is sufficient; documented in [docs/oauth-login.md](docs/oauth-login.md).
-
-- **OAuth provider catalog:** Document django-allauth social providers (primary starters + full 65.14.1 module list), enablement checklist, and links to the [upstream provider index](https://docs.allauth.org/en/latest/socialaccount/providers/index.html) — [docs/oauth-providers.md](docs/oauth-providers.md), cross-linked from [docs/oauth-login.md](docs/oauth-login.md).
-
-- **Action triggers:** Company-scoped domain events (`identity.*`) → email or webhook via `apps/actions` (ActionRule, ActionOutbox, DeliveryAttempt). Transactional outbox, `transaction.on_commit` delivery, `manage.py drain_action_outbox`, Django admin CRUD, default email templates per event, SCIM/group/token/conflict emitters, and [docs/actions.md](docs/actions.md). Closes [#35](https://github.com/shellui/identity-service/issues/35).
-- **Action catalog (users):** SCIM company-access events renamed to `identity.scim.user.provisioned` / `identity.scim.user.deprovisioned`; added account lifecycle `identity.user.created` (OAuth/admin) and `identity.user.deleted` (admin delete, per company membership).
-- **Self-service account deletion:** `DELETE /api/v1/user` with `{"confirm": true}` lets the authenticated user permanently delete their account (GDPR/RGPD erasure workflows). Emits `identity.user.deleted` per company membership with `source: self`, revokes sessions/PATs, and hard-deletes the user like Django admin. Documented in [docs/oauth-login.md](docs/oauth-login.md).
-
-### Changed
-
-- **Homepage:** Root landing uses Shellui brand favicons and a simpler layout aligned with sibling service sites (hero wash, hosting-style footer, circular dark-mode transition). Title and meta describe **Shellui Identity** (OAuth, JWT, SCIM) instead of the vague “Shellui Auth” product name. Tailwind v4 builds `static/css/site.css` from `templates/` (same pattern as hosting-service); `runserver` rebuilds CSS locally when `DEBUG=true`.
-
-
-- **Company group source provenance:** Django admin no longer exposes `CompanyGroup.source` on create and shows it read-only on edit; admin creates always persist `manual`. Model `save()` rejects setting `scim` outside the SCIM adapter (`scim_source=True`) and still blocks demoting SCIM groups to `manual`.
-
-- **Hybrid company groups:** `CompanyGroup.source` (`manual` | `scim`) with migration defaulting existing rows to `manual`. SCIM exposes only `scim` groups; admin REST can still create/edit `manual` groups when SCIM is configured; SCIM-sourced rows are admin read-only. SCIM status adds `scim_groups_read_only` and keeps `directory_read_only: false`. Shared `display_name` per company returns **409** on cross-source collisions (SCIM vs manual). Collisions are logged and stored as `ScimProvisioningEvent` / `last_provisioning_error` on `GET /api/v1/scim`. See [docs/scim.md](docs/scim.md).
-
-- **JWT / user `groups` claim:** `user_metadata.groups` (OAuth tokens, `GET /api/v1/user`, Shellui admin user payloads) now lists **effective** company groups — direct membership plus ancestor groups via nested `member_groups`. SCIM User `groups` remain **direct** only. See [docs/scim.md](docs/scim.md) and [docs/oauth-login.md](docs/oauth-login.md).
+## [0.6.0] - 2026-09-26
 
 ### Added
 
 - **Enterprise SCIM (opt-in):** Per-company SCIM 2.0 **Users and Groups** (including **nested** group members) via [django-scim2](https://pypi.org/project/django-scim2/) at `/api/v1/companies/<slug>/scim/v2/`, bearer tokens (`CompanyScimToken`), and [docs/scim.md](docs/scim.md). `CompanyGroup` uses SCIM vocabulary (`display_name`, `external_id`, `member_groups` for nested groups). Tenant isolation regression tests and filter SQL hardening included.
 - **SCIM admin REST:** `GET /api/v1/scim`, `GET/POST /api/v1/scim/tokens`, and `POST /api/v1/scim/tokens/<uuid>/revoke` for staff or company owners (Shellui admin SCIM setup; bearer secret returned once on create).
-
-### ✨ Feature
-
+- **Magic link login:** Company-scoped passwordless email sign-in (`POST /api/v1/magic-link/request`, `GET|POST /api/v1/magic-link/verify`). Enabled by default for new companies (`Company.enable_magic_link`); deployment kill switch `MAGIC_LINK_ENABLED`. Admin REST `GET|PATCH|PUT /api/v1/auth-methods` (staff or company owner) toggles magic link for shellui/admin integrators. Emits `identity.auth.magic_link.requested` with en/fr Action email templates (link injected at email send time, not in webhook payloads). Documented in [docs/magic-link.md](docs/magic-link.md).
+- **Action triggers:** Company-scoped domain events (`identity.*`) to email or webhook via `apps/actions` (ActionRule, ActionOutbox, DeliveryAttempt). Transactional outbox, `transaction.on_commit` delivery, `manage.py drain_action_outbox`, Django admin CRUD, default email templates per event, SCIM/group/token/conflict emitters, and [docs/actions.md](docs/actions.md). Closes [#35](https://github.com/shellui/identity-service/issues/35).
+- **Action catalog (users):** SCIM company-access events renamed to `identity.scim.user.provisioned` / `identity.scim.user.deprovisioned`; added account lifecycle `identity.user.created` (OAuth/admin) and `identity.user.deleted` (admin delete, per company membership).
+- **Action email i18n:** Locale-aware HTML and subject templates under `apps/actions/templates/actions/emails/<lang>/` with deployment default `ACTIONS_EMAIL_DEFAULT_LANGUAGE` (fallback `en`). Shipped default template sets: **English (`en`)** and **French (`fr`)** for all catalog events. User event payloads and webhook `data` include `language` and `region` from `UserPreference`. Ops fixed recipients and payload-email recipients can receive separate localized messages. Documented in [docs/actions.md](docs/actions.md).
+- **Self-service account deletion:** `DELETE /api/v1/user` with `{"confirm": true}` lets the authenticated user permanently delete their account (GDPR/RGPD erasure workflows). Emits `identity.user.deleted` per company membership with `source: self`, revokes sessions/PATs, and hard-deletes the user like Django admin. Documented in [docs/oauth-login.md](docs/oauth-login.md).
+- **OAuth skip confirm:** `OAUTH_SKIP_CONFIRM_PROVIDERS` (default `google`) lets configured IdPs bypass the identity account confirmation page after callback when profile data is sufficient; documented in [docs/oauth-login.md](docs/oauth-login.md).
 - **Shared Redis cache:** set `REDIS_URL` to use Django's Redis cache backend for auth rate limits, logout access-token denylist, and last-seen throttling. When unset, behavior stays on in-process LocMem (local dev / single worker).
+
+### Changed
+
+- **Homepage:** Root landing uses Shellui brand favicons and a simpler layout aligned with sibling service sites (hero wash, hosting-style footer, circular dark-mode transition). Title and meta describe **Shellui Identity** (OAuth, JWT, SCIM) instead of the vague “Shellui Auth” product name. Tailwind v4 builds `static/css/site.css` from `templates/` (same pattern as hosting-service); `runserver` rebuilds CSS locally when `DEBUG=true`.
+- **Hybrid company groups:** `CompanyGroup.source` (`manual` | `scim`) with migration defaulting existing rows to `manual`. SCIM exposes only `scim` groups; admin REST can still create/edit `manual` groups when SCIM is configured; SCIM-sourced rows are admin read-only. SCIM status adds `scim_groups_read_only` and keeps `directory_read_only: false`. Shared `display_name` per company returns **409** on cross-source collisions (SCIM vs manual). Collisions are logged and stored as `ScimProvisioningEvent` / `last_provisioning_error` on `GET /api/v1/scim`. See [docs/scim.md](docs/scim.md).
+- **Company group source provenance:** Django admin no longer exposes `CompanyGroup.source` on create and shows it read-only on edit; admin creates always persist `manual`. Model `save()` rejects setting `scim` outside the SCIM adapter (`scim_source=True`) and still blocks demoting SCIM groups to `manual`.
+- **JWT / user `groups` claim:** `user_metadata.groups` (OAuth tokens, `GET /api/v1/user`, Shellui admin user payloads) now lists **effective** company groups: direct membership plus ancestor groups via nested `member_groups`. SCIM User `groups` remain **direct** only. See [docs/scim.md](docs/scim.md) and [docs/oauth-login.md](docs/oauth-login.md).
 
 ### 🛠 Improvements
 
@@ -51,15 +34,11 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ### 📚 Documentation
 
+- Root [AGENTS.md](AGENTS.md) with Shellui writing and design guidelines for coding agents.
+- **OAuth provider catalog:** Document django-allauth social providers (primary starters + full 65.14.1 module list), enablement checklist, and links to the [upstream provider index](https://docs.allauth.org/en/latest/socialaccount/providers/index.html); see [docs/oauth-providers.md](docs/oauth-providers.md), cross-linked from [docs/oauth-login.md](docs/oauth-login.md).
 - Document `REDIS_URL` in `.env.example`, [README.md](README.md), and [PUBLISH.md](PUBLISH.md) (including Coolify Redis steps).
 - Align identity-service Docusaurus chrome with [shellui/shellui](https://github.com/shellui/shellui) (`tools/docusaurus/` theme, navbar, footer, assets); production URL `https://identity.docs.shellui.com`.
-- v0.6.0 docs on `develop`: [Configuration](docs/configuration.md), [SCIM](docs/scim.md), refreshed introduction and sidebar IA.
-
-## [0.6.0] - 2026-09-24
-
-### 📚 Documentation
-
-- Add README **Current release** line and align [PUBLISH.md](PUBLISH.md) and [docs/RELEASES.md](docs/RELEASES.md) Docker Hub tag and `VERSION=` examples with shipping semver.
+- [Configuration](docs/configuration.md), [SCIM](docs/scim.md), refreshed introduction and sidebar IA; README **Current release** line and aligned [PUBLISH.md](PUBLISH.md) / [docs/RELEASES.md](docs/RELEASES.md) Docker Hub tags and `VERSION=` examples.
 
 ## [0.5.1] - 2026-09-24
 
