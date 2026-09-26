@@ -21,10 +21,6 @@ class ScimRoutingTests(TestCase):
         company = Company.objects.create(name='Acme', slug='acme')
         self.assertEqual(resolve_company_from_scim_url_segment(str(company.pk)), company)
 
-    def test_resolve_by_legacy_slug(self):
-        company = Company.objects.create(name='Acme', slug='acme')
-        self.assertEqual(resolve_company_from_scim_url_segment('acme'), company)
-
-    def test_numeric_slug_fallback_when_no_pk_match(self):
-        company = Company.objects.create(name='Legacy', slug='99999')
-        self.assertEqual(resolve_company_from_scim_url_segment('99999'), company)
+    def test_resolve_rejects_non_numeric_segment(self):
+        Company.objects.create(name='Acme', slug='acme')
+        self.assertIsNone(resolve_company_from_scim_url_segment('acme'))

@@ -25,7 +25,7 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 ### ✨ Feature
 
-- **SCIM 2.0 (opt-in):** Per-company Users and Groups (including nested groups) at `/api/v1/companies/<company_id>/scim/v2/` via [django-scim2](https://pypi.org/project/django-scim2/), authenticated with bearer tokens (`CompanyScimToken`). Legacy slug URLs in the same path position remain supported. See [docs/scim.md](docs/scim.md).
+- **SCIM 2.0 (opt-in):** Per-company Users and Groups (including nested groups) at `/api/v1/companies/<company_id>/scim/v2/` via [django-scim2](https://pypi.org/project/django-scim2/), authenticated with bearer tokens (`CompanyScimToken`). See [docs/scim.md](docs/scim.md).
 - **SCIM admin API:** `GET /api/v1/scim`, `GET/POST /api/v1/scim/tokens`, and `POST /api/v1/scim/tokens/<uuid>/revoke` for staff or company owners. Bearer secret is returned once on create.
 - **Magic link login:** Company-scoped passwordless sign-in (`POST /api/v1/magic-link/request`, `GET|POST /api/v1/magic-link/verify`). On by default for new companies; kill switch `MAGIC_LINK_ENABLED`. Toggle via `GET|PATCH|PUT /api/v1/auth-methods`. Emits `identity.auth.magic_link.requested`. See [docs/magic-link.md](docs/magic-link.md).
 - **Action triggers:** Company-scoped `identity.*` events to email or webhook (`ActionRule`, outbox, `manage.py drain_action_outbox`). Closes [#35](https://github.com/shellui/identity-service/issues/35). See [docs/actions.md](docs/actions.md).
@@ -39,13 +39,14 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 ### 🚨 Changed
 
-- **SCIM base URL:** Canonical service-provider path uses the company numeric id (`/api/v1/companies/<id>/scim/v2/`). `GET /api/v1/scim` `base_url` and SCIM resource `location` fields follow the id path. Slug-based URLs remain a legacy alias until IdPs are updated.
+- **SCIM base URL:** Service-provider path uses the company numeric id (`/api/v1/companies/<id>/scim/v2/`). `GET /api/v1/scim` `base_url` and SCIM resource `location` fields use that id path. Slug-based SCIM URLs are not mounted.
 - **Homepage:** Shellui Identity branding (favicons, title/meta), layout aligned with sibling services, and Tailwind v4 `static/css/site.css` rebuilt by `runserver` when `DEBUG=true`.
 - **Hybrid company groups:** `CompanyGroup.source` is `manual` or `scim`. SCIM only exposes `scim` groups; admin REST manages `manual` ones; SCIM rows are admin read-only. Cross-source `display_name` collisions return **409** and surface on `GET /api/v1/scim`. Django admin always creates `manual` and shows `source` read-only. See [docs/scim.md](docs/scim.md).
 - **JWT `groups` claim:** `user_metadata.groups` lists effective membership (direct + nested ancestors). SCIM User `groups` stay direct-only. See [docs/scim.md](docs/scim.md).
 
 ### 🛠 Improvements
 
+- **SCIM URL wiring:** Removed the slug-based SCIM URL mount so the `scim` namespace is unique and startup no longer warns with `urls.W005`.
 - **Action email templates:** Default `identity.*` HTML and subjects in `en` and `fr` use shared card layout, customer-facing copy for sign-in and access emails, and readable operator notifications without event ids or debug tables.
 - **Action delivery admin:** Richer Django admin for **Action deliveries** and **Delivery attempts** (filters, search, inline attempts on outbox, recent deliveries on rules). Operator notes in [docs/actions.md](docs/actions.md).
 - Deploy check `authapi.W002` warns when `DEBUG=false`, LocMem is in use, and `GUNICORN_WORKERS` > 1.

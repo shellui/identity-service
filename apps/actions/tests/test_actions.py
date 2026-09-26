@@ -250,7 +250,7 @@ class ScimActionIntegrationTests(TestCase):
         }
         with self.captureOnCommitCallbacks(execute=True):
             response = self.client.post(
-                '/api/v1/companies/acme/scim/v2/Users',
+                f'/api/v1/companies/{self.company.pk}/scim/v2/Users',
                 data=json.dumps(payload),
                 content_type='application/scim+json',
                 HTTP_AUTHORIZATION=f'Bearer {self.scim_token}',
