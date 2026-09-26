@@ -50,6 +50,26 @@ class ActionsAdminApiTests(TestCase):
         self.assertEqual(row['payload_email_field'], 'email')
         self.assertIn('email', row['supported_action_kinds'])
         self.assertIn('webhook', row['supported_action_kinds'])
+        self.assertTrue(any(f['name'] == 'email' for f in row['payload_fields']))
+        self.assertEqual(row['email_context_fields'], [])
+        self.assertTrue(
+            any(f['name'] == 'envelope.company.name' for f in response.data['email_envelope_fields'])
+        )
+
+    def test_events_catalog_magic_link_email_context_fields(self):
+        self._as_owner()
+        response = self.client.get(self._url('/api/v1/actions/events'))
+        row = next(
+            r for r in response.data['results'] if r['type'] == 'identity.auth.magic_link.requested'
+        )
+        self.assertTrue(any(f['name'] == 'request_id' for f in row['payload_fields']))
+        magic = next(f for f in row['email_context_fields'] if f['name'] == 'magic_link_url')
+        self.assertIn('send time', magic['description'].lower())
+        self.assertIn('https://', str(magic['example']))
+        self.assertNotIn(
+            'magic_link_url',
+            [f['name'] for f in row['payload_fields']],
+        )
 
     def test_member_forbidden(self):
         self.client.force_authenticate(user=self.member)

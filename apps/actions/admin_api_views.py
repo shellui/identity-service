@@ -10,7 +10,12 @@ from rest_framework.views import APIView
 
 from apps.actions.email_template_preview import default_event_email_template, effective_email_template
 from apps.actions.models import ActionOutbox, ActionRule, DeliveryAttempt
-from apps.actions.registry import all_event_types, get_event_type
+from apps.actions.registry import (
+    SHARED_EMAIL_ENVELOPE_FIELDS,
+    all_event_types,
+    event_field_doc_dict,
+    get_event_type,
+)
 from apps.actions.rule_config import (
     build_email_config,
     build_webhook_config,
@@ -148,9 +153,20 @@ class ShellUIAdminActionEventsView(APIView):
                     'emit_by_default': event.emit_by_default,
                     'payload_email_field': event.email_payload_email_field,
                     'supported_action_kinds': list(SUPPORTED_ACTION_KINDS),
+                    'payload_fields': [event_field_doc_dict(f) for f in event.payload_fields],
+                    'email_context_fields': [
+                        event_field_doc_dict(f) for f in event.email_context_fields
+                    ],
                 }
             )
-        return Response({'results': results})
+        return Response(
+            {
+                'results': results,
+                'email_envelope_fields': [
+                    event_field_doc_dict(f) for f in SHARED_EMAIL_ENVELOPE_FIELDS
+                ],
+            }
+        )
 
 
 @extend_schema_view(

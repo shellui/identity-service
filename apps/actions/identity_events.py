@@ -174,6 +174,13 @@ register_event(
             EventFieldDoc('request_id', 'Magic link request UUID', '00000000-0000-0000-0000-000000000001'),
             EventFieldDoc('expires_at', 'ISO8601 expiry for the link', '2026-09-25T10:00:00+00:00'),
         ),
+        email_context_fields=(
+            EventFieldDoc(
+                'magic_link_url',
+                'One-time sign-in URL injected at email send time (omitted from webhook payloads)',
+                'https://identity.example.com/api/v1/magic-link/verify?token=abc&company_id=1',
+            ),
+        ),
         email_subject_template='[Shellui] Sign in to {{ envelope.company.name }}',
         email_payload_email_field='email',
     )
