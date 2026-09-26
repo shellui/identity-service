@@ -1,6 +1,6 @@
 # Action triggers (domain events → email / webhook)
 
-Company admins can react when identity events happen (SCIM access changes, account create/delete, group changes, SCIM conflicts, token lifecycle) using **Action rules** configured in **Django admin**. Each rule maps a **catalog event type** (for example `identity.scim.user.provisioned`) to either **email** or **webhook** delivery.
+Company owners (and Django staff) can react when identity events happen (SCIM access changes, account create/delete, group changes, SCIM conflicts, token lifecycle) using **Action rules** in the **Shellui admin API** or **Django admin**. Each rule maps a **catalog event type** (for example `identity.scim.user.provisioned`) to either **email** or **webhook** delivery.
 
 Shellui identity stays the source of truth for domain events. Automation (n8n, Make, custom workers) consumes **outbound webhooks**; identity does not run a central action microservice.
 
@@ -108,7 +108,13 @@ Stored JSON shape:
 ```json
 {
   "recipients": ["ops@example.com", "security@example.com"],
-  "include_payload_email": true
+  "include_payload_email": true,
+  "email_templates": {
+    "en": {
+      "subject": "Optional override subject",
+      "html": "<!DOCTYPE html><html><body>...</body></html>"
+    }
+  }
 }
 ```
 
@@ -125,9 +131,10 @@ Legacy flat paths `apps/actions/templates/actions/emails/<event_type>.html` are 
 
 **Resolution order** (body and subject use the same chain):
 
-1. **Recipient user’s preferred language** — from `data.language` on the event payload (`UserPreference.language`), when the message is sent to the address from **Also send to email from event payload** (`include_payload_email`).
-2. **Deployment default language** — `ACTIONS_EMAIL_DEFAULT_LANGUAGE` (default `en`).
-3. **`en`** — always the final fallback when a template file is missing for the preferred language.
+1. **Per-rule override** — when the rule’s `config.email_templates[<language>]` includes `html` (and `subject`), that content wins for that locale (Django template syntax; same context as filesystem templates).
+2. **Recipient user’s preferred language** — from `data.language` on the event payload (`UserPreference.language`), when the message is sent to the address from **Also send to email from event payload** (`include_payload_email`).
+3. **Deployment default language** — `ACTIONS_EMAIL_DEFAULT_LANGUAGE` (default `en`).
+4. **`en`** — always the final fallback when a template file is missing for the preferred language.
 
 **Fixed ops recipients** (the comma-separated **To:** list) always use the deployment default language chain (steps 2 → 3), not the end user’s preference. When both fixed recipients and payload email are configured, identity sends **separate messages** so each audience gets the correct locale.
 
@@ -202,9 +209,66 @@ Optional settings (see [configuration.md](configuration.md)):
 - `ACTIONS_WEBHOOK_ALLOW_PRIVATE` (default `false`)
 - `ACTIONS_EMAIL_DEFAULT_LANGUAGE` (default `en`) — fallback locale for ops recipients and when a user’s preferred template is missing
 
+---
+
+## Company admin REST API (`/api/v1/actions/`)
+
+Same authentication as other Shellui admin endpoints: Bearer JWT (or PAT) plus `company_id` query parameter. Callers must be **Django staff** or a **company owner** for that company. Regular members receive **403**.
+
+| Method | Path | Purpose |
+| ------ | ---- | ------- |
+| `GET` | `/api/v1/actions/events` | Registered event catalog (`type`, `label`, `description`, `emit_by_default`, `payload_email_field`, `supported_action_kinds`). |
+| `GET` | `/api/v1/actions/rules` | List action rules for the company (webhook secrets redacted). |
+| `POST` | `/api/v1/actions/rules` | Create a rule. |
+| `GET` | `/api/v1/actions/rules/<id>` | Rule detail. |
+| `PATCH` | `/api/v1/actions/rules/<id>` | Update fields or config. Blank webhook `secret` or `authorization_header` keeps existing values. |
+| `DELETE` | `/api/v1/actions/rules/<id>` | Delete a rule. |
+| `GET` | `/api/v1/actions/rules/<id>/email-template?language=en` | Effective subject and HTML for the editor (`source`: `override` or `filesystem`). |
+| `GET` | `/api/v1/actions/deliveries` | Paginated delivery log (`status`, `event_type`, `action_rule_id`, `created_after`, `created_before`, `page`, `page_size`). |
+| `GET` | `/api/v1/actions/deliveries/<uuid>` | Delivery detail with `envelope` and `attempts`. |
+| `POST` | `/api/v1/actions/deliveries/<uuid>/requeue` | Re-queue a row (same as Django admin re-queue). |
+
+### Example: create an email rule
+
+```json
+POST /api/v1/actions/rules?company_id=1
+{
+  "name": "Notify ops on new users",
+  "event_type": "identity.user.created",
+  "action_kind": "email",
+  "recipients": ["ops@example.com"],
+  "include_payload_email": true,
+  "email_templates": {
+    "en": {
+      "subject": "New user {{ data.email }}",
+      "html": "<!DOCTYPE html><html><body><p>User {{ data.email }} joined.</p></body></html>"
+    }
+  }
+}
+```
+
+List and detail responses expose webhook `secret_set` and `authorization_header_set` instead of plaintext secrets. Per-language HTML overrides must be standalone (no `<script>` tags or remote stylesheets). When `html` is set, `subject` is required for that locale.
+
+### Example: webhook rule (create)
+
+```json
+POST /api/v1/actions/rules?company_id=1
+{
+  "name": "n8n user hook",
+  "event_type": "identity.user.created",
+  "action_kind": "webhook",
+  "url": "https://n8n.example.com/webhook/abc",
+  "secret": "whsec_…"
+}
+```
+
+Only **superusers** may set `allow_private_urls` on create or update (same policy as Django admin).
+
+---
+
 ### Debugging delivery in Django admin
 
-Delivery history is stored in Postgres (no separate public API yet). In Django admin, open **Action deliveries** for one row per fired rule (outbox) or **Delivery attempts** for each HTTP or email try.
+Delivery history lives in Postgres and is also available via **`GET /api/v1/actions/deliveries`**. In Django admin, open **Action deliveries** for one row per fired rule (outbox) or **Delivery attempts** for each HTTP or email try.
 
 | Outbox status | Meaning |
 | ------------- | ------- |
