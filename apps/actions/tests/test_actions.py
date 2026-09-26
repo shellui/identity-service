@@ -387,6 +387,71 @@ class ActionAdminTests(TestCase):
         response = client.get(url)
         self.assertEqual(response.status_code, 200)
 
+    def test_action_outbox_changelist_and_detail_with_attempt_inline(self):
+        from django.test import Client
+
+        rule = ActionRule.objects.create(
+            company=self.company,
+            name='Mail',
+            event_type='identity.scim.user.provisioned',
+            action_kind=ActionRule.ACTION_EMAIL,
+            config={'recipients': ['a@test.com']},
+        )
+        row = ActionOutbox.objects.create(
+            company=self.company,
+            action_rule=rule,
+            event_type='identity.scim.user.provisioned',
+            envelope={'id': '1', 'type': 'identity.scim.user.provisioned', 'data': {}},
+            status=ActionOutbox.STATUS_DELIVERED,
+        )
+        DeliveryAttempt.objects.create(
+            outbox=row,
+            status=DeliveryAttempt.STATUS_SUCCESS,
+            attempt_number=1,
+            duration_ms=12,
+        )
+        client = Client()
+        client.force_login(self.staff)
+        list_url = reverse('admin:actions_actionoutbox_changelist')
+        list_response = client.get(list_url)
+        self.assertEqual(list_response.status_code, 200)
+        self.assertContains(list_response, str(row.pk))
+        self.assertContains(list_response, 'identity.scim.user.provisioned')
+
+        detail_url = reverse('admin:actions_actionoutbox_change', args=[row.pk])
+        detail_response = client.get(detail_url)
+        self.assertEqual(detail_response.status_code, 200)
+        self.assertContains(detail_response, 'Delivery attempts')
+        self.assertContains(detail_response, 'Envelope JSON')
+
+        attempts_url = reverse('admin:actions_deliveryattempt_changelist')
+        self.assertEqual(client.get(attempts_url).status_code, 200)
+
+    def test_action_rule_change_shows_recent_deliveries_inline(self):
+        from django.test import Client
+
+        rule = ActionRule.objects.create(
+            company=self.company,
+            name='Hook rule',
+            event_type='identity.group.created',
+            action_kind=ActionRule.ACTION_WEBHOOK,
+            config={'url': 'https://example.com/h', 'secret': 's'},
+        )
+        ActionOutbox.objects.create(
+            company=self.company,
+            action_rule=rule,
+            event_type='identity.group.created',
+            envelope={'id': '2', 'type': 'identity.group.created', 'data': {}},
+            status=ActionOutbox.STATUS_PENDING,
+        )
+        client = Client()
+        client.force_login(self.staff)
+        url = reverse('admin:actions_actionrule_change', args=[rule.pk])
+        response = client.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Recent deliveries')
+        self.assertContains(response, 'identity.group.created')
+
     def test_change_form_does_not_echo_webhook_secret(self):
         from django.test import Client
 

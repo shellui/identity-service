@@ -85,6 +85,8 @@ class ActionOutbox(models.Model):
     delivered_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
+        verbose_name = 'Action delivery'
+        verbose_name_plural = 'Action deliveries'
         ordering = ['-created_at']
         indexes = [
             models.Index(fields=['status', 'next_attempt_at']),
@@ -115,6 +117,8 @@ class DeliveryAttempt(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
+        verbose_name = 'Delivery attempt'
+        verbose_name_plural = 'Delivery attempts'
         ordering = ['-created_at']
 
     def __str__(self) -> str:
