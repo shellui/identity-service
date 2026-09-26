@@ -1,17 +1,12 @@
-<!DOCTYPE html>
-<html lang="fr">
-<head><meta charset="utf-8"><title>Jeton SCIM révoqué</title></head>
-<body style="font-family: system-ui, -apple-system, Segoe UI, sans-serif; color: #1a1a1a; line-height: 1.5; max-width: 560px; margin: 0 auto; padding: 24px;">
-  <p style="color: #666; font-size: 13px; margin: 0 0 16px;">Shellui identity</p>
-  <h1 style="font-size: 18px; font-weight: 600; margin: 0 0 12px;">Jeton SCIM révoqué</h1>
-  <p style="margin: 0 0 16px;">Un jeton porteur SCIM a été révoqué.</p>
-  <table style="border-collapse: collapse; font-size: 14px; width: 100%; margin-bottom: 16px;">
-    <tr><td style="padding: 4px 12px 4px 0; color: #666; vertical-align: top;">Entreprise</td><td>{{ envelope.company.name }} ({{ envelope.company.slug }})</td></tr>
-    <tr><td style="padding: 4px 12px 4px 0; color: #666;">Événement</td><td>{{ envelope.type }}</td></tr>
-    <tr><td style="padding: 4px 12px 4px 0; color: #666;">Date et heure</td><td>{{ envelope.time }}</td></tr>
-    <tr><td style="padding: 4px 12px 4px 0; color: #666;">Nom</td><td>{{ data.name|default:"—" }}</td></tr>
-    <tr><td style="padding: 4px 12px 4px 0; color: #666;">Préfixe</td><td>{{ data.token_prefix }}</td></tr>
+{% extends "actions/emails/_layout.html" %}
+{% block html_lang %}fr{% endblock %}
+{% block document_title %}Jeton SCIM révoqué{% endblock %}
+{% block heading %}Un jeton SCIM a été révoqué pour {{ envelope.company.name }}{% endblock %}
+{% block content %}
+  <p style="margin: 0 0 20px; font-size: 15px; color: #3f3f46;">Les requêtes d'approvisionnement qui utilisent encore ce jeton échoueront tant qu'un nouveau jeton n'est pas émis.</p>
+  <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="font-size: 14px; border-collapse: collapse;">
+    <tr><td style="padding: 8px 16px 8px 0; color: #71717a; vertical-align: top; width: 120px;">Libellé</td><td style="padding: 8px 0; color: #18181b;">{{ data.name|default:"Jeton sans titre" }}</td></tr>
+    {% if data.token_prefix %}<tr><td style="padding: 8px 16px 8px 0; color: #71717a; vertical-align: top;">Préfixe</td><td style="padding: 8px 0; color: #18181b; font-family: ui-monospace, monospace;">{{ data.token_prefix }}…</td></tr>{% endif %}
   </table>
-  <p style="color: #888; font-size: 12px; margin-top: 24px;">Identifiant d’événement : {{ envelope.id }}</p>
-</body>
-</html>
+{% endblock %}
+{% block footer %}{% endblock %}

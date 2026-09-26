@@ -1,1 +1,1 @@
-[Shellui] Group membership changed: {{ data.display_name }}
+[Shellui] Membership changed for {{ data.display_name }} in {{ envelope.company.name }}

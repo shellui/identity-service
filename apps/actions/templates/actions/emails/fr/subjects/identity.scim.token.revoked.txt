@@ -1,1 +1,1 @@
-[Shellui] Jeton SCIM révoqué : {{ data.name|default:data.token_prefix }}
+[Shellui] Jeton SCIM révoqué pour {{ envelope.company.name }} : {{ data.name|default:data.token_prefix }}

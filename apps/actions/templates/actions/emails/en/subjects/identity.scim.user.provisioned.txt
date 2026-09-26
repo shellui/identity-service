@@ -1,1 +1,1 @@
-[Shellui] SCIM access enabled: {{ data.email|default:"user" }}
+[Shellui] You have access to {{ envelope.company.name }}

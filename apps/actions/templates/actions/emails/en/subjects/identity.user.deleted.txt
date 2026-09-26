@@ -1,1 +1,1 @@
-[Shellui] User account deleted: {{ data.email|default:"user" }}
+[Shellui] Account removed from {{ envelope.company.name }}: {{ data.email|default:"user" }}

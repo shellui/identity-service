@@ -1,1 +1,1 @@
-[Shellui] Groupe mis à jour : {{ data.display_name }}
+[Shellui] Groupe mis à jour dans {{ envelope.company.name }} : {{ data.display_name }}
