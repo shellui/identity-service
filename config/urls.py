@@ -51,6 +51,6 @@ urlpatterns = [
     ),
     path(
         'api/v1/companies/<slug:company_slug>/scim/v2/',
-        include(('apps.scim.urls', 'scim'), namespace='scim'),
+        include(('apps.scim.urls', 'scim'), namespace='scim-slug'),
     ),
 ]
