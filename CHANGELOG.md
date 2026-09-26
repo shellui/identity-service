@@ -21,10 +21,6 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
 -->
 
-### Changed
-
-- **Action delivery admin:** Richer Django admin for **Action deliveries** and **Delivery attempts** (filters, search, inline attempts on outbox, recent deliveries on rules). Operator notes in [docs/actions.md](docs/actions.md). No public REST API for delivery logs in this change.
-
 ## [0.6.0] - 2026-09-26
 
 ### ✨ Feature
