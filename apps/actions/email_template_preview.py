@@ -2,22 +2,20 @@
 
 from __future__ import annotations
 
-from django.template.loader import engines, get_template, render_to_string
-
 from apps.actions.email_i18n import (
     default_email_language,
     normalize_language_code,
     resolve_body_template,
     resolve_subject_template_name,
 )
+from apps.actions.email_template_defaults import (
+    read_default_document,
+    read_default_html_source,
+    read_default_subject_source,
+)
+from apps.actions.email_template_substitute import substitute_action_email_template
 from apps.actions.registry import EventFieldDoc, get_event_type
 from apps.companies.models import Company
-
-
-def _read_template_source(template_name: str) -> str:
-    engine = engines['django']
-    template = engine.get_template(template_name)
-    return template.template.source
 
 
 def _sample_data_from_event(event_type: str) -> dict:
@@ -51,18 +49,22 @@ def effective_email_template(
     use_user_preference: bool = False,
 ) -> dict:
     """
-    Return ``subject``, ``html``, ``language``, and ``source`` (``override`` or ``filesystem``).
+    Return ``subject``, ``html``, optional ``document``, ``language``, and ``source``.
     """
     lang = normalize_language_code(language) or default_email_language()
     templates = (rule_config or {}).get('email_templates') or {}
     override = templates.get(lang) if isinstance(templates, dict) else None
     if isinstance(override, dict) and override.get('html'):
-        return {
+        payload = {
             'language': lang,
             'source': 'override',
             'subject': (override.get('subject') or '').strip(),
             'html': override.get('html') or '',
         }
+        doc = override.get('document')
+        if isinstance(doc, dict):
+            payload['document'] = doc
+        return payload
 
     envelope = sample_envelope(event_type=event_type, company=company)
     context = {'envelope': envelope, 'data': envelope.get('data') or {}}
@@ -71,24 +73,27 @@ def effective_email_template(
         preferred=lang,
         use_user_preference=use_user_preference,
     )
-    html = render_to_string(template_name, context)
-    subject_template_name, _sub_lang = resolve_subject_template_name(
+    html = substitute_action_email_template(read_default_html_source(template_name), context)
+    subject_source, _sub_lang = read_default_subject_source(
         event_type,
         preferred=lang,
         use_user_preference=use_user_preference,
     )
-    if subject_template_name:
-        subject = get_template(subject_template_name).render(context).strip()
+    if subject_source:
+        subject = substitute_action_email_template(subject_source, context).strip()
     else:
         event = get_event_type(event_type)
-        engine = engines['django']
-        subject = engine.from_string(event.email_subject_template).render(context).strip()
-    return {
+        subject = substitute_action_email_template(event.email_subject_template, context).strip()
+    payload = {
         'language': resolved_lang,
         'source': 'filesystem',
         'subject': subject,
         'html': html,
     }
+    document = read_default_document(template_name)
+    if document is not None:
+        payload['document'] = document
+    return payload
 
 
 def default_event_email_template(
@@ -97,34 +102,37 @@ def default_event_email_template(
     language: str | None,
 ) -> dict:
     """
-    Raw filesystem defaults for admin create/edit (unrendered Django template source).
+    Raw filesystem defaults for admin create/edit (unrendered HTML + React Email document JSON).
 
     Raises ``ValueError`` when ``event_type`` is not in the catalog.
     Raises ``TemplateDoesNotExist`` when no body template file exists.
     """
     get_event_type(event_type)
     lang = normalize_language_code(language) or default_email_language()
-    # Admin passes an explicit locale; treat it like a preferred language in the resolution chain.
     template_name, resolved_lang = resolve_body_template(
         event_type,
         preferred=lang,
         use_user_preference=True,
     )
-    html = _read_template_source(template_name)
-    subject_template_name, _sub_lang = resolve_subject_template_name(
+    html = read_default_html_source(template_name)
+    subject_source, _sub_lang = read_default_subject_source(
         event_type,
         preferred=lang,
         use_user_preference=True,
     )
-    if subject_template_name:
-        subject = _read_template_source(subject_template_name).strip()
+    if subject_source:
+        subject = subject_source.strip()
     else:
         event = get_event_type(event_type)
         subject = (event.email_subject_template or '').strip()
-    return {
+    payload = {
         'language': resolved_lang,
         'source': 'filesystem',
         'subject': subject,
         'html': html,
         'body_html': html,
     }
+    document = read_default_document(template_name)
+    if document is not None:
+        payload['document'] = document
+    return payload

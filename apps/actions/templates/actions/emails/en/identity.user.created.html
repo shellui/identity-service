@@ -1,11 +1,28 @@
-{% extends "actions/emails/_layout.html" %}
-{% block html_lang %}en{% endblock %}
-{% block document_title %}Welcome{% endblock %}
-{% block heading %}Welcome to {{ envelope.company.name }}{% endblock %}
-{% block content %}
-  <p style="margin: 0 0 16px; font-size: 15px; color: #3f3f46;">{% if data.email %}An account for <strong style="font-weight: 600;">{{ data.email }}</strong> is ready.{% else %}Your account is ready.{% endif %} Sign in when your administrator shares the link to your app.</p>
-  {% if data.oauth_provider %}
-  <p style="margin: 0; font-size: 14px; color: #71717a;">You can continue with {{ data.oauth_provider|title }} on the sign-in page.</p>
-  {% endif %}
-{% endblock %}
-{% block footer_text %}If you did not expect this message, contact your organization's administrator.{% endblock %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Welcome</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f4f4f5; color: #18181b; font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; line-height: 1.5; -webkit-font-smoothing: antialiased;">
+  <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f4f4f5; border-collapse: collapse;">
+    <tr>
+      <td align="center" style="padding: 32px 16px;">
+        <table role="presentation" cellpadding="0" cellspacing="0" width="560" style="max-width: 560px; width: 100%; background-color: #ffffff; border: 1px solid #e4e4e7; border-radius: 10px; border-collapse: separate;">
+          <tr>
+            <td style="padding: 32px 28px;">
+              <p style="margin: 0 0 24px; color: #71717a; font-size: 13px;">Shellui · {{ envelope.company.name }}</p>
+              <h1 style="margin: 0 0 16px; font-size: 22px; font-weight: 600; letter-spacing: -0.02em; color: #18181b;">Welcome to {{ envelope.company.name }}</h1>
+  <p style="margin: 0 0 16px; font-size: 15px; color: #3f3f46;">An account for <strong style="font-weight: 600;">{{ data.email }}</strong> is ready. Sign in when your administrator shares the link to your app.</p>
+  <p style="margin: 0 0 16px; font-size: 15px; color: #3f3f46;">You can continue with {{ data.oauth_provider }} on the sign-in page when OAuth is enabled.</p>
+
+  <p style="margin: 28px 0 0; padding-top: 20px; border-top: 1px solid #f4f4f5; color: #a1a1aa; font-size: 12px; line-height: 1.5;">If you did not expect this message, contact your organization's administrator.</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

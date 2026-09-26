@@ -1,0 +1,80 @@
+{
+  "type": "doc",
+  "content": [
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "Shellui \u00b7 {{ envelope.company.name }}"
+        }
+      ]
+    },
+    {
+      "type": "heading",
+      "attrs": {
+        "level": 1
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "Connectez-vous \u00e0 {{ envelope.company.name }}"
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "Vous avez demand\u00e9 un lien de connexion pour {{ envelope.company.name }}. Utilisez le bouton ci-dessous pour continuer."
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "Ce lien fonctionne une seule fois et expire bient\u00f4t."
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "Si le bouton ne fonctionne pas, copiez ce lien dans votre navigateur :<br><span style=\"word-break: break-all; color: #52525b;\">{{ data.magic_link_url }}</span>"
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "Se connecter",
+          "marks": [
+            {
+              "type": "link",
+              "attrs": {
+                "href": "{{ data.magic_link_url }}",
+                "target": "_blank"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "Si vous n'avez pas demand\u00e9 cet e-mail, vous pouvez l'ignorer."
+        }
+      ]
+    }
+  ]
+}

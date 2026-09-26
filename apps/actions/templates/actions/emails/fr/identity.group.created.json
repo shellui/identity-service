@@ -1,0 +1,44 @@
+{
+  "type": "doc",
+  "content": [
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "Shellui \u00b7 {{ envelope.company.name }}"
+        }
+      ]
+    },
+    {
+      "type": "heading",
+      "attrs": {
+        "level": 1
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "Un nouveau groupe a \u00e9t\u00e9 cr\u00e9\u00e9 dans {{ envelope.company.name }}"
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "Nom du groupe : <strong style=\"font-weight: 600;\">{{ data.display_name }}</strong>"
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "Origine : {{ data.source }}"
+        }
+      ]
+    }
+  ]
+}

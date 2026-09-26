@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from django.conf import settings
 from django.template import TemplateDoesNotExist
-from django.template.loader import engines, get_template, render_to_string
+from django.template.loader import get_template
+
+from apps.actions.email_template_substitute import substitute_action_email_template
 
 FALLBACK_LANGUAGE = 'en'
 
@@ -61,19 +63,13 @@ def resolve_body_template(
     use_user_preference: bool,
 ) -> tuple[str, str]:
     """Return ``(template_name, resolved_language)`` for the HTML body."""
-    for language in language_candidates(preferred=preferred, use_user_preference=use_user_preference):
-        name = _body_template_name(event_type, language)
-        try:
-            get_template(name)
-            return name, language
-        except TemplateDoesNotExist:
-            continue
-    legacy = _legacy_body_template_name(event_type)
-    try:
-        get_template(legacy)
-        return legacy, FALLBACK_LANGUAGE
-    except TemplateDoesNotExist as exc:
-        raise TemplateDoesNotExist(f'No action email template for event {event_type!r}') from exc
+    from apps.actions.email_template_defaults import resolve_default_body_template_name
+
+    return resolve_default_body_template_name(
+        event_type,
+        preferred=preferred,
+        use_user_preference=use_user_preference,
+    )
 
 
 def resolve_subject_template_name(
@@ -125,19 +121,22 @@ def render_action_email_body(
     for language in language_candidates(preferred=preferred, use_user_preference=use_user_preference):
         entry = _rule_template_entry(rule_config, language)
         if entry:
-            engine = engines['django']
-            html = engine.from_string(entry['html']).render(context)
+            html = substitute_action_email_template(entry['html'], context)
             return html, language
         name = _body_template_name(event_type, language)
         try:
-            get_template(name)
-            return render_to_string(name, context), language
+            from apps.actions.email_template_defaults import read_default_html_source
+
+            source = read_default_html_source(name)
+            return substitute_action_email_template(source, context), language
         except TemplateDoesNotExist:
             continue
     legacy = _legacy_body_template_name(event_type)
     try:
-        get_template(legacy)
-        return render_to_string(legacy, context), FALLBACK_LANGUAGE
+        from apps.actions.email_template_defaults import read_default_html_source
+
+        source = read_default_html_source(legacy)
+        return substitute_action_email_template(source, context), FALLBACK_LANGUAGE
     except TemplateDoesNotExist as exc:
         raise TemplateDoesNotExist(f'No action email template for event {event_type!r}') from exc
 
@@ -157,14 +156,15 @@ def render_action_email_subject(
         if entry:
             subj = (entry.get('subject') or '').strip()
             if subj:
-                engine = engines['django']
-                return engine.from_string(subj).render(context).strip()
+                return substitute_action_email_template(subj, context).strip()
         name = _subject_template_name(event_type, language)
         try:
             get_template(name)
-            return get_template(name).render(context).strip()
+            from apps.actions.email_template_defaults import read_default_html_source
+
+            source = read_default_html_source(name)
+            return substitute_action_email_template(source, context).strip()
         except TemplateDoesNotExist:
             continue
     event = get_event_type(event_type)
-    engine = engines['django']
-    return engine.from_string(event.email_subject_template).render(context).strip()
+    return substitute_action_email_template(event.email_subject_template, context).strip()

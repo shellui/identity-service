@@ -47,7 +47,7 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 ### 🛠 Improvements
 
 - **SCIM URL wiring:** Removed the slug-based SCIM URL mount so the `scim` namespace is unique and startup no longer warns with `urls.W005`.
-- **Action email templates:** Default `identity.*` HTML and subjects in `en` and `fr` use shared card layout, customer-facing copy for sign-in and access emails, and readable operator notifications without event ids or debug tables.
+- **Action email templates:** Default `identity.*` emails in `en` and `fr` ship as React Email editor document JSON plus flat compiled HTML (welcome-style card layout, Shellui palette). Send path and rule overrides substitute `{{ variable }}` placeholders only; Django `{% %}` layout tags are rejected on save. Admin default template API returns `document`, `subject`, and `html`.
 - **Action delivery admin:** Richer Django admin for **Action deliveries** and **Delivery attempts** (filters, search, inline attempts on outbox, recent deliveries on rules). Operator notes in [docs/actions.md](docs/actions.md).
 - Deploy check `authapi.W002` warns when `DEBUG=false`, LocMem is in use, and `GUNICORN_WORKERS` > 1.
 

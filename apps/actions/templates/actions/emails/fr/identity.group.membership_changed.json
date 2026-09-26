@@ -1,0 +1,44 @@
+{
+  "type": "doc",
+  "content": [
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "Shellui \u00b7 {{ envelope.company.name }}"
+        }
+      ]
+    },
+    {
+      "type": "heading",
+      "attrs": {
+        "level": 1
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "L'adh\u00e9sion au groupe a chang\u00e9 dans {{ envelope.company.name }}"
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "Groupe : <strong style=\"font-weight: 600;\">{{ data.display_name }}</strong>"
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "Modification : {{ data.change }}"
+        }
+      ]
+    }
+  ]
+}

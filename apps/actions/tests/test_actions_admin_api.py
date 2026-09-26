@@ -161,6 +161,8 @@ class ActionsAdminApiTests(TestCase):
             self.assertIn('{{ envelope.company.name }}', response.data['subject'])
             self.assertEqual(response.data['body_html'], response.data['html'])
             self.assertNotIn(self.company.name, response.data['html'])
+            self.assertEqual(response.data['document']['type'], 'doc')
+            self.assertIn('{{ envelope.company.name }}', response.data['document']['content'][0]['content'][0]['text'])
 
     def test_event_default_email_template_unknown_event(self):
         self._as_owner()
@@ -269,6 +271,26 @@ class ActionsAdminApiTests(TestCase):
         self.assertEqual(requeue.status_code, 200)
         self.assertEqual(requeue.data['status'], 'pending')
         self.assertEqual(requeue.data['last_error'], '')
+
+    def test_rejects_django_tags_in_html_override(self):
+        self._as_owner()
+        bad = self.client.post(
+            self._url('/api/v1/actions/rules'),
+            {
+                'name': 'Block tags',
+                'event_type': 'identity.user.created',
+                'action_kind': 'email',
+                'recipients': ['ops@actions-co.test'],
+                'email_templates': {
+                    'en': {
+                        'subject': 'Hi',
+                        'html': '{% block content %}<p>x</p>{% endblock %}',
+                    }
+                },
+            },
+            format='json',
+        )
+        self.assertEqual(bad.status_code, 400)
 
     def test_rejects_script_in_html_override(self):
         self._as_owner()

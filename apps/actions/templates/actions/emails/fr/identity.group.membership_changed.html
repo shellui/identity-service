@@ -1,12 +1,28 @@
-{% extends "actions/emails/_layout.html" %}
-{% block html_lang %}fr{% endblock %}
-{% block document_title %}Adhésion au groupe{% endblock %}
-{% block heading %}L'adhésion à un groupe a changé dans {{ envelope.company.name }}{% endblock %}
-{% block content %}
-  <p style="margin: 0 0 20px; font-size: 15px; color: #3f3f46;">Les membres ou les groupes imbriqués ont été mis à jour.</p>
-  <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="font-size: 14px; border-collapse: collapse;">
-    <tr><td style="padding: 8px 16px 8px 0; color: #71717a; vertical-align: top; width: 120px;">Groupe</td><td style="padding: 8px 0; color: #18181b; font-weight: 600;">{{ data.display_name }}</td></tr>
-    {% if data.change %}<tr><td style="padding: 8px 16px 8px 0; color: #71717a; vertical-align: top;">Modification</td><td style="padding: 8px 0; color: #18181b;">{{ data.change }}</td></tr>{% endif %}
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Adhésion modifiée</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f4f4f5; color: #18181b; font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; line-height: 1.5; -webkit-font-smoothing: antialiased;">
+  <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f4f4f5; border-collapse: collapse;">
+    <tr>
+      <td align="center" style="padding: 32px 16px;">
+        <table role="presentation" cellpadding="0" cellspacing="0" width="560" style="max-width: 560px; width: 100%; background-color: #ffffff; border: 1px solid #e4e4e7; border-radius: 10px; border-collapse: separate;">
+          <tr>
+            <td style="padding: 32px 28px;">
+              <p style="margin: 0 0 24px; color: #71717a; font-size: 13px;">Shellui · {{ envelope.company.name }}</p>
+              <h1 style="margin: 0 0 16px; font-size: 22px; font-weight: 600; letter-spacing: -0.02em; color: #18181b;">L'adhésion au groupe a changé dans {{ envelope.company.name }}</h1>
+  <p style="margin: 0 0 16px; font-size: 15px; color: #3f3f46;">Groupe : <strong style="font-weight: 600;">{{ data.display_name }}</strong></p>
+  <p style="margin: 0 0 16px; font-size: 15px; color: #3f3f46;">Modification : {{ data.change }}</p>
+
+
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
   </table>
-{% endblock %}
-{% block footer %}{% endblock %}
+</body>
+</html>
