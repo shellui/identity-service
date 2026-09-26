@@ -1,14 +1,31 @@
-{% extends "actions/emails/_layout.html" %}
-{% block html_lang %}fr{% endblock %}
-{% block document_title %}Conflit SCIM{% endblock %}
-{% block heading %}L'approvisionnement SCIM nécessite votre attention dans {{ envelope.company.name }}{% endblock %}
-{% block content %}
-  <p style="margin: 0 0 20px; font-size: 15px; color: #3f3f46;">Une requête d'approvisionnement n'a pas pu aboutir car un groupe portant le même nom d'affichage existe déjà.</p>
-  <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="font-size: 14px; border-collapse: collapse;">
-    <tr><td style="padding: 8px 16px 8px 0; color: #71717a; vertical-align: top; width: 120px;">Nom d'affichage</td><td style="padding: 8px 0; color: #18181b; font-weight: 600;">{{ data.display_name }}</td></tr>
-    {% if data.operation %}<tr><td style="padding: 8px 16px 8px 0; color: #71717a; vertical-align: top;">Action demandée</td><td style="padding: 8px 0; color: #18181b;">{{ data.operation }}</td></tr>{% endif %}
-    {% if data.conflicting_group_source %}<tr><td style="padding: 8px 16px 8px 0; color: #71717a; vertical-align: top;">Groupe existant</td><td style="padding: 8px 0; color: #18181b;">{% if data.conflicting_group_source == "scim" %}Approvisionnement SCIM{% elif data.conflicting_group_source == "manual" %}Manuel{% else %}{{ data.conflicting_group_source }}{% endif %}</td></tr>{% endif %}
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Conflit SCIM</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f4f4f5; color: #18181b; font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; line-height: 1.5; -webkit-font-smoothing: antialiased;">
+  <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f4f4f5; border-collapse: collapse;">
+    <tr>
+      <td align="center" style="padding: 32px 16px;">
+        <table role="presentation" cellpadding="0" cellspacing="0" width="560" style="max-width: 560px; width: 100%; background-color: #ffffff; border: 1px solid #e4e4e7; border-radius: 10px; border-collapse: separate;">
+          <tr>
+            <td style="padding: 32px 28px;">
+              <p style="margin: 0 0 24px; color: #71717a; font-size: 13px;">Shellui · {{ envelope.company.name }}</p>
+              <h1 style="margin: 0 0 16px; font-size: 22px; font-weight: 600; letter-spacing: -0.02em; color: #18181b;">Le provisionnement SCIM nécessite votre attention dans {{ envelope.company.name }}</h1>
+  <p style="margin: 0 0 16px; font-size: 15px; color: #3f3f46;">Une demande de provisionnement n'a pas pu aboutir car un groupe portant le même nom existe déjà.</p>
+  <p style="margin: 0 0 16px; font-size: 15px; color: #3f3f46;">Nom affiché : <strong style="font-weight: 600;">{{ data.display_name }}</strong></p>
+  <p style="margin: 0 0 16px; font-size: 15px; color: #3f3f46;">Action demandée : {{ data.operation }}</p>
+  <p style="margin: 0 0 16px; font-size: 15px; color: #3f3f46;">Source du groupe existant : {{ data.conflicting_group_source }}</p>
+  <p style="margin: 0 0 16px; font-size: 15px; color: #3f3f46;">Renommez ou fusionnez les groupes dans votre annuaire, puis relancez la requête SCIM.</p>
+
+
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
   </table>
-  <p style="margin: 20px 0 0; font-size: 14px; color: #71717a;">Renommez ou fusionnez les groupes dans votre annuaire, puis relancez la requête SCIM.</p>
-{% endblock %}
-{% block footer %}{% endblock %}
+</body>
+</html>

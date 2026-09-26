@@ -116,15 +116,21 @@ class ActionEmailI18nTests(TestCase):
         base = Path(settings.BASE_DIR) / 'apps/actions/templates/actions/emails'
         for lang in ('en', 'fr'):
             html_events = {p.stem for p in (base / lang).glob('*.html')}
+            json_events = {p.stem for p in (base / lang).glob('*.json')}
             self.assertEqual(
                 catalog_ids,
                 html_events,
                 f'missing or extra {lang} HTML templates vs event catalog',
             )
+            self.assertEqual(catalog_ids, json_events, f'missing {lang} React Email JSON defaults')
             for event_id in catalog_ids:
                 template_name = f'actions/emails/{lang}/{event_id}.html'
                 with self.subTest(lang=lang, event=event_id):
                     get_template(template_name)
+                html_path = base / lang / f'{event_id}.html'
+                source = html_path.read_text(encoding='utf-8')
+                self.assertNotIn('{%', source)
+                self.assertNotIn('%}', source)
 
     def test_french_templates_match_english_set(self):
         base = Path(settings.BASE_DIR) / 'apps/actions/templates/actions/emails'

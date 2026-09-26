@@ -1,0 +1,44 @@
+{
+  "type": "doc",
+  "content": [
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "Shellui \u00b7 {{ envelope.company.name }}"
+        }
+      ]
+    },
+    {
+      "type": "heading",
+      "attrs": {
+        "level": 1
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "Un compte utilisateur a \u00e9t\u00e9 retir\u00e9 de {{ envelope.company.name }}"
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "E-mail : <strong style=\"font-weight: 600;\">{{ data.email }}</strong>"
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "Le compte n'a plus acc\u00e8s \u00e0 cette organisation."
+        }
+      ]
+    }
+  ]
+}

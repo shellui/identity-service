@@ -1,0 +1,53 @@
+{
+  "type": "doc",
+  "content": [
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "Shellui \u00b7 {{ envelope.company.name }}"
+        }
+      ]
+    },
+    {
+      "type": "heading",
+      "attrs": {
+        "level": 1
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "Vous avez acc\u00e8s \u00e0 {{ envelope.company.name }}"
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "Votre organisation a activ\u00e9 votre acc\u00e8s. Connectez-vous avec <strong style=\"font-weight: 600;\">{{ data.email }}</strong> lorsque votre application est pr\u00eate."
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "Si vous aviez d\u00e9j\u00e0 un compte ailleurs dans Shellui, utilisez la m\u00eame adresse e-mail."
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "Des questions ? Contactez l'administrateur de votre organisation."
+        }
+      ]
+    }
+  ]
+}

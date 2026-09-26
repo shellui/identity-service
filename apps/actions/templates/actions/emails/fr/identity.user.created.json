@@ -1,0 +1,53 @@
+{
+  "type": "doc",
+  "content": [
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "Shellui \u00b7 {{ envelope.company.name }}"
+        }
+      ]
+    },
+    {
+      "type": "heading",
+      "attrs": {
+        "level": 1
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "Bienvenue chez {{ envelope.company.name }}"
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "Un compte pour <strong style=\"font-weight: 600;\">{{ data.email }}</strong> est pr\u00eat. Connectez-vous lorsque votre administrateur partage le lien vers votre application."
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "Vous pouvez continuer avec {{ data.oauth_provider }} sur la page de connexion lorsque OAuth est activ\u00e9."
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "Si vous n'attendiez pas ce message, contactez l'administrateur de votre organisation."
+        }
+      ]
+    }
+  ]
+}

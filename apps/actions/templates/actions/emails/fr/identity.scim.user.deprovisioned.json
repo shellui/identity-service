@@ -1,0 +1,44 @@
+{
+  "type": "doc",
+  "content": [
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "Shellui \u00b7 {{ envelope.company.name }}"
+        }
+      ]
+    },
+    {
+      "type": "heading",
+      "attrs": {
+        "level": 1
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "Votre acc\u00e8s \u00e0 {{ envelope.company.name }} est termin\u00e9"
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "Vous n'avez plus acc\u00e8s \u00e0 cette organisation ({{ data.email }}). Votre compte Shellui n'a pas \u00e9t\u00e9 supprim\u00e9 et peut encore fonctionner pour d'autres organisations."
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "Si cela vous semble incorrect, contactez l'administrateur de votre organisation."
+        }
+      ]
+    }
+  ]
+}

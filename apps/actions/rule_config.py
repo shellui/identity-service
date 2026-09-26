@@ -7,6 +7,7 @@ import re
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 
+from apps.actions.email_template_substitute import assert_no_django_template_tags
 from apps.actions.models import ActionRule
 from apps.actions.registry import get_event_type
 
@@ -27,10 +28,10 @@ def validate_email_template_html(html: str) -> None:
         raise ValidationError('HTML must not load remote stylesheets.')
 
 
-def normalize_email_templates(raw: object | None) -> dict[str, dict[str, str]]:
+def normalize_email_templates(raw: object | None) -> dict[str, dict[str, object]]:
     if not raw or not isinstance(raw, dict):
         return {}
-    out: dict[str, dict[str, str]] = {}
+    out: dict[str, dict[str, object]] = {}
     for lang_key, entry in raw.items():
         if not isinstance(lang_key, str) or not isinstance(entry, dict):
             continue
@@ -39,15 +40,28 @@ def normalize_email_templates(raw: object | None) -> dict[str, dict[str, str]]:
             continue
         subject = entry.get('subject')
         html = entry.get('html')
+        document = entry.get('document')
         subject_s = subject.strip() if isinstance(subject, str) else ''
         html_s = html if isinstance(html, str) else ''
-        if not subject_s and not html_s:
+        if not subject_s and not html_s and document is None:
             continue
         if html_s and not subject_s:
             raise ValidationError(f'email_templates[{lang_key}]: subject is required when html is set.')
         if html_s:
             validate_email_template_html(html_s)
-        out[lang] = {'subject': subject_s, 'html': html_s}
+            assert_no_django_template_tags(html_s, field_label=f'email_templates[{lang_key}].html')
+        if subject_s:
+            assert_no_django_template_tags(subject_s, field_label=f'email_templates[{lang_key}].subject')
+        stored: dict[str, object] = {'subject': subject_s, 'html': html_s}
+        if isinstance(document, dict) and document.get('type') == 'doc':
+            stored['document'] = document
+        preview = entry.get('preview')
+        if isinstance(preview, str) and preview.strip():
+            stored['preview'] = preview.strip()
+        theme_id = entry.get('theme_id')
+        if isinstance(theme_id, str) and theme_id.strip():
+            stored['theme_id'] = theme_id.strip()
+        out[lang] = stored
     return out
 
 

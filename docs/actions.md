@@ -113,7 +113,8 @@ Stored JSON shape:
   "include_payload_email": true,
   "email_templates": {
     "en": {
-      "subject": "Optional override subject",
+      "subject": "Optional override subject with {{ data.email }}",
+      "document": { "type": "doc", "content": [] },
       "html": "<!DOCTYPE html><html><body>...</body></html>"
     }
   }
@@ -122,10 +123,11 @@ Stored JSON shape:
 
 #### Email language (i18n)
 
-Action emails are **locale-aware**. **English (`en`)** and **French (`fr`)** ship for **every catalog event**, each with a **full HTML body** plus a subject line. Subject `.txt` files alone are not sufficient — the HTML template is the content source of truth.
+Action emails are **locale-aware**. **English (`en`)** and **French (`fr`)** ship for **every catalog event**, each with a **React Email editor document JSON**, a matching compiled **HTML body**, and a subject line.
 
-- **HTML body (required):** `apps/actions/templates/actions/emails/<language>/<event_type>.html` — multipart emails attach this as `text/html`.
-- **Subject line:** `apps/actions/templates/actions/emails/<language>/subjects/<event_type>.txt` (Django template syntax; same context as the body: `data`, `envelope`)
+- **Editor document (source for admin):** `apps/actions/templates/actions/emails/<language>/<event_type>.json` — TipTap / `@react-email/editor` `JSONContent` (`{ "type": "doc", "content": [...] }`).
+- **HTML body (required at send time):** `apps/actions/templates/actions/emails/<language>/<event_type>.html` — flat HTML with literal `{{ envelope.company.name }}` / `{{ data.* }}` placeholders (no Django `{% %}` tags). Multipart emails attach the rendered HTML as `text/html`.
+- **Subject line:** `apps/actions/templates/actions/emails/<language>/subjects/<event_type>.txt` — same placeholder syntax as the body (`data`, `envelope`).
 
 Additional locales follow the same layout (HTML body + subject per event).
 
@@ -133,7 +135,7 @@ Legacy flat paths `apps/actions/templates/actions/emails/<event_type>.html` are 
 
 **Resolution order** (body and subject use the same chain):
 
-1. **Per-rule override** — when the rule’s `config.email_templates[<language>]` includes `html` (and `subject`), that content wins for that locale (Django template syntax; same context as filesystem templates).
+1. **Per-rule override** — when the rule’s `config.email_templates[<language>]` includes `html` (and `subject`), that content wins for that locale. Overrides store optional `document` JSON for the admin editor plus compiled `html`. Only `{{ variable }}` substitution runs at send time; Django `{% %}` tags are rejected on save.
 2. **Recipient user’s preferred language** — from `data.language` on the event payload (`UserPreference.language`), when the message is sent to the address from **Also send to email from event payload** (`include_payload_email`).
 3. **Deployment default language** — `ACTIONS_EMAIL_DEFAULT_LANGUAGE` (default `en`).
 4. **`en`** — always the final fallback when a template file is missing for the preferred language.
@@ -220,7 +222,7 @@ Same authentication as other Shellui admin endpoints: Bearer JWT (or PAT) plus `
 | Method | Path | Purpose |
 | ------ | ---- | ------- |
 | `GET` | `/api/v1/actions/events` | Registered event catalog plus template variable docs: per-event `payload_fields` (webhook `data.*`), `email_context_fields` (email-only, e.g. `magic_link_url`), and top-level `email_envelope_fields` (`envelope.*` shared by all templates). |
-| `GET` | `/api/v1/actions/events/<event_type>/email-template?language=en` | Default filesystem subject and HTML for create/edit (`source`: `filesystem`; unrendered template source, not sample data). |
+| `GET` | `/api/v1/actions/events/<event_type>/email-template?language=en` | Default filesystem subject, React Email `document` JSON, and flat HTML for create/edit (`source`: `filesystem`; unrendered placeholders, not sample data). |
 | `GET` | `/api/v1/actions/rules` | List action rules for the company (webhook secrets redacted). |
 | `POST` | `/api/v1/actions/rules` | Create a rule. |
 | `GET` | `/api/v1/actions/rules/<id>` | Rule detail. |
@@ -244,13 +246,14 @@ POST /api/v1/actions/rules?company_id=1
   "email_templates": {
     "en": {
       "subject": "New user {{ data.email }}",
+      "document": { "type": "doc", "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "User {{ data.email }} joined." }] }] },
       "html": "<!DOCTYPE html><html><body><p>User {{ data.email }} joined.</p></body></html>"
     }
   }
 }
 ```
 
-List and detail responses expose webhook `secret_set` and `authorization_header_set` instead of plaintext secrets. Per-language HTML overrides must be standalone (no `<script>` tags or remote stylesheets). When `html` is set, `subject` is required for that locale.
+List and detail responses expose webhook `secret_set` and `authorization_header_set` instead of plaintext secrets. Per-language HTML overrides must be standalone (no `<script>` tags, remote stylesheets, or Django `{% %}` tags). When `html` is set, `subject` is required for that locale. Optional `document` is persisted when the admin editor saves TipTap JSON.
 
 ### Example: webhook rule (create)
 
