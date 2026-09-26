@@ -46,6 +46,10 @@ urlpatterns = [
         name='redoc',
     ),
     path(
+        'api/v1/companies/<int:company_id>/scim/v2/',
+        include(('apps.scim.urls', 'scim'), namespace='scim'),
+    ),
+    path(
         'api/v1/companies/<slug:company_slug>/scim/v2/',
         include(('apps.scim.urls', 'scim'), namespace='scim'),
     ),

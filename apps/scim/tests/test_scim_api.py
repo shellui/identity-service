@@ -19,6 +19,10 @@ SCIM_ON = {
 
 
 def _scim_base(company: Company) -> str:
+    return f'/api/v1/companies/{company.pk}/scim/v2'
+
+
+def _scim_base_legacy_slug(company: Company) -> str:
     return f'/api/v1/companies/{company.slug}/scim/v2'
 
 
@@ -51,13 +55,20 @@ class ScimApiTests(TestCase):
         response = self.client.get(f'{_scim_base(self.company)}/Users')
         self.assertEqual(response.status_code, 401)
 
-    def test_wrong_company_slug_rejected(self):
+    def test_wrong_company_id_rejected(self):
         other = Company.objects.create(name='Other', slug='other-co')
         response = self.client.get(
             f'{_scim_base(other)}/Users',
             HTTP_AUTHORIZATION=self.auth_header,
         )
         self.assertEqual(response.status_code, 401)
+
+    def test_legacy_slug_url_still_accepted(self):
+        response = self.client.get(
+            f'{_scim_base_legacy_slug(self.company)}/ServiceProviderConfig',
+            HTTP_AUTHORIZATION=self.auth_header,
+        )
+        self.assertEqual(response.status_code, 200)
 
     def test_create_list_and_patch_user(self):
         payload = {

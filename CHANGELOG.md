@@ -25,7 +25,7 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 ### ✨ Feature
 
-- **SCIM 2.0 (opt-in):** Per-company Users and Groups (including nested groups) at `/api/v1/companies/<slug>/scim/v2/` via [django-scim2](https://pypi.org/project/django-scim2/), authenticated with bearer tokens (`CompanyScimToken`). See [docs/scim.md](docs/scim.md).
+- **SCIM 2.0 (opt-in):** Per-company Users and Groups (including nested groups) at `/api/v1/companies/<company_id>/scim/v2/` via [django-scim2](https://pypi.org/project/django-scim2/), authenticated with bearer tokens (`CompanyScimToken`). Legacy slug URLs in the same path position remain supported. See [docs/scim.md](docs/scim.md).
 - **SCIM admin API:** `GET /api/v1/scim`, `GET/POST /api/v1/scim/tokens`, and `POST /api/v1/scim/tokens/<uuid>/revoke` for staff or company owners. Bearer secret is returned once on create.
 - **Magic link login:** Company-scoped passwordless sign-in (`POST /api/v1/magic-link/request`, `GET|POST /api/v1/magic-link/verify`). On by default for new companies; kill switch `MAGIC_LINK_ENABLED`. Toggle via `GET|PATCH|PUT /api/v1/auth-methods`. Emits `identity.auth.magic_link.requested`. See [docs/magic-link.md](docs/magic-link.md).
 - **Action triggers:** Company-scoped `identity.*` events to email or webhook (`ActionRule`, outbox, `manage.py drain_action_outbox`). Closes [#35](https://github.com/shellui/identity-service/issues/35). See [docs/actions.md](docs/actions.md).
@@ -37,6 +37,7 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 ### 🚨 Changed
 
+- **SCIM base URL:** Canonical service-provider path uses the company numeric id (`/api/v1/companies/<id>/scim/v2/`). `GET /api/v1/scim` `base_url` and SCIM resource `location` fields follow the id path. Slug-based URLs remain a legacy alias until IdPs are updated.
 - **Homepage:** Shellui Identity branding (favicons, title/meta), layout aligned with sibling services, and Tailwind v4 `static/css/site.css` rebuilt by `runserver` when `DEBUG=true`.
 - **Hybrid company groups:** `CompanyGroup.source` is `manual` or `scim`. SCIM only exposes `scim` groups; admin REST manages `manual` ones; SCIM rows are admin read-only. Cross-source `display_name` collisions return **409** and surface on `GET /api/v1/scim`. Django admin always creates `manual` and shows `source` read-only. See [docs/scim.md](docs/scim.md).
 - **JWT `groups` claim:** `user_metadata.groups` lists effective membership (direct + nested ancestors). SCIM User `groups` stay direct-only. See [docs/scim.md](docs/scim.md).

@@ -6,19 +6,20 @@ from django.conf import settings
 from django.http import HttpResponse
 from django.utils import timezone
 
-from apps.companies.models import Company
 from apps.scim.models import CompanyScimToken
+from apps.scim.routing import resolve_company_from_scim_url_segment
 from apps.scim.provisioner import get_scim_provisioner_user
 from apps.scim.tokens import hash_scim_token
 
-_SCIM_PATH_RE = re.compile(r'^/api/v1/companies/(?P<slug>[^/]+)/scim/v2/')
+_SCIM_PATH_RE = re.compile(r'^/api/v1/companies/(?P<segment>[^/]+)/scim/v2/')
 
 
 class ScimBearerAuthMiddleware:
     """
     Authenticate SCIM calls with ``Authorization: Bearer <company-scim-token>``.
 
-    The URL slug must match the token's company. Sets ``request.scim_company`` and a
+    The URL company segment (id or legacy slug) must match the token's company. Sets
+    ``request.scim_company`` and a
     non-interactive ``request.user`` for django-scim2's auth middleware.
     """
 
@@ -50,8 +51,9 @@ class ScimBearerAuthMiddleware:
         except CompanyScimToken.DoesNotExist:
             return self._unauthorized()
 
-        slug = match.group('slug')
-        if row.company.slug != slug:
+        segment = match.group('segment')
+        url_company = resolve_company_from_scim_url_segment(segment)
+        if url_company is None or url_company.pk != row.company_id:
             return self._unauthorized()
 
         CompanyScimToken.objects.filter(pk=row.pk).update(last_used_at=timezone.now())

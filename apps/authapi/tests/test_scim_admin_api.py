@@ -41,7 +41,7 @@ class ScimAdminApiTests(TestCase):
         status = self.client.get(self._url('/api/v1/scim'))
         self.assertEqual(status.status_code, 200, status.data)
         self.assertTrue(status.data['enabled'])
-        self.assertIn('/api/v1/companies/scim-co/scim/v2/', status.data['base_url'])
+        self.assertIn(f'/api/v1/companies/{self.company.pk}/scim/v2/', status.data['base_url'])
         self.assertFalse(status.data['configured'])
         self.assertEqual(status.data['active_token_count'], 0)
         self.assertFalse(status.data['directory_read_only'])

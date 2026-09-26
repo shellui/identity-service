@@ -4,9 +4,9 @@ from django_scim.utils import get_group_adapter, get_user_adapter
 
 
 class ShellUIServiceProviderConfigView(DjangoServiceProviderConfigView):
-    """Accept company_slug from the company-scoped URL include."""
+    """Accept company id (or legacy slug) from the company-scoped URL include."""
 
-    def get(self, request, company_slug=None, *args, **kwargs):
+    def get(self, request, company_id=None, company_slug=None, *args, **kwargs):
         return super().get(request)
 
 
