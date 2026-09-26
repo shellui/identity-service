@@ -8,6 +8,7 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.actions.admin_email_template_query import requested_email_template_languages
 from apps.actions.email_template_preview import default_event_email_template, effective_email_template
 from apps.actions.models import ActionOutbox, ActionRule, DeliveryAttempt
 from apps.actions.registry import (
@@ -179,9 +180,31 @@ class ShellUIAdminActionEventsView(APIView):
                 type=str,
                 location=OpenApiParameter.QUERY,
                 required=False,
-                description='Locale code (e.g. en, fr). Defaults to deployment email language.',
+                description=(
+                    'Single locale (e.g. en). Comma-separated values use the batch response shape. '
+                    'Prefer ``languages`` for multiple locales.'
+                ),
+            ),
+            OpenApiParameter(
+                name='languages',
+                type=str,
+                location=OpenApiParameter.QUERY,
+                required=False,
+                description=(
+                    'Comma-separated locale codes (e.g. en,fr). One code returns the legacy single-object '
+                    'body; two or more return ``event_type`` and a ``templates`` map. Invalid codes yield 400.'
+                ),
             ),
         ],
+        responses={
+            200: OpenApiResponse(
+                description=(
+                    'Single locale: subject, html, document, language, and source. '
+                    'Multiple locales: event_type and templates keyed by language code.'
+                ),
+            ),
+            400: OpenApiResponse(description='Invalid language code(s).'),
+        },
         operation_id='api_v1_actions_events_email_template',
     ),
 )
@@ -197,9 +220,24 @@ class ShellUIAdminActionEventEmailTemplateView(APIView):
             get_event_type(event_type)
         except ValueError:
             return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
-        language = (request.GET.get('language') or '').strip() or None
+        languages, lang_err = requested_email_template_languages(request)
+        if lang_err:
+            return lang_err
+        if isinstance(languages, list):
+            templates: dict[str, dict] = {}
+            for code in languages:
+                try:
+                    templates[code] = default_event_email_template(
+                        event_type=event_type,
+                        language=code,
+                    )
+                except TemplateDoesNotExist:
+                    continue
+            if not templates:
+                return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+            return Response({'event_type': event_type, 'templates': templates})
         try:
-            payload = default_event_email_template(event_type=event_type, language=language)
+            payload = default_event_email_template(event_type=event_type, language=languages)
         except TemplateDoesNotExist:
             return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
         return Response(payload)
@@ -324,9 +362,31 @@ class ShellUIAdminActionRuleDetailView(APIView):
                 type=str,
                 location=OpenApiParameter.QUERY,
                 required=False,
-                description='Locale code (e.g. en, fr). Defaults to deployment email language.',
+                description=(
+                    'Single locale (e.g. en). Comma-separated values use the batch response shape. '
+                    'Prefer ``languages`` for multiple locales.'
+                ),
+            ),
+            OpenApiParameter(
+                name='languages',
+                type=str,
+                location=OpenApiParameter.QUERY,
+                required=False,
+                description=(
+                    'Comma-separated locale codes (e.g. en,fr). One code returns the legacy single-object '
+                    'body; two or more return a ``templates`` map. Invalid codes yield 400.'
+                ),
             ),
         ],
+        responses={
+            200: OpenApiResponse(
+                description=(
+                    'Single locale: subject, html, document, language, and source. '
+                    'Multiple locales: templates keyed by language code.'
+                ),
+            ),
+            400: OpenApiResponse(description='Invalid language code(s).'),
+        },
         operation_id='api_v1_actions_rules_email_template',
     ),
 )
@@ -347,12 +407,24 @@ class ShellUIAdminActionRuleEmailTemplateView(APIView):
                 {'error': 'Email templates apply only to email action rules.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        language = (request.GET.get('language') or '').strip() or None
+        languages, lang_err = requested_email_template_languages(request)
+        if lang_err:
+            return lang_err
+        if isinstance(languages, list):
+            templates: dict[str, dict] = {}
+            for code in languages:
+                templates[code] = effective_email_template(
+                    rule_config=rule.config or {},
+                    event_type=rule.event_type,
+                    company=company,
+                    language=code,
+                )
+            return Response({'templates': templates})
         payload = effective_email_template(
             rule_config=rule.config or {},
             event_type=rule.event_type,
             company=company,
-            language=language,
+            language=languages,
         )
         return Response(payload)
 

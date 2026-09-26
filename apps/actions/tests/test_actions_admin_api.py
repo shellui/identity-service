@@ -171,6 +171,43 @@ class ActionsAdminApiTests(TestCase):
         )
         self.assertEqual(response.status_code, 404)
 
+    def test_event_default_email_template_batch_languages(self):
+        self._as_owner()
+        response = self.client.get(
+            self._url(
+                '/api/v1/actions/events/identity.user.created/email-template?languages=en,fr'
+            )
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data['event_type'], 'identity.user.created')
+        self.assertEqual(set(response.data['templates'].keys()), {'en', 'fr'})
+        for lang in ('en', 'fr'):
+            row = response.data['templates'][lang]
+            self.assertEqual(row['language'], lang)
+            self.assertEqual(row['source'], 'filesystem')
+            self.assertIn('{{ data.email', row['html'])
+
+    def test_event_default_email_template_languages_single_legacy_shape(self):
+        self._as_owner()
+        response = self.client.get(
+            self._url(
+                '/api/v1/actions/events/identity.user.created/email-template?languages=en'
+            )
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data['language'], 'en')
+        self.assertNotIn('templates', response.data)
+
+    def test_event_default_email_template_invalid_language(self):
+        self._as_owner()
+        response = self.client.get(
+            self._url(
+                '/api/v1/actions/events/identity.user.created/email-template?languages=en,12'
+            )
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('Invalid language', response.data['error'])
+
     def test_email_template_effective_and_override_delivery(self):
         self._as_owner()
         created = self.client.post(
@@ -197,6 +234,15 @@ class ActionsAdminApiTests(TestCase):
         self.assertEqual(template.status_code, 200)
         self.assertEqual(template.data['source'], 'override')
         self.assertIn('Custom', template.data['subject'])
+
+        batch = self.client.get(
+            self._url(
+                f'/api/v1/actions/rules/{created.data["id"]}/email-template?languages=en,fr'
+            )
+        )
+        self.assertEqual(batch.status_code, 200, batch.data)
+        self.assertEqual(batch.data['templates']['en']['source'], 'override')
+        self.assertEqual(batch.data['templates']['fr']['source'], 'filesystem')
 
         rule = ActionRule.objects.get(pk=created.data['id'])
         envelope = {
