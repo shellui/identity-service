@@ -3,6 +3,7 @@ from __future__ import annotations
 from django.contrib.auth import get_user_model
 
 from apps.scim.context import get_scim_company
+from apps.scim.routing import scim_path_prefix_for_company
 
 
 def shellui_base_scim_location(request=None, *args, **kwargs):
@@ -13,7 +14,7 @@ def shellui_base_scim_location(request=None, *args, **kwargs):
         return ''
     scheme = 'https' if request.is_secure() else 'http'
     host = request.get_host()
-    return f'{scheme}://{host}/api/v1/companies/{company.slug}/scim/v2/'
+    return f'{scheme}://{host}{scim_path_prefix_for_company(company)}'
 
 
 def _user_filter_kwargs_getter():

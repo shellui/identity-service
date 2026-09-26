@@ -15,6 +15,7 @@ from apps.companies.group_display_name import first_display_name_conflict
 from apps.companies.group_graph import NestedGroupCycleError, assert_nested_group_link_allowed
 from apps.companies.models import CompanyGroup
 from apps.scim.context import get_scim_company
+from apps.scim.routing import scim_reverse_kwargs
 from apps.scim.group_members import parse_scim_members
 from apps.scim.filters import ShellUIGroupFilterQuery, ShellUIUserFilterQuery
 from apps.actions.scim_hooks import (
@@ -40,11 +41,11 @@ class _ShellUIResourceTypeMixin:
         id_ = cls.resource_type
         path = reverse(
             'scim:resource-types',
-            kwargs={'uuid': id_, 'company_slug': company.slug},
+            kwargs=scim_reverse_kwargs(company, uuid=id_),
         )
         location = urljoin(get_base_scim_location_getter()(request), path)
         endpoint_name = 'scim:users' if id_ == 'User' else 'scim:groups'
-        endpoint = reverse(endpoint_name, kwargs={'company_slug': company.slug})
+        endpoint = reverse(endpoint_name, kwargs=scim_reverse_kwargs(company))
         schema = constants.SchemaURI.USER if id_ == 'User' else constants.SchemaURI.GROUP
         return {
             'schemas': [constants.SchemaURI.RESOURCE_TYPE],
@@ -87,7 +88,7 @@ class ShellUIScimUser(_ShellUIResourceTypeMixin, SCIMUser):
     @property
     def path(self):
         company = self._company
-        return reverse('scim:users', kwargs={'uuid': self.id, 'company_slug': company.slug})
+        return reverse('scim:users', kwargs=scim_reverse_kwargs(company, uuid=self.id))
 
     @property
     def location(self):
@@ -214,7 +215,7 @@ class ShellUIScimGroup(_ShellUIResourceTypeMixin, SCIMGroup):
     @property
     def path(self):
         company = self._company
-        return reverse('scim:groups', kwargs={'uuid': self.id, 'company_slug': company.slug})
+        return reverse('scim:groups', kwargs=scim_reverse_kwargs(company, uuid=self.id))
 
     @property
     def location(self):

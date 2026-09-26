@@ -1012,8 +1012,9 @@ def _require_authenticated_company_member(request):
 
 
 def _scim_base_url_for_company(request, company: Company) -> str:
-    path = f'/api/v1/companies/{company.slug}/scim/v2/'
-    return request.build_absolute_uri(path)
+    from apps.scim.routing import scim_path_prefix_for_company
+
+    return request.build_absolute_uri(scim_path_prefix_for_company(company))
 
 
 def _active_scim_token_count(company: Company) -> int:

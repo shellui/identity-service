@@ -6,6 +6,7 @@ from django_scim.models import SCIMServiceProviderConfig
 from django_scim.utils import get_base_scim_location_getter
 
 from apps.scim.context import get_scim_company
+from apps.scim.routing import scim_reverse_kwargs
 
 
 class ShellUIServiceProviderConfig(SCIMServiceProviderConfig):
@@ -14,7 +15,7 @@ class ShellUIServiceProviderConfig(SCIMServiceProviderConfig):
     @property
     def location(self):
         company = get_scim_company(self.request)
-        kwargs = {'company_slug': company.slug} if company else {}
+        kwargs = scim_reverse_kwargs(company) if company else {}
         path = reverse('scim:service-provider-config', kwargs=kwargs)
         return urljoin(get_base_scim_location_getter()(self.request), path)
 

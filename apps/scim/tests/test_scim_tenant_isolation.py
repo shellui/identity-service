@@ -18,7 +18,7 @@ SCIM_ON = {
 
 
 def _scim_base(company: Company) -> str:
-    return f'/api/v1/companies/{company.slug}/scim/v2'
+    return f'/api/v1/companies/{company.pk}/scim/v2'
 
 
 def _token_for(company: Company) -> str:
@@ -57,7 +57,7 @@ class ScimTenantIsolationTests(TestCase):
             display_name='A Group',
         )
 
-    def test_token_slug_mismatch_is_401(self):
+    def test_token_company_mismatch_is_401(self):
         response = self.client.get(
             f'{_scim_base(self.company_b)}/Users',
             HTTP_AUTHORIZATION=self.auth_a,

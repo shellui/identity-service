@@ -19,7 +19,7 @@ SCIM_ON = {
 
 
 def _scim_base(company: Company) -> str:
-    return f'/api/v1/companies/{company.slug}/scim/v2'
+    return f'/api/v1/companies/{company.pk}/scim/v2'
 
 
 @override_settings(**SCIM_ON)

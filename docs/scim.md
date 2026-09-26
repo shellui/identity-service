@@ -29,8 +29,10 @@ This feature is **opt-in**: set `SCIM_ENABLED=true` on the deployment. When disa
 ## Base URL and endpoints
 
 ```text
-https://{host}/api/v1/companies/{company_slug}/scim/v2/
+https://{host}/api/v1/companies/{company_id}/scim/v2/
 ```
+
+**Legacy alias:** `{company_slug}` in the same path position still works for existing IdP configs. Prefer `{company_id}` (numeric primary key) for new setups; `GET /api/v1/scim` returns the canonical `base_url`.
 
 | Method | Path | Notes |
 | ------ | ---- | ----- |
@@ -42,7 +44,7 @@ https://{host}/api/v1/companies/{company_slug}/scim/v2/
 | GET/POST | `Groups` | List / create |
 | GET/PUT/PATCH/DELETE | `Groups/{id}` | Read / replace / patch / delete group row |
 
-**Authentication:** `Authorization: Bearer <company-scim-token>` — token and URL slug must match the same company.
+**Authentication:** `Authorization: Bearer <company-scim-token>` — token and URL company (id or legacy slug) must resolve to the same company.
 
 ---
 
@@ -177,7 +179,7 @@ Create a new Company SCIM token (admin REST or Django admin), update IdP, revoke
 
 SCIM is **strictly scoped to one company** per request:
 
-1. **Bearer token binding** — The `CompanyScimToken` row fixes the tenant. The URL segment `<company_slug>` must match that company’s slug; otherwise the response is **401** (no handler logic runs on a mismatched pair).
+1. **Bearer token binding** — The `CompanyScimToken` row fixes the tenant. The URL segment must resolve to that company (canonical numeric id, or legacy slug alias); otherwise the response is **401** (no handler logic runs on a mismatched pair).
 2. **Users** — List/get/update paths filter with `companies=<token company>` (and membership post-checks). A user id that exists globally but **not** in the token company returns **404**, not another tenant’s payload.
 3. **Groups** — All queries use `company=<token company>` and **`source=scim`**. Manual Shellui groups are invisible on the SCIM surface. Nested group members and user members are resolved only among scim-sourced groups in that company; foreign or manual ids return **404**.
 4. **Multi-company users** — The same Django user may appear in SCIM for company A and B with separate tokens. `active` / deprovision affects **only** `CompanyMembership` for the token’s company; other companies are unchanged and the user row is not deleted.

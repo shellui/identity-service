@@ -62,7 +62,7 @@ class HybridCompanyGroupTests(TestCase):
 
     def test_admin_cannot_mutate_scim_sourced_group(self):
         create = self.scim_client.post(
-            f'/api/v1/companies/{self.company.slug}/scim/v2/Groups',
+            f'/api/v1/companies/{self.company.pk}/scim/v2/Groups',
             data=json.dumps(
                 {
                     'schemas': ['urn:ietf:params:scim:schemas:core:2.0:Group'],
@@ -109,7 +109,7 @@ class HybridCompanyGroupTests(TestCase):
 
     def test_admin_create_conflicts_with_scim_display_name(self):
         create = self.scim_client.post(
-            f'/api/v1/companies/{self.company.slug}/scim/v2/Groups',
+            f'/api/v1/companies/{self.company.pk}/scim/v2/Groups',
             data=json.dumps(
                 {
                     'schemas': ['urn:ietf:params:scim:schemas:core:2.0:Group'],
@@ -137,7 +137,7 @@ class HybridCompanyGroupTests(TestCase):
     def test_scim_create_conflicts_with_manual_display_name(self):
         manual = CompanyGroup.objects.create(company=self.company, display_name='Shell Only')
         response = self.scim_client.post(
-            f'/api/v1/companies/{self.company.slug}/scim/v2/Groups',
+            f'/api/v1/companies/{self.company.pk}/scim/v2/Groups',
             data=json.dumps(
                 {
                     'schemas': ['urn:ietf:params:scim:schemas:core:2.0:Group'],
@@ -163,7 +163,7 @@ class HybridCompanyGroupTests(TestCase):
     def test_scim_rename_conflicts_with_manual_display_name(self):
         CompanyGroup.objects.create(company=self.company, display_name='Taken Manual')
         create = self.scim_client.post(
-            f'/api/v1/companies/{self.company.slug}/scim/v2/Groups',
+            f'/api/v1/companies/{self.company.pk}/scim/v2/Groups',
             data=json.dumps(
                 {
                     'schemas': ['urn:ietf:params:scim:schemas:core:2.0:Group'],
@@ -177,7 +177,7 @@ class HybridCompanyGroupTests(TestCase):
         group_id = json.loads(create.content)['id']
 
         patch = self.scim_client.patch(
-            f'/api/v1/companies/{self.company.slug}/scim/v2/Groups/{group_id}',
+            f'/api/v1/companies/{self.company.pk}/scim/v2/Groups/{group_id}',
             data=json.dumps(
                 {
                     'schemas': ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
@@ -196,7 +196,7 @@ class HybridCompanyGroupTests(TestCase):
     def test_scim_manual_name_collision_records_provisioning_event_and_status(self):
         CompanyGroup.objects.create(company=self.company, display_name='Audit Manual')
         response = self.scim_client.post(
-            f'/api/v1/companies/{self.company.slug}/scim/v2/Groups',
+            f'/api/v1/companies/{self.company.pk}/scim/v2/Groups',
             data=json.dumps(
                 {
                     'schemas': ['urn:ietf:params:scim:schemas:core:2.0:Group'],
@@ -230,7 +230,7 @@ class HybridCompanyGroupTests(TestCase):
 
     def test_admin_scim_name_collision_records_provisioning_event(self):
         create = self.scim_client.post(
-            f'/api/v1/companies/{self.company.slug}/scim/v2/Groups',
+            f'/api/v1/companies/{self.company.pk}/scim/v2/Groups',
             data=json.dumps(
                 {
                     'schemas': ['urn:ietf:params:scim:schemas:core:2.0:Group'],

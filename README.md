@@ -21,7 +21,7 @@ It supports OAuth login (stock: GitHub, Google, Microsoft; additional IdPs via d
 Set **`SCIM_ENABLED=true`** on the deployment to expose SCIM 2.0 user provisioning at:
 
 ```text
-/api/v1/companies/<company_slug>/scim/v2/
+/api/v1/companies/<company_id>/scim/v2/
 ```
 
 Create a **Company SCIM token** via Shellui admin (`GET/POST /api/v1/scim/tokens`, staff or company owner) or Django admin and configure your IdP with `Authorization: Bearer <token>`. Supports SCIM Users, Groups (including nested `type: Group` members), and SCIM-aligned `CompanyGroup` fields (`display_name`, `external_id`). Details: **[docs/scim.md](docs/scim.md)**.
