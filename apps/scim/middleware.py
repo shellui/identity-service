@@ -11,14 +11,14 @@ from apps.scim.routing import resolve_company_from_scim_url_segment
 from apps.scim.provisioner import get_scim_provisioner_user
 from apps.scim.tokens import hash_scim_token
 
-_SCIM_PATH_RE = re.compile(r'^/api/v1/companies/(?P<segment>[^/]+)/scim/v2/')
+_SCIM_PATH_RE = re.compile(r'^/api/v1/companies/(?P<segment>\d+)/scim/v2/')
 
 
 class ScimBearerAuthMiddleware:
     """
     Authenticate SCIM calls with ``Authorization: Bearer <company-scim-token>``.
 
-    The URL company segment (id or legacy slug) must match the token's company. Sets
+    The URL company id must match the token's company. Sets
     ``request.scim_company`` and a
     non-interactive ``request.user`` for django-scim2's auth middleware.
     """

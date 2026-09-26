@@ -18,14 +18,7 @@ def scim_reverse_kwargs(company: Company, **extra) -> dict:
 
 
 def resolve_company_from_scim_url_segment(segment: str) -> Company | None:
-    """
-    Resolve the company from the path segment after ``/api/v1/companies/``.
-
-    Canonical URLs use the numeric primary key. Legacy slug URLs remain supported:
-    when the segment is all digits, try pk first, then fall back to slug.
-    """
-    if segment.isdigit():
-        company = Company.objects.filter(pk=int(segment)).first()
-        if company is not None:
-            return company
-    return Company.objects.filter(slug=segment).first()
+    """Resolve the company from the numeric id in the SCIM URL path."""
+    if not segment.isdigit():
+        return None
+    return Company.objects.filter(pk=int(segment)).first()
