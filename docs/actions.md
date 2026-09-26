@@ -222,13 +222,13 @@ Same authentication as other Shellui admin endpoints: Bearer JWT (or PAT) plus `
 | Method | Path | Purpose |
 | ------ | ---- | ------- |
 | `GET` | `/api/v1/actions/events` | Registered event catalog plus template variable docs: per-event `payload_fields` (webhook `data.*`), `email_context_fields` (email-only, e.g. `magic_link_url`), and top-level `email_envelope_fields` (`envelope.*` shared by all templates). |
-| `GET` | `/api/v1/actions/events/<event_type>/email-template?language=en` | Default filesystem subject, React Email `document` JSON, and flat HTML for create/edit (`source`: `filesystem`; unrendered placeholders, not sample data). |
+| `GET` | `/api/v1/actions/events/<event_type>/email-template?language=en` | Default filesystem subject, React Email `document` JSON, and flat HTML for create/edit (`source`: `filesystem`; unrendered placeholders, not sample data). Use `languages=en,fr` (or comma-separated `language=`) to fetch several locales in one response (`event_type` plus `templates` map). One locale keeps the legacy single-object body. Invalid language codes return **400**. |
 | `GET` | `/api/v1/actions/rules` | List action rules for the company (webhook secrets redacted). |
 | `POST` | `/api/v1/actions/rules` | Create a rule. |
 | `GET` | `/api/v1/actions/rules/<id>` | Rule detail. |
 | `PATCH` | `/api/v1/actions/rules/<id>` | Update fields or config. Blank webhook `secret` or `authorization_header` keeps existing values. |
 | `DELETE` | `/api/v1/actions/rules/<id>` | Delete a rule. |
-| `GET` | `/api/v1/actions/rules/<id>/email-template?language=en` | Effective subject and HTML for an existing rule (`source`: `override` or rendered `filesystem` preview). |
+| `GET` | `/api/v1/actions/rules/<id>/email-template?language=en` | Effective subject and HTML for an existing rule (`source`: `override` or rendered `filesystem` preview). Batch locales with `languages=en,fr` (same rules as event defaults). |
 | `GET` | `/api/v1/actions/deliveries` | Paginated delivery log (`status`, `event_type`, `action_rule_id`, `created_after`, `created_before`, `page`, `page_size`). |
 | `GET` | `/api/v1/actions/deliveries/<uuid>` | Delivery detail with `envelope` and `attempts`. |
 | `POST` | `/api/v1/actions/deliveries/<uuid>/requeue` | Re-queue a row (same as Django admin re-queue). |
