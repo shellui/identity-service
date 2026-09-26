@@ -202,7 +202,22 @@ Optional settings (see [configuration.md](configuration.md)):
 - `ACTIONS_WEBHOOK_ALLOW_PRIVATE` (default `false`)
 - `ACTIONS_EMAIL_DEFAULT_LANGUAGE` (default `en`) — fallback locale for ops recipients and when a user’s preferred template is missing
 
-View **Action outbox** and **Delivery attempts** in Django admin; use the admin action **Retry delivery** on failed rows.
+### Debugging delivery in Django admin
+
+Delivery history is stored in Postgres (no separate public API yet). In Django admin, open **Action deliveries** for one row per fired rule (outbox) or **Delivery attempts** for each HTTP or email try.
+
+| Outbox status | Meaning |
+| ------------- | ------- |
+| `pending` | Waiting for the next delivery attempt (including after re-queue). |
+| `delivered` | Last attempt succeeded; see `delivered_at`. |
+| `failed` | Last attempt failed; will retry until max attempts. |
+| `dead` | Gave up after max attempts; fix the rule or payload, then re-queue. |
+
+On an **Action delivery** detail page, **Delivery attempts** are listed inline (newest first). Each attempt is `success` or `failure`. Email actions usually leave `http_status` empty on success. Webhook attempts record `http_status` when the HTTP client got a response.
+
+To retry failed or dead rows: select them on the **Action deliveries** list, choose **Re-queue selected outbox rows for delivery**, then run `manage.py drain_action_outbox` (or wait for in-process delivery on new events).
+
+On an **Action rule** change page, **Recent deliveries** shows up to 20 latest outbox rows for that rule so you can see whether it fired.
 
 ---
 
