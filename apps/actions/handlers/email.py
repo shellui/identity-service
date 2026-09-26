@@ -2,11 +2,10 @@ from __future__ import annotations
 
 from django.conf import settings
 from django.core.mail import EmailMultiAlternatives
-from django.template.loader import engines, get_template, render_to_string
 
 from apps.actions.email_i18n import (
-    resolve_body_template,
-    resolve_subject_template_name,
+    render_action_email_body,
+    render_action_email_subject,
     user_preferred_language_from_envelope,
 )
 from apps.actions.html_plain import html_to_plain_text
@@ -53,43 +52,6 @@ def _split_recipient_batches(config: dict, envelope: dict) -> list[tuple[list[st
     return batches
 
 
-_SUBJECT_TEMPLATE_CACHE: dict[str, object] = {}
-
-
-def _subject_template(subject_template: str):
-    cached = _SUBJECT_TEMPLATE_CACHE.get(subject_template)
-    if cached is not None:
-        return cached
-    engine = engines['django']
-    compiled = engine.from_string(subject_template)
-    _SUBJECT_TEMPLATE_CACHE[subject_template] = compiled
-    return compiled
-
-
-def _render_subject(
-    event_type: str,
-    envelope: dict,
-    *,
-    use_user_preference: bool,
-) -> str:
-    context = {
-        'data': envelope.get('data') or {},
-        'envelope': envelope,
-    }
-    preferred = user_preferred_language_from_envelope(envelope)
-    subject_template_name, _resolved = resolve_subject_template_name(
-        event_type,
-        preferred=preferred,
-        use_user_preference=use_user_preference,
-    )
-    if subject_template_name:
-        return get_template(subject_template_name).render(context).strip()
-
-    event = get_event_type(event_type)
-    template = _subject_template(event.email_subject_template)
-    return template.render(context).strip()
-
-
 def _send_html_email(*, recipients: list[str], subject: str, html_body: str) -> None:
     text_body = html_to_plain_text(html_body)
     message = EmailMultiAlternatives(
@@ -119,15 +81,18 @@ def deliver_email_action(*, config: dict, envelope: dict) -> None:
     context = {'envelope': envelope, 'data': _email_action_data(envelope)}
 
     for recipients, use_user_preference in _split_recipient_batches(config, envelope):
-        subject = _render_subject(
-            event_type,
-            envelope,
-            use_user_preference=use_user_preference,
-        )
-        template_name, _lang = resolve_body_template(
+        subject = render_action_email_subject(
             event_type,
             preferred=preferred,
             use_user_preference=use_user_preference,
+            rule_config=config,
+            context=context,
         )
-        html_body = render_to_string(template_name, context)
+        html_body, _lang = render_action_email_body(
+            event_type,
+            preferred=preferred,
+            use_user_preference=use_user_preference,
+            rule_config=config,
+            context=context,
+        )
         _send_html_email(recipients=recipients, subject=subject, html_body=html_body)

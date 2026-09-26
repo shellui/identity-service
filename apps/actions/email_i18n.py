@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from django.conf import settings
 from django.template import TemplateDoesNotExist
-from django.template.loader import get_template
+from django.template.loader import engines, get_template, render_to_string
 
 FALLBACK_LANGUAGE = 'en'
 
@@ -103,3 +103,68 @@ def user_preferred_language_from_envelope(envelope: dict) -> str | None:
         return None
     normalized = normalize_language_code(raw)
     return normalized or None
+
+
+def _rule_template_entry(rule_config: dict | None, language: str) -> dict | None:
+    templates = (rule_config or {}).get('email_templates') or {}
+    if not isinstance(templates, dict):
+        return None
+    entry = templates.get(language)
+    return entry if isinstance(entry, dict) and entry.get('html') else None
+
+
+def render_action_email_body(
+    event_type: str,
+    *,
+    preferred: str | None,
+    use_user_preference: bool,
+    rule_config: dict | None,
+    context: dict,
+) -> tuple[str, str]:
+    """Return ``(html_body, resolved_language)``. Rule override wins over filesystem templates."""
+    for language in language_candidates(preferred=preferred, use_user_preference=use_user_preference):
+        entry = _rule_template_entry(rule_config, language)
+        if entry:
+            engine = engines['django']
+            html = engine.from_string(entry['html']).render(context)
+            return html, language
+        name = _body_template_name(event_type, language)
+        try:
+            get_template(name)
+            return render_to_string(name, context), language
+        except TemplateDoesNotExist:
+            continue
+    legacy = _legacy_body_template_name(event_type)
+    try:
+        get_template(legacy)
+        return render_to_string(legacy, context), FALLBACK_LANGUAGE
+    except TemplateDoesNotExist as exc:
+        raise TemplateDoesNotExist(f'No action email template for event {event_type!r}') from exc
+
+
+def render_action_email_subject(
+    event_type: str,
+    *,
+    preferred: str | None,
+    use_user_preference: bool,
+    rule_config: dict | None,
+    context: dict,
+) -> str:
+    from apps.actions.registry import get_event_type
+
+    for language in language_candidates(preferred=preferred, use_user_preference=use_user_preference):
+        entry = _rule_template_entry(rule_config, language)
+        if entry:
+            subj = (entry.get('subject') or '').strip()
+            if subj:
+                engine = engines['django']
+                return engine.from_string(subj).render(context).strip()
+        name = _subject_template_name(event_type, language)
+        try:
+            get_template(name)
+            return get_template(name).render(context).strip()
+        except TemplateDoesNotExist:
+            continue
+    event = get_event_type(event_type)
+    engine = engines['django']
+    return engine.from_string(event.email_subject_template).render(context).strip()

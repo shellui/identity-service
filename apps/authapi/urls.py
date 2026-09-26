@@ -1,4 +1,4 @@
-from django.urls import path
+from django.urls import include, path
 
 from .magic_link_views import ShellUIMagicLinkRequestView, ShellUIMagicLinkVerifyView
 from .views import (
@@ -81,6 +81,7 @@ urlpatterns = [
         ShellUIPersonalAccessTokenListCreateView.as_view(),
         name='shellui-personal-access-tokens',
     ),
+    path('actions/', include('apps.actions.urls')),
     path('auth-methods', ShellUIAdminAuthMethodsView.as_view(), name='shellui-admin-auth-methods'),
     path('scim', ShellUIAdminScimStatusView.as_view(), name='shellui-admin-scim-status'),
     path(

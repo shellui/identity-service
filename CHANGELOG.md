@@ -21,6 +21,12 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
 -->
 
+## [Unreleased]
+
+### ✨ Feature
+
+- **Actions admin API:** Company owners and staff can manage action rules, preview email templates, and browse or re-queue delivery logs at `/api/v1/actions/*` (same JWT + `company_id` pattern as SCIM and auth-methods). Per-rule `email_templates` overrides ship in rule config. See [docs/actions.md](docs/actions.md).
+
 ## [0.6.0] - 2026-09-26
 
 ### ✨ Feature
