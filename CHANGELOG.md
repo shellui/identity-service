@@ -21,12 +21,6 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
 -->
 
-## [Unreleased]
-
-### ✨ Feature
-
-- **Actions admin API:** Company owners and staff can manage action rules, preview email templates, and browse or re-queue delivery logs at `/api/v1/actions/*` (same JWT + `company_id` pattern as SCIM and auth-methods). Per-rule `email_templates` overrides ship in rule config. See [docs/actions.md](docs/actions.md).
-
 ## [0.6.0] - 2026-09-26
 
 ### ✨ Feature
@@ -35,6 +29,7 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 - **SCIM admin API:** `GET /api/v1/scim`, `GET/POST /api/v1/scim/tokens`, and `POST /api/v1/scim/tokens/<uuid>/revoke` for staff or company owners. Bearer secret is returned once on create.
 - **Magic link login:** Company-scoped passwordless sign-in (`POST /api/v1/magic-link/request`, `GET|POST /api/v1/magic-link/verify`). On by default for new companies; kill switch `MAGIC_LINK_ENABLED`. Toggle via `GET|PATCH|PUT /api/v1/auth-methods`. Emits `identity.auth.magic_link.requested`. See [docs/magic-link.md](docs/magic-link.md).
 - **Action triggers:** Company-scoped `identity.*` events to email or webhook (`ActionRule`, outbox, `manage.py drain_action_outbox`). Closes [#35](https://github.com/shellui/identity-service/issues/35). See [docs/actions.md](docs/actions.md).
+- **Actions admin API:** Company owners and staff can manage action rules, preview email templates, and browse or re-queue delivery logs at `/api/v1/actions/*` (same JWT + `company_id` pattern as SCIM and auth-methods). Per-rule `email_templates` overrides ship in rule config. See [docs/actions.md](docs/actions.md).
 - **Action catalog:** `identity.scim.user.provisioned` / `deprovisioned`, `identity.user.created`, and `identity.user.deleted`. Email templates ship in `en` and `fr` (`ACTIONS_EMAIL_DEFAULT_LANGUAGE`, default `en`). Event payloads include `language` and `region` from `UserPreference`.
 - **Self-service account deletion:** `DELETE /api/v1/user` with `{"confirm": true}` hard-deletes the account, revokes sessions/PATs, and emits `identity.user.deleted` (`source: self`) per membership. See [docs/oauth-login.md](docs/oauth-login.md).
 - **OAuth skip confirm:** `OAUTH_SKIP_CONFIRM_PROVIDERS` (default `google`) skips the account confirmation page when the IdP profile is sufficient. See [docs/oauth-login.md](docs/oauth-login.md).
