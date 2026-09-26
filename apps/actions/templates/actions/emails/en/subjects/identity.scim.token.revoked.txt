@@ -1,1 +1,1 @@
-[Shellui] SCIM token revoked: {{ data.name|default:data.token_prefix }}
+[Shellui] SCIM token revoked for {{ envelope.company.name }}: {{ data.name|default:data.token_prefix }}

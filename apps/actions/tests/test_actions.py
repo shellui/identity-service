@@ -61,13 +61,14 @@ class EmitEventTests(TestCase):
         self.assertEqual(row.status, ActionOutbox.STATUS_DELIVERED)
         self.assertEqual(len(mail.outbox), 1)
         msg = mail.outbox[0]
-        self.assertIn('ada@a.test', msg.subject)
+        self.assertIn('You have access to A', msg.subject)
         self.assertEqual(msg.to, ['ops@a.test'])
         self.assertTrue(msg.body.strip())
         self.assertEqual(len(msg.alternatives), 1)
         html_part, mime = msg.alternatives[0]
         self.assertEqual(mime, 'text/html')
-        self.assertIn('Shellui identity', html_part)
+        self.assertIn('Shellui · A', html_part)
+        self.assertIn('ada@a.test', html_part)
 
     def test_company_isolation(self):
         emit_event('identity.scim.user.provisioned', self.company_b, {'user_id': 1})

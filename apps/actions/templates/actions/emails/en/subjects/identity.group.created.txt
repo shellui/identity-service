@@ -1,1 +1,1 @@
-[Shellui] Group created: {{ data.display_name }}
+[Shellui] New group in {{ envelope.company.name }}: {{ data.display_name }}

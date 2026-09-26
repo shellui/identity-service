@@ -1,1 +1,1 @@
-[Shellui] User updated: {{ data.email|default:"user" }}
+[Shellui] Profile updated in {{ envelope.company.name }}: {{ data.email|default:"user" }}

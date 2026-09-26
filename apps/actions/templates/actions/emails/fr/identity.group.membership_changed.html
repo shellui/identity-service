@@ -1,17 +1,12 @@
-<!DOCTYPE html>
-<html lang="fr">
-<head><meta charset="utf-8"><title>Adhésion au groupe modifiée</title></head>
-<body style="font-family: system-ui, -apple-system, Segoe UI, sans-serif; color: #1a1a1a; line-height: 1.5; max-width: 560px; margin: 0 auto; padding: 24px;">
-  <p style="color: #666; font-size: 13px; margin: 0 0 16px;">Shellui identity</p>
-  <h1 style="font-size: 18px; font-weight: 600; margin: 0 0 12px;">Adhésion au groupe modifiée</h1>
-  <p style="margin: 0 0 16px;">Les membres ou les groupes imbriqués ont été mis à jour.</p>
-  <table style="border-collapse: collapse; font-size: 14px; width: 100%; margin-bottom: 16px;">
-    <tr><td style="padding: 4px 12px 4px 0; color: #666; vertical-align: top;">Entreprise</td><td>{{ envelope.company.name }} ({{ envelope.company.slug }})</td></tr>
-    <tr><td style="padding: 4px 12px 4px 0; color: #666;">Événement</td><td>{{ envelope.type }}</td></tr>
-    <tr><td style="padding: 4px 12px 4px 0; color: #666;">Date et heure</td><td>{{ envelope.time }}</td></tr>
-    <tr><td style="padding: 4px 12px 4px 0; color: #666;">Groupe</td><td>{{ data.display_name }}</td></tr>
-    <tr><td style="padding: 4px 12px 4px 0; color: #666;">Modification</td><td>{{ data.change }}</td></tr>
+{% extends "actions/emails/_layout.html" %}
+{% block html_lang %}fr{% endblock %}
+{% block document_title %}Adhésion au groupe{% endblock %}
+{% block heading %}L'adhésion à un groupe a changé dans {{ envelope.company.name }}{% endblock %}
+{% block content %}
+  <p style="margin: 0 0 20px; font-size: 15px; color: #3f3f46;">Les membres ou les groupes imbriqués ont été mis à jour.</p>
+  <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="font-size: 14px; border-collapse: collapse;">
+    <tr><td style="padding: 8px 16px 8px 0; color: #71717a; vertical-align: top; width: 120px;">Groupe</td><td style="padding: 8px 0; color: #18181b; font-weight: 600;">{{ data.display_name }}</td></tr>
+    {% if data.change %}<tr><td style="padding: 8px 16px 8px 0; color: #71717a; vertical-align: top;">Modification</td><td style="padding: 8px 0; color: #18181b;">{{ data.change }}</td></tr>{% endif %}
   </table>
-  <p style="color: #888; font-size: 12px; margin-top: 24px;">Identifiant d’événement : {{ envelope.id }}</p>
-</body>
-</html>
+{% endblock %}
+{% block footer %}{% endblock %}

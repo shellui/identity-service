@@ -65,12 +65,12 @@ class ActionEmailI18nTests(TestCase):
         self.assertEqual(len(mail.outbox), 2)
         ops_msg = mail.outbox[0]
         self.assertEqual(ops_msg.to, ['ops@i18n.test'])
-        self.assertIn('SCIM access enabled', ops_msg.alternatives[0][0])
+        self.assertIn('You have access to', ops_msg.alternatives[0][0])
 
         user_msg = mail.outbox[1]
         self.assertEqual(user_msg.to, ['user@i18n.test'])
-        self.assertIn('Accès SCIM activé', user_msg.alternatives[0][0])
-        self.assertIn('Accès SCIM activé', user_msg.subject)
+        self.assertIn('Vous avez accès', user_msg.alternatives[0][0])
+        self.assertIn('Vous avez accès', user_msg.subject)
 
     def test_fallback_to_english_when_preferred_template_missing(self):
         envelope = {
@@ -91,7 +91,7 @@ class ActionEmailI18nTests(TestCase):
         )
         self.assertEqual(len(mail.outbox), 1)
         html = mail.outbox[0].alternatives[0][0]
-        self.assertIn('SCIM access enabled', html)
+        self.assertIn('You have access to', html)
 
     def test_emit_outbox_envelope_includes_language(self):
         user = User.objects.create_user(username='hook', email='hook@i18n.test', password='x')
@@ -171,10 +171,10 @@ class ActionEmailI18nTests(TestCase):
         msg = mail.outbox[-1]
         html_part, mime = msg.alternatives[0]
         self.assertEqual(mime, 'text/html')
-        self.assertIn('Compte utilisateur créé', html_part)
-        self.assertIn('Nouveau compte utilisateur', msg.subject)
+        self.assertIn('Bienvenue chez', html_part)
+        self.assertIn('Bienvenue chez', msg.subject)
         self.assertNotIn('<h1', msg.body)
-        self.assertIn('Compte utilisateur créé', msg.body)
+        self.assertIn('Bienvenue chez', msg.body)
 
     def test_plain_text_part_derived_from_html_via_html2text(self):
         envelope = {
@@ -189,4 +189,4 @@ class ActionEmailI18nTests(TestCase):
         html_part, _mime = msg.alternatives[0]
         self.assertIn('<html', html_part.lower())
         self.assertNotIn('<p', msg.body)
-        self.assertIn('SCIM access enabled', msg.body)
+        self.assertIn('You have access to', msg.body)

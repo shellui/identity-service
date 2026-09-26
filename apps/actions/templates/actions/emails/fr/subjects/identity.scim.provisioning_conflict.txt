@@ -1,1 +1,1 @@
-[Shellui] Conflit d'approvisionnement SCIM : {{ data.display_name }}
+[Shellui] Conflit SCIM dans {{ envelope.company.name }} : {{ data.display_name }}

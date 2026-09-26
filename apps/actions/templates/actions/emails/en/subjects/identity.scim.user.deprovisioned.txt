@@ -1,1 +1,1 @@
-[Shellui] SCIM access disabled: {{ data.email|default:"user" }}
+[Shellui] Access ended for {{ envelope.company.name }}

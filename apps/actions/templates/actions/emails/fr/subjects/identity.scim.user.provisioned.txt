@@ -1,1 +1,1 @@
-[Shellui] Accès SCIM activé : {{ data.email|default:"utilisateur" }}
+[Shellui] Vous avez accès à {{ envelope.company.name }}

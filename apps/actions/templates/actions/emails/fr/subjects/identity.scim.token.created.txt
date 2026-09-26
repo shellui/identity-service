@@ -1,1 +1,1 @@
-[Shellui] Jeton SCIM créé : {{ data.name|default:data.token_prefix }}
+[Shellui] Nouveau jeton SCIM pour {{ envelope.company.name }} : {{ data.name|default:data.token_prefix }}

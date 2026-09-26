@@ -1,1 +1,1 @@
-[Shellui] Groupe supprimé : {{ data.display_name }}
+[Shellui] Groupe retiré de {{ envelope.company.name }} : {{ data.display_name }}

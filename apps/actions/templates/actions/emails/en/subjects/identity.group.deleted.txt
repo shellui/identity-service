@@ -1,1 +1,1 @@
-[Shellui] Group deleted: {{ data.display_name }}
+[Shellui] Group removed from {{ envelope.company.name }}: {{ data.display_name }}

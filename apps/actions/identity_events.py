@@ -29,7 +29,7 @@ register_event(
         label='SCIM user provisioned',
         description='Company access was enabled for a user via SCIM (create or re-enable). The user account may already exist.',
         payload_fields=_USER,
-        email_subject_template='[Shellui] SCIM access enabled: {{ data.email|default:"user" }}',
+        email_subject_template='[Shellui] You have access to {{ envelope.company.name }}',
         email_payload_email_field='email',
     )
 )
@@ -40,7 +40,7 @@ register_event(
         label='SCIM user deprovisioned',
         description='Company access was disabled via SCIM (deprovision). The user account is not deleted.',
         payload_fields=_USER,
-        email_subject_template='[Shellui] SCIM access disabled: {{ data.email|default:"user" }}',
+        email_subject_template='[Shellui] Access ended for {{ envelope.company.name }}',
         email_payload_email_field='email',
     )
 )
@@ -51,7 +51,7 @@ register_event(
         label='User account created',
         description='A new Django user row was created (OAuth first sign-in or admin), scoped to the company in context.',
         payload_fields=_ACCOUNT_USER,
-        email_subject_template='[Shellui] New user account: {{ data.email|default:"user" }}',
+        email_subject_template='[Shellui] Welcome to {{ envelope.company.name }}',
         email_payload_email_field='email',
     )
 )
@@ -62,7 +62,7 @@ register_event(
         label='User account deleted',
         description='The user account was permanently deleted. Emitted once per company membership before removal.',
         payload_fields=_USER,
-        email_subject_template='[Shellui] User account deleted: {{ data.email|default:"user" }}',
+        email_subject_template='[Shellui] Account removed from {{ envelope.company.name }}: {{ data.email|default:"user" }}',
         email_payload_email_field='email',
     )
 )
@@ -75,7 +75,7 @@ register_event(
         payload_fields=_USER
         + (EventFieldDoc('changed_fields', 'List of changed attribute names', ['displayName']),),
         emit_by_default=False,
-        email_subject_template='[Shellui] User updated: {{ data.email|default:"user" }}',
+        email_subject_template='[Shellui] Profile updated in {{ envelope.company.name }}: {{ data.email|default:"user" }}',
         email_payload_email_field='email',
     )
 )
@@ -93,7 +93,7 @@ register_event(
         label='Group created',
         description='A company group was created.',
         payload_fields=_GROUP,
-        email_subject_template='[Shellui] Group created: {{ data.display_name }}',
+        email_subject_template='[Shellui] New group in {{ envelope.company.name }}: {{ data.display_name }}',
     )
 )
 
@@ -104,7 +104,7 @@ register_event(
         description='Group metadata (display name, external id) changed.',
         payload_fields=_GROUP
         + (EventFieldDoc('changed_fields', 'Changed fields', ['display_name']),),
-        email_subject_template='[Shellui] Group updated: {{ data.display_name }}',
+        email_subject_template='[Shellui] Group updated in {{ envelope.company.name }}: {{ data.display_name }}',
     )
 )
 
@@ -114,7 +114,7 @@ register_event(
         label='Group deleted',
         description='A company group was removed.',
         payload_fields=_GROUP,
-        email_subject_template='[Shellui] Group deleted: {{ data.display_name }}',
+        email_subject_template='[Shellui] Group removed from {{ envelope.company.name }}: {{ data.display_name }}',
     )
 )
 
@@ -129,7 +129,7 @@ register_event(
             EventFieldDoc('user_ids', 'Affected user ids when applicable', [1, 2]),
             EventFieldDoc('nested_group_ids', 'Affected nested group ids', []),
         ),
-        email_subject_template='[Shellui] Group membership changed: {{ data.display_name }}',
+        email_subject_template='[Shellui] Membership changed for {{ data.display_name }} in {{ envelope.company.name }}',
     )
 )
 
@@ -143,7 +143,7 @@ register_event(
             EventFieldDoc('name', 'Operator label for the token', 'Okta prod'),
             EventFieldDoc('token_prefix', 'First characters shown in admin', 'abc123'),
         ),
-        email_subject_template='[Shellui] SCIM token created: {{ data.name|default:data.token_prefix }}',
+        email_subject_template='[Shellui] New SCIM token for {{ envelope.company.name }}: {{ data.name|default:data.token_prefix }}',
     )
 )
 
@@ -157,7 +157,7 @@ register_event(
             EventFieldDoc('name', 'Operator label', 'Okta prod'),
             EventFieldDoc('token_prefix', 'Prefix shown in admin', 'abc123'),
         ),
-        email_subject_template='[Shellui] SCIM token revoked: {{ data.name|default:data.token_prefix }}',
+        email_subject_template='[Shellui] SCIM token revoked for {{ envelope.company.name }}: {{ data.name|default:data.token_prefix }}',
     )
 )
 
@@ -199,6 +199,6 @@ register_event(
             EventFieldDoc('http_status', 'HTTP status recorded', 409),
             EventFieldDoc('channel', 'Provisioning channel', 'scim'),
         ),
-        email_subject_template='[Shellui] SCIM provisioning conflict: {{ data.display_name }}',
+        email_subject_template='[Shellui] SCIM conflict in {{ envelope.company.name }}: {{ data.display_name }}',
     )
 )

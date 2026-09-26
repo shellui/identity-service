@@ -158,7 +158,7 @@ class ActionsAdminApiTests(TestCase):
             self.assertEqual(response.data['source'], 'filesystem')
             self.assertEqual(response.data['language'], lang)
             self.assertIn('{{ data.email', response.data['html'])
-            self.assertIn('{{ data.email', response.data['subject'])
+            self.assertIn('{{ envelope.company.name }}', response.data['subject'])
             self.assertEqual(response.data['body_html'], response.data['html'])
             self.assertNotIn(self.company.name, response.data['html'])
 
