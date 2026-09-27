@@ -12,6 +12,7 @@ from apps.actions.html_plain import html_to_plain_text
 from apps.actions.emit import emit_event
 from apps.actions.handlers.webhook import WebhookDeliveryError
 from apps.actions.models import ActionOutbox, ActionRule, DeliveryAttempt
+from apps.actions.tests.email_templates import email_rule_config
 from apps.actions.ssrf import SSRFError, validate_webhook_url
 from apps.actions.webhook_signing import sign_webhook_body
 from apps.companies.models import Company
@@ -32,7 +33,7 @@ class EmitEventTests(TestCase):
             name='Notify',
             event_type='identity.scim.user.provisioned',
             action_kind=ActionRule.ACTION_EMAIL,
-            config={'recipients': ['ops@a.test']},
+            config=email_rule_config('identity.scim.user.provisioned', recipients=['ops@a.test']),
         )
 
     def test_unknown_event_type_raises(self):
@@ -89,7 +90,11 @@ class EmitEventTests(TestCase):
     @override_settings(**LOC_MEM_EMAIL)
     def test_include_payload_email_adds_recipient(self):
         ActionRule.objects.filter(company=self.company_a).update(
-            config={'recipients': ['ops@a.test'], 'include_payload_email': True},
+            config=email_rule_config(
+                'identity.scim.user.provisioned',
+                recipients=['ops@a.test'],
+                include_payload_email=True,
+            ),
         )
         with self.captureOnCommitCallbacks(execute=True):
             emit_event(
@@ -231,7 +236,7 @@ class ScimActionIntegrationTests(TestCase):
             name='Provision email',
             event_type='identity.scim.user.provisioned',
             action_kind=ActionRule.ACTION_EMAIL,
-            config={'recipients': ['admin@acme.test']},
+            config=email_rule_config('identity.scim.user.provisioned', recipients=['admin@acme.test']),
         )
         raw, prefix, digest = generate_scim_token()
         self.scim_token = raw
@@ -332,7 +337,7 @@ class ActionAdminFormTests(TestCase):
                 'company': company.pk,
                 'name': 'Notify user',
                 'description': '',
-                'enabled': True,
+                'enabled': False,
                 'event_type': 'identity.user.created',
                 'action_kind': ActionRule.ACTION_EMAIL,
                 'email_recipients': '',
@@ -368,6 +373,84 @@ class ActionAdminFormTests(TestCase):
         )
         self.assertFalse(form.is_valid())
         self.assertIn('email_recipients', form.errors)
+
+    def test_enabled_email_rule_requires_compiled_template(self):
+        from apps.actions.admin_forms import ActionRuleAdminForm
+
+        company = Company.objects.create(name='Tpl', slug='tpl-co')
+
+        class StaffForm(ActionRuleAdminForm):
+            is_superuser = False
+
+        form = StaffForm(
+            data={
+                'company': company.pk,
+                'name': 'Ops mail',
+                'description': '',
+                'enabled': True,
+                'event_type': 'identity.user.created',
+                'action_kind': ActionRule.ACTION_EMAIL,
+                'email_recipients': 'ops@tpl.test',
+            },
+            instance=None,
+        )
+        self.assertFalse(form.is_valid())
+        self.assertIn('enabled', form.errors)
+
+    def test_edit_keeps_compiled_templates(self):
+        from apps.actions.admin_forms import ActionRuleAdminForm
+
+        company = Company.objects.create(name='Keep', slug='keep-co')
+        rule = ActionRule.objects.create(
+            company=company,
+            name='Ops mail',
+            event_type='identity.user.created',
+            action_kind=ActionRule.ACTION_EMAIL,
+            config=email_rule_config('identity.user.created', recipients=['ops@keep.test']),
+        )
+
+        class StaffForm(ActionRuleAdminForm):
+            is_superuser = False
+
+        form = StaffForm(
+            data={
+                'company': company.pk,
+                'name': 'Ops mail renamed',
+                'description': '',
+                'enabled': True,
+                'event_type': 'identity.user.created',
+                'action_kind': ActionRule.ACTION_EMAIL,
+                'email_recipients': 'ops@keep.test, sec@keep.test',
+            },
+            instance=rule,
+        )
+        self.assertTrue(form.is_valid(), form.errors)
+        saved = form.save()
+        self.assertEqual(saved.config['recipients'], ['ops@keep.test', 'sec@keep.test'])
+        self.assertIn('html', saved.config['email_templates']['en'])
+
+
+class MissingCompiledTemplateDeliveryTests(TestCase):
+    def test_rule_without_html_goes_dead_without_retry(self):
+        company = Company.objects.create(name='Legacy', slug='legacy-co')
+        rule = ActionRule.objects.create(
+            company=company,
+            name='Legacy mail',
+            event_type='identity.scim.user.provisioned',
+            action_kind=ActionRule.ACTION_EMAIL,
+            config={'recipients': ['ops@legacy.test']},
+        )
+        row = ActionOutbox.objects.create(
+            company=company,
+            action_rule=rule,
+            event_type='identity.scim.user.provisioned',
+            envelope={'id': '1', 'type': 'identity.scim.user.provisioned', 'data': {}},
+        )
+        deliver_outbox_row(row.pk)
+        row.refresh_from_db()
+        self.assertEqual(row.status, ActionOutbox.STATUS_DEAD)
+        self.assertEqual(row.attempt_count, 1)
+        self.assertIn('Shellui admin', row.last_error)
 
 
 class ActionAdminTests(TestCase):

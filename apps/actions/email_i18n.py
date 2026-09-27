@@ -1,14 +1,24 @@
-"""Locale resolution and template paths for action notification emails."""
+"""Locale resolution and rendering for action notification emails."""
 
 from __future__ import annotations
 
 from django.conf import settings
-from django.template import TemplateDoesNotExist
-from django.template.loader import get_template
 
 from apps.actions.email_template_substitute import substitute_action_email_template
 
 FALLBACK_LANGUAGE = 'en'
+
+MISSING_COMPILED_TEMPLATE_MESSAGE = (
+    'Email rule has no compiled HTML template. Open the rule in the Shellui admin '
+    '(Actions → Rules) and save it to compile the template.'
+)
+
+
+class MissingCompiledEmailTemplateError(ValueError):
+    """Raised when an email rule has no stored ``email_templates[*].html`` to send."""
+
+    def __init__(self, message: str = MISSING_COMPILED_TEMPLATE_MESSAGE):
+        super().__init__(message)
 
 
 def normalize_language_code(raw: str | None) -> str:
@@ -44,54 +54,6 @@ def language_candidates(*, preferred: str | None, use_user_preference: bool) -> 
     return ordered
 
 
-def _body_template_name(event_type: str, language: str) -> str:
-    return f'actions/emails/{language}/{event_type}.html'
-
-
-def _legacy_body_template_name(event_type: str) -> str:
-    return f'actions/emails/{event_type}.html'
-
-
-def _subject_template_name(event_type: str, language: str) -> str:
-    return f'actions/emails/{language}/subjects/{event_type}.txt'
-
-
-def resolve_body_template(
-    event_type: str,
-    *,
-    preferred: str | None,
-    use_user_preference: bool,
-) -> tuple[str, str]:
-    """Return ``(template_name, resolved_language)`` for the HTML body."""
-    from apps.actions.email_template_defaults import resolve_default_body_template_name
-
-    return resolve_default_body_template_name(
-        event_type,
-        preferred=preferred,
-        use_user_preference=use_user_preference,
-    )
-
-
-def resolve_subject_template_name(
-    event_type: str,
-    *,
-    preferred: str | None,
-    use_user_preference: bool,
-) -> tuple[str | None, str]:
-    """
-    Return ``(template_name, resolved_language)`` for a locale subject file,
-    or ``(None, language)`` when the catalog inline subject should be used.
-    """
-    for language in language_candidates(preferred=preferred, use_user_preference=use_user_preference):
-        name = _subject_template_name(event_type, language)
-        try:
-            get_template(name)
-            return name, language
-        except TemplateDoesNotExist:
-            continue
-    return None, FALLBACK_LANGUAGE
-
-
 def user_preferred_language_from_envelope(envelope: dict) -> str | None:
     data = envelope.get('data') or {}
     raw = data.get('language')
@@ -101,75 +63,55 @@ def user_preferred_language_from_envelope(envelope: dict) -> str | None:
     return normalized or None
 
 
-def _rule_template_entry(rule_config: dict | None, language: str) -> dict | None:
+def _compiled_rule_templates(rule_config: dict | None) -> dict[str, dict]:
     templates = (rule_config or {}).get('email_templates') or {}
     if not isinstance(templates, dict):
-        return None
-    entry = templates.get(language)
-    return entry if isinstance(entry, dict) and entry.get('html') else None
+        return {}
+    return {
+        lang: entry
+        for lang, entry in templates.items()
+        if isinstance(lang, str) and isinstance(entry, dict) and entry.get('html')
+    }
 
 
-def render_action_email_body(
-    event_type: str,
+def select_rule_email_template(
+    rule_config: dict | None,
     *,
     preferred: str | None,
     use_user_preference: bool,
-    rule_config: dict | None,
-    context: dict,
-) -> tuple[str, str]:
-    """Return ``(html_body, resolved_language)``. Rule override wins over filesystem templates."""
+) -> tuple[dict, str]:
+    """
+    Pick the stored compiled template for delivery.
+
+    Order: user preference (when applicable) → deployment default → ``en`` → any
+    other stored locale. Raises ``MissingCompiledEmailTemplateError`` when none exist.
+    """
+    compiled = _compiled_rule_templates(rule_config)
     for language in language_candidates(preferred=preferred, use_user_preference=use_user_preference):
-        entry = _rule_template_entry(rule_config, language)
-        if entry:
-            html = substitute_action_email_template(entry['html'], context, mode='html')
-            return html, language
-        name = _body_template_name(event_type, language)
-        try:
-            from apps.actions.email_template_defaults import read_default_html_source
-
-            source = read_default_html_source(name)
-            return substitute_action_email_template(source, context, mode='html'), language
-        except TemplateDoesNotExist:
-            continue
-    legacy = _legacy_body_template_name(event_type)
-    try:
-        from apps.actions.email_template_defaults import read_default_html_source
-
-        source = read_default_html_source(legacy)
-        return (
-            substitute_action_email_template(source, context, mode='html'),
-            FALLBACK_LANGUAGE,
-        )
-    except TemplateDoesNotExist as exc:
-        raise TemplateDoesNotExist(f'No action email template for event {event_type!r}') from exc
+        if language in compiled:
+            return compiled[language], language
+    for language in sorted(compiled):
+        return compiled[language], language
+    raise MissingCompiledEmailTemplateError()
 
 
-def render_action_email_subject(
+def render_action_email(
     event_type: str,
     *,
     preferred: str | None,
     use_user_preference: bool,
     rule_config: dict | None,
     context: dict,
-) -> str:
+) -> tuple[str, str, str]:
+    """Return ``(subject, html_body, resolved_language)`` from the rule's compiled template."""
     from apps.actions.registry import get_event_type
 
-    for language in language_candidates(preferred=preferred, use_user_preference=use_user_preference):
-        entry = _rule_template_entry(rule_config, language)
-        if entry:
-            subj = (entry.get('subject') or '').strip()
-            if subj:
-                return substitute_action_email_template(subj, context, mode='plain').strip()
-        name = _subject_template_name(event_type, language)
-        try:
-            get_template(name)
-            from apps.actions.email_template_defaults import read_default_html_source
-
-            source = read_default_html_source(name)
-            return substitute_action_email_template(source, context, mode='plain').strip()
-        except TemplateDoesNotExist:
-            continue
-    event = get_event_type(event_type)
-    return substitute_action_email_template(
-        event.email_subject_template, context, mode='plain'
-    ).strip()
+    entry, language = select_rule_email_template(
+        rule_config,
+        preferred=preferred,
+        use_user_preference=use_user_preference,
+    )
+    html = substitute_action_email_template(entry['html'], context, mode='html')
+    subject_source = (entry.get('subject') or '').strip() or get_event_type(event_type).email_subject_template
+    subject = substitute_action_email_template(subject_source, context, mode='plain').strip()
+    return subject, html, language

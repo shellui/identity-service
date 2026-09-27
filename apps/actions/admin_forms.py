@@ -4,6 +4,7 @@ from django import forms
 
 from apps.actions.models import ActionRule
 from apps.actions.registry import get_event_type
+from apps.actions.rule_config import has_compiled_email_template
 
 
 _PAYLOAD_EMAIL_HELP = (
@@ -149,6 +150,14 @@ class ActionRuleAdminForm(forms.ModelForm):
                     'Add at least one fixed recipient, or enable payload email for an event '
                     'type that provides an email address.',
                 )
+            existing = (self.instance.config or {}) if self.instance.pk else {}
+            if cleaned.get('enabled') and not has_compiled_email_template(existing):
+                self.add_error(
+                    'enabled',
+                    'Email rules need a compiled template, which Django admin cannot produce. '
+                    'Create or edit this rule in the Shellui admin (Actions → Rules), '
+                    'or save it here disabled.',
+                )
         elif kind == ActionRule.ACTION_WEBHOOK:
             if not (cleaned.get('webhook_url') or '').strip():
                 self.add_error('webhook_url', 'Webhook URL is required.')
@@ -168,10 +177,13 @@ class ActionRuleAdminForm(forms.ModelForm):
                 for part in (cleaned.get('email_recipients') or '').split(',')
                 if part.strip()
             ]
-            return {
+            config = {
                 'recipients': recipients,
                 'include_payload_email': bool(cleaned.get('email_include_payload_email')),
             }
+            if existing.get('email_templates'):
+                config['email_templates'] = existing['email_templates']
+            return config
         config: dict = {
             'url': (cleaned.get('webhook_url') or '').strip(),
         }

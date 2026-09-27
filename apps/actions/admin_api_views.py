@@ -115,6 +115,14 @@ def _apply_rule_config(
                 email_templates=data.get('email_templates') if 'email_templates' in data else None,
                 event_type=event_type,
                 partial=partial,
+                # Metadata-only PATCHes (rename, disable) stay allowed on legacy rules
+                # that predate compiled templates.
+                require_templates=(
+                    not partial
+                    or 'email_templates' in data
+                    or 'action_kind' in data
+                    or data.get('enabled') is True
+                ),
             )
         elif kind == ActionRule.ACTION_WEBHOOK:
             rule.config = build_webhook_config(

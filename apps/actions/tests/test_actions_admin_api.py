@@ -9,6 +9,7 @@ from rest_framework.test import APIClient
 from apps.actions.emit import emit_event
 from apps.actions.handlers.email import deliver_email_action
 from apps.actions.models import ActionOutbox, ActionRule, DeliveryAttempt
+from apps.actions.tests.email_templates import compiled_email_templates
 from apps.companies.access import set_company_access
 from apps.companies.models import Company
 
@@ -90,6 +91,7 @@ class ActionsAdminApiTests(TestCase):
                 'action_kind': 'email',
                 'recipients': ['ops@actions-co.test'],
                 'include_payload_email': False,
+                'email_templates': compiled_email_templates('identity.user.created'),
             },
             format='json',
         )
@@ -161,10 +163,9 @@ class ActionsAdminApiTests(TestCase):
             self.assertEqual(response.status_code, 200, response.data)
             self.assertEqual(response.data['source'], 'filesystem')
             self.assertEqual(response.data['language'], lang)
-            self.assertIn('{{ data.email', response.data['html'])
             self.assertIn('{{ envelope.company.name }}', response.data['subject'])
-            self.assertEqual(response.data['body_html'], response.data['html'])
-            self.assertNotIn(self.company.name, response.data['html'])
+            self.assertNotIn('html', response.data)
+            self.assertNotIn('body_html', response.data)
             self.assertEqual(response.data['document']['type'], 'doc')
             doc_json = json.dumps(response.data['document'])
             self.assertIn('{{ envelope.company.name }}', doc_json)
@@ -190,7 +191,7 @@ class ActionsAdminApiTests(TestCase):
             row = response.data['templates'][lang]
             self.assertEqual(row['language'], lang)
             self.assertEqual(row['source'], 'filesystem')
-            self.assertIn('{{ data.email', row['html'])
+            self.assertIn('{{ data.email', json.dumps(row['document']))
 
     def test_event_default_email_template_languages_single_legacy_shape(self):
         self._as_owner()
@@ -248,6 +249,8 @@ class ActionsAdminApiTests(TestCase):
         self.assertEqual(batch.status_code, 200, batch.data)
         self.assertEqual(batch.data['templates']['en']['source'], 'override')
         self.assertEqual(batch.data['templates']['fr']['source'], 'filesystem')
+        self.assertEqual(batch.data['templates']['fr']['document']['type'], 'doc')
+        self.assertNotIn('html', batch.data['templates']['fr'])
 
         rule = ActionRule.objects.get(pk=created.data['id'])
         envelope = {
@@ -261,6 +264,61 @@ class ActionsAdminApiTests(TestCase):
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn('Custom ada@actions-co.test', mail.outbox[0].subject)
         self.assertIn('Override body', mail.outbox[0].alternatives[0][0])
+
+    def test_email_rule_requires_compiled_html(self):
+        self._as_owner()
+        base = {
+            'name': 'No html',
+            'event_type': 'identity.user.created',
+            'action_kind': 'email',
+            'recipients': ['ops@actions-co.test'],
+        }
+        missing = self.client.post(self._url('/api/v1/actions/rules'), base, format='json')
+        self.assertEqual(missing.status_code, 400, missing.data)
+
+        doc_only = self.client.post(
+            self._url('/api/v1/actions/rules'),
+            {
+                **base,
+                'email_templates': {
+                    'en': {
+                        'subject': 'Hi',
+                        'document': {'type': 'doc', 'content': []},
+                    }
+                },
+            },
+            format='json',
+        )
+        self.assertEqual(doc_only.status_code, 400, doc_only.data)
+
+    def test_legacy_email_rule_without_html_can_be_disabled_not_enabled(self):
+        self._as_owner()
+        legacy = ActionRule.objects.create(
+            company=self.company,
+            name='Legacy',
+            event_type='identity.user.created',
+            action_kind=ActionRule.ACTION_EMAIL,
+            config={'recipients': ['ops@actions-co.test']},
+        )
+        disabled = self.client.patch(
+            self._url(f'/api/v1/actions/rules/{legacy.pk}'),
+            {'enabled': False},
+            format='json',
+        )
+        self.assertEqual(disabled.status_code, 200, disabled.data)
+        enabled = self.client.patch(
+            self._url(f'/api/v1/actions/rules/{legacy.pk}'),
+            {'enabled': True},
+            format='json',
+        )
+        self.assertEqual(enabled.status_code, 400, enabled.data)
+
+        template = self.client.get(
+            self._url(f'/api/v1/actions/rules/{legacy.pk}/email-template?language=en')
+        )
+        self.assertEqual(template.status_code, 200, template.data)
+        self.assertEqual(template.data['source'], 'filesystem')
+        self.assertEqual(template.data['document']['type'], 'doc')
 
     def test_delivery_list_filters_and_requeue(self):
         rule = ActionRule.objects.create(

@@ -9,6 +9,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from apps.actions.models import ActionOutbox, ActionRule
+from apps.actions.tests.email_templates import email_rule_config
 from apps.authapi.magic_link import build_magic_link_verify_url, redeem_magic_link_token
 from apps.authapi.models import MagicLinkToken
 from apps.companies.access import set_company_access
@@ -147,7 +148,11 @@ class MagicLinkAuthTests(TestCase):
             event_type='identity.auth.magic_link.requested',
             action_kind=ActionRule.ACTION_EMAIL,
             enabled=True,
-            config={'recipients': ['ops@example.com'], 'include_payload_email': True},
+            config=email_rule_config(
+                'identity.auth.magic_link.requested',
+                recipients=['ops@example.com'],
+                include_payload_email=True,
+            ),
         )
         self._request_link()
         outbox = ActionOutbox.objects.filter(event_type='identity.auth.magic_link.requested').first()

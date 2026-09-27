@@ -1,4 +1,8 @@
-"""Load filesystem default action email HTML, JSON documents, and subjects."""
+"""Load filesystem default action email documents (React Email JSON) and subjects.
+
+Defaults ship as JSON only. HTML is compiled in the admin browser and stored on the
+rule; the send path never reads HTML from disk.
+"""
 
 from __future__ import annotations
 
@@ -8,67 +12,37 @@ from pathlib import Path
 from django.conf import settings
 from django.template import TemplateDoesNotExist
 
-_FALLBACK_LANGUAGE = 'en'
-
 
 def _templates_root() -> Path:
     return Path(settings.BASE_DIR) / 'apps/actions/templates/actions/emails'
 
 
-def _body_template_name(event_type: str, language: str) -> str:
-    return f'actions/emails/{language}/{event_type}.html'
+def _document_path(event_type: str, language: str) -> Path:
+    return _templates_root() / language / f'{event_type}.json'
 
 
-def _legacy_body_template_name(event_type: str) -> str:
-    return f'actions/emails/{event_type}.html'
+def _subject_path(event_type: str, language: str) -> Path:
+    return _templates_root() / language / 'subjects' / f'{event_type}.txt'
 
 
-def _subject_template_name(event_type: str, language: str) -> str:
-    return f'actions/emails/{language}/subjects/{event_type}.txt'
-
-
-def _json_path_for_html_template(template_name: str) -> Path:
-    rel = template_name.replace('actions/emails/', '')
-    if rel.endswith('.html'):
-        rel = rel[: -len('.html')] + '.json'
-    return _templates_root() / rel
-
-
-def read_default_html_source(template_name: str) -> str:
-    rel = template_name.replace('actions/emails/', '')
-    path = _templates_root() / rel
-    if not path.is_file():
-        raise TemplateDoesNotExist(template_name)
-    return path.read_text(encoding='utf-8')
-
-
-def read_default_document(template_name: str) -> dict | None:
-    path = _json_path_for_html_template(template_name)
-    if not path.is_file():
-        return None
-    with path.open(encoding='utf-8') as fh:
-        data = json.load(fh)
-    return data if isinstance(data, dict) else None
-
-
-def resolve_default_body_template_name(
+def resolve_default_document(
     event_type: str,
     *,
     preferred: str | None,
     use_user_preference: bool,
-) -> tuple[str, str]:
+) -> tuple[dict, str]:
+    """Return ``(document, resolved_language)`` for the first locale with a JSON default."""
     from apps.actions.email_i18n import language_candidates
 
     for language in language_candidates(preferred=preferred, use_user_preference=use_user_preference):
-        name = _body_template_name(event_type, language)
-        path = _templates_root() / f'{language}/{event_type}.html'
-        if path.is_file():
-            return name, language
-    legacy = _legacy_body_template_name(event_type)
-    legacy_path = _templates_root() / f'{event_type}.html'
-    if legacy_path.is_file():
-        return legacy, _FALLBACK_LANGUAGE
-    raise TemplateDoesNotExist(f'No action email template for event {event_type!r}')
+        path = _document_path(event_type, language)
+        if not path.is_file():
+            continue
+        with path.open(encoding='utf-8') as fh:
+            data = json.load(fh)
+        if isinstance(data, dict):
+            return data, language
+    raise TemplateDoesNotExist(f'No default action email document for event {event_type!r}')
 
 
 def read_default_subject_source(
@@ -77,11 +51,10 @@ def read_default_subject_source(
     preferred: str | None,
     use_user_preference: bool,
 ) -> tuple[str | None, str]:
-    from apps.actions.email_i18n import language_candidates
+    from apps.actions.email_i18n import FALLBACK_LANGUAGE, language_candidates
 
     for language in language_candidates(preferred=preferred, use_user_preference=use_user_preference):
-        name = _subject_template_name(event_type, language)
-        path = _templates_root() / f'{language}/subjects/{event_type}.txt'
+        path = _subject_path(event_type, language)
         if path.is_file():
             return path.read_text(encoding='utf-8'), language
-    return None, _FALLBACK_LANGUAGE
+    return None, FALLBACK_LANGUAGE

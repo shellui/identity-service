@@ -23,6 +23,14 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 ## [Unreleased]
 
+### 🚨 Changed
+
+- **Action emails send only rule-stored HTML.** Default templates ship as React Email JSON documents (plus subject `.txt`); the `.html` files are removed. The Shellui admin compiles HTML from the document and stores it on the rule; identity substitutes placeholders into that HTML at send time.
+- **Email rules require compiled HTML.** Creating an email rule, or updating its templates/kind/enabling it, without `email_templates[<lang>].html` for at least one language returns **400**; every stored locale entry needs `subject` and `html`. Django admin can only save email rules that already have compiled HTML, or disabled ones (it now also keeps existing `email_templates` on save instead of dropping them).
+- **Existing rules without stored HTML** (saved before this change) fail at delivery with a clear “no compiled HTML template” error and are marked dead without retries. Open them in the Shellui admin, save, then re-queue.
+- **Email template API:** event defaults (`GET …/events/<event_type>/email-template`) return `subject` + `document` (no `html` / `body_html`). Rule templates without stored HTML return the same JSON default (raw subject) instead of a sample-rendered HTML preview.
+- **Language fallback at send:** user preference → deployment default → `en` → any other locale stored on the rule.
+
 ### ✨ Feature
 
 - **Actions admin API:** `POST /api/v1/actions/events/<event_type>/email-template/send-test` — staff or company owner only; renders provided subject/html with `sample_context` and emails solely `request.user.email` (no rule recipients / outbox). Rate-limited (`action_email_test`, default 5/min). Subject prefixed with `[Test]`.

@@ -1,19 +1,12 @@
-"""Effective action email templates for admin preview (filesystem defaults vs rule overrides)."""
+"""Action email templates for the admin editor (filesystem JSON defaults vs stored rule templates)."""
 
 from __future__ import annotations
 
-from apps.actions.email_i18n import (
-    default_email_language,
-    normalize_language_code,
-    resolve_body_template,
-    resolve_subject_template_name,
-)
+from apps.actions.email_i18n import default_email_language, normalize_language_code
 from apps.actions.email_template_defaults import (
-    read_default_document,
-    read_default_html_source,
     read_default_subject_source,
+    resolve_default_document,
 )
-from apps.actions.email_template_substitute import substitute_action_email_template
 from apps.actions.registry import EventFieldDoc, get_event_type
 from apps.companies.models import Company
 
@@ -54,10 +47,10 @@ def effective_email_template(
     event_type: str,
     company: Company,
     language: str | None,
-    use_user_preference: bool = False,
 ) -> dict:
     """
-    Return ``subject``, ``html``, optional ``document``, ``language``, and ``source``.
+    Stored rule template for *language* (``source: override``, includes ``html``), or the
+    filesystem JSON default (``source: filesystem``, ``document`` + raw ``subject``, no html).
     """
     lang = normalize_language_code(language) or default_email_language()
     templates = (rule_config or {}).get('email_templates') or {}
@@ -73,39 +66,7 @@ def effective_email_template(
         if isinstance(doc, dict):
             payload['document'] = doc
         return payload
-
-    envelope = sample_envelope(event_type=event_type, company=company)
-    context = {'envelope': envelope, 'data': envelope.get('data') or {}}
-    template_name, resolved_lang = resolve_body_template(
-        event_type,
-        preferred=lang,
-        use_user_preference=use_user_preference,
-    )
-    html = substitute_action_email_template(
-        read_default_html_source(template_name), context, mode='html'
-    )
-    subject_source, _sub_lang = read_default_subject_source(
-        event_type,
-        preferred=lang,
-        use_user_preference=use_user_preference,
-    )
-    if subject_source:
-        subject = substitute_action_email_template(subject_source, context, mode='plain').strip()
-    else:
-        event = get_event_type(event_type)
-        subject = substitute_action_email_template(
-            event.email_subject_template, context, mode='plain'
-        ).strip()
-    payload = {
-        'language': resolved_lang,
-        'source': 'filesystem',
-        'subject': subject,
-        'html': html,
-    }
-    document = read_default_document(template_name)
-    if document is not None:
-        payload['document'] = document
-    return payload
+    return default_event_email_template(event_type=event_type, language=lang)
 
 
 def default_event_email_template(
@@ -114,37 +75,29 @@ def default_event_email_template(
     language: str | None,
 ) -> dict:
     """
-    Raw filesystem defaults for admin create/edit (unrendered HTML + React Email document JSON).
+    Filesystem defaults for admin create/edit: React Email ``document`` JSON and raw subject.
+
+    HTML is not shipped on disk; the admin compiles it from ``document`` and stores it on the rule.
 
     Raises ``ValueError`` when ``event_type`` is not in the catalog.
-    Raises ``TemplateDoesNotExist`` when no body template file exists.
+    Raises ``TemplateDoesNotExist`` when no JSON default exists.
     """
-    get_event_type(event_type)
+    event = get_event_type(event_type)
     lang = normalize_language_code(language) or default_email_language()
-    template_name, resolved_lang = resolve_body_template(
+    document, resolved_lang = resolve_default_document(
         event_type,
         preferred=lang,
         use_user_preference=True,
     )
-    html = read_default_html_source(template_name)
     subject_source, _sub_lang = read_default_subject_source(
         event_type,
         preferred=lang,
         use_user_preference=True,
     )
-    if subject_source:
-        subject = subject_source.strip()
-    else:
-        event = get_event_type(event_type)
-        subject = (event.email_subject_template or '').strip()
-    payload = {
+    subject = (subject_source or event.email_subject_template or '').strip()
+    return {
         'language': resolved_lang,
         'source': 'filesystem',
         'subject': subject,
-        'html': html,
-        'body_html': html,
+        'document': document,
     }
-    document = read_default_document(template_name)
-    if document is not None:
-        payload['document'] = document
-    return payload

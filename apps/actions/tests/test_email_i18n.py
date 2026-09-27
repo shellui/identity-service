@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from django.conf import settings
@@ -5,13 +6,13 @@ from django.contrib.auth import get_user_model
 from django.core import mail
 from django.test import TestCase, override_settings
 
-from django.template.loader import get_template
-
-from apps.actions.email_i18n import resolve_body_template, resolve_subject_template_name
+from apps.actions.email_i18n import MissingCompiledEmailTemplateError, select_rule_email_template
+from apps.actions.email_template_defaults import resolve_default_document
 from apps.actions.emit import emit_event
 from apps.actions.handlers.email import deliver_email_action
-from apps.actions.registry import all_event_types
 from apps.actions.models import ActionRule
+from apps.actions.registry import all_event_types
+from apps.actions.tests.email_templates import compiled_email_templates, email_rule_config
 from apps.authapi.models import UserPreference
 from apps.companies.models import Company
 
@@ -31,7 +32,11 @@ class ActionEmailI18nTests(TestCase):
             name='Provision mail',
             event_type='identity.scim.user.provisioned',
             action_kind=ActionRule.ACTION_EMAIL,
-            config={'recipients': ['ops@i18n.test'], 'include_payload_email': True},
+            config=email_rule_config(
+                'identity.scim.user.provisioned',
+                recipients=['ops@i18n.test'],
+                include_payload_email=True,
+            ),
         )
 
     def test_user_payload_includes_language_and_region(self):
@@ -86,12 +91,39 @@ class ActionEmailI18nTests(TestCase):
             },
         }
         deliver_email_action(
-            config={'recipients': [], 'include_payload_email': True},
+            config=email_rule_config(
+                'identity.scim.user.provisioned', recipients=[], include_payload_email=True
+            ),
             envelope=envelope,
         )
         self.assertEqual(len(mail.outbox), 1)
         html = mail.outbox[0].alternatives[0][0]
         self.assertIn('You have access to', html)
+
+    def test_falls_back_to_any_stored_language(self):
+        config = {
+            'email_templates': compiled_email_templates('identity.user.created', ('fr',)),
+        }
+        entry, lang = select_rule_email_template(config, preferred='de', use_user_preference=True)
+        self.assertEqual(lang, 'fr')
+        self.assertIn('Bienvenue chez', entry['html'])
+
+    def test_rule_without_compiled_html_raises(self):
+        with self.assertRaises(MissingCompiledEmailTemplateError):
+            select_rule_email_template(
+                {'recipients': ['ops@i18n.test']}, preferred='en', use_user_preference=False
+            )
+        with self.assertRaises(MissingCompiledEmailTemplateError):
+            deliver_email_action(
+                config={'recipients': ['ops@i18n.test']},
+                envelope={
+                    'id': 'evt-none',
+                    'type': 'identity.user.created',
+                    'company': {'id': self.company.pk, 'slug': 'i18n-co', 'name': 'I18n Co'},
+                    'data': {},
+                },
+            )
+        self.assertEqual(len(mail.outbox), 0)
 
     def test_emit_outbox_envelope_includes_language(self):
         user = User.objects.create_user(username='hook', email='hook@i18n.test', password='x')
@@ -110,53 +142,39 @@ class ActionEmailI18nTests(TestCase):
         self.assertEqual(envelope['data']['language'], 'fr')
         self.assertEqual(envelope['data']['region'], 'Europe/Paris')
 
-    def test_catalog_events_have_en_fr_html_bodies(self):
-        """Every registered identity event ships full HTML bodies in en and fr."""
+    def test_catalog_events_have_en_fr_json_documents_only(self):
+        """Every registered identity event ships a React Email JSON default in en and fr; no HTML."""
         catalog_ids = {event.id for event in all_event_types()}
         base = Path(settings.BASE_DIR) / 'apps/actions/templates/actions/emails'
+        self.assertEqual(list(base.rglob('*.html')), [], 'default HTML must not ship on disk')
         for lang in ('en', 'fr'):
-            html_events = {p.stem for p in (base / lang).glob('*.html')}
             json_events = {p.stem for p in (base / lang).glob('*.json')}
-            self.assertEqual(
-                catalog_ids,
-                html_events,
-                f'missing or extra {lang} HTML templates vs event catalog',
-            )
             self.assertEqual(catalog_ids, json_events, f'missing {lang} React Email JSON defaults')
             for event_id in catalog_ids:
-                template_name = f'actions/emails/{lang}/{event_id}.html'
                 with self.subTest(lang=lang, event=event_id):
-                    get_template(template_name)
-                html_path = base / lang / f'{event_id}.html'
-                source = html_path.read_text(encoding='utf-8')
-                self.assertNotIn('{%', source)
-                self.assertNotIn('%}', source)
+                    source = (base / lang / f'{event_id}.json').read_text(encoding='utf-8')
+                    self.assertEqual(json.loads(source)['type'], 'doc')
+                    self.assertNotIn('{%', source)
+                    self.assertNotIn('%}', source)
 
     def test_french_templates_match_english_set(self):
         base = Path(settings.BASE_DIR) / 'apps/actions/templates/actions/emails'
-        en_html = {p.name for p in (base / 'en').glob('*.html')}
-        fr_html = {p.name for p in (base / 'fr').glob('*.html')}
-        self.assertEqual(en_html, fr_html)
+        en_docs = {p.name for p in (base / 'en').glob('*.json')}
+        fr_docs = {p.name for p in (base / 'fr').glob('*.json')}
+        self.assertEqual(en_docs, fr_docs)
         en_subjects = {p.name for p in (base / 'en' / 'subjects').glob('*.txt')}
         fr_subjects = {p.name for p in (base / 'fr' / 'subjects').glob('*.txt')}
         self.assertEqual(en_subjects, fr_subjects)
 
     def test_french_user_created_template_resolves(self):
         event_type = 'identity.user.created'
-        body_name, lang = resolve_body_template(
+        document, lang = resolve_default_document(
             event_type,
             preferred='fr',
             use_user_preference=True,
         )
         self.assertEqual(lang, 'fr')
-        self.assertEqual(body_name, 'actions/emails/fr/identity.user.created.html')
-        subject_name, subject_lang = resolve_subject_template_name(
-            event_type,
-            preferred='fr',
-            use_user_preference=True,
-        )
-        self.assertEqual(subject_lang, 'fr')
-        self.assertEqual(subject_name, 'actions/emails/fr/subjects/identity.user.created.txt')
+        self.assertEqual(document['type'], 'doc')
 
         envelope = {
             'id': 'evt-fr-created',
@@ -171,7 +189,7 @@ class ActionEmailI18nTests(TestCase):
             },
         }
         deliver_email_action(
-            config={'recipients': [], 'include_payload_email': True},
+            config=email_rule_config(event_type, recipients=[], include_payload_email=True),
             envelope=envelope,
         )
         msg = mail.outbox[-1]
@@ -190,7 +208,10 @@ class ActionEmailI18nTests(TestCase):
             'company': {'id': self.company.pk, 'slug': 'i18n-co', 'name': 'I18n Co'},
             'data': {'user_id': 1, 'email': 'plain@i18n.test', 'source': 'scim'},
         }
-        deliver_email_action(config={'recipients': ['ops@i18n.test']}, envelope=envelope)
+        deliver_email_action(
+            config=email_rule_config('identity.scim.user.provisioned', recipients=['ops@i18n.test']),
+            envelope=envelope,
+        )
         msg = mail.outbox[-1]
         html_part, _mime = msg.alternatives[0]
         self.assertIn('<html', html_part.lower())

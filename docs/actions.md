@@ -113,7 +113,7 @@ Stored JSON shape:
   "include_payload_email": true,
   "email_templates": {
     "en": {
-      "subject": "Optional override subject with {{ data.email }}",
+      "subject": "Subject with {{ data.email }}",
       "document": { "type": "doc", "content": [] },
       "html": "<!DOCTYPE html><html><body>...</body></html>"
     }
@@ -123,28 +123,31 @@ Stored JSON shape:
 
 #### Email language (i18n)
 
-Action emails are **locale-aware**. **English (`en`)** and **French (`fr`)** ship for **every catalog event**, each with a **React Email editor document JSON**, a matching compiled **HTML body**, and a subject line.
+Action emails are **locale-aware**. **English (`en`)** and **French (`fr`)** defaults ship for **every catalog event** as a **React Email editor document (JSON)** plus a subject line. **No HTML ships on disk.**
 
-- **Editor document (source for admin):** `apps/actions/templates/actions/emails/<language>/<event_type>.json` — TipTap / `@react-email/editor` `JSONContent` (`{ "type": "doc", "content": [...] }`).
-- **HTML body (required at send time):** `apps/actions/templates/actions/emails/<language>/<event_type>.html` — flat HTML with literal `{{ envelope.company.name }}` / `{{ data.* }}` placeholders (no Django `{% %}` tags). Values are HTML-escaped at send; URL attributes are scheme-checked. Multipart emails attach the rendered HTML as `text/html`.
-- **Subject line:** `apps/actions/templates/actions/emails/<language>/subjects/<event_type>.txt` — same placeholder syntax as the body (`data`, `envelope`), substituted in plain mode (no HTML entities; newlines stripped).
+- **Editor document (default content):** `apps/actions/templates/actions/emails/<language>/<event_type>.json` — TipTap / `@react-email/editor` `JSONContent` (`{ "type": "doc", "content": [...] }`). Regenerate with `manage.py generate_action_email_defaults`.
+- **Subject line:** `apps/actions/templates/actions/emails/<language>/subjects/<event_type>.txt` — `{{ data.* }}` / `{{ envelope.* }}` placeholders.
 
-Additional locales follow the same layout (HTML body + subject per event).
+**How HTML is produced:** when a rule is created or edited in the Shellui admin, the browser loads the JSON document, renders it with React Email, and saves the compiled `html` (plus `document` and `subject`) into `config.email_templates[<language>]`. Identity sends **only that stored HTML**, substituting `{{ variable }}` placeholders at send time:
 
-Legacy flat paths `apps/actions/templates/actions/emails/<event_type>.html` are still tried as a last resort for custom deployments.
+- HTML bodies HTML-escape interpolated values; placeholders inside URL attributes (`href`, `src`, …) accept only `http(s)` / `mailto` / `tel` / `#`.
+- Subjects use plain substitution (no HTML entities; CR/LF stripped).
+- Django `{% %}` tags are rejected on save.
 
-**Resolution order** (body and subject use the same chain):
+**Compiled HTML is required.** Creating an email rule (or updating its templates, kind, or enabling it) without `html` for at least one language returns **400**. Each stored locale entry must include both `subject` and `html`. Django admin cannot compile templates: it only saves email rules that already have compiled HTML, or that are disabled. A rule without stored HTML (for example one saved before this change) fails at delivery with a *“no compiled HTML template”* error and is marked **dead** without retries — open it in the Shellui admin, save, then re-queue.
 
-1. **Per-rule override** — when the rule’s `config.email_templates[<language>]` includes `html` (and `subject`), that content wins for that locale. Overrides store optional `document` JSON for the admin editor plus compiled `html`. Only `{{ variable }}` substitution runs at send time; Django `{% %}` tags are rejected on save. HTML bodies HTML-escape interpolated values; placeholders inside URL attributes (`href`, `src`, …) accept only `http(s)` / `mailto` / `tel` / `#`. Subjects use plain substitution (no HTML entities; CR/LF stripped).
-2. **Recipient user’s preferred language** — from `data.language` on the event payload (`UserPreference.language`), when the message is sent to the address from **Also send to email from event payload** (`include_payload_email`).
-3. **Deployment default language** — `ACTIONS_EMAIL_DEFAULT_LANGUAGE` (default `en`).
-4. **`en`** — always the final fallback when a template file is missing for the preferred language.
+**Language selection** among the rule’s stored templates:
 
-**Fixed ops recipients** (the comma-separated **To:** list) always use the deployment default language chain (steps 2 → 3), not the end user’s preference. When both fixed recipients and payload email are configured, identity sends **separate messages** so each audience gets the correct locale.
+1. **Recipient user’s preferred language** — from `data.language` on the event payload (`UserPreference.language`), when the message is sent to the address from **Also send to email from event payload** (`include_payload_email`).
+2. **Deployment default language** — `ACTIONS_EMAIL_DEFAULT_LANGUAGE` (default `en`).
+3. **`en`**.
+4. **Any other stored language** — so a rule saved with only one locale still sends.
+
+**Fixed ops recipients** (the comma-separated **To:** list) always use the deployment default language chain (steps 2 → 4), not the end user’s preference. When both fixed recipients and payload email are configured, identity sends **separate messages** so each audience gets the correct locale.
 
 **Plain text** is not authored separately: it is generated from the rendered HTML at send time via `html2text` (`apps/actions/html_plain.py`). Multipart `alternative` delivery includes both the derived plain part and the HTML part.
 
-Add further locales by copying the `en` (or `fr`) tree under `…/emails/<language>/` with matching `subjects/` files.
+Add further locales by adding JSON documents under `…/emails/<language>/` with matching `subjects/` files.
 
 ### Webhook config
 
@@ -222,14 +225,14 @@ Same authentication as other Shellui admin endpoints: Bearer JWT (or PAT) plus `
 | Method | Path | Purpose |
 | ------ | ---- | ------- |
 | `GET` | `/api/v1/actions/events` | Registered event catalog plus template variable docs: per-event `payload_fields` (webhook `data.*`), `email_context_fields` (email-only, e.g. `magic_link_url`), top-level `email_envelope_fields` (`envelope.*`), and per-event `sample_context` (`{ envelope, data }` with the caller’s company + catalog examples) for admin preview substitution. |
-| `GET` | `/api/v1/actions/events/<event_type>/email-template?language=en` | Default filesystem subject, React Email `document` JSON, and flat HTML for create/edit (`source`: `filesystem`; unrendered placeholders, not sample data). Use `languages=en,fr` (or comma-separated `language=`) to fetch several locales in one response (`event_type` plus `templates` map). One locale keeps the legacy single-object body. Invalid language codes return **400**. |
+| `GET` | `/api/v1/actions/events/<event_type>/email-template?language=en` | Default subject and React Email `document` JSON for create/edit (`source`: `filesystem`; unrendered placeholders; no `html` — the admin compiles it). Use `languages=en,fr` (or comma-separated `language=`) to fetch several locales in one response (`event_type` plus `templates` map). One locale keeps the legacy single-object body. Invalid language codes return **400**. |
 | `POST` | `/api/v1/actions/events/<event_type>/email-template/send-test` | Send a one-off preview to **the authenticated user’s email only** (`language`, `subject`, `html` in the body). Substitutes `sample_context`, prefixes subject with `[Test]`, does not use rule recipients or the outbox. Staff/owner; rate-limited (`action_email_test`). |
 | `GET` | `/api/v1/actions/rules` | List action rules for the company (webhook secrets redacted). |
 | `POST` | `/api/v1/actions/rules` | Create a rule. |
 | `GET` | `/api/v1/actions/rules/<id>` | Rule detail. |
 | `PATCH` | `/api/v1/actions/rules/<id>` | Update fields or config. Blank webhook `secret` or `authorization_header` keeps existing values. |
 | `DELETE` | `/api/v1/actions/rules/<id>` | Delete a rule. |
-| `GET` | `/api/v1/actions/rules/<id>/email-template?language=en` | Effective subject and HTML for an existing rule (`source`: `override` or rendered `filesystem` preview). Batch locales with `languages=en,fr` (same rules as event defaults). |
+| `GET` | `/api/v1/actions/rules/<id>/email-template?language=en` | Stored template for an existing rule (`source`: `override` with `subject`, `html`, `document`), or the event’s JSON default when that locale has no stored HTML (`source`: `filesystem`, same shape as the event endpoint). Batch locales with `languages=en,fr` (same rules as event defaults). |
 | `GET` | `/api/v1/actions/deliveries` | Paginated delivery log (`status`, `event_type`, `action_rule_id`, `created_after`, `created_before`, `page`, `page_size`). |
 | `GET` | `/api/v1/actions/deliveries/<uuid>` | Delivery detail with `envelope` and `attempts`. |
 | `POST` | `/api/v1/actions/deliveries/<uuid>/requeue` | Re-queue a row (same as Django admin re-queue). |
@@ -295,7 +298,7 @@ On an **Action rule** change page, **Recent deliveries** shows up to 20 latest o
 ## Adding a new event type (developers)
 
 1. Register the type in `apps/actions/identity_events.py` (or a sibling module imported from `AppsConfig.ready()`).
-2. Add HTML and subject templates under `apps/actions/templates/actions/emails/en/<event_type>.html` and `…/en/subjects/<event_type>.txt` (plus other locales as needed).
+2. Add default copy to `generate_action_email_defaults` and run it to write `apps/actions/templates/actions/emails/<language>/<event_type>.json`, plus `…/<language>/subjects/<event_type>.txt` (en and fr).
 3. Call `emit_event(...)` or `emit_event_if_rules(...)` from the business path inside a transaction when appropriate.
 4. Document the payload in this file and add tests under `apps/actions/tests/`.
 

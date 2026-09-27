@@ -1,8 +1,11 @@
-"""Generate flat HTML + React Email editor JSON defaults (maintainer utility)."""
+"""Generate React Email editor JSON defaults (maintainer utility).
+
+Only JSON ships on disk. The admin compiles HTML from these documents and stores it
+on each email rule; the send path substitutes placeholders into that stored HTML.
+"""
 
 from __future__ import annotations
 
-import html as html_lib
 import json
 import re
 from pathlib import Path
@@ -12,11 +15,11 @@ from django.core.management.base import BaseCommand
 
 from apps.actions.registry import all_event_types
 
-# Barebones-inspired card layout (react.email demo): muted page bg, padded white
-# card, primary CTA as a real TipTap `button` node (not a bare link mark).
+# Primary CTA is a real TipTap `button` node (not a bare link mark) so the editor
+# theme applies padding/background.
 #
 # Copy uses a tiny inline markup — NEVER raw HTML in TipTap text nodes:
-#   **{{ data.email }}**  → bold mark in JSON / <strong> in HTML
+#   **{{ data.email }}**  → bold mark in JSON
 
 
 _BOLD_RE = re.compile(r'\*\*(.+?)\*\*')
@@ -81,31 +84,15 @@ def _link_paragraph(label: str, href: str) -> dict:
     }
 
 
-def _markup_to_html_fragment(text: str) -> str:
-    """Escape text and turn ``**bold**`` into ``<strong>`` for send HTML."""
-    parts: list[str] = []
-    pos = 0
-    for match in _BOLD_RE.finditer(text):
-        if match.start() > pos:
-            parts.append(html_lib.escape(text[pos : match.start()]))
-        parts.append(f'<strong style="font-weight: 600;">{html_lib.escape(match.group(1))}</strong>')
-        pos = match.end()
-    if pos < len(text):
-        parts.append(html_lib.escape(text[pos:]))
-    return ''.join(parts) if parts else html_lib.escape(text)
-
-
 def _document(
     *,
-    html_lang: str,
-    title: str,
     kicker: str,
     heading: str,
     paragraphs: list[str],
     cta: tuple[str, str] | None = None,
     link_fallback: tuple[str, str] | None = None,
     footer: str | None = None,
-) -> tuple[str, dict]:
+) -> dict:
     doc_content: list[dict] = [
         _paragraph_from_markup(kicker),
         _heading(1, heading),
@@ -121,7 +108,7 @@ def _document(
 
     # Editor auto-wraps top-level blocks in a container; seed one so defaults
     # match what getJSON() returns after open.
-    document = {
+    return {
         'type': 'doc',
         'content': [
             {
@@ -131,74 +118,6 @@ def _document(
         ],
     }
 
-    body_parts: list[str] = []
-    for para in paragraphs:
-        body_parts.append(
-            '              <p style="margin: 0 0 24px; font-size: 16px; line-height: 1.5; '
-            f'color: #52525b;">{_markup_to_html_fragment(para)}</p>'
-        )
-    cta_html = ''
-    if cta:
-        label = html_lib.escape(cta[0])
-        href = html_lib.escape(cta[1], quote=True)
-        cta_html = f"""              <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border-collapse: collapse; margin: 0 0 24px;">
-                <tr>
-                  <td align="center">
-                    <a href="{href}" style="display: inline-block; background-color: #18181b; color: #ffffff; text-decoration: none; padding: 16px 28px; border-radius: 8px; font-weight: 500; font-size: 16px; line-height: 1.5; box-sizing: border-box;">{label}</a>
-                  </td>
-                </tr>
-              </table>
-"""
-    link_html = ''
-    if link_fallback:
-        label = html_lib.escape(link_fallback[0])
-        href = html_lib.escape(link_fallback[1], quote=True)
-        href_text = html_lib.escape(link_fallback[1])
-        link_html = (
-            f'              <p style="margin: 0 0 24px; font-size: 13px; line-height: 1.5; color: #a1a1aa;">'
-            f'{label}<br>'
-            f'<a href="{href}" style="word-break: break-all; color: #52525b;">{href_text}</a></p>\n'
-        )
-    footer_html = ''
-    if footer:
-        footer_html = (
-            '              <p style="margin: 32px 0 0; padding-top: 24px; border-top: 1px solid #e4e4e7; '
-            f'color: #a1a1aa; font-size: 13px; line-height: 1.5; text-align: center;">'
-            f'{_markup_to_html_fragment(footer)}</p>\n'
-        )
-
-    html = f"""<!DOCTYPE html>
-<html lang="{html_lang}">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{html_lib.escape(title)}</title>
-</head>
-<body style="margin: 0; padding: 0; background-color: #f4f4f5; color: #18181b; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.5; -webkit-font-smoothing: antialiased;">
-  <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f4f4f5; border-collapse: collapse;">
-    <tr>
-      <td align="center" style="padding: 32px 16px;">
-        <table role="presentation" cellpadding="0" cellspacing="0" width="640" style="max-width: 640px; width: 100%; background-color: #ffffff; border-radius: 8px; border-collapse: separate;">
-          <tr>
-            <td style="padding: 16px 40px 8px;">
-              <p style="margin: 0; color: #a1a1aa; font-size: 13px; text-align: left;">{_markup_to_html_fragment(kicker)}</p>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding: 40px 40px 64px; text-align: center;">
-              <h1 style="margin: 0 0 24px; font-size: 28px; font-weight: 600; letter-spacing: -0.02em; color: #18181b; line-height: 1.3;">{html_lib.escape(heading)}</h1>
-{chr(10).join(body_parts)}
-{cta_html}{link_html}{footer_html}            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>
-"""
-    return html, document
-
 
 def _event_copy(event_id: str, lang: str) -> dict:
     company = '{{ envelope.company.name }}'
@@ -206,7 +125,6 @@ def _event_copy(event_id: str, lang: str) -> dict:
     copies: dict[str, dict[str, dict]] = {
         'identity.scim.user.provisioned': {
             'en': {
-                'title': 'Access enabled',
                 'heading': f'You have access to {company}',
                 'paragraphs': [
                     f'Your organization enabled your access. Sign in with **{{{{ data.email }}}}** when your app is ready.',
@@ -215,7 +133,6 @@ def _event_copy(event_id: str, lang: str) -> dict:
                 'footer': "Questions? Contact your organization's administrator.",
             },
             'fr': {
-                'title': 'Accès activé',
                 'heading': f'Vous avez accès à {company}',
                 'paragraphs': [
                     f'Votre organisation a activé votre accès. Connectez-vous avec **{{{{ data.email }}}}** lorsque votre application est prête.',
@@ -226,7 +143,6 @@ def _event_copy(event_id: str, lang: str) -> dict:
         },
         'identity.scim.user.deprovisioned': {
             'en': {
-                'title': 'Access ended',
                 'heading': f'Your access to {company} has ended',
                 'paragraphs': [
                     f'You no longer have access to this organization (**{{{{ data.email }}}}**). Your Shellui account was not deleted and may still work for other organizations.',
@@ -234,7 +150,6 @@ def _event_copy(event_id: str, lang: str) -> dict:
                 ],
             },
             'fr': {
-                'title': 'Accès terminé',
                 'heading': f'Votre accès à {company} est terminé',
                 'paragraphs': [
                     f'Vous n\'avez plus accès à cette organisation (**{{{{ data.email }}}}**). Votre compte Shellui n\'a pas été supprimé et peut encore fonctionner pour d\'autres organisations.',
@@ -244,7 +159,6 @@ def _event_copy(event_id: str, lang: str) -> dict:
         },
         'identity.user.created': {
             'en': {
-                'title': 'Welcome',
                 'heading': f'Welcome to {company}',
                 'paragraphs': [
                     f'An account for **{{{{ data.email }}}}** is ready. Sign in when your administrator shares the link to your app.',
@@ -253,7 +167,6 @@ def _event_copy(event_id: str, lang: str) -> dict:
                 'footer': "If you did not expect this message, contact your organization's administrator.",
             },
             'fr': {
-                'title': 'Bienvenue',
                 'heading': f'Bienvenue chez {company}',
                 'paragraphs': [
                     f'Un compte pour **{{{{ data.email }}}}** est prêt. Connectez-vous lorsque votre administrateur partage le lien vers votre application.',
@@ -264,7 +177,6 @@ def _event_copy(event_id: str, lang: str) -> dict:
         },
         'identity.user.deleted': {
             'en': {
-                'title': 'Account removed',
                 'heading': f'A user account was removed from {company}',
                 'paragraphs': [
                     'Email: **{{ data.email }}**',
@@ -272,7 +184,6 @@ def _event_copy(event_id: str, lang: str) -> dict:
                 ],
             },
             'fr': {
-                'title': 'Compte supprimé',
                 'heading': f'Un compte utilisateur a été retiré de {company}',
                 'paragraphs': [
                     'E-mail : **{{ data.email }}**',
@@ -282,7 +193,6 @@ def _event_copy(event_id: str, lang: str) -> dict:
         },
         'identity.user.updated': {
             'en': {
-                'title': 'Profile updated',
                 'heading': f'A user profile was updated in {company}',
                 'paragraphs': [
                     'Email: **{{ data.email }}**',
@@ -290,7 +200,6 @@ def _event_copy(event_id: str, lang: str) -> dict:
                 ],
             },
             'fr': {
-                'title': 'Profil mis à jour',
                 'heading': f'Un profil utilisateur a été mis à jour dans {company}',
                 'paragraphs': [
                     'E-mail : **{{ data.email }}**',
@@ -300,7 +209,6 @@ def _event_copy(event_id: str, lang: str) -> dict:
         },
         'identity.group.created': {
             'en': {
-                'title': 'Group created',
                 'heading': f'A new group was created in {company}',
                 'paragraphs': [
                     'Group name: **{{ data.display_name }}**',
@@ -308,7 +216,6 @@ def _event_copy(event_id: str, lang: str) -> dict:
                 ],
             },
             'fr': {
-                'title': 'Groupe créé',
                 'heading': f'Un nouveau groupe a été créé dans {company}',
                 'paragraphs': [
                     'Nom du groupe : **{{ data.display_name }}**',
@@ -318,7 +225,6 @@ def _event_copy(event_id: str, lang: str) -> dict:
         },
         'identity.group.updated': {
             'en': {
-                'title': 'Group updated',
                 'heading': f'A group was updated in {company}',
                 'paragraphs': [
                     'Group name: **{{ data.display_name }}**',
@@ -326,7 +232,6 @@ def _event_copy(event_id: str, lang: str) -> dict:
                 ],
             },
             'fr': {
-                'title': 'Groupe mis à jour',
                 'heading': f'Un groupe a été mis à jour dans {company}',
                 'paragraphs': [
                     'Nom du groupe : **{{ data.display_name }}**',
@@ -336,14 +241,12 @@ def _event_copy(event_id: str, lang: str) -> dict:
         },
         'identity.group.deleted': {
             'en': {
-                'title': 'Group deleted',
                 'heading': f'A group was deleted in {company}',
                 'paragraphs': [
                     'Group name: **{{ data.display_name }}**',
                 ],
             },
             'fr': {
-                'title': 'Groupe supprimé',
                 'heading': f'Un groupe a été supprimé dans {company}',
                 'paragraphs': [
                     'Nom du groupe : **{{ data.display_name }}**',
@@ -352,7 +255,6 @@ def _event_copy(event_id: str, lang: str) -> dict:
         },
         'identity.group.membership_changed': {
             'en': {
-                'title': 'Membership changed',
                 'heading': f'Group membership changed in {company}',
                 'paragraphs': [
                     'Group: **{{ data.display_name }}**',
@@ -360,7 +262,6 @@ def _event_copy(event_id: str, lang: str) -> dict:
                 ],
             },
             'fr': {
-                'title': 'Adhésion modifiée',
                 'heading': f"L'adhésion au groupe a changé dans {company}",
                 'paragraphs': [
                     'Groupe : **{{ data.display_name }}**',
@@ -370,7 +271,6 @@ def _event_copy(event_id: str, lang: str) -> dict:
         },
         'identity.scim.token.created': {
             'en': {
-                'title': 'SCIM token created',
                 'heading': f'A new SCIM token was created for {company}',
                 'paragraphs': [
                     'Label: **{{ data.name }}**',
@@ -378,7 +278,6 @@ def _event_copy(event_id: str, lang: str) -> dict:
                 ],
             },
             'fr': {
-                'title': 'Jeton SCIM créé',
                 'heading': f'Un nouveau jeton SCIM a été créé pour {company}',
                 'paragraphs': [
                     'Libellé : **{{ data.name }}**',
@@ -388,7 +287,6 @@ def _event_copy(event_id: str, lang: str) -> dict:
         },
         'identity.scim.token.revoked': {
             'en': {
-                'title': 'SCIM token revoked',
                 'heading': f'A SCIM token was revoked for {company}',
                 'paragraphs': [
                     'Label: **{{ data.name }}**',
@@ -396,7 +294,6 @@ def _event_copy(event_id: str, lang: str) -> dict:
                 ],
             },
             'fr': {
-                'title': 'Jeton SCIM révoqué',
                 'heading': f'Un jeton SCIM a été révoqué pour {company}',
                 'paragraphs': [
                     'Libellé : **{{ data.name }}**',
@@ -406,7 +303,6 @@ def _event_copy(event_id: str, lang: str) -> dict:
         },
         'identity.auth.magic_link.requested': {
             'en': {
-                'title': 'Sign in',
                 'heading': "We're almost there!",
                 'paragraphs': [
                     f'Thank you for signing in to {company}.',
@@ -420,7 +316,6 @@ def _event_copy(event_id: str, lang: str) -> dict:
                 'footer': 'If you did not request this email, you can ignore it.',
             },
             'fr': {
-                'title': 'Connexion',
                 'heading': 'Vous y êtes presque !',
                 'paragraphs': [
                     f'Merci de vous connecter à {company}.',
@@ -436,7 +331,6 @@ def _event_copy(event_id: str, lang: str) -> dict:
         },
         'identity.scim.provisioning_conflict': {
             'en': {
-                'title': 'SCIM conflict',
                 'heading': f'SCIM provisioning needs attention in {company}',
                 'paragraphs': [
                     'A provisioning request could not complete because a group with the same display name already exists.',
@@ -447,7 +341,6 @@ def _event_copy(event_id: str, lang: str) -> dict:
                 ],
             },
             'fr': {
-                'title': 'Conflit SCIM',
                 'heading': f'Le provisionnement SCIM nécessite votre attention dans {company}',
                 'paragraphs': [
                     "Une demande de provisionnement n'a pas pu aboutir car un groupe portant le même nom existe déjà.",
@@ -464,32 +357,24 @@ def _event_copy(event_id: str, lang: str) -> dict:
 
 
 class Command(BaseCommand):
-    help = 'Write flat HTML and React Email JSON defaults for all catalog events.'
+    help = 'Write React Email JSON defaults for all catalog events.'
 
     def handle(self, *args, **options):
         root = Path(settings.BASE_DIR) / 'apps/actions/templates/actions/emails'
-        layout = root / '_layout.html'
-        if layout.is_file():
-            layout.unlink()
 
         for event in all_event_types():
             for lang in ('en', 'fr'):
                 copy = _event_copy(event.id, lang)
-                kicker = 'Shellui · {{ envelope.company.name }}'
-                html, document = _document(
-                    html_lang=lang,
-                    title=copy['title'],
-                    kicker=kicker,
+                document = _document(
+                    kicker='Shellui · {{ envelope.company.name }}',
                     heading=copy['heading'],
                     paragraphs=copy['paragraphs'],
                     cta=copy.get('cta'),
                     link_fallback=copy.get('link_fallback'),
                     footer=copy.get('footer'),
                 )
-                html_path = root / lang / f'{event.id}.html'
                 json_path = root / lang / f'{event.id}.json'
-                html_path.write_text(html, encoding='utf-8')
                 json_path.write_text(json.dumps(document, indent=2) + '\n', encoding='utf-8')
-                self.stdout.write(f'Wrote {html_path.relative_to(settings.BASE_DIR)}')
+                self.stdout.write(f'Wrote {json_path.relative_to(settings.BASE_DIR)}')
 
         self.stdout.write(self.style.SUCCESS('Done.'))

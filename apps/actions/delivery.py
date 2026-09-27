@@ -11,6 +11,7 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
+from apps.actions.email_i18n import MissingCompiledEmailTemplateError
 from apps.actions.handlers.email import deliver_email_action
 from apps.actions.handlers.webhook import deliver_webhook_action
 from apps.actions.handlers.webhook import WebhookDeliveryError
@@ -55,9 +56,14 @@ def _deliver_outbox_row(row: ActionOutbox) -> ActionOutbox:
     http_status = None
     error_message = ''
     success = False
+    permanent = False
     try:
         _deliver_for_rule(rule=rule, envelope=row.envelope)
         success = True
+    except MissingCompiledEmailTemplateError as exc:
+        # Retrying cannot help until the rule is re-saved from the admin.
+        error_message = str(exc)
+        permanent = True
     except WebhookDeliveryError as exc:
         error_message = str(exc)
         http_status = exc.http_status
@@ -81,7 +87,7 @@ def _deliver_outbox_row(row: ActionOutbox) -> ActionOutbox:
         row.delivered_at = timezone.now()
         row.last_error = ''
         row.next_attempt_at = None
-    elif attempt_number >= _max_attempts():
+    elif permanent or attempt_number >= _max_attempts():
         row.status = ActionOutbox.STATUS_DEAD
         row.last_error = error_message
         row.next_attempt_at = None

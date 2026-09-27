@@ -45,13 +45,16 @@ def normalize_email_templates(raw: object | None) -> dict[str, dict[str, object]
         html_s = html if isinstance(html, str) else ''
         if not subject_s and not html_s and document is None:
             continue
-        if html_s and not subject_s:
+        if not html_s.strip():
+            raise ValidationError(
+                f'email_templates[{lang_key}]: html is required. Save the template from the '
+                'Shellui admin so it is compiled from the document.'
+            )
+        if not subject_s:
             raise ValidationError(f'email_templates[{lang_key}]: subject is required when html is set.')
-        if html_s:
-            validate_email_template_html(html_s)
-            assert_no_django_template_tags(html_s, field_label=f'email_templates[{lang_key}].html')
-        if subject_s:
-            assert_no_django_template_tags(subject_s, field_label=f'email_templates[{lang_key}].subject')
+        validate_email_template_html(html_s)
+        assert_no_django_template_tags(html_s, field_label=f'email_templates[{lang_key}].html')
+        assert_no_django_template_tags(subject_s, field_label=f'email_templates[{lang_key}].subject')
         stored: dict[str, object] = {'subject': subject_s, 'html': html_s}
         if isinstance(document, dict) and document.get('type') == 'doc':
             stored['document'] = document
@@ -63,6 +66,13 @@ def normalize_email_templates(raw: object | None) -> dict[str, dict[str, object]
             stored['theme_id'] = theme_id.strip()
         out[lang] = stored
     return out
+
+
+def has_compiled_email_template(config: dict | None) -> bool:
+    templates = (config or {}).get('email_templates') or {}
+    if not isinstance(templates, dict):
+        return False
+    return any(isinstance(entry, dict) and entry.get('html') for entry in templates.values())
 
 
 def _parse_recipients(raw: object) -> list[str]:
@@ -87,6 +97,7 @@ def build_email_config(
     email_templates: object | None = None,
     event_type: str,
     partial: bool,
+    require_templates: bool = True,
 ) -> dict:
     cfg = dict(existing or {})
     if recipients is not None or not partial:
@@ -112,6 +123,11 @@ def build_email_config(
     if not recips and not (inc and payload_field):
         raise ValidationError(
             'Add at least one recipient, or enable include_payload_email for an event type that provides an email.'
+        )
+    if require_templates and not has_compiled_email_template(cfg):
+        raise ValidationError(
+            'email_templates must include compiled html for at least one language. '
+            'Create or edit email rules from the Shellui admin so templates are compiled.'
         )
     return cfg
 

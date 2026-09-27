@@ -4,8 +4,7 @@ from django.conf import settings
 from django.core.mail import EmailMultiAlternatives
 
 from apps.actions.email_i18n import (
-    render_action_email_body,
-    render_action_email_subject,
+    render_action_email,
     user_preferred_language_from_envelope,
 )
 from apps.actions.html_plain import html_to_plain_text
@@ -81,14 +80,7 @@ def deliver_email_action(*, config: dict, envelope: dict) -> None:
     context = {'envelope': envelope, 'data': _email_action_data(envelope)}
 
     for recipients, use_user_preference in _split_recipient_batches(config, envelope):
-        subject = render_action_email_subject(
-            event_type,
-            preferred=preferred,
-            use_user_preference=use_user_preference,
-            rule_config=config,
-            context=context,
-        )
-        html_body, _lang = render_action_email_body(
+        subject, html_body, _lang = render_action_email(
             event_type,
             preferred=preferred,
             use_user_preference=use_user_preference,
