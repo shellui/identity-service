@@ -121,14 +121,14 @@ def render_action_email_body(
     for language in language_candidates(preferred=preferred, use_user_preference=use_user_preference):
         entry = _rule_template_entry(rule_config, language)
         if entry:
-            html = substitute_action_email_template(entry['html'], context)
+            html = substitute_action_email_template(entry['html'], context, mode='html')
             return html, language
         name = _body_template_name(event_type, language)
         try:
             from apps.actions.email_template_defaults import read_default_html_source
 
             source = read_default_html_source(name)
-            return substitute_action_email_template(source, context), language
+            return substitute_action_email_template(source, context, mode='html'), language
         except TemplateDoesNotExist:
             continue
     legacy = _legacy_body_template_name(event_type)
@@ -136,7 +136,10 @@ def render_action_email_body(
         from apps.actions.email_template_defaults import read_default_html_source
 
         source = read_default_html_source(legacy)
-        return substitute_action_email_template(source, context), FALLBACK_LANGUAGE
+        return (
+            substitute_action_email_template(source, context, mode='html'),
+            FALLBACK_LANGUAGE,
+        )
     except TemplateDoesNotExist as exc:
         raise TemplateDoesNotExist(f'No action email template for event {event_type!r}') from exc
 
@@ -156,15 +159,17 @@ def render_action_email_subject(
         if entry:
             subj = (entry.get('subject') or '').strip()
             if subj:
-                return substitute_action_email_template(subj, context).strip()
+                return substitute_action_email_template(subj, context, mode='plain').strip()
         name = _subject_template_name(event_type, language)
         try:
             get_template(name)
             from apps.actions.email_template_defaults import read_default_html_source
 
             source = read_default_html_source(name)
-            return substitute_action_email_template(source, context).strip()
+            return substitute_action_email_template(source, context, mode='plain').strip()
         except TemplateDoesNotExist:
             continue
     event = get_event_type(event_type)
-    return substitute_action_email_template(event.email_subject_template, context).strip()
+    return substitute_action_email_template(
+        event.email_subject_template, context, mode='plain'
+    ).strip()

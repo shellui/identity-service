@@ -5,19 +5,21 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Group created</title>
 </head>
-<body style="margin: 0; padding: 0; background-color: #f4f4f5; color: #18181b; font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; line-height: 1.5; -webkit-font-smoothing: antialiased;">
+<body style="margin: 0; padding: 0; background-color: #f4f4f5; color: #18181b; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.5; -webkit-font-smoothing: antialiased;">
   <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f4f4f5; border-collapse: collapse;">
     <tr>
       <td align="center" style="padding: 32px 16px;">
-        <table role="presentation" cellpadding="0" cellspacing="0" width="560" style="max-width: 560px; width: 100%; background-color: #ffffff; border: 1px solid #e4e4e7; border-radius: 10px; border-collapse: separate;">
+        <table role="presentation" cellpadding="0" cellspacing="0" width="640" style="max-width: 640px; width: 100%; background-color: #ffffff; border-radius: 8px; border-collapse: separate;">
           <tr>
-            <td style="padding: 32px 28px;">
-              <p style="margin: 0 0 24px; color: #71717a; font-size: 13px;">Shellui · {{ envelope.company.name }}</p>
-              <h1 style="margin: 0 0 16px; font-size: 22px; font-weight: 600; letter-spacing: -0.02em; color: #18181b;">A new group was created in {{ envelope.company.name }}</h1>
-  <p style="margin: 0 0 16px; font-size: 15px; color: #3f3f46;">Group name: <strong style="font-weight: 600;">{{ data.display_name }}</strong></p>
-  <p style="margin: 0 0 16px; font-size: 15px; color: #3f3f46;">Origin: {{ data.source }}</p>
-
-
+            <td style="padding: 16px 40px 8px;">
+              <p style="margin: 0; color: #a1a1aa; font-size: 13px; text-align: left;">Shellui · {{ envelope.company.name }}</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 40px 40px 64px; text-align: center;">
+              <h1 style="margin: 0 0 24px; font-size: 28px; font-weight: 600; letter-spacing: -0.02em; color: #18181b; line-height: 1.3;">A new group was created in {{ envelope.company.name }}</h1>
+              <p style="margin: 0 0 24px; font-size: 16px; line-height: 1.5; color: #52525b;">Group name: <strong style="font-weight: 600;">{{ data.display_name }}</strong></p>
+              <p style="margin: 0 0 24px; font-size: 16px; line-height: 1.5; color: #52525b;">Origin: {{ data.source }}</p>
             </td>
           </tr>
         </table>

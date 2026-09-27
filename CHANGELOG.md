@@ -21,6 +21,22 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
 -->
 
+## [Unreleased]
+
+### ✨ Feature
+
+- **Actions admin API:** `POST /api/v1/actions/events/<event_type>/email-template/send-test` — staff or company owner only; renders provided subject/html with `sample_context` and emails solely `request.user.email` (no rule recipients / outbox). Rate-limited (`action_email_test`, default 5/min). Subject prefixed with `[Test]`.
+
+### 🔒 Security
+
+- **Action email substitution:** HTML bodies HTML-escape every `{{ … }}` value; placeholders inside `href`/`src` (and related URL attrs) are restricted to `http(s)` / `mailto` / `tel` / `#`. Subjects use plain mode (no HTML entities) but strip CR/LF.
+
+### 🛠 Improvements
+
+- **Action email defaults:** regenerates EN/FR templates with a barebones-inspired card layout (muted page background, 640px padded card, centered CTA). Magic-link JSON now uses a TipTap `button` node (not a plain link mark) so `@react-email/editor` applies theme padding/background.
+- **Action email defaults:** TipTap JSON no longer embeds raw HTML (`<strong>`, `<br>`, `<span>`) as text — emphasis uses bold marks / link marks; HTML is only generated for the send path.
+- **Actions events API:** each catalog event includes `sample_context` (`{ envelope, data }`) with the caller’s company and field examples (including email-only `magic_link_url`) for admin WYSIWYG preview substitution.
+
 ## [0.6.0] - 2026-09-26
 
 ### ✨ Feature

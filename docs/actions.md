@@ -126,8 +126,8 @@ Stored JSON shape:
 Action emails are **locale-aware**. **English (`en`)** and **French (`fr`)** ship for **every catalog event**, each with a **React Email editor document JSON**, a matching compiled **HTML body**, and a subject line.
 
 - **Editor document (source for admin):** `apps/actions/templates/actions/emails/<language>/<event_type>.json` — TipTap / `@react-email/editor` `JSONContent` (`{ "type": "doc", "content": [...] }`).
-- **HTML body (required at send time):** `apps/actions/templates/actions/emails/<language>/<event_type>.html` — flat HTML with literal `{{ envelope.company.name }}` / `{{ data.* }}` placeholders (no Django `{% %}` tags). Multipart emails attach the rendered HTML as `text/html`.
-- **Subject line:** `apps/actions/templates/actions/emails/<language>/subjects/<event_type>.txt` — same placeholder syntax as the body (`data`, `envelope`).
+- **HTML body (required at send time):** `apps/actions/templates/actions/emails/<language>/<event_type>.html` — flat HTML with literal `{{ envelope.company.name }}` / `{{ data.* }}` placeholders (no Django `{% %}` tags). Values are HTML-escaped at send; URL attributes are scheme-checked. Multipart emails attach the rendered HTML as `text/html`.
+- **Subject line:** `apps/actions/templates/actions/emails/<language>/subjects/<event_type>.txt` — same placeholder syntax as the body (`data`, `envelope`), substituted in plain mode (no HTML entities; newlines stripped).
 
 Additional locales follow the same layout (HTML body + subject per event).
 
@@ -135,7 +135,7 @@ Legacy flat paths `apps/actions/templates/actions/emails/<event_type>.html` are 
 
 **Resolution order** (body and subject use the same chain):
 
-1. **Per-rule override** — when the rule’s `config.email_templates[<language>]` includes `html` (and `subject`), that content wins for that locale. Overrides store optional `document` JSON for the admin editor plus compiled `html`. Only `{{ variable }}` substitution runs at send time; Django `{% %}` tags are rejected on save.
+1. **Per-rule override** — when the rule’s `config.email_templates[<language>]` includes `html` (and `subject`), that content wins for that locale. Overrides store optional `document` JSON for the admin editor plus compiled `html`. Only `{{ variable }}` substitution runs at send time; Django `{% %}` tags are rejected on save. HTML bodies HTML-escape interpolated values; placeholders inside URL attributes (`href`, `src`, …) accept only `http(s)` / `mailto` / `tel` / `#`. Subjects use plain substitution (no HTML entities; CR/LF stripped).
 2. **Recipient user’s preferred language** — from `data.language` on the event payload (`UserPreference.language`), when the message is sent to the address from **Also send to email from event payload** (`include_payload_email`).
 3. **Deployment default language** — `ACTIONS_EMAIL_DEFAULT_LANGUAGE` (default `en`).
 4. **`en`** — always the final fallback when a template file is missing for the preferred language.
@@ -221,8 +221,9 @@ Same authentication as other Shellui admin endpoints: Bearer JWT (or PAT) plus `
 
 | Method | Path | Purpose |
 | ------ | ---- | ------- |
-| `GET` | `/api/v1/actions/events` | Registered event catalog plus template variable docs: per-event `payload_fields` (webhook `data.*`), `email_context_fields` (email-only, e.g. `magic_link_url`), and top-level `email_envelope_fields` (`envelope.*` shared by all templates). |
+| `GET` | `/api/v1/actions/events` | Registered event catalog plus template variable docs: per-event `payload_fields` (webhook `data.*`), `email_context_fields` (email-only, e.g. `magic_link_url`), top-level `email_envelope_fields` (`envelope.*`), and per-event `sample_context` (`{ envelope, data }` with the caller’s company + catalog examples) for admin preview substitution. |
 | `GET` | `/api/v1/actions/events/<event_type>/email-template?language=en` | Default filesystem subject, React Email `document` JSON, and flat HTML for create/edit (`source`: `filesystem`; unrendered placeholders, not sample data). Use `languages=en,fr` (or comma-separated `language=`) to fetch several locales in one response (`event_type` plus `templates` map). One locale keeps the legacy single-object body. Invalid language codes return **400**. |
+| `POST` | `/api/v1/actions/events/<event_type>/email-template/send-test` | Send a one-off preview to **the authenticated user’s email only** (`language`, `subject`, `html` in the body). Substitutes `sample_context`, prefixes subject with `[Test]`, does not use rule recipients or the outbox. Staff/owner; rate-limited (`action_email_test`). |
 | `GET` | `/api/v1/actions/rules` | List action rules for the company (webhook secrets redacted). |
 | `POST` | `/api/v1/actions/rules` | Create a rule. |
 | `GET` | `/api/v1/actions/rules/<id>` | Rule detail. |

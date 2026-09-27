@@ -24,9 +24,11 @@ def _sample_data_from_event(event_type: str) -> dict:
     except ValueError:
         return {}
     data: dict = {}
-    for field in event.payload_fields:
+    for field in (*event.payload_fields, *event.email_context_fields):
         if isinstance(field, EventFieldDoc) and field.example is not None:
-            data[field.name] = field.example
+            # email_context_fields use bare names (e.g. magic_link_url) → data.*
+            name = field.name.removeprefix('data.')
+            data[name] = field.example
     return data
 
 
@@ -38,6 +40,12 @@ def sample_envelope(*, event_type: str, company: Company) -> dict:
         'company': {'id': company.pk, 'slug': company.slug, 'name': company.name},
         'data': _sample_data_from_event(event_type),
     }
+
+
+def sample_email_context(*, event_type: str, company: Company) -> dict:
+    """Send-path shape: ``{ envelope, data }`` with catalog example values."""
+    envelope = sample_envelope(event_type=event_type, company=company)
+    return {'envelope': envelope, 'data': envelope.get('data') or {}}
 
 
 def effective_email_template(
@@ -73,17 +81,21 @@ def effective_email_template(
         preferred=lang,
         use_user_preference=use_user_preference,
     )
-    html = substitute_action_email_template(read_default_html_source(template_name), context)
+    html = substitute_action_email_template(
+        read_default_html_source(template_name), context, mode='html'
+    )
     subject_source, _sub_lang = read_default_subject_source(
         event_type,
         preferred=lang,
         use_user_preference=use_user_preference,
     )
     if subject_source:
-        subject = substitute_action_email_template(subject_source, context).strip()
+        subject = substitute_action_email_template(subject_source, context, mode='plain').strip()
     else:
         event = get_event_type(event_type)
-        subject = substitute_action_email_template(event.email_subject_template, context).strip()
+        subject = substitute_action_email_template(
+            event.email_subject_template, context, mode='plain'
+        ).strip()
     payload = {
         'language': resolved_lang,
         'source': 'filesystem',

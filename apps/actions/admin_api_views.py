@@ -9,7 +9,12 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.actions.admin_email_template_query import requested_email_template_languages
-from apps.actions.email_template_preview import default_event_email_template, effective_email_template
+from apps.actions.email_test_send import send_action_email_test_to_self
+from apps.actions.email_template_preview import (
+    default_event_email_template,
+    effective_email_template,
+    sample_email_context,
+)
 from apps.actions.models import ActionOutbox, ActionRule, DeliveryAttempt
 from apps.actions.registry import (
     SHARED_EMAIL_ENVELOPE_FIELDS,
@@ -25,6 +30,7 @@ from apps.actions.rule_config import (
 from apps.actions.serializers import ActionRuleCreateSerializer, ActionRuleUpdateSerializer
 from apps.authapi.permissions import ShellUIPermission
 from apps.authapi.serializers import ShellUIOpenAPISerializer
+from apps.authapi.throttling import rate_limit
 from apps.authapi.views import _require_staff_or_company_owner
 
 SUPPORTED_ACTION_KINDS = [ActionRule.ACTION_EMAIL, ActionRule.ACTION_WEBHOOK]
@@ -141,7 +147,7 @@ class ShellUIAdminActionEventsView(APIView):
     serializer_class = ShellUIOpenAPISerializer
 
     def get(self, request):
-        _actor, _company, err = _require_staff_or_company_owner(request)
+        _actor, company, err = _require_staff_or_company_owner(request)
         if err:
             return err
         results = []
@@ -158,6 +164,11 @@ class ShellUIAdminActionEventsView(APIView):
                     'email_context_fields': [
                         event_field_doc_dict(f) for f in event.email_context_fields
                     ],
+                    # Ready-made { envelope, data } for admin WYSIWYG preview substitution.
+                    'sample_context': sample_email_context(
+                        event_type=event.id,
+                        company=company,
+                    ),
                 }
             )
         return Response(
@@ -241,6 +252,70 @@ class ShellUIAdminActionEventEmailTemplateView(APIView):
         except TemplateDoesNotExist:
             return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
         return Response(payload)
+
+
+@rate_limit(
+    'action_email_test',
+    identity=lambda request: str(getattr(getattr(request, 'user', None), 'pk', '') or ''),
+)
+@extend_schema_view(
+    post=extend_schema(
+        tags=['actions-admin'],
+        summary='Send a test copy of an action email to the authenticated user',
+        description=(
+            'Renders the provided subject/html with sample_context and emails only '
+            '``request.user.email``. Staff or company owner required. Rate-limited.'
+        ),
+        request={
+            'application/json': {
+                'type': 'object',
+                'properties': {
+                    'language': {'type': 'string', 'example': 'en'},
+                    'subject': {'type': 'string'},
+                    'html': {'type': 'string'},
+                },
+                'required': ['html'],
+            }
+        },
+        responses={
+            200: OpenApiResponse(description='Test email accepted for delivery'),
+            400: OpenApiResponse(description='Missing html, user email, or invalid payload'),
+            404: OpenApiResponse(description='Unknown event type'),
+            429: OpenApiResponse(description='Rate limited'),
+        },
+        operation_id='api_v1_actions_events_email_template_send_test',
+    ),
+)
+class ShellUIAdminActionEventEmailTemplateSendTestView(APIView):
+    permission_classes = [ShellUIPermission]
+    serializer_class = ShellUIOpenAPISerializer
+
+    def post(self, request, event_type):
+        actor, company, err = _require_staff_or_company_owner(request)
+        if err:
+            return err
+        try:
+            get_event_type(event_type)
+        except ValueError:
+            return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        raw = request.data if isinstance(request.data, dict) else {}
+        language = raw.get('language') if isinstance(raw.get('language'), str) else None
+        subject = raw.get('subject') if isinstance(raw.get('subject'), str) else ''
+        html = raw.get('html') if isinstance(raw.get('html'), str) else ''
+
+        try:
+            result = send_action_email_test_to_self(
+                user_email=getattr(actor, 'email', '') or '',
+                event_type=event_type,
+                company=company,
+                language=language,
+                subject=subject,
+                html=html,
+            )
+        except ValueError as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(result, status=status.HTTP_200_OK)
 
 
 @extend_schema_view(

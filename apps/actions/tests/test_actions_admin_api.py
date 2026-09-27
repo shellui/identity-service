@@ -1,3 +1,4 @@
+import json
 import uuid
 
 from django.contrib.auth import get_user_model
@@ -70,6 +71,9 @@ class ActionsAdminApiTests(TestCase):
             'magic_link_url',
             [f['name'] for f in row['payload_fields']],
         )
+        sample = row['sample_context']
+        self.assertEqual(sample['envelope']['company']['name'], self.company.name)
+        self.assertIn('https://', str(sample['data'].get('magic_link_url', '')))
 
     def test_member_forbidden(self):
         self.client.force_authenticate(user=self.member)
@@ -162,7 +166,8 @@ class ActionsAdminApiTests(TestCase):
             self.assertEqual(response.data['body_html'], response.data['html'])
             self.assertNotIn(self.company.name, response.data['html'])
             self.assertEqual(response.data['document']['type'], 'doc')
-            self.assertIn('{{ envelope.company.name }}', response.data['document']['content'][0]['content'][0]['text'])
+            doc_json = json.dumps(response.data['document'])
+            self.assertIn('{{ envelope.company.name }}', doc_json)
 
     def test_event_default_email_template_unknown_event(self):
         self._as_owner()

@@ -4,6 +4,7 @@ from apps.actions.admin_api_views import (
     ShellUIAdminActionDeliveryDetailView,
     ShellUIAdminActionDeliveryListView,
     ShellUIAdminActionDeliveryRequeueView,
+    ShellUIAdminActionEventEmailTemplateSendTestView,
     ShellUIAdminActionEventEmailTemplateView,
     ShellUIAdminActionEventsView,
     ShellUIAdminActionRuleDetailView,
@@ -13,6 +14,11 @@ from apps.actions.admin_api_views import (
 
 urlpatterns = [
     path('events', ShellUIAdminActionEventsView.as_view(), name='shellui-admin-actions-events'),
+    path(
+        'events/<path:event_type>/email-template/send-test',
+        ShellUIAdminActionEventEmailTemplateSendTestView.as_view(),
+        name='shellui-admin-actions-event-email-template-send-test',
+    ),
     path(
         'events/<path:event_type>/email-template',
         ShellUIAdminActionEventEmailTemplateView.as_view(),
