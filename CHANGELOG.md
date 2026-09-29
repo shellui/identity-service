@@ -55,6 +55,9 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 - **Magic link:** Sign-in links are redeemed with a single atomic update; only a hash of the token is stored. Per-company request rate limits no longer block other clients.
 - **Self-service account deletion:** `DELETE /api/v1/user` rejects personal access tokens, requires a recently issued session access JWT (`SELF_SERVICE_ACCOUNT_DELETE_MAX_IAT_AGE`, default 5m), and returns **409** when the user still belongs to more than one company.
 - **Client IP behind proxies:** With `TRUSTED_PROXY_IPS` set, audit and rate limits use the rightmost untrusted `X-Forwarded-For` hop instead of the client-controlled leftmost entry.
+- **Client IP edge cases:** IPv4-mapped proxy addresses match `TRUSTED_PROXY_IPS` CIDRs, `X-Forwarded-For` hops are normalized (ports, brackets, invalid entries), and IPv6 rate limits bucket by /64 while audit logs keep the full address.
+- **Webhook SSRF:** NAT64, 6to4, and IPv4-compatible literal addresses are checked against the embedded IPv4 target.
+- **Dependencies:** Pin `html2text` to the lockfile version for reproducible installs outside Docker.
 
 ## [0.5.1] - 2026-09-24
 

@@ -414,7 +414,7 @@ requires-dist = [
     { name = "djangorestframework-simplejwt", specifier = "==5.5.1" },
     { name = "drf-spectacular", specifier = "==0.29.0" },
     { name = "gunicorn", specifier = "==26.0.0" },
-    { name = "html2text", specifier = ">=2025.4.15" },
+    { name = "html2text", specifier = "==2025.4.15" },
     { name = "markdown", specifier = "==3.10.2" },
     { name = "prometheus-client", specifier = "==0.21.1" },
     { name = "psycopg", extras = ["binary"], specifier = "==3.3.4" },

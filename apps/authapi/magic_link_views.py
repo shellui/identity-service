@@ -19,7 +19,7 @@ from apps.actions.user_hooks import emit_user_account_created
 from apps.companies.access import apply_company_join
 from apps.companies.redirect_allowlist import validate_redirect_to_for_company
 from apps.authapi import metrics as auth_metrics
-from apps.authapi.login_audit import get_client_ip, record_login_event
+from apps.authapi.login_audit import client_ip_rate_limit_key, get_client_ip, record_login_event
 from apps.authapi.magic_link import (
     create_magic_link_token,
     magic_link_enabled_for_company,
@@ -54,7 +54,7 @@ _GENERIC_REQUEST_OK = {
 
 
 def _magic_link_rate_limits(request, *, company_id: int, email: str) -> Response | None:
-    ip = get_client_ip(request) or 'unknown'
+    ip = client_ip_rate_limit_key(get_client_ip(request))
     buckets = [
         f'ip:{ip}',
         f'email:{email}:{company_id}',
