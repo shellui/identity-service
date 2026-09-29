@@ -23,6 +23,7 @@ from dotenv import load_dotenv
 from django.core.exceptions import ImproperlyConfigured
 
 from apps.authapi.jwks import read_jwt_env, resolve_jwt_configuration
+from config.allauth_provider_apps import ALLAUTH_SOCIALACCOUNT_PROVIDER_APPS
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -209,9 +210,7 @@ INSTALLED_APPS = [
     'allauth',
     'allauth.account',
     'allauth.socialaccount',
-    'allauth.socialaccount.providers.github',
-    'allauth.socialaccount.providers.google',
-    'allauth.socialaccount.providers.microsoft',
+    *ALLAUTH_SOCIALACCOUNT_PROVIDER_APPS,
     'corsheaders',
     'rest_framework',
     'drf_spectacular',

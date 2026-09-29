@@ -24,6 +24,7 @@ def build_oauth_state(
     client_timezone: str | None = None,
     client_device_id: str | None = None,
     token_delivery: str | None = None,
+    pkce_code_verifier: str | None = None,
     nonce: str | None = None,
 ) -> tuple[str, str]:
     """
@@ -48,6 +49,9 @@ def build_oauth_state(
     delivery = (token_delivery or '').strip().lower()
     if delivery in {'code', 'fragment'}:
         payload['token_delivery'] = delivery
+    pkce = (pkce_code_verifier or '').strip()
+    if pkce:
+        payload['pkce_code_verifier'] = pkce[:128]
     return signing.dumps(payload, salt=OAUTH_STATE_SALT), state_nonce
 
 
@@ -98,6 +102,9 @@ def parse_oauth_state(state: str | None) -> tuple[dict | None, str | None]:
     delivery = str(payload.get('token_delivery') or '').strip().lower()
     if delivery in {'code', 'fragment'}:
         out['token_delivery'] = delivery
+    pkce = str(payload.get('pkce_code_verifier') or '').strip()
+    if pkce:
+        out['pkce_code_verifier'] = pkce[:128]
     return out, None
 
 

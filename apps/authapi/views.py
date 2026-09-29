@@ -85,6 +85,13 @@ from .oauth import (
     get_provider_config,
     resolve_oauth_client,
     should_skip_oauth_confirm,
+    social_app_catalog_slug,
+)
+from .provider_registry import (
+    get_provider_catalog,
+    resolve_catalog_slug,
+    supported_oauth_provider_slugs,
+    validate_extra_settings,
 )
 from .serializers import (
     ProviderAuthorizeSerializer,
@@ -327,6 +334,15 @@ def _company_oauth_clients(company: Company) -> list[CompanyOAuthClient]:
     )
 
 
+def _social_app_matches_catalog_entry(social_app: SocialApp, entry) -> bool:
+    if str(social_app.provider).strip().lower() != entry.allauth_id.lower():
+        return False
+    if entry.allauth_id == 'openid_connect':
+        sub = str(getattr(social_app, 'provider_id', '') or '').strip().lower()
+        return sub == entry.social_app_provider_id().lower()
+    return True
+
+
 def _get_company_oauth_client(
     company: Company,
     provider: str,
@@ -334,11 +350,11 @@ def _get_company_oauth_client(
 ) -> tuple[CompanyOAuthClient | None, str | None]:
     if company_oauth_client_id is None:
         return None, None
+    entry = resolve_catalog_slug(provider)
     row = (
         CompanyOAuthClient.objects.filter(
             pk=company_oauth_client_id,
             company=company,
-            social_app__provider=provider,
             is_active=True,
         )
         .exclude(social_app__client_id='')
@@ -346,17 +362,20 @@ def _get_company_oauth_client(
         .select_related('social_app')
         .first()
     )
-    if row:
+    if row and entry and _social_app_matches_catalog_entry(row.social_app, entry):
         return row, None
     return None, 'Requested company_oauth_client_id is not available for this provider.'
 
 
 def _enabled_oauth_providers(company: Company) -> list[str]:
-    return sorted({str(row.social_app.provider).lower() for row in _company_oauth_clients(company)})
+    slugs: set[str] = set()
+    for row in _company_oauth_clients(company):
+        slugs.add(social_app_catalog_slug(row.social_app))
+    return sorted(slugs)
 
 
 def _supported_oauth_providers() -> list[str]:
-    return sorted(SUPPORTED_OAUTH_PROVIDERS)
+    return sorted(supported_oauth_provider_slugs())
 
 
 def _oauth_client_payload(row: CompanyOAuthClient) -> dict:
@@ -365,7 +384,8 @@ def _oauth_client_payload(row: CompanyOAuthClient) -> dict:
         social_app_settings = {}
     return {
         'id': row.id,
-        'provider': row.social_app.provider,
+        'provider': social_app_catalog_slug(row.social_app),
+        'allauth_provider': row.social_app.provider,
         'label': row.social_app.name,
         'client_id': row.social_app.client_id,
         'tenant': str(social_app_settings.get('tenant') or ''),
@@ -385,14 +405,75 @@ def _oauth_social_app_payload(company: Company, app: SocialApp) -> dict:
     app_settings = app.settings if isinstance(app.settings, dict) else {}
     return {
         'id': app.id,
-        'provider': app.provider,
+        'provider': social_app_catalog_slug(app),
+        'allauth_provider': app.provider,
+        'provider_id': str(getattr(app, 'provider_id', '') or ''),
         'name': app.name,
         'client_id': app.client_id,
         'tenant': str(app_settings.get('tenant') or ''),
+        'extra_settings': {
+            key: value
+            for key, value in app_settings.items()
+            if key not in {'catalog_slug', 'tenant'}
+        },
         'is_linked': mapping is not None,
         'mapping_id': mapping.id if mapping is not None else None,
         'mapping_is_active': bool(mapping.is_active) if mapping is not None else False,
     }
+
+
+def _identity_oauth_callback_url(request) -> str:
+    return oauth_provider_redirect_uri(request)
+
+
+def _catalog_provider_payload(request, entry, *, include_unsupported: bool) -> dict:
+    return {
+        'docs_slug': entry.docs_slug,
+        'name': entry.name,
+        'tier': entry.tier,
+        'legacy': entry.legacy,
+        'replaced_by': entry.replaced_by,
+        'protocol': entry.protocol,
+        'supported': entry.supported,
+        'unsupported_reason': entry.unsupported_reason,
+        'icon': entry.icon,
+        'docs_url': entry.docs_url,
+        'console_url': entry.console_url,
+        'callback_url': _identity_oauth_callback_url(request),
+        'allauth_callback_path': entry.allauth_callback_path,
+        'extra_settings_schema': [
+            {
+                'name': field.name,
+                'label': field.label,
+                'type': field.type,
+                'required': field.required,
+                'secret': field.secret,
+                'help_text': field.help_text,
+            }
+            for field in entry.extra_settings_schema
+        ],
+    }
+
+
+def _merge_social_app_settings(entry, validated: dict, *, existing: dict | None = None) -> tuple[dict, str | None]:
+    base = dict(existing or {})
+    tenant = str(validated.get('tenant') or '').strip()
+    if tenant:
+        base['tenant'] = tenant
+    elif 'tenant' in validated:
+        base.pop('tenant', None)
+    extra_input = dict(validated.get('extra_settings') or {})
+    if tenant and 'tenant' not in extra_input:
+        extra_input.setdefault('tenant', tenant)
+    normalized, errors = validate_extra_settings(entry, extra_input, partial=bool(existing))
+    if errors:
+        return base, '; '.join(errors)
+    for key, value in normalized.items():
+        if key == 'catalog_slug':
+            continue
+        base[key] = value
+    base['catalog_slug'] = entry.docs_slug
+    return base, None
 
 
 def _generated_social_app_name(provider: str, company: Company) -> str:
@@ -513,8 +594,10 @@ def _issue_personal_access_token(
 
 def _link_social_account(user: User, provider: str, provider_id: str, userinfo: dict) -> None:
     # Persist provider payload in DB so one user can have multiple linked auth methods.
+    entry = resolve_catalog_slug(provider)
+    account_provider = entry.allauth_id if entry is not None else str(provider).strip().lower()
     SocialAccount.objects.update_or_create(
-        provider=provider,
+        provider=account_provider,
         uid=provider_id,
         defaults={
             'user': user,
@@ -1186,9 +1269,10 @@ class SocialAuthorizeView(APIView):
         )
         if rerr or not redirect_uri:
             return Response({'error': rerr or 'Invalid redirect_uri.'}, status=status.HTTP_400_BAD_REQUEST)
-        authorize_url = build_authorize_url(
+        authorize_url, _pkce = build_authorize_url(
             provider=provider,
             redirect_uri=redirect_uri,
+            request=request,
             company_id=company.id,
             company_oauth_client_id=company_oauth_client_id,
         )
@@ -1236,14 +1320,18 @@ class SocialLoginView(APIView):
                 provider=provider,
                 code=serializer.validated_data['code'],
                 redirect_uri=redirect_uri,
+                request=request,
                 company_id=company.id,
                 company_oauth_client_id=company_oauth_client_id,
             )
             userinfo = fetch_provider_userinfo(
                 provider,
                 token_bundle.access_token,
+                request=request,
                 company_id=company.id,
                 company_oauth_client_id=company_oauth_client_id,
+                redirect_uri=redirect_uri,
+                id_token=token_bundle.id_token,
             )
             user, created, profile, resolve_err = _resolve_oauth_login_user(
                 provider=provider,
@@ -1546,14 +1634,36 @@ class ShellUIAuthorizeView(APIView):
             token_delivery=token_delivery,
         )
         # Provider always returns to this service; bounce target is in signed state.
-        authorize_url = build_authorize_url(
+        authorize_url, pkce_verifier = build_authorize_url(
             provider=provider,
             redirect_uri=oauth_provider_redirect_uri(request),
             state=state,
+            request=request,
             company_id=company.id,
             company_oauth_client_id=company_oauth_client_id,
             switch_account=switch_account,
         )
+        if pkce_verifier:
+            state, state_nonce = build_oauth_state(
+                provider=provider,
+                redirect_to=redirect_to,
+                company_id=company.id,
+                company_oauth_client_id=company_oauth_client_id,
+                client_timezone=client_tz or None,
+                client_device_id=client_dev,
+                token_delivery=token_delivery,
+                pkce_code_verifier=pkce_verifier,
+                nonce=state_nonce,
+            )
+            authorize_url, _ignored_pkce = build_authorize_url(
+                provider=provider,
+                redirect_uri=oauth_provider_redirect_uri(request),
+                state=state,
+                request=request,
+                company_id=company.id,
+                company_oauth_client_id=company_oauth_client_id,
+                switch_account=switch_account,
+            )
         response = HttpResponseRedirect(authorize_url)
         cookie = oauth_state_nonce_cookie_value(state_nonce)
         response.set_cookie(
@@ -1674,14 +1784,19 @@ class ShellUIOAuthCallbackView(APIView):
                 provider=provider,
                 code=code,
                 redirect_uri=callback_url,
+                request=request,
                 company_id=company.id,
                 company_oauth_client_id=company_oauth_client_id,
+                pkce_code_verifier=state_payload.get('pkce_code_verifier'),
             )
             userinfo = fetch_provider_userinfo(
                 provider,
                 token_bundle.access_token,
+                request=request,
                 company_id=company.id,
                 company_oauth_client_id=company_oauth_client_id,
+                redirect_uri=callback_url,
+                id_token=token_bundle.id_token,
             )
             user, created, profile, resolve_err = _resolve_oauth_login_user(
                 provider=provider,
@@ -1983,14 +2098,18 @@ class ShellUIOAuthExchangeView(APIView):
                 provider=provider,
                 code=code,
                 redirect_uri=redirect_uri,
+                request=request,
                 company_id=company.id,
                 company_oauth_client_id=company_oauth_client_id,
             )
             userinfo = fetch_provider_userinfo(
                 provider,
                 token_bundle.access_token,
+                request=request,
                 company_id=company.id,
                 company_oauth_client_id=company_oauth_client_id,
+                redirect_uri=redirect_uri,
+                id_token=token_bundle.id_token,
             )
             user, created, profile, resolve_err = _resolve_oauth_login_user(
                 provider=provider,
@@ -2948,7 +3067,7 @@ class ShellUIAdminOAuthClientListView(APIView):
             social_app = SocialApp.objects.get(pk=validated['social_app_id'])
         except SocialApp.DoesNotExist:
             return Response({'error': 'SocialApp not found.'}, status=status.HTTP_400_BAD_REQUEST)
-        if str(social_app.provider).strip().lower() not in enabled:
+        if social_app_catalog_slug(social_app) not in enabled:
             return Response(
                 {'error': f"Provider '{social_app.provider}' is not supported."},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -2970,6 +3089,55 @@ class ShellUIAdminOAuthClientListView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         return Response(_oauth_client_payload(row), status=status.HTTP_201_CREATED)
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=['oauth-social-apps'],
+        summary='OAuth provider catalog for admin setup (staff or company owner)',
+        description=(
+            'Lists django-allauth providers with setup metadata, extra settings schema, '
+            'and the identity-hosted callback URL for this request host.'
+        ),
+        parameters=[
+            OpenApiParameter(
+                name='include_legacy',
+                type=bool,
+                location=OpenApiParameter.QUERY,
+                required=False,
+                description='When true, include legacy providers replaced by newer modules.',
+            ),
+        ],
+    ),
+)
+class ShellUIAdminOAuthProviderCatalogView(APIView):
+    permission_classes = [ShellUIPermission]
+    serializer_class = ShellUIOpenAPISerializer
+
+    def get(self, request):
+        _actor, company, err = _require_staff_or_company_owner(request)
+        if err:
+            return err
+        include_legacy = str(request.GET.get('include_legacy', '')).strip().lower() in {
+            '1',
+            'true',
+            'yes',
+            'on',
+        }
+        catalog = get_provider_catalog()
+        providers = []
+        for entry in catalog.providers:
+            if entry.legacy and not include_legacy:
+                continue
+            providers.append(_catalog_provider_payload(request, entry, include_unsupported=include_legacy))
+        return Response(
+            {
+                'catalog_version': catalog.catalog_version,
+                'allauth_version': catalog.allauth_version,
+                'callback_url': _identity_oauth_callback_url(request),
+                'providers': providers,
+            }
+        )
 
 
 @extend_schema_view(
@@ -3000,7 +3168,7 @@ class ShellUIAdminOAuthSocialAppListView(APIView):
         rows = [
             _oauth_social_app_payload(company, app)
             for app in apps
-            if str(app.provider).strip().lower() in enabled_providers
+            if social_app_catalog_slug(app) in enabled_providers
         ]
         return Response(
             {
@@ -3016,27 +3184,29 @@ class ShellUIAdminOAuthSocialAppListView(APIView):
         serializer = ShellUIAdminOAuthSocialAppCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         validated = serializer.validated_data
-        provider = str(validated['provider']).strip().lower()
-        if provider not in set(_supported_oauth_providers()):
+        docs_slug = str(validated['docs_slug']).strip().lower()
+        entry = resolve_catalog_slug(docs_slug)
+        if entry is None or not entry.supported:
             return Response(
-                {'error': f"Provider '{provider}' is not supported."},
+                {'error': f"Provider '{docs_slug}' is not supported."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        if CompanyOAuthClient.objects.filter(company=company, social_app__provider=provider).exists():
-            return Response(
-                {'error': f"Provider '{provider}' is already configured for this company."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        social_settings = {}
-        tenant = str(validated.get('tenant') or '').strip()
-        if tenant:
-            social_settings = {'tenant': tenant}
+        for row in CompanyOAuthClient.objects.filter(company=company).select_related('social_app'):
+            if social_app_catalog_slug(row.social_app) == entry.docs_slug:
+                return Response(
+                    {'error': f"Provider '{docs_slug}' is already configured for this company."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        social_settings, settings_err = _merge_social_app_settings(entry, validated)
+        if settings_err:
+            return Response({'error': settings_err}, status=status.HTTP_400_BAD_REQUEST)
         app = SocialApp.objects.create(
-            provider=provider,
-            name=_generated_social_app_name(provider, company),
+            provider=entry.allauth_id,
+            provider_id=entry.social_app_provider_id(),
+            name=_generated_social_app_name(entry.docs_slug, company),
             client_id=str(validated['client_id']).strip(),
             secret=str(validated['client_secret']).strip(),
-            key='',
+            key=str(validated.get('extra_settings', {}).get('key') or '').strip(),
             settings=social_settings,
         )
         try:
@@ -3098,9 +3268,19 @@ class ShellUIAdminOAuthSocialAppDetailView(APIView):
             app.client_id = str(validated['client_id']).strip()
         if 'client_secret' in validated:
             app.secret = str(validated['client_secret']).strip()
+        entry = resolve_catalog_slug(social_app_catalog_slug(app))
         settings_data = app.settings if isinstance(app.settings, dict) else {}
         settings_data = dict(settings_data)
-        if 'tenant' in validated:
+        if entry is not None and ('tenant' in validated or 'extra_settings' in validated):
+            merged, settings_err = _merge_social_app_settings(
+                entry,
+                validated,
+                existing=settings_data,
+            )
+            if settings_err:
+                return Response({'error': settings_err}, status=status.HTTP_400_BAD_REQUEST)
+            settings_data = merged
+        elif 'tenant' in validated:
             tenant = str(validated['tenant']).strip()
             if tenant:
                 settings_data['tenant'] = tenant
@@ -3182,7 +3362,7 @@ class ShellUIAdminOAuthClientDetailView(APIView):
                 social_app = SocialApp.objects.get(pk=validated['social_app_id'])
             except SocialApp.DoesNotExist:
                 return Response({'error': 'SocialApp not found.'}, status=status.HTTP_400_BAD_REQUEST)
-            if str(social_app.provider).strip().lower() not in enabled:
+            if social_app_catalog_slug(social_app) not in enabled:
                 return Response(
                     {'error': f"Provider '{social_app.provider}' is not supported."},
                     status=status.HTTP_400_BAD_REQUEST,

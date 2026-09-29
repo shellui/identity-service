@@ -43,7 +43,7 @@ Do **not** register the shell `/login/callback` URL on the IdP. That path only r
 
 ## Social login providers
 
-identity-service uses **[django-allauth](https://docs.allauth.org/en/latest/)** for `SocialApp` storage and provider modules. **Stock releases** wire the identity-hosted OAuth flow (`/api/v1/authorize` → `/api/v1/oauth/callback`) for **GitHub**, **Google**, and **Microsoft** only. Every other provider in the allauth catalog is **available in the library** once you enable its module, satisfy any extra dependencies from the provider page, create per-company `SocialApp` credentials, and extend OAuth wiring in your deploy — see the full checklist and catalog in **[Social login providers (django-allauth)](oauth-providers.md)**.
+identity-service uses **[django-allauth](https://docs.allauth.org/en/latest/)** for `SocialApp` storage and provider modules. The identity-hosted OAuth flow (`/api/v1/authorize` → `/api/v1/oauth/callback`) runs through allauth OAuth2/OIDC adapters for every **supported** entry in the provider catalog (97 OAuth2/OIDC providers in the current release). Shellui admin loads setup metadata from `GET /api/v1/oauth-provider-catalog`. OAuth1, SAML, OpenID 2.0, and legacy modules stay catalogued but are not wired to this callback yet. See **[OAuth providers](oauth-providers.md)** for the full list.
 
 Quick reference:
 

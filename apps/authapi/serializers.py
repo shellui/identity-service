@@ -142,20 +142,32 @@ class ShellUIAdminOAuthClientUpdateSerializer(serializers.Serializer):
 
 
 class ShellUIAdminOAuthSocialAppCreateSerializer(serializers.Serializer):
-    provider = serializers.CharField(max_length=64)
+    docs_slug = serializers.CharField(required=False, allow_blank=True, max_length=128)
+    provider = serializers.CharField(required=False, allow_blank=True, max_length=64)
     client_id = serializers.CharField(max_length=191)
     client_secret = serializers.CharField(max_length=191)
     tenant = serializers.CharField(required=False, allow_blank=True, max_length=255)
+    extra_settings = serializers.DictField(required=False, allow_empty=True)
+
+    def validate(self, attrs: dict) -> dict:
+        slug = str(attrs.get('docs_slug') or attrs.get('provider') or '').strip().lower()
+        if not slug:
+            raise serializers.ValidationError('Provide docs_slug (preferred) or provider.')
+        attrs['docs_slug'] = slug
+        return attrs
 
 
 class ShellUIAdminOAuthSocialAppUpdateSerializer(serializers.Serializer):
     client_id = serializers.CharField(required=False, allow_blank=False, max_length=191)
     client_secret = serializers.CharField(required=False, allow_blank=False, max_length=191)
     tenant = serializers.CharField(required=False, allow_blank=True, max_length=255)
+    extra_settings = serializers.DictField(required=False, allow_empty=True)
 
     def validate(self, attrs: dict) -> dict:
         if not attrs:
-            raise serializers.ValidationError('Provide at least one of: client_id, client_secret, tenant.')
+            raise serializers.ValidationError(
+                'Provide at least one of: client_id, client_secret, tenant, extra_settings.'
+            )
         return attrs
 
 

@@ -21,6 +21,17 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
 -->
 
+## [Unreleased] - 2026-09-29
+
+### ✨ Feature
+
+- **OAuth provider catalog:** identity-service ships a checked-in django-allauth provider catalog (`apps/authapi/provider_catalog.json`) with **97** OAuth2/OIDC providers wired through allauth adapters on the identity-hosted callback. Admin API: `GET /api/v1/admin/oauth-provider-catalog`. OAuth app CRUD accepts `docs_slug` plus validated `extra_settings`.
+- **django-allauth 65.19.5:** dependency upgraded to match the provider dataset.
+
+### 📚 Documentation
+
+- Regenerated [docs/oauth-providers.md](docs/oauth-providers.md) from the catalog (CI drift check).
+
 ## [0.6.0] - 2026-09-29
 
 ### ✨ Feature

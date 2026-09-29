@@ -1,0 +1,119 @@
+#!/usr/bin/env python3
+"""Generate docs/oauth-providers.md from apps/authapi/provider_catalog.json."""
+
+from __future__ import annotations
+
+import json
+import pathlib
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+CATALOG_PATH = ROOT / 'apps' / 'authapi' / 'provider_catalog.json'
+OUT_PATH = ROOT / 'docs' / 'oauth-providers.md'
+
+TIER_HEADINGS = {
+    'popular': 'Popular',
+    'generic': 'Generic protocols',
+    'other': 'All others',
+}
+
+
+def _icon_cell(icon: dict) -> str:
+    if icon.get('source') == 'simple-icons' and icon.get('slug'):
+        slug = icon['slug']
+        hex_color = str(icon.get('hex') or '000000').lstrip('#')
+        return (
+            f'<img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/{slug}.svg" '
+            f'width="20" height="20" alt="" style="vertical-align:middle;background:#{hex_color};" />'
+        )
+    return '🔑'
+
+
+def _console_links(console_url: list) -> str:
+    links = []
+    for item in console_url or []:
+        if not isinstance(item, dict):
+            continue
+        url = str(item.get('url') or item.get('text') or '').strip()
+        if not url.startswith('http'):
+            continue
+        label = str(item.get('label') or item.get('text') or 'Developer console').strip()
+        links.append(f'[{label}]({url})')
+    return '<br />'.join(links) if links else '—'
+
+
+def _extra_settings(entry: dict) -> str:
+    schema = entry.get('extra_settings_schema') or []
+    if not schema:
+        return '—'
+    parts = []
+    for field in schema:
+        req = 'required' if field.get('required') else 'optional'
+        secret = ' (secret)' if field.get('secret') else ''
+        parts.append(f"`{field['name']}` ({req}{secret})")
+    return ', '.join(parts)
+
+
+def render_provider_row(entry: dict) -> str:
+    supported = 'Yes' if entry.get('supported') else 'No'
+    if not entry.get('supported') and entry.get('unsupported_reason'):
+        supported = f"No — {entry['unsupported_reason']}"
+    docs_url = entry.get('docs_url') or ''
+    docs_link = f"[allauth docs]({docs_url})" if docs_url else '—'
+    callback = entry.get('allauth_callback_path') or '—'
+    return (
+        f"| {_icon_cell(entry.get('icon') or {})} {entry.get('name')} "
+        f"| `{entry.get('docs_slug')}` "
+        f"| {entry.get('protocol') or '—'} "
+        f"| {_console_links(entry.get('console_url') or [])} "
+        f"| {docs_link} "
+        f"| `{callback}` "
+        f"| {_extra_settings(entry)} "
+        f"| {supported} |"
+    )
+
+
+def main() -> int:
+    catalog = json.loads(CATALOG_PATH.read_text(encoding='utf-8'))
+    providers = catalog.get('providers') or []
+    by_tier: dict[str, list] = {key: [] for key in TIER_HEADINGS}
+    for entry in providers:
+        tier = entry.get('tier') or 'other'
+        by_tier.setdefault(tier, []).append(entry)
+    for tier_entries in by_tier.values():
+        tier_entries.sort(key=lambda item: str(item.get('name') or '').lower())
+
+    lines = [
+        '# OAuth providers',
+        '',
+        'identity-service ships a catalog of django-allauth social providers for Shellui admin setup.',
+        'Register each IdP app with the **identity-hosted callback** (`/api/v1/oauth/callback`), not the default allauth `/accounts/…` path.',
+        'See [OAuth login](oauth-login.md) for the full authorize flow.',
+        '',
+        f"Catalog version **{catalog.get('catalog_version')}** (django-allauth **{catalog.get('allauth_version')}**).",
+        '',
+        '> This page is generated from `apps/authapi/provider_catalog.json`. Run `uv run python tools/render_oauth_providers_doc.py` after catalog changes.',
+        '',
+    ]
+    for tier, heading in TIER_HEADINGS.items():
+        entries = by_tier.get(tier) or []
+        if not entries:
+            continue
+        lines.extend(
+            [
+                f'## {heading}',
+                '',
+                '| | Provider | Catalog id | Protocol | Developer console | allauth docs | allauth callback (reference) | Extra settings | Shellui supported |',
+                '| --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+            ]
+        )
+        for entry in entries:
+            lines.append(render_provider_row(entry))
+        lines.append('')
+
+    OUT_PATH.write_text('\n'.join(lines).rstrip() + '\n', encoding='utf-8')
+    print(f'Wrote {OUT_PATH}')
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

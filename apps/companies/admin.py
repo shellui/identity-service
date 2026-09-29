@@ -6,7 +6,7 @@ from django.urls import path, reverse
 from django.utils.html import format_html
 
 from apps.actions.scim_hooks import emit_group_created, emit_group_deleted, emit_group_updated
-from apps.authapi.oauth import SUPPORTED_OAUTH_PROVIDERS
+from apps.authapi.provider_registry import supported_oauth_provider_slugs
 from .access import normalize_allowed_domains
 from .models import Company, CompanyGroup, CompanyMembership, CompanyOAuthClient, CompanyOAuthRedirect
 
@@ -169,7 +169,7 @@ class CompanyAdmin(admin.ModelAdmin):
 
     @staticmethod
     def _enabled_providers() -> list[str]:
-        return sorted(SUPPORTED_OAUTH_PROVIDERS)
+        return sorted(supported_oauth_provider_slugs())
 
     def oauth_clients_view(self, request, company_id: int):
         try:

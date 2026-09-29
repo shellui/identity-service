@@ -12,6 +12,8 @@ import jwt
 from allauth.socialaccount.models import SocialAccount
 from django.contrib.auth import get_user_model
 
+from apps.authapi.provider_registry import resolve_catalog_slug
+
 User = get_user_model()
 logger = logging.getLogger(__name__)
 
@@ -119,6 +121,52 @@ def _fetch_github_verified_primary_email(access_token: str) -> tuple[str | None,
     return None, False
 
 
+def _email_verified_for_link_from_policy(
+    *,
+    policy: str,
+    provider_key: str,
+    userinfo: dict,
+    access_token: str,
+    tenant: str | None,
+    id_token_claims: dict,
+) -> tuple[bool, str | None, str | None]:
+    """Return (verified_for_link, error_message, resolved_email_override)."""
+    info = userinfo if isinstance(userinfo, dict) else {}
+    claims = id_token_claims if isinstance(id_token_claims, dict) else {}
+
+    if policy == 'github_verified_primary':
+        gh_email, verified = _fetch_github_verified_primary_email(access_token)
+        if verified and gh_email:
+            return True, None, gh_email
+        return False, (
+            'GitHub sign-in requires a verified primary email on your account. '
+            'Verify your email at GitHub, then try again.'
+        ), None
+
+    if policy == 'google_email_verified':
+        return _truthy_claim(info.get('email_verified')), None, None
+
+    if policy == 'microsoft_tenant':
+        if not microsoft_email_trustworthy(tenant=tenant, id_token_claims=claims):
+            return False, (
+                'Microsoft sign-in requires a verified work account or a company-configured tenant. '
+                'Ask your administrator to restrict sign-in to your organization tenant.'
+            ), None
+        ms_email = info.get('mail') or info.get('userPrincipalName') or info.get('email')
+        if isinstance(ms_email, str) and ms_email.strip() and '@' in ms_email:
+            return True, None, ms_email.strip().lower()
+        return False, None, None
+
+    if policy in {'oidc_email_verified_or_uid_only', 'oauth2_email_verified_or_uid_only'}:
+        if _truthy_claim(info.get('email_verified')):
+            return True, None, None
+        if _truthy_claim(claims.get('email_verified')):
+            return True, None, None
+        return False, None, None
+
+    return False, None, None
+
+
 def extract_oauth_profile(
     provider: str,
     userinfo: dict,
@@ -128,6 +176,9 @@ def extract_oauth_profile(
     id_token_claims: dict | None = None,
 ) -> tuple[OAuthProfile | None, str | None]:
     key = str(provider).strip().lower()
+    entry = resolve_catalog_slug(key)
+    policy = entry.email_link_policy if entry is not None else 'uid_only'
+    social_account_provider = entry.allauth_id if entry is not None else key
     info = userinfo if isinstance(userinfo, dict) else {}
     claims = id_token_claims if isinstance(id_token_claims, dict) else {}
 
@@ -143,37 +194,21 @@ def extract_oauth_profile(
 
     email = info.get('email') or info.get('mail') or info.get('userPrincipalName')
     full_name = info.get('name') or info.get('displayName') or ''
-    email_verified_for_link = False
-
-    if key == 'google':
-        email_verified_for_link = _truthy_claim(info.get('email_verified'))
-    elif key == 'github':
-        gh_email, verified = _fetch_github_verified_primary_email(access_token)
-        if verified and gh_email:
-            email = gh_email
-            email_verified_for_link = True
-        else:
-            return None, (
-                'GitHub sign-in requires a verified primary email on your account. '
-                'Verify your email at GitHub, then try again.'
-            )
-    elif key == 'microsoft':
-        if not microsoft_email_trustworthy(tenant=tenant, id_token_claims=claims):
-            return None, (
-                'Microsoft sign-in requires a verified work account or a company-configured tenant. '
-                'Ask your administrator to restrict sign-in to your organization tenant.'
-            )
-        ms_email = info.get('mail') or info.get('userPrincipalName') or info.get('email')
-        if isinstance(ms_email, str) and ms_email.strip() and '@' in ms_email:
-            email = ms_email
-            email_verified_for_link = True
-        else:
-            email_verified_for_link = False
-    else:
-        email_verified_for_link = _truthy_claim(info.get('email_verified'))
+    email_verified_for_link, policy_error, email_override = _email_verified_for_link_from_policy(
+        policy=policy,
+        provider_key=social_account_provider,
+        userinfo=info,
+        access_token=access_token,
+        tenant=tenant,
+        id_token_claims=claims,
+    )
+    if policy_error:
+        return None, policy_error
+    if email_override:
+        email = email_override
 
     if not email or not str(email).strip():
-        email = f'{provider_id}@{key}.local'
+        email = f'{provider_id}@{social_account_provider}.local'
     else:
         email = str(email).strip().lower()
 
@@ -199,15 +234,17 @@ def resolve_oauth_user(*, provider: str, profile: OAuthProfile) -> tuple[User | 
     Link by (provider, uid) first. Link by email only when ``email_verified_for_link`` is true.
     """
     key = str(provider).strip().lower()
+    entry = resolve_catalog_slug(key)
+    social_key = entry.allauth_id if entry is not None else key
     existing = (
-        SocialAccount.objects.filter(provider=key, uid=profile.provider_id)
+        SocialAccount.objects.filter(provider=social_key, uid=profile.provider_id)
         .select_related('user')
         .first()
     )
     if existing is not None:
         return existing.user, False, None
 
-    synthetic = profile.email.endswith(f'@{key}.local')
+    synthetic = profile.email.endswith(f'@{social_key}.local')
     if not profile.email_verified_for_link and not synthetic:
         return None, False, (
             'We could not verify your email with this sign-in provider. '
@@ -216,7 +253,7 @@ def resolve_oauth_user(*, provider: str, profile: OAuthProfile) -> tuple[User | 
 
     if synthetic:
         user = User.objects.create(
-            username=f'{key}_{profile.provider_id}',
+            username=f'{social_key}_{profile.provider_id}',
             email=profile.email,
             first_name=profile.full_name.split(' ')[0],
             last_name=' '.join(profile.full_name.split(' ')[1:]),
@@ -228,7 +265,7 @@ def resolve_oauth_user(*, provider: str, profile: OAuthProfile) -> tuple[User | 
     user, created = get_or_create_user_for_oauth(
         email=profile.email,
         defaults={
-            'username': f'{key}_{profile.provider_id}',
+            'username': f'{social_key}_{profile.provider_id}',
             'first_name': profile.full_name.split(' ')[0],
             'last_name': ' '.join(profile.full_name.split(' ')[1:]),
         },

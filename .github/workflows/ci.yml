@@ -54,6 +54,13 @@ jobs:
       - name: Verify lockfile
         run: uv lock --check
 
+      - name: Verify generated OAuth provider artifacts
+        run: |
+          uv run python tools/build_provider_catalog.py
+          uv run python tools/generate_allauth_provider_apps.py
+          uv run python tools/render_oauth_providers_doc.py
+          git diff --exit-code apps/authapi/provider_catalog.json config/allauth_provider_apps.py docs/oauth-providers.md
+
       - name: Django system checks
         run: uv run python manage.py check
 

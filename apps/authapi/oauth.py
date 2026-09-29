@@ -6,9 +6,23 @@ from dataclasses import dataclass
 from typing import Any
 
 from django.db.utils import OperationalError, ProgrammingError
+from allauth.socialaccount.models import SocialApp
+
+from apps.authapi.oauth_allauth import (
+    build_allauth_authorize_url,
+    exchange_allauth_code,
+    get_identity_oauth2_adapter,
+    sociallogin_userinfo,
+)
+from apps.authapi.provider_registry import (
+    ProviderCatalogEntry,
+    catalog_entry_for_social_app,
+    resolve_catalog_slug,
+    supported_oauth_provider_slugs,
+)
 from apps.companies.models import CompanyOAuthClient
 
-SUPPORTED_OAUTH_PROVIDERS = frozenset({'github', 'google', 'microsoft'})
+SUPPORTED_OAUTH_PROVIDERS = supported_oauth_provider_slugs()
 
 
 @dataclass(frozen=True)
@@ -31,10 +45,23 @@ class OAuthTokenBundle:
 @dataclass(frozen=True)
 class ResolvedOAuthClient:
     provider: str
+    catalog_entry: ProviderCatalogEntry
     client_id: str
     client_secret: str
     tenant: str | None = None
     company_oauth_client_id: int | None = None
+    social_app_id: int | None = None
+
+
+def _match_social_app_provider(entry: ProviderCatalogEntry, social_app: SocialApp) -> bool:
+    provider = str(social_app.provider).strip().lower()
+    if provider != entry.allauth_id.lower():
+        return False
+    if entry.allauth_id == 'openid_connect':
+        sub_id = str(getattr(social_app, 'provider_id', '') or '').strip().lower()
+        expected = entry.social_app_provider_id().lower()
+        return sub_id == expected
+    return True
 
 
 def _resolve_company_client(
@@ -42,20 +69,31 @@ def _resolve_company_client(
     company_id: int | None,
     company_oauth_client_id: int | None,
 ) -> ResolvedOAuthClient | None:
+    entry = resolve_catalog_slug(provider)
+    if not entry or not entry.supported:
+        return None
     if not company_id:
         return None
     try:
-        qs = CompanyOAuthClient.objects.filter(
-            company_id=company_id,
-            is_active=True,
-            social_app__provider=provider,
-        ).exclude(social_app__client_id='').exclude(social_app__secret='')
+        qs = (
+            CompanyOAuthClient.objects.filter(
+                company_id=company_id,
+                is_active=True,
+            )
+            .exclude(social_app__client_id='')
+            .exclude(social_app__secret='')
+            .select_related('social_app')
+        )
         if company_oauth_client_id is not None:
             row = qs.filter(pk=company_oauth_client_id).first()
-            if not row:
+            if not row or not _match_social_app_provider(entry, row.social_app):
                 return None
         else:
-            row = qs.order_by('id').first()
+            row = None
+            for candidate in qs.order_by('id'):
+                if _match_social_app_provider(entry, candidate.social_app):
+                    row = candidate
+                    break
     except (OperationalError, ProgrammingError):
         return None
     if not row:
@@ -64,11 +102,13 @@ def _resolve_company_client(
     if not isinstance(social_app_settings, dict):
         social_app_settings = {}
     return ResolvedOAuthClient(
-        provider=provider,
+        provider=entry.docs_slug,
+        catalog_entry=entry,
         client_id=str(row.social_app.client_id).strip(),
         client_secret=str(row.social_app.secret).strip(),
         tenant=str(social_app_settings.get('tenant', '')).strip() or None,
         company_oauth_client_id=row.id,
+        social_app_id=row.social_app_id,
     )
 
 
@@ -88,6 +128,12 @@ def resolve_oauth_client(
     return selected
 
 
+def get_social_app_for_client(resolved: ResolvedOAuthClient) -> SocialApp:
+    if resolved.social_app_id is None:
+        raise ValueError('Missing social_app_id on resolved OAuth client.')
+    return SocialApp.objects.get(pk=resolved.social_app_id)
+
+
 def get_provider_config(
     provider: str,
     *,
@@ -99,39 +145,15 @@ def get_provider_config(
         company_id=company_id,
         company_oauth_client_id=company_oauth_client_id,
     )
-    tenant = resolved.tenant or 'common'
-    providers = {
-        'github': ProviderConfig(
-            name='github',
-            client_id=resolved.client_id,
-            client_secret=resolved.client_secret,
-            authorize_url='https://github.com/login/oauth/authorize',
-            token_url='https://github.com/login/oauth/access_token',
-            userinfo_url='https://api.github.com/user',
-            scope='read:user user:email',
-        ),
-        'google': ProviderConfig(
-            name='google',
-            client_id=resolved.client_id,
-            client_secret=resolved.client_secret,
-            authorize_url='https://accounts.google.com/o/oauth2/v2/auth',
-            token_url='https://oauth2.googleapis.com/token',
-            userinfo_url='https://www.googleapis.com/oauth2/v3/userinfo',
-            scope='openid email profile',
-        ),
-        'microsoft': ProviderConfig(
-            name='microsoft',
-            client_id=resolved.client_id,
-            client_secret=resolved.client_secret,
-            authorize_url=f'https://login.microsoftonline.com/{tenant}/oauth2/v2.0/authorize',
-            token_url=f'https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token',
-            userinfo_url='https://graph.microsoft.com/v1.0/me',
-            scope='openid email profile User.Read',
-        ),
-    }
-    if provider not in providers:
-        raise ValueError(f'Unsupported provider: {provider}')
-    return providers[provider]
+    return ProviderConfig(
+        name=resolved.provider,
+        client_id=resolved.client_id,
+        client_secret=resolved.client_secret,
+        authorize_url='',
+        token_url='',
+        userinfo_url='',
+        scope='',
+    )
 
 
 def build_authorize_url(
@@ -139,28 +161,29 @@ def build_authorize_url(
     redirect_uri: str,
     state: str | None = None,
     *,
+    request=None,
     company_id: int | None = None,
     company_oauth_client_id: int | None = None,
     switch_account: bool = False,
-) -> str:
-    config = get_provider_config(
+) -> tuple[str, str | None]:
+    if request is None:
+        raise ValueError('HTTP request is required to build provider authorize URLs.')
+    resolved = resolve_oauth_client(
         provider,
         company_id=company_id,
         company_oauth_client_id=company_oauth_client_id,
     )
-    params = {
-        'client_id': config.client_id,
-        'redirect_uri': redirect_uri,
-        'response_type': 'code',
-        'scope': config.scope,
-        'state': state or str(uuid.uuid4()),
-    }
-    if provider == 'google':
-        params['access_type'] = 'offline'
-        params['prompt'] = 'select_account consent' if switch_account else 'consent'
-    elif provider == 'microsoft' and switch_account:
-        params['prompt'] = 'select_account'
-    return f"{config.authorize_url}?{urllib.parse.urlencode(params)}"
+    social_app = get_social_app_for_client(resolved)
+    signed_state = state or str(uuid.uuid4())
+    url, pkce = build_allauth_authorize_url(
+        request,
+        entry=resolved.catalog_entry,
+        social_app=social_app,
+        redirect_uri=redirect_uri,
+        state=signed_state,
+        switch_account=switch_account,
+    )
+    return url, pkce
 
 
 def exchange_code_for_token(
@@ -168,32 +191,29 @@ def exchange_code_for_token(
     code: str,
     redirect_uri: str,
     *,
+    request=None,
     company_id: int | None = None,
     company_oauth_client_id: int | None = None,
+    pkce_code_verifier: str | None = None,
 ) -> OAuthTokenBundle:
-    config = get_provider_config(
+    if request is None:
+        raise ValueError('HTTP request is required for OAuth code exchange.')
+    if code and not request.GET.get('code'):
+        query = request.GET.copy()
+        query['code'] = code
+        request.GET = query
+    resolved = resolve_oauth_client(
         provider,
         company_id=company_id,
         company_oauth_client_id=company_oauth_client_id,
     )
-    payload = {
-        'client_id': config.client_id,
-        'client_secret': config.client_secret,
-        'code': code,
-        'redirect_uri': redirect_uri,
-        'grant_type': 'authorization_code',
-    }
-    encoded = urllib.parse.urlencode(payload).encode('utf-8')
-    req = urllib.request.Request(
-        config.token_url,
-        data=encoded,
-        headers={
-            'Accept': 'application/json',
-            'Content-Type': 'application/x-www-form-urlencoded',
-        },
+    social_app = get_social_app_for_client(resolved)
+    _sociallogin, data = exchange_allauth_code(
+        request,
+        social_app=social_app,
+        redirect_uri=redirect_uri,
+        pkce_code_verifier=pkce_code_verifier,
     )
-    with urllib.request.urlopen(req, timeout=20) as response:
-        data: dict[str, Any] = json.loads(response.read().decode('utf-8'))
     access_token = data.get('access_token')
     if not access_token:
         raise ValueError('No access token returned by provider.')
@@ -206,24 +226,65 @@ def fetch_provider_userinfo(
     provider: str,
     access_token: str,
     *,
+    request=None,
     company_id: int | None = None,
     company_oauth_client_id: int | None = None,
+    redirect_uri: str | None = None,
+    id_token: str | None = None,
 ) -> dict:
-    config = get_provider_config(
+    if request is None:
+        raise ValueError('HTTP request is required to load provider profiles.')
+    resolved = resolve_oauth_client(
         provider,
         company_id=company_id,
         company_oauth_client_id=company_oauth_client_id,
     )
-    req = urllib.request.Request(
-        config.userinfo_url,
-        headers={
-            'Authorization': f'Bearer {access_token}',
-            'Accept': 'application/json',
-        },
+    social_app = get_social_app_for_client(resolved)
+    oauth2_adapter = get_identity_oauth2_adapter(
+        request,
+        social_app=social_app,
+        callback_url=redirect_uri or '',
     )
-    with urllib.request.urlopen(req, timeout=20) as response:
-        data = json.loads(response.read().decode('utf-8'))
-    return data
+    token_response: dict[str, Any] = {'access_token': access_token}
+    if id_token:
+        token_response['id_token'] = id_token
+    token = oauth2_adapter.parse_token(token_response)
+    sociallogin = oauth2_adapter.complete_login(
+        request,
+        social_app,
+        token,
+        response=token_response,
+    )
+    return sociallogin_userinfo(sociallogin)
+
+
+def complete_oauth_social_login(
+    *,
+    request,
+    provider: str,
+    redirect_uri: str,
+    company_id: int,
+    company_oauth_client_id: int | None,
+    pkce_code_verifier: str | None = None,
+):
+    resolved = resolve_oauth_client(
+        provider,
+        company_id=company_id,
+        company_oauth_client_id=company_oauth_client_id,
+    )
+    social_app = get_social_app_for_client(resolved)
+    sociallogin, token_data = exchange_allauth_code(
+        request,
+        social_app=social_app,
+        redirect_uri=redirect_uri,
+        pkce_code_verifier=pkce_code_verifier,
+    )
+    userinfo = sociallogin_userinfo(sociallogin)
+    access_token = str(token_data.get('access_token') or '')
+    id_token = token_data.get('id_token')
+    id_str = id_token.strip() if isinstance(id_token, str) and id_token.strip() else None
+    token_bundle = OAuthTokenBundle(access_token=access_token, id_token=id_str)
+    return sociallogin, token_bundle, userinfo, resolved
 
 
 def oauth_skip_confirm_provider_ids() -> frozenset[str]:
@@ -256,3 +317,10 @@ def should_skip_oauth_confirm(provider: str, *, email: str, userinfo: dict) -> b
     if key not in oauth_skip_confirm_provider_ids():
         return False
     return oauth_identity_sufficient_for_auto_confirm(key, email=email, userinfo=userinfo)
+
+
+def social_app_catalog_slug(social_app: SocialApp) -> str:
+    entry = catalog_entry_for_social_app(social_app)
+    if entry is not None:
+        return entry.docs_slug
+    return str(social_app.provider).strip().lower()

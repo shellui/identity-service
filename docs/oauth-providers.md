@@ -1,247 +1,138 @@
-# Social login providers (django-allauth)
+# OAuth providers
 
-identity-service stores OAuth client credentials in django-allauth **`SocialApp`** rows (linked to companies via **`CompanyOAuthClient`**). The service depends on **[django-allauth 65.14.1](https://docs.allauth.org/en/latest/)** (`pyproject.toml` / `uv.lock`).
+identity-service ships a catalog of django-allauth social providers for Shellui admin setup.
+Register each IdP app with the **identity-hosted callback** (`/api/v1/oauth/callback`), not the default allauth `/accounts/…` path.
+See [OAuth login](oauth-login.md) for the full authorize flow.
 
-**Source of truth for provider setup steps:** the upstream [django-allauth socialaccount provider index](https://docs.allauth.org/en/latest/socialaccount/providers/index.html). Each provider page documents IdP registration, optional Python/OS packages, and `SOCIALACCOUNT_PROVIDERS` settings.
+Catalog version **1** (django-allauth **65.19.5**).
 
-This page mirrors that catalog for operators planning IdP coverage. It does **not** imply Shellui ships credentials for every IdP — you still register each client with the provider and attach it to a company.
+> This page is generated from `apps/authapi/provider_catalog.json`. Run `uv run python tools/render_oauth_providers_doc.py` after catalog changes.
 
----
+## Popular
 
-## How this relates to Shellui OAuth
+| | Provider | Catalog id | Protocol | Developer console | allauth docs | allauth callback (reference) | Extra settings | Shellui supported |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/apple.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#000000;" /> Apple | `apple` | OAuth2 | [App registration (create an App ID and then a related Service ID here)](https://developer.apple.com/account/resources/identifiers/list)<br />[Private Key registration (be sure to save it)](https://developer.apple.com/account/resources/authkeys/list) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/apple.html) | `/accounts/apple/login/callback/` | `key` (required), `certificate_key` (required (secret)) | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/auth0.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#EB5424;" /> Auth0 | `auth0` | OAuth2 | [App registration (get your key and secret here)](https://manage.auth0.com/#/clients) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/auth0.html) | `/accounts/auth0/login/callback/` | `AUTH0_URL` (required) | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/bitbucket.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#0052CC;" /> Bitbucket | `bitbucket` | OAuth2 | [App registration (get your key and secret here)](https://bitbucket.org/account/user/{{yourusername}}/oauth-consumers/new) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/bitbucket.html) | `/accounts/bitbucket_oauth2/login/callback/` | — | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/discord.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#5865F2;" /> Discord | `discord` | OAuth2 | [App registration and management (get your key and secret here)](https://discordapp.com/developers/applications/me) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/discord.html) | `/accounts/discord/login/callback/` | — | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/facebook.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#0866FF;" /> Facebook | `facebook` | OAuth2 | [App registration: a key and secret key can be obtained by creating an app](https://developers.facebook.com/apps) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/facebook.html) | `/accounts/facebook/login/callback/` | — | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/github.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#181717;" /> GitHub | `github` | OAuth2 | [App registration (get your key and secret here)](https://github.com/settings/applications/new) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/github.html) | `/accounts/github/login/callback/` | — | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/gitlab.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#FC6D26;" /> GitLab | `gitlab` | OAuth2 | — | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/gitlab.html) | `/accounts/gitlab/login/callback/` | — | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/google.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#4285F4;" /> Google | `google` | OAuth2 | [Google Developer Console](https://console.developers.google.com/) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/google.html) | `/accounts/google/login/callback/` | — | Yes |
+| 🔑 LinkedIn | `linkedin` | OpenID Connect | [App registration (get your key and secret here)](https://www.linkedin.com/secure/developer?newapp=) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/linkedin.html) | `/accounts/oidc/linkedin/login/callback/` | `provider_id` (required), `server_url` (required) | Yes |
+| 🔑 Microsoft | `microsoft` | OAuth2 | [Apps can be registered (for consumer key and secret) here](https://portal.azure.com/#blade/Microsoft_AAD_RegisteredApps/ApplicationsListBlade) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/microsoft.html) | `/accounts/microsoft/login/callback/` | `tenant` (optional) | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/okta.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#007DC1;" /> Okta | `okta` | OAuth2 | — | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/okta.html) | `/accounts/okta/login/callback/` | `OKTA_BASE_URL` (required) | Yes |
+| 🔑 Slack | `slack` | OAuth2 | [App registration (get your key and secret here)](https://api.slack.com/apps/new) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/slack.html) | `/accounts/slack/login/callback/` | — | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/x.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#000000;" /> X/Twitter (OAuth 2) | `twitter_oauth2` | OAuth2 | [App registration: create a new app via](https://developer.x.com/en/portal/dashboard)<br />[Use the X keys tab of your application to fill in the form](https://developer.x.com/en/portal/projects/{project-id}/apps/{app-id}/keys) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/twitter_oauth2.html) | `/accounts/twitter_oauth2/login/callback/` | — | Yes |
 
-| Layer | What it does |
-| ----- | ------------ |
-| **django-allauth** | Provider modules, `SocialApp` model, optional vanilla `/accounts/…` routes (not mounted by default in identity-service) |
-| **identity-service OAuth API** | Identity-hosted flow: `GET /api/v1/authorize` → IdP → `GET /api/v1/oauth/callback` → confirmation (optional; **Google skips by default**) → `redirect_to?shellui_auth_code=…` — see [OAuth login](oauth-login.md) |
-| **Per-company enablement** | Active `CompanyOAuthClient` rows; `GET /api/v1/settings?company_id=…` lists providers that have credentials for that company |
+## Generic protocols
 
-### IdP callback URL (Shellui flow)
+| | Provider | Catalog id | Protocol | Developer console | allauth docs | allauth callback (reference) | Extra settings | Shellui supported |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 🔑 OAuth 2.0 | `oauth2` | OAuth2 | — | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/oauth2.html) | `/accounts/<provider_slug>/login/callback/` | — | No — Generic OAuth 2.0 requires custom endpoints; not wired in this release. |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/openid.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#F78C40;" /> OpenID | `openid` | other | — | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/openid.html) | `/accounts/openid/callback/` | — | No — Protocol other is not supported by the identity-hosted OAuth callback yet. |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/openid.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#F78C40;" /> OpenID Connect | `openid_connect` | OpenID Connect | — | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/openid_connect.html) | `/accounts/oidc/{id}/login/callback/` | `server_url` (required) | Yes |
+| 🔑 SAML | `saml` | SAML | — | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/saml.html) | `/accounts/saml/<organization_slug>/acs/` | — | No — Protocol SAML is not supported by the identity-hosted OAuth callback yet. |
 
-Register **one** authorization callback on the IdP — the identity host, **no query string**:
+## All others
 
-| Environment | Callback URL |
-| ----------- | ------------ |
-| Local | `http://localhost:8000/api/v1/oauth/callback` |
-| Production | `https://<identity-host>/api/v1/oauth/callback` |
-
-django-allauth’s **default** callback pattern (when using stock allauth URLs) is `…/accounts/<provider>/login/callback/`. identity-service does **not** expose that path for the Shellui authorize flow; use the table above instead.
-
-### Enabling a provider (operator checklist)
-
-1. **Read the allauth provider page** linked from the [provider index](https://docs.allauth.org/en/latest/socialaccount/providers/index.html) (scopes, tenant IDs, SAML metadata, etc.).
-2. **Install optional dependencies** called out on that page (for example SAML stacks, crypto, or provider-specific libraries). Add OS packages in your container image when allauth documents Debian requirements.
-3. **Enable the provider module** in Django: add `allauth.socialaccount.providers.<provider_id>` to `INSTALLED_APPS` (see the provider page — identity-service ships with `github`, `google`, and `microsoft` only).
-4. **Configure `SOCIALACCOUNT_PROVIDERS`** in settings when the provider page shows non-default scopes or endpoints (see `config/settings.py` for the stock three).
-5. **Create credentials per company:** Django admin → Company → OAuth clients, or `POST /api/v1/admin/oauth-social-apps` + company mapping. Each IdP needs its own client id/secret (or SAML metadata) on a `SocialApp`.
-6. **Allowlist shell origins** for token delivery (`CompanyOAuthRedirect`) — [OAuth login → Redirect allowlist](oauth-login.md#redirect-allowlist).
-
-**Stock release wiring:** `GET /api/v1/authorize`, the method picker, and server-side code exchange are implemented for **`github`**, **`google`**, and **`microsoft`** only (`apps/authapi/oauth.py`). Additional allauth providers are **available in the library** but require extending that OAuth integration (and `SUPPORTED_OAUTH_PROVIDERS`) in a custom deploy or future release before they appear in the Shellui login UI. Lower-level APIs (`/api/v1/providers/<provider>/authorize/` and `/api/v1/providers/<provider>/login/`) follow the same provider allowlist today.
-
-Listing a provider here is **not** a security or legal attestation for that IdP.
-
----
-
-## Primary / recommended (common starters)
-
-These are typical enterprise, consumer, and developer IdPs. Only **GitHub**, **Google**, and **Microsoft** are wired end-to-end in the stock image; the rest follow the same allauth + `SocialApp` pattern once your deploy enables the module and OAuth wiring.
-
-| Provider | allauth id | Protocol | Notes |
-| -------- | ---------- | -------- | ----- |
-| Google | [`google`](https://docs.allauth.org/en/latest/socialaccount/providers/google.html) | OAuth 2 / OIDC | **Stock** — common consumer & Workspace |
-| Microsoft | [`microsoft`](https://docs.allauth.org/en/latest/socialaccount/providers/microsoft.html) | OAuth 2 / OIDC | **Stock** — Entra ID (Azure AD) & personal accounts; set tenant on `SocialApp.settings` |
-| GitHub | [`github`](https://docs.allauth.org/en/latest/socialaccount/providers/github.html) | OAuth 2 | **Stock** — developer teams |
-| Apple | [`apple`](https://docs.allauth.org/en/latest/socialaccount/providers/apple.html) | OAuth 2 / OIDC | Sign in with Apple; extra Apple developer setup |
-| GitLab | [`gitlab`](https://docs.allauth.org/en/latest/socialaccount/providers/gitlab.html) | OAuth 2 | Self-hosted or gitlab.com |
-| Slack | [`slack`](https://docs.allauth.org/en/latest/socialaccount/providers/slack.html) | OAuth 2 | Workspace apps |
-| Okta | [`okta`](https://docs.allauth.org/en/latest/socialaccount/providers/okta.html) | OAuth 2 / OIDC | Workforce IdP |
-| Auth0 | [`auth0`](https://docs.allauth.org/en/latest/socialaccount/providers/auth0.html) | OAuth 2 / OIDC | Auth0 tenant |
-| Keycloak | [`openid_connect`](https://docs.allauth.org/en/latest/socialaccount/providers/openid_connect.html) | OIDC | Configure Keycloak as an OpenID Connect provider (allauth Keycloak guide) |
-| OpenID Connect | [`openid_connect`](https://docs.allauth.org/en/latest/socialaccount/providers/openid_connect.html) | OIDC | Generic OIDC IdPs |
-| SAML | [`saml`](https://docs.allauth.org/en/latest/socialaccount/providers/saml.html) | SAML 2.0 | Enterprise SSO; often extra Python/XML dependencies |
-| Discord | [`discord`](https://docs.allauth.org/en/latest/socialaccount/providers/discord.html) | OAuth 2 | Communities |
-| Facebook | [`facebook`](https://docs.allauth.org/en/latest/socialaccount/providers/facebook.html) | OAuth 2 | Consumer login |
-| LinkedIn | [`linkedin_oauth2`](https://docs.allauth.org/en/latest/socialaccount/providers/linkedin.html) | OAuth 2 / OIDC | Prefer OpenID Connect per [allauth LinkedIn](https://docs.allauth.org/en/latest/socialaccount/providers/linkedin.html); legacy module id `linkedin_oauth2` |
-| Amazon Cognito | [`amazon_cognito`](https://docs.allauth.org/en/latest/socialaccount/providers/amazon_cognito.html) | OAuth 2 / OIDC | AWS user pools |
-
-For **provisioning** (not social login), many teams pair OAuth with **[SCIM](scim.md)** for Okta, Entra ID, or similar directories.
-
----
-
-## Also available (full django-allauth 65.14.1 catalog)
-
-The tables below list provider modules shipped inside **django-allauth 65.14.1** (the version pinned in this repository). Primary starters above are omitted here to avoid duplication. Names follow the [official provider index](https://docs.allauth.org/en/latest/socialaccount/providers/index.html) where they differ from the Python package slug.
-
-<details>
-<summary><strong>Generic protocol adapters</strong></summary>
-
-| Provider | allauth id | Protocol |
-| -------- | ---------- | -------- |
-| [OpenID](https://docs.allauth.org/en/latest/socialaccount/providers/openid.html) | `openid` | OpenID 2.0 |
-| [OAuth 2 (generic)](https://docs.allauth.org/en/latest/socialaccount/providers/oauth2.html) | `oauth2` | OAuth 2 |
-
-</details>
-
-<details>
-<summary><strong>Enterprise, education & workforce</strong></summary>
-
-| Provider | allauth id | Protocol |
-| -------- | ---------- | -------- |
-| [Atlassian](https://docs.allauth.org/en/latest/socialaccount/providers/atlassian.html) | `atlassian` | OAuth 2 |
-| [Authentiq](https://docs.allauth.org/en/latest/socialaccount/providers/authentiq.html) | `authentiq` | OAuth 2 |
-| [Authelia](https://docs.allauth.org/en/latest/socialaccount/providers/authelia.html) | `authelia` | OAuth 2 |
-| [Cilogon](https://docs.allauth.org/en/latest/socialaccount/providers/cilogon.html) | `cilogon` | OAuth 2 |
-| [Clever](https://docs.allauth.org/en/latest/socialaccount/providers/clever.html) | `clever` | OAuth 2 |
-| [Dataporten](https://docs.allauth.org/en/latest/socialaccount/providers/dataporten.html) | `dataporten` | OAuth 2 |
-| [Edmodo](https://docs.allauth.org/en/latest/socialaccount/providers/edmodo.html) | `edmodo` | OAuth 2 |
-| [Edx](https://docs.allauth.org/en/latest/socialaccount/providers/edx.html) | `edx` | OAuth 2 |
-| [Globus](https://docs.allauth.org/en/latest/socialaccount/providers/globus.html) | `globus` | OAuth 2 |
-| [JupyterHub](https://docs.allauth.org/en/latest/socialaccount/providers/jupyterhub.html) | `jupyterhub` | OAuth 2 |
-| [LemonLDAP::NG](https://docs.allauth.org/en/latest/socialaccount/providers/lemonldap.html) | `lemonldap` | OAuth 2 |
-| [Netiq](https://docs.allauth.org/en/latest/socialaccount/providers/netiq.html) | `netiq` | OAuth 2 |
-| [Nextcloud](https://docs.allauth.org/en/latest/socialaccount/providers/nextcloud.html) | `nextcloud` | OAuth 2 |
-| [ORCID](https://docs.allauth.org/en/latest/socialaccount/providers/orcid.html) | `orcid` | OAuth 2 |
-| [Salesforce](https://docs.allauth.org/en/latest/socialaccount/providers/salesforce.html) | `salesforce` | OAuth 2 |
-| [Sharefile](https://docs.allauth.org/en/latest/socialaccount/providers/sharefile.html) | `sharefile` | OAuth 2 |
-| [Windows Live](https://docs.allauth.org/en/latest/socialaccount/providers/windowslive.html) | `windowslive` | OAuth 2 |
-| [Zoho](https://docs.allauth.org/en/latest/socialaccount/providers/zoho.html) | `zoho` | OAuth 2 |
-| [Cern](https://docs.allauth.org/en/latest/socialaccount/providers/cern.html) | `cern` | OAuth 2 |
-
-</details>
-
-<details>
-<summary><strong>Developer tools & collaboration</strong></summary>
-
-| Provider | allauth id | Protocol |
-| -------- | ---------- | -------- |
-| [Bitbucket](https://docs.allauth.org/en/latest/socialaccount/providers/bitbucket.html) | `bitbucket_oauth2` | OAuth 2 |
-| [Box](https://docs.allauth.org/en/latest/socialaccount/providers/box.html) | `box` | OAuth 2 |
-| [Dropbox](https://docs.allauth.org/en/latest/socialaccount/providers/dropbox.html) | `dropbox` | OAuth 2 |
-| [Gitea](https://docs.allauth.org/en/latest/socialaccount/providers/gitea.html) | `gitea` | OAuth 2 |
-| [Mediawiki](https://docs.allauth.org/en/latest/socialaccount/providers/mediawiki.html) | `mediawiki` | OAuth 2 |
-| [Miro](https://docs.allauth.org/en/latest/socialaccount/providers/miro.html) | `miro` | OAuth 2 |
-| [Notion](https://docs.allauth.org/en/latest/socialaccount/providers/notion.html) | `notion` | OAuth 2 |
-| [Stackexchange](https://docs.allauth.org/en/latest/socialaccount/providers/stackexchange.html) | `stackexchange` | OAuth 2 |
-| [Trello](https://docs.allauth.org/en/latest/socialaccount/providers/trello.html) | `trello` | OAuth 1 |
-| [Zoom](https://docs.allauth.org/en/latest/socialaccount/providers/zoom.html) | `zoom` | OAuth 2 |
-
-</details>
-
-<details>
-<summary><strong>Consumer, social & media</strong></summary>
-
-| Provider | allauth id | Protocol |
-| -------- | ---------- | -------- |
-| [23andMe](https://docs.allauth.org/en/latest/socialaccount/providers/23andme.html) | `twentythreeandme` | OAuth 2 |
-| [500px](https://docs.allauth.org/en/latest/socialaccount/providers/500px.html) | `fivehundredpx` | OAuth 2 |
-| Angellist | `angellist` | OAuth 2 |
-| Disqus | `disqus` | OAuth 2 |
-| Douban | `douban` | OAuth 2 |
-| [Flickr](https://docs.allauth.org/en/latest/socialaccount/providers/flickr.html) | `flickr` | OAuth 1 |
-| Foursquare | `foursquare` | OAuth 2 |
-| [Instagram](https://docs.allauth.org/en/latest/socialaccount/providers/instagram.html) | `instagram` | OAuth 2 |
-| [Kakao](https://docs.allauth.org/en/latest/socialaccount/providers/kakao.html) | `kakao` | OAuth 2 |
-| [Line](https://docs.allauth.org/en/latest/socialaccount/providers/line.html) | `line` | OAuth 2 |
-| Meetup | `meetup` | OAuth 2 |
-| [Odnoklassniki](https://docs.allauth.org/en/latest/socialaccount/providers/odnoklassniki.html) | `odnoklassniki` | OAuth 2 |
-| [Pinterest](https://docs.allauth.org/en/latest/socialaccount/providers/pinterest.html) | `pinterest` | OAuth 2 |
-| [Reddit](https://docs.allauth.org/en/latest/socialaccount/providers/reddit.html) | `reddit` | OAuth 2 |
-| [Snapchat](https://docs.allauth.org/en/latest/socialaccount/providers/snapchat.html) | `snapchat` | OAuth 2 |
-| [Soundcloud](https://docs.allauth.org/en/latest/socialaccount/providers/soundcloud.html) | `soundcloud` | OAuth 2 |
-| Spotify | `spotify` | OAuth 2 |
-| [Steam](https://docs.allauth.org/en/latest/socialaccount/providers/steam.html) | `steam` | OpenID |
-| [Tiktok](https://docs.allauth.org/en/latest/socialaccount/providers/tiktok.html) | `tiktok` | OAuth 2 |
-| Tumblr | `tumblr` | OAuth 2 |
-| [Tumblr (OAuth 2)](https://docs.allauth.org/en/latest/socialaccount/providers/tumblr_oauth2.html) | `tumblr_oauth2` | OAuth 2 |
-| [Twitch](https://docs.allauth.org/en/latest/socialaccount/providers/twitch.html) | `twitch` | OAuth 2 |
-| [Untappd](https://docs.allauth.org/en/latest/socialaccount/providers/untappd.html) | `untappd` | OAuth 2 |
-| [Vimeo](https://docs.allauth.org/en/latest/socialaccount/providers/vimeo.html) | `vimeo` | OAuth 1 |
-| [Vimeo (OAuth 2)](https://docs.allauth.org/en/latest/socialaccount/providers/vimeo_oauth2.html) | `vimeo_oauth2` | OAuth 2 |
-| [Vk](https://docs.allauth.org/en/latest/socialaccount/providers/vk.html) | `vk` | OAuth 2 |
-| [Weibo](https://docs.allauth.org/en/latest/socialaccount/providers/weibo.html) | `weibo` | OAuth 2 |
-| [Weixin (WeChat)](https://docs.allauth.org/en/latest/socialaccount/providers/weixin.html) | `weixin` | OAuth 2 |
-| [X / Twitter (OAuth 1)](https://docs.allauth.org/en/latest/socialaccount/providers/twitter.html) | `twitter` | OAuth 1 |
-| [X / Twitter (OAuth 2)](https://docs.allauth.org/en/latest/socialaccount/providers/twitter_oauth2.html) | `twitter_oauth2` | OAuth 2 |
-| [Xing](https://docs.allauth.org/en/latest/socialaccount/providers/xing.html) | `xing` | OAuth 1 |
-| [Yahoo](https://docs.allauth.org/en/latest/socialaccount/providers/yahoo.html) | `yahoo` | OAuth 2 |
-| [Yandex](https://docs.allauth.org/en/latest/socialaccount/providers/yandex.html) | `yandex` | OAuth 2 |
-
-</details>
-
-<details>
-<summary><strong>Commerce, finance & productivity</strong></summary>
-
-| Provider | allauth id | Protocol |
-| -------- | ---------- | -------- |
-| [Amazon](https://docs.allauth.org/en/latest/socialaccount/providers/amazon.html) | `amazon` | OAuth 2 |
-| Asana | `asana` | OAuth 2 |
-| Coinbase | `coinbase` | OAuth 2 |
-| [Dwolla](https://docs.allauth.org/en/latest/socialaccount/providers/dwolla.html) | `dwolla` | OAuth 2 |
-| [Eventbrite](https://docs.allauth.org/en/latest/socialaccount/providers/eventbrite.html) | `eventbrite` | OAuth 2 |
-| Feedly | `feedly` | OAuth 2 |
-| [Feishu](https://docs.allauth.org/en/latest/socialaccount/providers/feishu.html) | `feishu` | OAuth 2 |
-| [Figma](https://docs.allauth.org/en/latest/socialaccount/providers/figma.html) | `figma` | OAuth 2 |
-| [Gumroad](https://docs.allauth.org/en/latest/socialaccount/providers/gumroad.html) | `gumroad` | OAuth 2 |
-| [Hubspot](https://docs.allauth.org/en/latest/socialaccount/providers/hubspot.html) | `hubspot` | OAuth 2 |
-| [Klaviyo](https://docs.allauth.org/en/latest/socialaccount/providers/klaviyo.html) | `klaviyo` | OAuth 2 |
-| [Mailchimp](https://docs.allauth.org/en/latest/socialaccount/providers/mailchimp.html) | `mailchimp` | OAuth 2 |
-| Mailru | `mailru` | OAuth 2 |
-| [Patreon](https://docs.allauth.org/en/latest/socialaccount/providers/patreon.html) | `patreon` | OAuth 2 |
-| [Paypal](https://docs.allauth.org/en/latest/socialaccount/providers/paypal.html) | `paypal` | OAuth 2 |
-| [Pocket](https://docs.allauth.org/en/latest/socialaccount/providers/pocket.html) | `pocket` | OAuth 1 |
-| [Questrade](https://docs.allauth.org/en/latest/socialaccount/providers/questrade.html) | `questrade` | OAuth 2 |
-| [Quickbooks](https://docs.allauth.org/en/latest/socialaccount/providers/quickbooks.html) | `quickbooks` | OAuth 2 |
-| Robinhood | `robinhood` | OAuth 2 |
-| [Shopify](https://docs.allauth.org/en/latest/socialaccount/providers/shopify.html) | `shopify` | OAuth 2 |
-| [Stocktwits](https://docs.allauth.org/en/latest/socialaccount/providers/stocktwits.html) | `stocktwits` | OAuth 2 |
-| [Strava](https://docs.allauth.org/en/latest/socialaccount/providers/strava.html) | `strava` | OAuth 2 |
-| [Stripe](https://docs.allauth.org/en/latest/socialaccount/providers/stripe.html) | `stripe` | OAuth 2 |
-| [Trainingpeaks](https://docs.allauth.org/en/latest/socialaccount/providers/trainingpeaks.html) | `trainingpeaks` | OAuth 2 |
-| [Ynab](https://docs.allauth.org/en/latest/socialaccount/providers/ynab.html) | `ynab` | OAuth 2 |
-
-</details>
-
-<details>
-<summary><strong>Regional, specialty & other</strong></summary>
-
-| Provider | allauth id | Protocol |
-| -------- | ---------- | -------- |
-| [Agave](https://docs.allauth.org/en/latest/socialaccount/providers/agave.html) | `agave` | OAuth 2 |
-| [Baidu](https://docs.allauth.org/en/latest/socialaccount/providers/baidu.html) | `baidu` | OAuth 2 |
-| [Basecamp](https://docs.allauth.org/en/latest/socialaccount/providers/basecamp.html) | `basecamp` | OAuth 2 |
-| [Battlenet](https://docs.allauth.org/en/latest/socialaccount/providers/battlenet.html) | `battlenet` | OAuth 2 |
-| Bitly | `bitly` | OAuth 2 |
-| [Daum](https://docs.allauth.org/en/latest/socialaccount/providers/daum.html) | `daum` | OAuth 2 |
-| [Digitalocean](https://docs.allauth.org/en/latest/socialaccount/providers/digitalocean.html) | `digitalocean` | OAuth 2 |
-| [Dingtalk](https://docs.allauth.org/en/latest/socialaccount/providers/dingtalk.html) | `dingtalk` | OAuth 2 |
-| [Discogs](https://docs.allauth.org/en/latest/socialaccount/providers/discogs.html) | `discogs` | OAuth 1 |
-| [Doximity](https://docs.allauth.org/en/latest/socialaccount/providers/doximity.html) | `doximity` | OAuth 2 |
-| [Draugiem](https://docs.allauth.org/en/latest/socialaccount/providers/draugiem.html) | `draugiem` | OAuth 2 |
-| [Drip](https://docs.allauth.org/en/latest/socialaccount/providers/drip.html) | `drip` | OAuth 2 |
-| [Eveonline](https://docs.allauth.org/en/latest/socialaccount/providers/eveonline.html) | `eveonline` | OAuth 2 |
-| [Evernote](https://docs.allauth.org/en/latest/socialaccount/providers/evernote.html) | `evernote` | OAuth 1 |
-| [Exist](https://docs.allauth.org/en/latest/socialaccount/providers/exist.html) | `exist` | OAuth 2 |
-| [Firefox Accounts](https://docs.allauth.org/en/latest/socialaccount/providers/fxa.html) | `fxa` | OAuth 2 |
-| [Frontier](https://docs.allauth.org/en/latest/socialaccount/providers/frontier.html) | `frontier` | OAuth 2 |
-| Hubic | `hubic` | OAuth 2 |
-| [Lichess](https://docs.allauth.org/en/latest/socialaccount/providers/lichess.html) | `lichess` | OAuth 2 |
-| [Mailcow](https://docs.allauth.org/en/latest/socialaccount/providers/mailcow.html) | `mailcow` | OAuth 2 |
-| [Naver](https://docs.allauth.org/en/latest/socialaccount/providers/naver.html) | `naver` | OAuth 2 |
-| [Openstreetmap](https://docs.allauth.org/en/latest/socialaccount/providers/openstreetmap.html) | `openstreetmap` | OAuth 1 |
-| [Telegram](https://docs.allauth.org/en/latest/socialaccount/providers/telegram.html) | `telegram` | Login widget |
-| [Wahoo](https://docs.allauth.org/en/latest/socialaccount/providers/wahoo.html) | `wahoo` | OAuth 2 |
-
-</details>
-### Upstream index vs this pin
-
-The [latest allauth provider index](https://docs.allauth.org/en/latest/socialaccount/providers/index.html) may document providers before they appear in a given release. This repository pins **django-allauth 65.14.1** — module lists above reflect that wheel. Upstream pages for **[Authelia](https://docs.allauth.org/en/latest/socialaccount/providers/authelia.html)**, **[CERN](https://docs.allauth.org/en/latest/socialaccount/providers/cern.html)**, and **[Klaviyo](https://docs.allauth.org/en/latest/socialaccount/providers/klaviyo.html)** are included in the enterprise/commerce tables for planning; upgrade django-allauth before enabling those modules.
-
-Some package modules (for example `angellist`, `spotify`, `tumblr`) do not yet have dedicated upstream doc pages — use the [provider index](https://docs.allauth.org/en/latest/socialaccount/providers/index.html) and module source in the allauth package.
-
----
-
-## See also
-
-- [OAuth login](oauth-login.md) — Shellui authorize/callback flow, redirect allowlist, upgrades
-- [Company access](company-access.md) — join modes after a successful login
-- [Configuration](configuration.md) — environment variables and production checklist
+| | Provider | Catalog id | Protocol | Developer console | allauth docs | allauth callback (reference) | Extra settings | Shellui supported |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 🔑 23andMe | `23andme` | OAuth2 | [App registration (get your key and secret here)](https://api.23andme.com/dev/) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/23andme.html) | `/accounts/23andme/login/callback/` | — | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/500px.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#222222;" /> 500px | `500px` | OAuth1 | [App registration (get your key and secret here)](https://500px.com/settings/applications) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/500px.html) | `/accounts/500px/login/callback/` | — | No — Protocol OAuth1 is not supported by the identity-hosted OAuth callback yet. |
+| 🔑 AgaveAPI | `agave` | OAuth2 | [Account Signup](https://public.agaveapi.co/create_account)<br />[App registration: run client-create from the cli](https://bitbucket.org/agaveapi/cli/overview) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/agave.html) | `/accounts/agave/login/callback/` | — | Yes |
+| 🔑 Amazon | `amazon` | OAuth2 | [App registration (get your key and secret here)](http://login.amazon.com/manageApps) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/amazon.html) | `/accounts/amazon/login/callback/` | — | Yes |
+| 🔑 Amazon Cognito | `amazon_cognito` | OAuth2 | [App registration (get your key and secret here)](https://console.aws.amazon.com/cognito/) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/amazon_cognito.html) | `/accounts/amazon_cognito/login/callback/` | — | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/atlassian.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#0052CC;" /> Atlassian | `atlassian` | OAuth2 | [Atlassian developer console](https://developer.atlassian.com/console/myapps/) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/atlassian.html) | `/accounts/atlassian/login/callback/` | — | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/authelia.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#113155;" /> Authelia | `authelia` | OpenID Connect | — | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/authelia.html) | `/accounts/oidc/authelia/login/callback/` | `provider_id` (required), `server_url` (required) | Yes |
+| 🔑 Authentiq | `authentiq` | OAuth2 | [App registration](https://dashboard.authentiq.com/) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/authentiq.html) | `/accounts/authentiq/login/callback/` | — | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/baidu.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#2932E1;" /> Baidu | `baidu` | OAuth2 | — | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/baidu.html) | `/accounts/baidu/login/callback/` | — | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/basecamp.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#1D2D35;" /> Basecamp | `basecamp` | OAuth2 | [App registration (get your key and secret here)](https://integrate.37signals.com/) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/basecamp.html) | `/accounts/basecamp/login/callback/` | — | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/battledotnet.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#4381C3;" /> Battle.net | `battlenet` | OAuth2 | [Register your app here (Blizzard account required)](https://develop.battle.net/access/clients/create) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/battlenet.html) | `/accounts/battlenet/login/callback/` | — | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/box.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#0061D5;" /> Box | `box` | OAuth2 | [App registration (get your key and secret here)](https://app.box.com/developers/services/edit/) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/box.html) | `/accounts/box/login/callback/` | — | Yes |
+| 🔑 CERN | `cern` | OpenID Connect | [App registration (get your key and secret here)](https://application-portal.web.cern.ch/) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/cern.html) | `/accounts/oidc/cern/login/callback/` | `provider_id` (required), `server_url` (required) | Yes |
+| 🔑 CILogon | `cilogon` | OAuth2 | [App registration (get your key and secret here)](https://cilogon.org/oauth2/register) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/cilogon.html) | `/accounts/cilogon/login/callback/` | — | Yes |
+| 🔑 Clever | `clever` | OAuth2 | — | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/clever.html) | `/accounts/clever/login/callback/` | — | Yes |
+| 🔑 Dataporten | `dataporten` | OAuth2 | [App registration (get your key and secret here)](https://docs.dataporten.no/docs/gettingstarted/) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/dataporten.html) | `/accounts/dataporten/login/callback/` | — | Yes |
+| 🔑 daum | `daum` | OAuth2 | [App registration (get your key and secret here)](https://developers.daum.net/console) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/daum.html) | `/accounts/Daum/login/callback/` | — | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/digitalocean.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#0080FF;" /> DigitalOcean | `digitalocean` | OAuth2 | [App registration (get your key and secret here)](https://cloud.digitalocean.com/settings/applications) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/digitalocean.html) | `/accounts/digitalocean/login/callback/` | — | Yes |
+| 🔑 DingTalk | `dingtalk` | OAuth2 | — | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/dingtalk.html) | `/accounts/dingtalk/login/callback/` | — | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/discogs.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#333333;" /> Discogs (OAuth 1a) | `discogs` | OAuth1 | [App registration: create a new app at](https://www.discogs.com/settings/developers) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/discogs.html) | `/accounts/discogs/login/callback/` | — | No — Protocol OAuth1 is not supported by the identity-hosted OAuth callback yet. |
+| 🔑 Doximity | `doximity` | OAuth2 | [Request API keys here](https://www.doximity.com/developers/api_signup) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/doximity.html) | `/accounts/doximity/login/callback/` | — | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/draugiemdotlv.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#FF6600;" /> Draugiem | `draugiem` | other | [App registration (get your key and secret here)](https://www.draugiem.lv/applications/dev/create/?type=4) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/draugiem.html) | `/accounts/draugiem/callback/` | — | No — Protocol other is not supported by the identity-hosted OAuth callback yet. |
+| 🔑 Drip | `drip` | OAuth2 | [App registration (get your key and secret here)](https://www.getdrip.com/user/applications) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/drip.html) | `/accounts/drip/login/callback/` | — | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/dropbox.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#0061FF;" /> Dropbox | `dropbox` | OAuth2 | [App registration (get your key and secret here)](https://www.dropbox.com/developers/apps/) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/dropbox.html) | `/accounts/dropbox/login/callback/` | — | Yes |
+| 🔑 Dwolla | `dwolla` | OAuth2 | [App registration (get your key and secret here)](https://dashboard-uat.dwolla.com/applications) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/dwolla.html) | `/accounts/dwolla/login/callback/` | — | Yes |
+| 🔑 Edmodo | `edmodo` | OAuth2 | — | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/edmodo.html) | `/accounts/edmodo/login/callback/` | — | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/edx.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#02262B;" /> Edx | `edx` | OAuth2 | — | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/edx.html) | `/accounts/edx/login/callback/` | — | Yes |
+| 🔑 Eve Online | `eveonline` | OAuth2 | [Register your application at](https://developers.eveonline.com/applications/create) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/eveonline.html) | `/accounts/eveonline/login/callback/` | — | Yes |
+| 🔑 Eventbrite | `eventbrite` | OAuth2 | [App registration](https://www.eventbrite.com/myaccount/apps/) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/eventbrite.html) | `/accounts/eventbrite/login/callback/` | — | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/evernote.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#00A82D;" /> Evernote | `evernote` | OAuth1 | [Register your OAuth2 application at](https://dev.evernote.com/doc/articles/authentication.php) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/evernote.html) | `/accounts/evernote/login/callback/` | — | No — Protocol OAuth1 is not supported by the identity-hosted OAuth callback yet. |
+| 🔑 Exist | `exist` | OAuth2 | [Register your OAuth2 app in apps page](https://exist.io/account/apps/) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/exist.html) | `/accounts/exist/login/callback/` | — | Yes |
+| 🔑 Feishu | `feishu` | OAuth2 | [App Registration](https://open.feishu.cn/app) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/feishu.html) | `/accounts/feishu/login/callback/` | — | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/figma.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#F24E1E;" /> Figma | `figma` | OAuth2 | [App registration (get your key and secret here)](https://www.figma.com/developers/apps) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/figma.html) | `/accounts/figma/login/callback/` | — | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/firefox.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#FF7139;" /> Firefox Accounts | `fxa` | OAuth2 | — | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/fxa.html) | `/accounts/fxa/login/callback/` | — | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/flickr.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#0063DC;" /> Flickr | `flickr` | OAuth1 | [App registration (get your key and secret here)](https://www.flickr.com/services/apps/create/) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/flickr.html) | `/accounts/flickr/login/callback/` | — | No — Protocol OAuth1 is not supported by the identity-hosted OAuth callback yet. |
+| 🔑 Frontier | `frontier` | OAuth2 | [Client registration: go to ... and apply for access](https://user.frontierstore.net/) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/frontier.html) | `/accounts/frontier/login/callback/` | — | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/gitea.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#609926;" /> Gitea | `gitea` | OAuth2 | [App registration (get your key and secret here)](https://gitea.com/user/settings/applications) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/gitea.html) | `/accounts/gitea/login/callback/` | — | Yes |
+| 🔑 Globus | `globus` | OAuth2 | [Registering an application](https://developers.globus.org/) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/globus.html) | `/accounts/globus/login/callback/` | — | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/gumroad.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#FF90E8;" /> Gumroad | `gumroad` | OAuth2 | [App registration (get your key and secret here)](https://help.gumroad.com/article/280-create-application-api) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/gumroad.html) | `/accounts/gumroad/login/callback/` | — | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/hubspot.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#FF7A59;" /> Hubspot | `hubspot` | OAuth2 | [App registration (get your key and secret here)](https://developers.hubspot.com/docs/api/creating-an-app) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/hubspot.html) | `/accounts/hubspot/login/callback/` | — | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/instagram.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#FF0069;" /> Instagram | `instagram` | OAuth2 | [App registration (get your key and secret here)](https://www.instagram.com/developer/clients/manage/) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/instagram.html) | `/accounts/instagram/login/callback/` | — | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/jupyter.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#F37626;" /> JupyterHub | `jupyterhub` | OAuth2 | [Documentation on configuring a key and secret key](https://jupyterhub.readthedocs.io/en/stable/api/services.auth.html) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/jupyterhub.html) | `/accounts/jupyterhub/login/callback/` | — | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/kakao.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#FFCD00;" /> Kakao | `kakao` | OAuth2 | [App registration (get your key here)](https://developers.kakao.com/apps) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/kakao.html) | `/accounts/kakao/login/callback/` | — | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/keycloak.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#4D4D4D;" /> Keycloak | `keycloak` | OpenID Connect | — | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/keycloak.html) | `/accounts/oidc/keycloak/login/callback/` | `provider_id` (required), `server_url` (required) | Yes |
+| 🔑 Klaviyo | `klaviyo` | OAuth2 | [App registration: create a new OAuth app at](https://www.klaviyo.com/manage-apps) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/klaviyo.html) | `/accounts/klaviyo/login/callback/` | — | Yes |
+| 🔑 LemonLDAP::NG | `lemonldap` | OAuth2 | — | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/lemonldap.html) | `/accounts/lemonldap/login/callback/` | — | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/lichess.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#000000;" /> Lichess | `lichess` | OAuth2 | — | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/lichess.html) | `/accounts/lichess/login/callback/` | — | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/line.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#00C300;" /> Line | `line` | OAuth2 | [App registration, create a Line login channel (get your channel_id and channel_secret here)](https://developers.line.biz/console/) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/line.html) | `/accounts/line/login/callback/` | — | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/mailchimp.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#FFE01B;" /> MailChimp (OAuth 2) | `mailchimp` | OAuth2 | [Login via](https://login.mailchimp.com/)<br />[App registration (where X is dependent on your account)](https://usX.admin.mailchimp.com/account/oauth2/) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/mailchimp.html) | `/accounts/mailchimp/login/callback/` | — | Yes |
+| 🔑 Mailcow | `mailcow` | OAuth2 | [To register the app with Mailcow, follow the applicable sections of the guide](https://docs.mailcow.email/third_party/nextcloud/third_party-nextcloud/) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/mailcow.html) | `/accounts/mailcow/login/callback/` | — | Yes |
+| 🔑 MediaWiki | `mediawiki` | OAuth2 | [App registration for Wikimedia wikis](https://meta.wikimedia.org/wiki/Special:OAuthConsumerRegistration/propose) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/mediawiki.html) | `/accounts/mediawiki/login/callback/` | — | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/miro.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#050038;" /> Miro | `miro` | OAuth2 | [Create your app here and acquire Client ID and Client Secret](https://miro.com/app/settings/user-profile/apps) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/miro.html) | `/accounts/miro/login/callback/` | — | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/naver.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#03C75A;" /> Naver | `naver` | OAuth2 | [App registration (get your key and secret here)](https://developers.naver.com/appinfo) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/naver.html) | `/accounts/naver/login/callback/` | — | Yes |
+| 🔑 NetIQ/Microfocus AccessManager (NAM) | `netiq` | OAuth2 | — | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/netiq.html) | `/accounts/netiq/login/callback/` | — | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/nextcloud.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#0082C9;" /> NextCloud | `nextcloud` | OAuth2 | [App registration (get your key and secret here)](https://nextcloud.example.org/settings/admin/security) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/nextcloud.html) | `/accounts/nextcloud/login/callback/` | — | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/notion.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#000000;" /> Notion | `notion` | OAuth2 | [App registration (get your key and secret here)](https://www.notion.so/my-integrations) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/notion.html) | `/accounts/notion/login/callback/` | — | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/odnoklassniki.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#EE8208;" /> Odnoklassniki | `odnoklassniki` | OAuth2 | [App registration (get your key and secret here)](http://apiok.ru/wiki/pages/viewpage.action?pageId=42476486) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/odnoklassniki.html) | `/accounts/odnoklassniki/login/callback/` | — | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/openstreetmap.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#7EBC6F;" /> OpenStreetMap | `openstreetmap` | OAuth1 | [First, register your client application here](https://www.openstreetmap.org/oauth2/applications) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/openstreetmap.html) | `/accounts/openstreetmap/login/callback/` | — | No — Legacy provider; use the replacement listed in the catalog. |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/orcid.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#A6CE39;" /> ORCID | `orcid` | OAuth2 | — | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/orcid.html) | `/accounts/orcid/login/callback/` | — | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/patreon.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#000000;" /> Patreon | `patreon` | OAuth2 | [App registration (get your key and secret for the API here)](https://www.patreon.com/portal/registration/register-clients) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/patreon.html) | `/accounts/patreon/login/callback/` | — | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/paypal.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#002991;" /> Paypal | `paypal` | OAuth2 | [App registration (get your key and secret here)](https://developer.paypal.com/webapps/developer/applications/myapps) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/paypal.html) | `/accounts/paypal/login/callback/` | — | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/pinterest.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#BD081C;" /> Pinterest | `pinterest` | OAuth2 | — | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/pinterest.html) | `/accounts/pinterest/login/callback/` | — | Yes |
+| 🔑 Pocket | `pocket` | OAuth1 | [App registration (get your consumer key here)](https://getpocket.com/developer/apps/) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/pocket.html) | `/accounts/pocket/login/callback/` | — | No — Protocol OAuth1 is not supported by the identity-hosted OAuth callback yet. |
+| 🔑 Questrade | `questrade` | OAuth2 | [App registration (get your key here, follow “Creating your first personal app”)](https://www.questrade.com/api/documentation/getting-started)<br />[App registration (get your key here, follow “Creating your first personal app”)](https://apphub.questrade.com/UI/UserApps.aspx) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/questrade.html) | `/accounts/questrade/login/callback/` | — | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/quickbooks.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#2CA01C;" /> QuickBooks | `quickbooks` | OAuth2 | [App registration (get your key and secret here)](https://developers.intuit.com/v2/ui#/app/startcreate) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/quickbooks.html) | `/accounts/quickbooks/login/callback/` | — | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/reddit.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#FF4500;" /> Reddit | `reddit` | OAuth2 | [App registration (get your key and secret here)](https://www.reddit.com/prefs/apps/) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/reddit.html) | `/accounts/reddit/login/callback/` | — | Yes |
+| 🔑 Salesforce | `salesforce` | OAuth2 | — | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/salesforce.html) | `/accounts/salesforce/login/callback/` | — | Yes |
+| 🔑 ShareFile | `sharefile` | OAuth2 | — | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/sharefile.html) | `/accounts/sharefile/login/callback/` | — | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/shopify.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#7AB55C;" /> Shopify | `shopify` | OAuth2 | — | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/shopify.html) | `/accounts/shopify/login/callback/` | — | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/snapchat.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#FFFC00;" /> Snapchat | `snapchat` | OAuth2 | [App registration (get your key and secret here)](https://kit.snapchat.com/manage/) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/snapchat.html) | `/accounts/snapchat/login/callback/` | — | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/soundcloud.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#FF5500;" /> SoundCloud | `soundcloud` | OAuth2 | [App registration (get your key and secret here)](http://soundcloud.com/you/apps/new) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/soundcloud.html) | `/accounts/soundcloud/login/callback/` | — | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/stackexchange.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#1E5397;" /> Stack Exchange | `stackexchange` | OAuth2 | [Register your OAuth2 app over at](http://stackapps.com/apps/oauth/register) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/stackexchange.html) | `/accounts/stackexchange/login/callback/` | — | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/steam.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#000000;" /> Steam | `steam` | other | [You need to register an API key here](https://steamcommunity.com/dev/apikey) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/steam.html) | `/accounts/steam/callback/` | — | No — Protocol other is not supported by the identity-hosted OAuth callback yet. |
+| 🔑 Stocktwits | `stocktwits` | OAuth2 | [App Registration](https://api.stocktwits.com/developers/apps/new) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/stocktwits.html) | `/accounts/stocktwits/login/callback/` | — | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/strava.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#FC4C02;" /> Strava | `strava` | OAuth2 | [Register your OAuth2 app in api settings page](https://strava.com/settings/api) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/strava.html) | `/accounts/strava/login/callback/` | — | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/stripe.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#635BFF;" /> Stripe | `stripe` | OAuth2 | [You register your OAuth2 app via the Connect->Settings page of the Stripe dashboard](https://dashboard.stripe.com/account/applications/settings)<br />[The secret key ... can be found on the Stripe dashboard API page](https://dashboard.stripe.com/account/apikeys) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/stripe.html) | `/accounts/stripe/login/callback/` | — | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/telegram.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#26A5E4;" /> Telegram | `telegram` | other | — | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/telegram.html) | `/accounts/telegram/login/callback/` | — | No — Protocol other is not supported by the identity-hosted OAuth callback yet. |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/tiktok.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#000000;" /> TikTok | `tiktok` | OAuth2 | [Sign up for a TikTok for Developer account here](https://developers.tiktok.com/)<br />[Complete your Integration Assessment for Unreleased App here](https://developers.tiktok.com/application/unreleased-app-integration) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/tiktok.html) | `/accounts/tiktok/login/callback/` | — | Yes |
+| 🔑 TrainingPeaks | `trainingpeaks` | OAuth2 | [You need to request an API Partnership to get your OAth credentials](https://api.trainingpeaks.com/request-access) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/trainingpeaks.html) | `/accounts/trainingpeaks/login/callback/` | — | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/trello.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#0052CC;" /> Trello | `trello` | OAuth1 | [Register the application at](https://trello.com/app-key) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/trello.html) | `/accounts/trello/login/callback/` | — | No — Protocol OAuth1 is not supported by the identity-hosted OAuth callback yet. |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/tumblr.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#36465D;" /> Tumblr (OAuth 2) | `tumblr_oauth2` | OAuth2 | [App registration: create a new app via](https://www.tumblr.com/oauth/register)<br />[Use the tumblr keys tab of your application to fill in the form](https://www.tumblr.com/oauth/apps) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/tumblr_oauth2.html) | `/accounts/tumblr_oauth2/login/callback/` | — | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/twitch.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#9146FF;" /> Twitch | `twitch` | OAuth2 | [App registration (get your key and secret here)](http://dev.twitch.tv/console) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/twitch.html) | `/accounts/twitch/login/callback/` | — | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/untappd.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#FFC000;" /> Untappd | `untappd` | OAuth2 | [App registration](https://untappd.com/api/register?register=new)<br />[The configuration values come from your API dashboard on Untappd](https://untappd.com/api/dashboard) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/untappd.html) | `/accounts/untappd/login/callback/` | — | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/vimeo.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#1AB7EA;" /> Vimeo | `vimeo` | OAuth1 | [App registration (get your key and secret here)](https://developer.vimeo.com/apps) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/vimeo.html) | `/accounts/vimeo/login/callback/` | — | No — Legacy provider; use the replacement listed in the catalog. |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/vimeo.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#1AB7EA;" /> Vimeo (OAuth 2) | `vimeo_oauth2` | OAuth2 | [App registration (get your key and secret here)](https://developer.vimeo.com/apps) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/vimeo_oauth2.html) | `/accounts/vimeo_oauth2/login/callback/` | — | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/vk.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#0077FF;" /> VK | `vk` | OAuth2 | [App registration](https://vk.com/editapp?act=create) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/vk.html) | `/accounts/vk/login/callback/` | — | Yes |
+| 🔑 Wahoo | `wahoo` | OAuth2 | [Register your OAuth2 app here](https://developers.wahooligan.com/applications/new) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/wahoo.html) | `/accounts/wahoo/login/callback/` | — | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/sinaweibo.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#E6162D;" /> Weibo | `weibo` | OAuth2 | [Register your OAuth2 app over at](http://open.weibo.com/apps) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/weibo.html) | `/accounts/weibo/login/callback/` | — | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/wechat.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#07C160;" /> Weixin | `weixin` | OAuth2 | — | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/weixin.html) | `/accounts/weixin/login/callback/` | — | Yes |
+| 🔑 Windows Live | `windowslive` | OAuth2 | [App registration (get your key and secret here)](https://apps.dev.microsoft.com/#/appList) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/windowslive.html) | `/accounts/windowslive/login/callback/` | — | No — Legacy provider; use the replacement listed in the catalog. |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/x.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#000000;" /> X/Twitter (OAuth 1) | `twitter` | OAuth1 | [App registration: create a new app via](https://developer.x.com/en/portal/apps/new)<br />[Use the X keys tab of your application to fill in the form](https://developer.x.com/en/portal/apps/{{yourappid}}/keys) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/twitter.html) | `/accounts/twitter/login/callback/` | — | No — Legacy provider; use the replacement listed in the catalog. |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/xing.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#006567;" /> Xing | `xing` | OAuth1 | [App registration (get your key and secret here)](https://dev.xing.com/applications) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/xing.html) | `/accounts/xing/login/callback/` | — | No — Protocol OAuth1 is not supported by the identity-hosted OAuth callback yet. |
+| 🔑 Yahoo | `yahoo` | OAuth2 | [Register your OAuth2 app below and enter the resultant client id and secret into admin](https://developer.yahoo.com/apps/create/) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/yahoo.html) | `/accounts/yahoo/login/callback/` | — | Yes |
+| 🔑 Yandex | `yandex` | OAuth2 | [App registration (get key and secret here)](https://oauth.yandex.com/client/new) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/yandex.html) | `/accounts/yandex/login/callback/` | — | Yes |
+| 🔑 YNAB | `ynab` | OAuth2 | [App Registration](https://app.youneedabudget.com/settings/developer) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/ynab.html) | `/accounts/ynab/login/callback/` | — | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/zoho.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#E42527;" /> Zoho | `zoho` | OAuth2 | [App Registration](https://api-console.zoho.com/add) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/zoho.html) | `/accounts/zoho/login/callback/` | — | Yes |
+| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/zoom.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#0B5CFF;" /> Zoom | `zoom` | OAuth2 | [App Registration](https://marketplace.zoom.us/develop/create) | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/zoom.html) | `/accounts/zoom/login/callback/` | — | Yes |
