@@ -135,7 +135,7 @@ class OAuthProviderE2ETests(TestCase):
         token_payload = {
             'access_token': 'access-token-e2e',
             'token_type': 'Bearer',
-            'id_token': 'eyJhbGciOiJub25lIn0.eyJzdWIiOiJ1aWQtZTJlIn0.',
+            'id_token': 'test-id-token-not-a-jwt',
         }
         for slug in _load_e2e_slugs():
             with self.subTest(provider=slug):
