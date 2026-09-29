@@ -103,10 +103,13 @@ def microsoft_email_trustworthy(
     id_token_claims: dict,
     configured_tenant: str | None = None,
 ) -> bool:
-    tenant_norm = (configured_tenant or tenant or 'common').strip().lower()
-    tid = str(id_token_claims.get('tid') or '').strip().lower()
-    if tenant_norm and tenant_norm != 'common':
-        return bool(tid) and tid == tenant_norm
+    import re
+
+    guid_re = re.compile(r'^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$', re.IGNORECASE)
+    configured = (configured_tenant or tenant or 'common').strip()
+    tid = str(id_token_claims.get('tid') or '').strip()
+    if configured and guid_re.match(configured):
+        return bool(tid) and tid.lower() == configured.lower()
     return _truthy_claim(id_token_claims.get('xms_edov'))
 
 

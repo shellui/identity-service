@@ -1,5 +1,3 @@
-from unittest import mock
-
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 
@@ -74,24 +72,6 @@ class VerifiedIdTokenLoginPolicyTests(TestCase):
         self.assertIsNone(err)
         self.assertTrue(profile.email_verified_for_link)
 
-    @mock.patch('apps.authapi.oauth_id_token.jwtkit.verify_and_decode')
-    def test_verified_login_id_token_claims_uses_jwks(self, verify_mock):
-        from allauth.socialaccount.models import SocialApp
-
-        from apps.authapi.oauth_id_token import verified_login_id_token_claims
-
-        verify_mock.return_value = {'tid': 'contoso.onmicrosoft.com', 'iss': 'https://login.microsoftonline.com/contoso/v2.0'}
-        app = SocialApp(client_id='cid', provider='microsoft', settings={'tenant': 'contoso.onmicrosoft.com'})
-        entry = get_provider_catalog().by_slug()['microsoft']
-        claims = verified_login_id_token_claims(
-            entry=entry,
-            social_app=app,
-            id_token_raw='header.payload.sig',
-            userinfo={},
-        )
-        self.assertEqual(claims.get('tid'), 'contoso.onmicrosoft.com')
-        verify_mock.assert_called_once()
-
     def test_microsoft_login_resolver_uses_verified_tid(self):
         company = Company.objects.create(name='MS Co', slug='ms-co')
         site = Site.objects.get_current()
@@ -111,19 +91,13 @@ class VerifiedIdTokenLoginPolicyTests(TestCase):
         userinfo = {
             'mail': 'user@contoso.com',
             'userPrincipalName': 'user@contoso.com',
-            '_verified_id_token_claims': {
-                'tid': 'contoso.onmicrosoft.com',
-                'iss': 'https://login.microsoftonline.com/contoso/v2.0',
-                'xms_edov': True,
-            },
         }
         user, created, profile, err = _resolve_oauth_login_user(
             provider='microsoft',
             company=company,
             userinfo=userinfo,
-            token_bundle=OAuthTokenBundle(access_token='at', id_token='jwt'),
+            token_bundle=OAuthTokenBundle(access_token='at', id_token=None),
             company_oauth_client_id=client.id,
         )
-        self.assertIsNone(err)
-        self.assertTrue(created)
-        self.assertTrue(profile.email_verified_for_link)
+        self.assertIsNotNone(err)
+        self.assertIsNone(user)

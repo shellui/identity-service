@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import logging
+
 import jwt
 from django.db import IntegrityError, migrations, models, transaction
+
+logger = logging.getLogger(__name__)
 
 
 def _issuer_from_extra(extra: dict) -> str:
@@ -59,11 +63,16 @@ def forwards(apps, schema_editor):
 
     def _migrate_account(account, *, provider_id: str, issuer: str) -> None:
         if not provider_id or not issuer:
+            logger.warning(
+                'OIDC migration skipped social_account_id=%s: missing provider_id or issuer',
+                account.id,
+            )
             return
         raw_uid = str(account.uid or '').strip()
         if '|' in raw_uid:
             _, _, raw_uid = raw_uid.partition('|')
         if not raw_uid:
+            logger.warning('OIDC migration skipped social_account_id=%s: empty uid', account.id)
             return
         new_uid = f'{issuer}|{raw_uid}'
         new_provider = provider_id
@@ -80,17 +89,15 @@ def forwards(apps, schema_editor):
             with transaction.atomic():
                 account.save(update_fields=['provider', 'uid'])
         except IntegrityError:
-            existing = (
-                SocialAccount.objects.filter(provider=new_provider, uid=new_uid)
-                .exclude(pk=account.pk)
-                .select_related('user')
-                .first()
+            logger.warning(
+                'OIDC migration left social_account_id=%s unchanged; '
+                'target provider=%r uid=%r already exists',
+                account.id,
+                new_provider,
+                new_uid,
             )
-            if existing is None:
-                raise
-            account.user = existing.user
-            account.save(update_fields=['user'])
-            account.delete()
+            migrated_ids.add(account.id)
+            return
         migrated_ids.add(account.id)
 
     for token in SocialToken.objects.filter(
@@ -114,6 +121,10 @@ def forwards(apps, schema_editor):
         issuer = _issuer_from_extra(extra)
         provider_id = str(extra.get('provider_id') or '').strip()
         if not issuer and not provider_id:
+            logger.warning(
+                'OIDC migration skipped social_account_id=%s: no issuer or provider_id in extra_data',
+                account.id,
+            )
             continue
         if not provider_id:
             provider_id = 'openid_connect'

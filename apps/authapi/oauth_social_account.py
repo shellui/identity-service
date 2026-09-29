@@ -5,7 +5,6 @@ from __future__ import annotations
 from allauth.socialaccount.models import SocialApp
 
 from apps.authapi.oauth_request_context import get_bound_oauth_social_app as _ctx_bound_app
-from apps.authapi.oauth_request_context import set_bound_oauth_social_app
 from apps.authapi.provider_registry import ProviderCatalogEntry, resolve_catalog_slug
 
 REQUEST_SOCIAL_APP_ATTR = 'shellui_oauth_social_app'
@@ -13,15 +12,13 @@ REQUEST_SOCIAL_APP_ATTR = 'shellui_oauth_social_app'
 
 def bind_oauth_social_app(request, social_app: SocialApp) -> None:
     setattr(request, REQUEST_SOCIAL_APP_ATTR, social_app)
-    set_bound_oauth_social_app(social_app)
 
 
 def get_bound_oauth_social_app(request) -> SocialApp | None:
-    app = _ctx_bound_app()
-    if app is not None:
-        return app
-    legacy = getattr(request, REQUEST_SOCIAL_APP_ATTR, None)
-    return legacy if isinstance(legacy, SocialApp) else None
+    bound = getattr(request, REQUEST_SOCIAL_APP_ATTR, None)
+    if isinstance(bound, SocialApp):
+        return bound
+    return _ctx_bound_app()
 
 
 def social_account_provider_key(*, entry: ProviderCatalogEntry | None, social_app: SocialApp) -> str:

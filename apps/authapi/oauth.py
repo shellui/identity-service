@@ -180,6 +180,7 @@ def build_authorize_url(
     company_oauth_client_id: int | None = None,
     switch_account: bool = False,
     pkce_params: dict | None = None,
+    oauth_nonce: str | None = None,
     require_supported: bool = True,
 ) -> str:
     if request is None:
@@ -201,6 +202,7 @@ def build_authorize_url(
         state=signed_state,
         switch_account=switch_account,
         pkce_params=pkce_params,
+        oauth_nonce=oauth_nonce,
     )
 
 

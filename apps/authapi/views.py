@@ -1693,6 +1693,7 @@ class ShellUIAuthorizeView(APIView):
             company_oauth_client_id=company_oauth_client_id,
             switch_account=switch_account,
             pkce_params=pkce_params if pkce_verifier else None,
+            oauth_nonce=state_nonce,
         )
         response = HttpResponseRedirect(authorize_url)
         cookie = oauth_state_nonce_cookie_value(state_nonce)
@@ -1767,13 +1768,6 @@ class ShellUIOAuthCallbackView(APIView):
                 error_code='invalid_oauth_callback_method',
                 redirect_to_raw=payload.get('redirect_to'),
             )
-        if not consume_apple_form_post_state_once(state_raw):
-            return _shellui_oauth_bounce_or_json(
-                request,
-                message='OAuth state already used.',
-                error_code='invalid_oauth_state',
-                redirect_to_raw=payload.get('redirect_to'),
-            )
         try:
             resolved = resolve_oauth_client(
                 'apple',
@@ -1806,6 +1800,13 @@ class ShellUIOAuthCallbackView(APIView):
                     redirect_to_raw=payload.get('redirect_to'),
                 )
             bridge_payload['user'] = (request.POST.get('user') or '').strip()
+        if not consume_apple_form_post_state_once(state_raw):
+            return _shellui_oauth_bounce_or_json(
+                request,
+                message='OAuth state already used.',
+                error_code='invalid_oauth_state',
+                redirect_to_raw=payload.get('redirect_to'),
+            )
         bridge_token = secrets.token_urlsafe(32)
         stash_apple_oauth_bridge_payload(bridge_token, bridge_payload)
         query = urlencode({'code': code, 'state': state_raw})

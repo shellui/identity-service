@@ -75,7 +75,12 @@ def get_identity_oauth2_adapter(
     return delegate
 
 
-def authorize_extras_for_entry(entry: ProviderCatalogEntry, *, switch_account: bool) -> dict[str, str]:
+def authorize_extras_for_entry(
+    entry: ProviderCatalogEntry,
+    *,
+    switch_account: bool,
+    oauth_nonce: str | None = None,
+) -> dict[str, str]:
     slug = entry.docs_slug
     if slug == 'google':
         params = {'access_type': 'offline', 'prompt': 'consent'}
@@ -85,7 +90,11 @@ def authorize_extras_for_entry(entry: ProviderCatalogEntry, *, switch_account: b
     if slug == 'microsoft' and switch_account:
         return {'prompt': 'select_account'}
     if slug == 'apple':
-        return {'response_mode': 'form_post', 'response_type': 'code id_token'}
+        params = {'response_mode': 'form_post', 'response_type': 'code id_token'}
+        nonce = str(oauth_nonce or '').strip()
+        if nonce:
+            params['nonce'] = nonce
+        return params
     return {}
 
 
@@ -98,6 +107,7 @@ def build_allauth_authorize_url(
     state: str,
     switch_account: bool = False,
     pkce_params: dict | None = None,
+    oauth_nonce: str | None = None,
 ) -> str:
     bind_oauth_social_app(request, social_app)
     with oauth_allauth_request(request, social_app=social_app):
@@ -111,7 +121,13 @@ def build_allauth_authorize_url(
         client.state = state
         scope = provider.get_scope()
         auth_params = dict(provider.get_auth_params())
-        auth_params.update(authorize_extras_for_entry(entry, switch_account=switch_account))
+        auth_params.update(
+            authorize_extras_for_entry(
+                entry,
+                switch_account=switch_account,
+                oauth_nonce=oauth_nonce,
+            )
+        )
         if pkce_params is not None:
             auth_params.update(pkce_params)
         return client.get_redirect_url(oauth2_adapter.authorize_url, scope, auth_params)

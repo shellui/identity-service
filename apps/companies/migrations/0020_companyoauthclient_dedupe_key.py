@@ -24,23 +24,27 @@ def _backfill_dedupe_keys(apps, schema_editor):
         row.save(update_fields=['catalog_slug', 'dedupe_key'])
 
 
-def _report_duplicate_dedupe_keys(apps, schema_editor):
-    CompanyOAuthClient = apps.get_model('companies', 'CompanyOAuthClient')
+def duplicate_dedupe_key_groups(CompanyOAuthClient) -> dict[tuple[int, str], list[int]]:
     groups: dict[tuple[int, str], list[int]] = defaultdict(list)
     for row in CompanyOAuthClient.objects.exclude(dedupe_key__isnull=True).exclude(dedupe_key='').iterator():
         groups[(row.company_id, row.dedupe_key)].append(row.id)
-    duplicates = {key: ids for key, ids in groups.items() if len(ids) > 1}
+    return {key: ids for key, ids in groups.items() if len(ids) > 1}
+
+
+def _report_duplicate_dedupe_keys(apps, schema_editor):
+    CompanyOAuthClient = apps.get_model('companies', 'CompanyOAuthClient')
+    duplicates = duplicate_dedupe_key_groups(CompanyOAuthClient)
     if not duplicates:
         return
-    print('company_oauth_client_dedupe_duplicates:')
+    lines = ['company_oauth_client_dedupe_duplicates:']
     for (company_id, dedupe_key), row_ids in sorted(duplicates.items()):
-        print(
+        lines.append(
             f'  company_id={company_id} dedupe_key={dedupe_key!r} '
             f'company_oauth_client_ids={sorted(row_ids)}'
         )
-    print(
-        'Resolve duplicate OAuth company mappings before relying on '
-        'company_oauth_client_unique_dedupe_per_company.'
+    message = '\n'.join(lines)
+    raise RuntimeError(
+        f'{message}\nResolve duplicate OAuth company mappings, then re-run migrate.'
     )
 
 

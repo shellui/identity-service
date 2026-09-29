@@ -1,49 +1,59 @@
-"""HTTP session that connects to vetted IPs (mitigate DNS rebinding for OAuth fetches)."""
+"""SSRF-pinned HTTP for OAuth (TLS SNI to original hostname, TCP to resolved IP)."""
 
 from __future__ import annotations
 
+import json
 from urllib.parse import urljoin, urlparse
 
 import requests
 from requests.adapters import HTTPAdapter
 
 from apps.actions.ssrf import SSRFError, resolve_webhook_endpoint
+from apps.actions.webhook_transport import fetch_resolved_endpoint
 
 
-class _PinnedHostAdapter(HTTPAdapter):
-    def __init__(self, *, connect_host: str, host_header: str, **kwargs):
-        self._connect_host = connect_host
-        self._host_header = host_header
-        super().__init__(**kwargs)
+def _resolve_chain(url: str) -> str:
+    return resolve_webhook_endpoint(url, allow_private=False).original_url
 
-    def send(self, request, stream=False, timeout=None, verify=True, cert=None, proxies=None):
-        parsed = urlparse(request.url)
-        port = parsed.port or (443 if parsed.scheme == 'https' else 80)
-        pinned_url = f'{parsed.scheme}://{self._connect_host}:{port}{parsed.path or "/"}'
-        if parsed.query:
-            pinned_url = f'{pinned_url}?{parsed.query}'
-        request.url = pinned_url
-        request.headers['Host'] = self._host_header
-        return super().send(
-            request,
-            stream=stream,
+
+def pinned_fetch_bytes(
+    url: str,
+    *,
+    method: str = 'GET',
+    headers: dict | None = None,
+    body: bytes | None = None,
+    timeout: float = 20,
+    max_redirects: int = 5,
+    max_bytes: int = 512 * 1024,
+) -> tuple[int, dict[str, str], bytes]:
+    current = _resolve_chain(url)
+    redirects = 0
+    while True:
+        endpoint = resolve_webhook_endpoint(current, allow_private=False)
+        status, resp_headers, payload = fetch_resolved_endpoint(
+            endpoint,
+            method=method,
+            headers=headers,
+            body=body,
             timeout=timeout,
-            verify=verify,
-            cert=cert,
-            proxies=proxies,
         )
-
-
-def pinned_requests_session_for_url(url: str) -> requests.Session:
-    endpoint = resolve_webhook_endpoint(url, allow_private=False)
-    session = requests.Session()
-    adapter = _PinnedHostAdapter(
-        connect_host=endpoint.connect_host,
-        host_header=endpoint.host_header,
-    )
-    session.mount('http://', adapter)
-    session.mount('https://', adapter)
-    return session
+        if status in {301, 302, 303, 307, 308}:
+            redirects += 1
+            if redirects > max_redirects:
+                raise SSRFError('Too many redirects.')
+            location = resp_headers.get('location', '')
+            if not location:
+                raise SSRFError('Redirect response missing Location header.')
+            parsed = urlparse(location)
+            if parsed.scheme in {'http', 'https'} and parsed.netloc:
+                target = location
+            else:
+                target = urljoin(current, location)
+            current = _resolve_chain(target)
+            continue
+        if len(payload) > max_bytes:
+            raise SSRFError('OAuth HTTP response is too large.')
+        return status, resp_headers, payload
 
 
 def pinned_get_json(
@@ -54,46 +64,55 @@ def pinned_get_json(
     max_redirects: int = 5,
     max_bytes: int = 512 * 1024,
 ) -> dict:
-    import json
+    status, _, payload = pinned_fetch_bytes(
+        url,
+        headers=headers,
+        timeout=timeout,
+        max_redirects=max_redirects,
+        max_bytes=max_bytes,
+    )
+    if status >= 400:
+        raise SSRFError(f'OAuth HTTP request failed with status {status}.')
+    data = json.loads(payload.decode('utf-8', errors='replace'))
+    if not isinstance(data, dict):
+        raise SSRFError('OAuth HTTP response must be a JSON object.')
+    return data
 
-    current = resolve_webhook_endpoint(url, allow_private=False).original_url
-    redirects = 0
-    while True:
-        session = pinned_requests_session_for_url(current)
-        response = session.get(
-            current,
-            headers=headers or {},
-            timeout=timeout,
-            allow_redirects=False,
-            stream=True,
+
+class _PinnedEndpointAdapter(HTTPAdapter):
+    """Route urllib3 connections through pinned fetch (one request per adapter mount)."""
+
+    def __init__(self, *, original_url: str, **kwargs):
+        self._original_url = original_url
+        super().__init__(**kwargs)
+
+    def send(self, request, stream=False, timeout=None, verify=True, cert=None, proxies=None):
+        import io
+
+        method = request.method or 'GET'
+        body = request.body
+        req_body = body.encode('utf-8') if isinstance(body, str) else body
+        status, resp_headers, payload = pinned_fetch_bytes(
+            request.url,
+            method=method,
+            headers=dict(request.headers),
+            body=req_body if req_body else None,
+            timeout=timeout if isinstance(timeout, (int, float)) else 20,
         )
-        if response.status_code in {301, 302, 303, 307, 308}:
-            redirects += 1
-            if redirects > max_redirects:
-                raise SSRFError('Too many redirects.')
-            location = response.headers.get('Location', '')
-            if not location:
-                raise SSRFError('Redirect response missing Location header.')
-            parsed = urlparse(location)
-            if parsed.scheme in {'http', 'https'} and parsed.netloc:
-                target = location
-            else:
-                target = urljoin(current, location)
-            current = resolve_webhook_endpoint(target, allow_private=False).original_url
-            response.close()
-            continue
-        response.raise_for_status()
-        chunks: list[bytes] = []
-        total = 0
-        for chunk in response.iter_content(chunk_size=65536):
-            if not chunk:
-                continue
-            total += len(chunk)
-            if total > max_bytes:
-                raise SSRFError('OAuth HTTP response is too large.')
-            chunks.append(chunk)
-        raw = b''.join(chunks).decode('utf-8', errors='replace')
-        data = json.loads(raw)
-        if not isinstance(data, dict):
-            raise SSRFError('OAuth HTTP response must be a JSON object.')
-        return data
+        response = requests.Response()
+        response.status_code = status
+        response.headers.update(resp_headers)
+        response.raw = io.BytesIO(payload)
+        response._content = payload
+        response.url = request.url
+        response.request = request
+        return response
+
+
+def pinned_requests_session_for_url(url: str) -> requests.Session:
+    cleaned = _resolve_chain(url)
+    session = requests.Session()
+    adapter = _PinnedEndpointAdapter(original_url=cleaned)
+    session.mount('http://', adapter)
+    session.mount('https://', adapter)
+    return session
