@@ -4,18 +4,23 @@
 from __future__ import annotations
 
 import importlib
+import importlib.metadata
 import json
 import pathlib
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 DEFAULT_SOURCE = ROOT / 'tools' / 'data' / 'allauth_providers_source.json'
+E2E_SLUGS_PATH = ROOT / 'tools' / 'data' / 'oauth_e2e_covered_slugs.json'
 OUT_PATH = ROOT / 'apps' / 'authapi' / 'provider_catalog.json'
 
 EMAIL_POLICY_BY_SLUG: dict[str, str] = {
     'github': 'github_verified_primary',
     'google': 'google_email_verified',
     'microsoft': 'microsoft_tenant',
+    'discord': 'discord_email_verified',
+    'kakao': 'kakao_email_verified',
 }
 
 EMAIL_POLICY_BY_PROTOCOL: dict[str, str] = {
@@ -69,9 +74,135 @@ EXTRA_SCHEMA_OVERRIDES: dict[str, list[dict]] = {
             'secret': False,
         },
     ],
+    'gitlab': [
+        {
+            'name': 'gitlab_url',
+            'label': 'GitLab base URL',
+            'type': 'url',
+            'required': False,
+            'secret': False,
+            'help_text': 'Self-hosted GitLab URL. Defaults to https://gitlab.com.',
+        },
+    ],
+    'nextcloud': [
+        {
+            'name': 'server',
+            'label': 'Nextcloud server URL',
+            'type': 'url',
+            'required': True,
+            'secret': False,
+        },
+    ],
+    'amazon_cognito': [
+        {
+            'name': 'DOMAIN',
+            'label': 'Cognito domain URL',
+            'type': 'url',
+            'required': True,
+            'secret': False,
+        },
+    ],
+    'jupyterhub': [
+        {
+            'name': 'API_URL',
+            'label': 'JupyterHub API URL',
+            'type': 'url',
+            'required': True,
+            'secret': False,
+        },
+    ],
+    'lemonldap': [
+        {
+            'name': 'LEMONLDAP_URL',
+            'label': 'LemonLDAP base URL',
+            'type': 'url',
+            'required': True,
+            'secret': False,
+        },
+    ],
+    'netiq': [
+        {
+            'name': 'NETIQ_URL',
+            'label': 'NetIQ Access Manager URL',
+            'type': 'url',
+            'required': True,
+            'secret': False,
+        },
+    ],
+    'gumroad': [
+        {
+            'name': 'GUMROAD_URL',
+            'label': 'Gumroad base URL',
+            'type': 'url',
+            'required': False,
+            'secret': False,
+        },
+    ],
+    'salesforce': [
+        {
+            'name': 'key',
+            'label': 'Salesforce login host',
+            'type': 'string',
+            'required': True,
+            'secret': False,
+            'help_text': 'Salesforce domain used as SocialApp key (for example login.salesforce.com).',
+        },
+    ],
+    'edx': [
+        {
+            'name': 'API_URL',
+            'label': 'edX API URL',
+            'type': 'url',
+            'required': True,
+            'secret': False,
+        },
+    ],
+    'mailcow': [
+        {
+            'name': 'API_URL',
+            'label': 'Mailcow API URL',
+            'type': 'url',
+            'required': True,
+            'secret': False,
+        },
+    ],
+    'mediawiki': [
+        {
+            'name': 'MEDIAWIKI_URL',
+            'label': 'MediaWiki URL',
+            'type': 'url',
+            'required': True,
+            'secret': False,
+        },
+    ],
+    'sharefile': [
+        {
+            'name': 'API_URL',
+            'label': 'ShareFile API URL',
+            'type': 'url',
+            'required': True,
+            'secret': False,
+        },
+    ],
+    'gitea': [
+        {
+            'name': 'GITEA_URL',
+            'label': 'Gitea URL',
+            'type': 'url',
+            'required': True,
+            'secret': False,
+        },
+    ],
+    'github_enterprise': [
+        {
+            'name': 'GITHUB_URL',
+            'label': 'GitHub Enterprise URL',
+            'type': 'url',
+            'required': True,
+            'secret': False,
+        },
+    ],
 }
-
-SHELLUI_VERIFIED_OAUTH_SLUGS = frozenset({'github', 'google', 'microsoft'})
 
 OIDC_SERVER_URL_SLUGS = frozenset(
     {
@@ -149,12 +280,19 @@ def _supported(entry: dict, installed: frozenset[str]) -> tuple[bool, str | None
         return False, 'Unsupported protocol.'
     if not _app_has_oauth2_provider(entry.get('app'), installed):
         return False, 'No OAuth2 adapter is available for this provider module.'
-    if entry.get('docs_slug') not in SHELLUI_VERIFIED_OAUTH_SLUGS:
-        return (
-            False,
-            'Shellui has not verified this provider on the identity-hosted OAuth adapter yet.',
-        )
+    e2e_slugs = _e2e_covered_slugs()
+    if entry.get('docs_slug') not in e2e_slugs:
+        return False, 'Missing end-to-end OAuth adapter test coverage.'
     return True, None
+
+
+def _e2e_covered_slugs() -> frozenset[str]:
+    if not E2E_SLUGS_PATH.is_file():
+        return frozenset()
+    data = json.loads(E2E_SLUGS_PATH.read_text(encoding='utf-8'))
+    if isinstance(data, list):
+        return frozenset(str(item).strip().lower() for item in data if str(item).strip())
+    return frozenset()
 
 
 def build_entry(raw: dict, *, installed: frozenset[str]) -> dict:
@@ -199,9 +337,10 @@ def main() -> int:
         return 1
     raw_entries = json.loads(source.read_text(encoding='utf-8'))
     installed = _installed_provider_apps()
+    installed_allauth = importlib.metadata.version('django-allauth')
     catalog = {
         'catalog_version': '1',
-        'allauth_version': '65.19.5',
+        'allauth_version': installed_allauth,
         'providers': [build_entry(item, installed=installed) for item in raw_entries],
     }
     OUT_PATH.write_text(json.dumps(catalog, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')

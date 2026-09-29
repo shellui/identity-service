@@ -14,7 +14,7 @@ class ProviderRegistryTests(APITestCase):
     def test_catalog_loads_all_entries(self):
         catalog = get_provider_catalog()
         self.assertEqual(len(catalog.providers), 114)
-        self.assertEqual(len(catalog.supported_slugs()), 3)
+        self.assertEqual(len(catalog.supported_slugs()), 97)
 
     def test_microsoft_extra_settings_validation(self):
         entry = get_provider_catalog().by_slug()['microsoft']

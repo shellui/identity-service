@@ -10,6 +10,7 @@ from allauth.socialaccount.adapter import get_adapter
 from allauth.socialaccount.models import SocialApp
 from django.core.exceptions import ImproperlyConfigured, MultipleObjectsReturned
 
+from apps.authapi.oauth_adapter_settings import apply_oauth_adapter_settings
 from apps.authapi.oauth_social_account import bind_oauth_social_app
 from apps.authapi.provider_registry import ProviderCatalogEntry, catalog_entry_for_social_app
 
@@ -42,6 +43,15 @@ def _patch_delegate_callback(delegate, callback_url: str) -> None:
     )
 
 
+def _ensure_delegate_get_client_uses_identity_callback(delegate, callback_url: str) -> None:
+    from allauth.socialaccount.providers.oauth2.views import OAuth2Adapter
+
+    _patch_delegate_callback(delegate, callback_url)
+    if getattr(delegate.get_client, '__func__', None) is OAuth2Adapter.get_client:
+        return
+    delegate.get_client = types.MethodType(OAuth2Adapter.get_client, delegate)
+
+
 def split_pkce_authorize_params(request, social_app: SocialApp) -> tuple[dict[str, str], str | None]:
     provider = _provider_for_social_app(request, social_app)
     params = dict(provider.get_pkce_params())
@@ -58,8 +68,10 @@ def get_identity_oauth2_adapter(
     callback_url: str,
 ):
     provider = _provider_for_social_app(request, social_app)
+    entry = catalog_entry_for_social_app(social_app)
     delegate = provider.get_oauth2_adapter(request)
-    _patch_delegate_callback(delegate, callback_url)
+    apply_oauth_adapter_settings(delegate, social_app=social_app, entry=entry)
+    _ensure_delegate_get_client_uses_identity_callback(delegate, callback_url)
     return delegate
 
 
@@ -72,6 +84,8 @@ def authorize_extras_for_entry(entry: ProviderCatalogEntry, *, switch_account: b
         return params
     if slug == 'microsoft' and switch_account:
         return {'prompt': 'select_account'}
+    if slug == 'apple':
+        return {'response_mode': 'form_post', 'response_type': 'code id_token'}
     return {}
 
 
@@ -116,6 +130,19 @@ def exchange_allauth_code(
         callback_url=redirect_uri,
     )
     client = oauth2_adapter.get_client(request, social_app)
+    apple_post = getattr(request, 'shellui_apple_oauth_post', None)
+    if isinstance(apple_post, dict):
+        original_get_token = oauth2_adapter.get_access_token_data
+
+        def _get_access_token_data(req, app, oauth_client, pkce_code_verifier=None):  # noqa: ANN001
+            data = original_get_token(req, app, oauth_client, pkce_code_verifier=pkce_code_verifier)
+            if apple_post.get('id_token'):
+                data['id_token'] = apple_post['id_token']
+            if apple_post.get('user'):
+                data['user'] = apple_post['user']
+            return data
+
+        oauth2_adapter.get_access_token_data = _get_access_token_data
     access_token_data = oauth2_adapter.get_access_token_data(
         request,
         social_app,

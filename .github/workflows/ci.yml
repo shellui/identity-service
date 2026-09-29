@@ -56,10 +56,13 @@ jobs:
 
       - name: Verify generated OAuth provider artifacts
         run: |
-          uv run python tools/build_provider_catalog.py
           uv run python tools/generate_allauth_provider_apps.py
+          uv run python tools/build_provider_catalog.py
           uv run python tools/render_oauth_providers_doc.py
-          git diff --exit-code apps/authapi/provider_catalog.json config/allauth_provider_apps.py docs/oauth-providers.md
+          git diff --exit-code apps/authapi/provider_catalog.json config/allauth_provider_apps.py docs/oauth-providers.md tools/data/oauth_e2e_covered_slugs.json
+      - name: Verify django-allauth version matches catalog
+        run: |
+          uv run python -c "import importlib.metadata, json; from pathlib import Path; cat=json.loads(Path('apps/authapi/provider_catalog.json').read_text()); assert cat['allauth_version']==importlib.metadata.version('django-allauth')"
 
       - name: Django system checks
         run: uv run python manage.py check

@@ -25,7 +25,7 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 ### ✨ Feature
 
-- **OAuth provider catalog:** identity-service ships a checked-in django-allauth provider catalog (`apps/authapi/provider_catalog.json`) covering **114** OAuth2/OIDC providers. **GitHub, Google, and Microsoft** are verified on the identity-hosted OAuth adapter (`supported: true`); other catalog entries are listed for setup reference until adapter coverage expands. Admin API: `GET /api/v1/oauth-provider-catalog`. OAuth app CRUD accepts `docs_slug` plus validated `extra_settings`.
+- **OAuth provider catalog:** identity-service ships a checked-in django-allauth provider catalog (`apps/authapi/provider_catalog.json`) with **97** OAuth2/OIDC providers marked `supported: true` on the identity-hosted adapter (114 total catalog entries). Admin API: `GET /api/v1/oauth-provider-catalog`. OAuth app CRUD accepts `docs_slug` plus validated `extra_settings`. Catalog generation tracks the installed django-allauth version and end-to-end adapter test coverage per provider.
 - **django-allauth 65.19.5:** dependency upgraded to match the provider dataset.
 
 ### 🔒 Security

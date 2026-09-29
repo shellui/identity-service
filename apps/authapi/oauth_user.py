@@ -155,6 +155,12 @@ def _email_verified_for_link_from_policy(
     if policy == 'google_email_verified':
         return _truthy_claim(info.get('email_verified')), None, None
 
+    if policy == 'discord_email_verified':
+        return _truthy_claim(info.get('verified')), None, None
+
+    if policy == 'kakao_email_verified':
+        return _truthy_claim(info.get('is_email_verified')), None, None
+
     if policy == 'microsoft_tenant':
         if not microsoft_email_trustworthy(
             tenant=tenant,

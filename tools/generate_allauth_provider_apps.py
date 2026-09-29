@@ -8,22 +8,32 @@ import pathlib
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-CATALOG_PATH = ROOT / 'apps' / 'authapi' / 'provider_catalog.json'
+SOURCE_PATH = ROOT / 'tools' / 'data' / 'allauth_providers_source.json'
 OUT_PATH = ROOT / 'config' / 'allauth_provider_apps.py'
 
 
-def main() -> int:
-    if not CATALOG_PATH.is_file():
-        print(f'Missing catalog: {CATALOG_PATH}', file=sys.stderr)
-        return 1
-    catalog = json.loads(CATALOG_PATH.read_text(encoding='utf-8'))
+def _oauth2_app_paths(source_entries: list[dict]) -> set[str]:
     apps: set[str] = set()
-    for entry in catalog.get('providers') or []:
-        if not entry.get('supported'):
+    for entry in source_entries:
+        if entry.get('legacy'):
+            continue
+        protocol = entry.get('protocol') or ''
+        if protocol not in {'OAuth2', 'OpenID Connect'}:
+            continue
+        if entry.get('docs_slug') == 'oauth2' or (entry.get('app') or '').endswith('.oauth2'):
             continue
         app_path = str(entry.get('app') or '').strip()
-        if app_path.startswith('allauth.socialaccount.providers.'):
+        if app_path.startswith('allauth.socialaccount.providers.') and not app_path.endswith('.oauth2'):
             apps.add(app_path)
+    return apps
+
+
+def main() -> int:
+    if not SOURCE_PATH.is_file():
+        print(f'Missing source: {SOURCE_PATH}', file=sys.stderr)
+        return 1
+    source_entries = json.loads(SOURCE_PATH.read_text(encoding='utf-8'))
+    apps = _oauth2_app_paths(source_entries)
     ordered = sorted(apps)
     lines = [
         '"""Installed django-allauth socialaccount provider apps (generated)."""',

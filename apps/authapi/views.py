@@ -18,7 +18,7 @@ from django.db.models import Count, Q
 from django.shortcuts import render
 from django.urls import reverse
 from django.utils.decorators import method_decorator
-from django.views.decorators.csrf import csrf_protect
+from django.views.decorators.csrf import csrf_exempt, csrf_protect
 from allauth.socialaccount.models import SocialApp, SocialAccount
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema, extend_schema_view
 from rest_framework import status
@@ -54,11 +54,13 @@ from .oauth_state import (
     consume_oauth_pkce_verifier,
     oauth_state_nonce_cookie_value,
     parse_oauth_state,
+    stash_apple_oauth_post_payload,
+    consume_apple_oauth_post_payload,
     stash_oauth_pkce_verifier,
     verify_oauth_state_request,
 )
 from .oauth_allauth import split_pkce_authorize_params
-from .oauth_user import OAuthProfile, decode_oauth_id_token_claims, extract_oauth_profile, resolve_oauth_user
+from .oauth_user import OAuthProfile, extract_oauth_profile, resolve_oauth_user
 from .oauth_confirm import build_oauth_confirm_token, parse_oauth_confirm_token
 from .oauth_session_code import (
     OAUTH_SESSION_CODE_PARAM,
@@ -216,7 +218,10 @@ def _resolve_oauth_login_user(
         company_oauth_client_id=company_oauth_client_id,
     )
     social_app = get_social_app_for_client(resolved)
-    id_claims = decode_oauth_id_token_claims(token_bundle.id_token)
+    id_claims: dict = {}
+    nested = userinfo.get('_id_token_claims') if isinstance(userinfo.get('_id_token_claims'), dict) else {}
+    if nested:
+        id_claims = nested
     profile, perror = extract_oauth_profile(
         provider,
         userinfo,
@@ -1709,9 +1714,40 @@ class ShellUIAuthorizeView(APIView):
         },
     ),
 )
+@method_decorator(csrf_exempt, name='dispatch')
 @rate_limit('oauth')
 class ShellUIOAuthCallbackView(APIView):
     permission_classes = [AllowAny]
+
+    def post(self, request):
+        """Apple Sign in with form_post: stash POST body, then 303 to GET callback."""
+        code = (request.POST.get('code') or '').strip()
+        state_raw = request.POST.get('state')
+        payload, state_err = parse_oauth_state(state_raw)
+        if state_err or not payload:
+            return _shellui_oauth_bounce_or_json(
+                request,
+                message=state_err or 'Invalid OAuth state.',
+                error_code='invalid_oauth_state',
+                redirect_to_raw=None,
+            )
+        if str(payload.get('provider') or '').strip().lower() != 'apple':
+            return _shellui_oauth_bounce_or_json(
+                request,
+                message='OAuth callback POST is only supported for Apple.',
+                error_code='invalid_oauth_callback_method',
+                redirect_to_raw=payload.get('redirect_to'),
+            )
+        stash_apple_oauth_post_payload(
+            payload['nonce'],
+            {
+                'id_token': (request.POST.get('id_token') or '').strip(),
+                'user': (request.POST.get('user') or '').strip(),
+            },
+        )
+        query = urlencode({'code': code, 'state': (state_raw or '').strip()})
+        redirect_url = f"{request.build_absolute_uri(request.path)}?{query}"
+        return HttpResponseRedirect(redirect_url, status=303)
 
     def get(self, request):
         code = request.GET.get('code', '').strip()
@@ -1780,6 +1816,9 @@ class ShellUIOAuthCallbackView(APIView):
                 redirect_to_raw=redirect_to,
             )
         callback_url = oauth_provider_redirect_uri(request)
+        apple_post = consume_apple_oauth_post_payload(state_payload.get('nonce') or '')
+        if apple_post:
+            request.shellui_apple_oauth_post = apple_post
         try:
             token_bundle = exchange_code_for_token(
                 provider=provider,
@@ -3205,7 +3244,11 @@ class ShellUIAdminOAuthSocialAppListView(APIView):
             name=_generated_social_app_name(entry.docs_slug, company),
             client_id=str(validated['client_id']).strip(),
             secret=str(validated['client_secret']).strip(),
-            key=str(validated.get('extra_settings', {}).get('key') or '').strip(),
+            key=str(
+                validated.get('extra_settings', {}).get('key')
+                or social_settings.get('key')
+                or ''
+            ).strip(),
             settings=social_settings,
         )
         try:

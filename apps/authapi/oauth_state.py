@@ -14,6 +14,7 @@ OAUTH_STATE_MAX_AGE_SECONDS = 15 * 60
 OAUTH_STATE_NONCE_COOKIE = 'shellui_oauth_state_nonce'
 OAUTH_STATE_USED_CACHE_PREFIX = 'shellui:oauth_state_used:'
 OAUTH_PKCE_CACHE_PREFIX = 'shellui:oauth_pkce:'
+OAUTH_APPLE_POST_CACHE_PREFIX = 'shellui:oauth_apple_post:'
 
 
 def stash_oauth_pkce_verifier(nonce: str, verifier: str) -> None:
@@ -22,6 +23,29 @@ def stash_oauth_pkce_verifier(nonce: str, verifier: str) -> None:
     if not key or not value:
         return
     cache.set(f'{OAUTH_PKCE_CACHE_PREFIX}{key}', value[:128], timeout=OAUTH_STATE_MAX_AGE_SECONDS)
+
+
+def stash_apple_oauth_post_payload(nonce: str, payload: dict) -> None:
+    key = str(nonce or '').strip()
+    if not key or not isinstance(payload, dict):
+        return
+    cache.set(
+        f'{OAUTH_APPLE_POST_CACHE_PREFIX}{key}',
+        payload,
+        timeout=OAUTH_STATE_MAX_AGE_SECONDS,
+    )
+
+
+def consume_apple_oauth_post_payload(nonce: str) -> dict | None:
+    key = str(nonce or '').strip()
+    if not key:
+        return None
+    cache_key = f'{OAUTH_APPLE_POST_CACHE_PREFIX}{key}'
+    value = cache.get(cache_key)
+    if isinstance(value, dict):
+        cache.delete(cache_key)
+        return value
+    return None
 
 
 def consume_oauth_pkce_verifier(nonce: str) -> str | None:
