@@ -1,9 +1,13 @@
+from datetime import timedelta
+
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import TestCase, override_settings
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from apps.actions.models import ActionOutbox, ActionRule
 from apps.authapi.models import PersonalAccessToken, RefreshTokenSession
+from apps.authapi.tokens import ShellUIAccessToken
 from apps.authapi.views import _issue_shellui_tokens
 from apps.companies.access import set_company_access
 from apps.companies.models import Company, CompanyMembership
@@ -30,7 +34,6 @@ class SelfServiceAccountDeleteTests(TestCase):
             password='secret',
         )
         set_company_access(self.company, self.user, enabled=True)
-        set_company_access(self.other_company, self.user, enabled=True)
         self.other_user = User.objects.create_user(
             username='stay',
             email='stay@example.com',
@@ -55,10 +58,6 @@ class SelfServiceAccountDeleteTests(TestCase):
         self.assertEqual(CompanyMembership.objects.filter(user_id=user_id).count(), 0)
         self.assertEqual(
             ActionOutbox.objects.filter(event_type='identity.user.deleted', company=self.company).count(),
-            1,
-        )
-        self.assertEqual(
-            ActionOutbox.objects.filter(event_type='identity.user.deleted', company=self.other_company).count(),
             1,
         )
         payload = ActionOutbox.objects.filter(
@@ -129,6 +128,58 @@ class SelfServiceAccountDeleteTests(TestCase):
             HTTP_AUTHORIZATION=f'Bearer {pat_secret}',
         )
         self.assertEqual(pat_profile.status_code, 401)
+
+    def test_personal_access_token_cannot_delete_account(self):
+        _pat_row, pat_secret = self._create_pat()
+        response = self.client.delete(
+            '/api/v1/user',
+            {'confirm': True},
+            HTTP_AUTHORIZATION=f'Bearer {pat_secret}',
+            format='json',
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(User.objects.filter(pk=self.user.pk).exists())
+
+    def test_stale_access_token_rejected(self):
+        access = ShellUIAccessToken.for_user(self.user)
+        access['company_id'] = self.company.id
+        access['iat'] = int((timezone.now() - timedelta(minutes=10)).timestamp())
+        response = self.client.delete(
+            '/api/v1/user',
+            {'confirm': True},
+            HTTP_AUTHORIZATION=f'Bearer {str(access)}',
+            format='json',
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(User.objects.filter(pk=self.user.pk).exists())
+
+    @override_settings(SELF_SERVICE_ACCOUNT_DELETE_MAX_IAT_AGE=timedelta(minutes=30))
+    def test_recent_access_token_allowed_within_configured_window(self):
+        access = ShellUIAccessToken.for_user(self.user)
+        access['company_id'] = self.company.id
+        access['iat'] = int((timezone.now() - timedelta(minutes=10)).timestamp())
+        user_id = self.user.pk
+        response = self.client.delete(
+            '/api/v1/user',
+            {'confirm': True},
+            HTTP_AUTHORIZATION=f'Bearer {str(access)}',
+            format='json',
+        )
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(User.objects.filter(pk=user_id).exists())
+
+    def test_multi_company_membership_returns_409(self):
+        set_company_access(self.other_company, self.user, enabled=True)
+        tokens = self._tokens()
+        response = self.client.delete(
+            '/api/v1/user',
+            {'confirm': True},
+            HTTP_AUTHORIZATION=f'Bearer {tokens["access_token"]}',
+            format='json',
+        )
+        self.assertEqual(response.status_code, 409)
+        self.assertTrue(User.objects.filter(pk=self.user.pk).exists())
+        self.assertEqual(self.user.company_memberships.count(), 2)
 
     def _create_pat(self):
         from apps.authapi.views import _issue_personal_access_token

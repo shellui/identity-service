@@ -114,6 +114,7 @@ from apps.scim.provisioning_events import (
 from apps.scim.tokens import generate_scim_token
 from apps.actions.user_hooks import emit_oauth_user_created_if_new
 from .account_lifecycle import delete_user_account
+from .self_service_delete import check_self_service_account_delete_allowed
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -2169,14 +2170,20 @@ class ShellUILogoutView(APIView):
         summary='Delete current user account (self-service)',
         description=(
             'Permanently delete the authenticated user account (GDPR/RGPD erasure support). '
-            'Requires JSON body `{"confirm": true}`. Emits `identity.user.deleted` once per '
-            'company membership with `source: self`. Revokes refresh sessions and personal access tokens.'
+            'Requires JSON body `{"confirm": true}`. Session access JWT only (not personal access '
+            'tokens); the access token must be recently issued (`iat` within '
+            '`SELF_SERVICE_ACCOUNT_DELETE_MAX_IAT_AGE`, default 5m). When the user belongs to '
+            'more than one company, returns 409 until other memberships are removed. Emits '
+            '`identity.user.deleted` once per company membership with `source: self`. Revokes '
+            'refresh sessions and personal access tokens.'
         ),
         request=ShellUIUserDeleteSerializer,
         responses={
             204: OpenApiResponse(description='Account deleted'),
             400: OpenApiResponse(description='Missing or false confirm flag'),
             401: OpenApiResponse(description='Missing or invalid bearer token'),
+            403: OpenApiResponse(description='PAT or stale access token'),
+            409: OpenApiResponse(description='User belongs to more than one company'),
         },
     ),
 )
@@ -2282,6 +2289,10 @@ class ShellUIUserView(APIView):
                 {'error': 'Set confirm to true to delete your account.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+        blocked = check_self_service_account_delete_allowed(request, user)
+        if blocked is not None:
+            return blocked
 
         request_auth = getattr(request, 'auth', None)
         if request_auth is not None and hasattr(request_auth, 'get'):

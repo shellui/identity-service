@@ -53,6 +53,8 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 - **Webhook targets:** Private and loopback addresses are blocked, and delivery connects to the checked IP to prevent DNS rebinding. Non-global addresses (including CGNAT `100.64.0.0/10`) are rejected. Changing a webhook URL clears a superuser-only private-URL allowance.
 - **SCIM:** Company SCIM tokens can no longer change global email, username, or password for users shared across companies or for staff accounts. Duplicate-email user creation returns a generic SCIM uniqueness error.
 - **Magic link:** Sign-in links are redeemed with a single atomic update; only a hash of the token is stored. Per-company request rate limits no longer block other clients.
+- **Self-service account deletion:** `DELETE /api/v1/user` rejects personal access tokens, requires a recently issued session access JWT (`SELF_SERVICE_ACCOUNT_DELETE_MAX_IAT_AGE`, default 5m), and returns **409** when the user still belongs to more than one company.
+- **Client IP behind proxies:** With `TRUSTED_PROXY_IPS` set, audit and rate limits use the rightmost untrusted `X-Forwarded-For` hop instead of the client-controlled leftmost entry.
 
 ## [0.5.1] - 2026-09-24
 
