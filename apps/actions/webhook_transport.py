@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import ipaddress
+import socket
 import ssl
 from dataclasses import dataclass
 from http.client import HTTPConnection, HTTPSConnection, HTTPResponse
@@ -36,6 +38,41 @@ class WebhookPostResult:
     retry_after_seconds: int | None = None
 
 
+def _socket_connect_host(connect_host: str) -> str:
+    """Normalize connect addresses for ``socket.create_connection``."""
+    try:
+        ip = ipaddress.ip_address(connect_host)
+    except ValueError:
+        return connect_host
+    if isinstance(ip, ipaddress.IPv6Address):
+        return ip.compressed
+    return connect_host
+
+
+class PinnedHTTPSConnection(HTTPSConnection):
+    """TLS to the original hostname while the TCP socket targets a pinned IP."""
+
+    def __init__(
+        self,
+        host: str,
+        port: int,
+        *,
+        connect_host: str,
+        timeout: float,
+        context: ssl.SSLContext,
+    ) -> None:
+        super().__init__(host, port, timeout=timeout, context=context)
+        self._pinned_connect_host = _socket_connect_host(connect_host)
+
+    def connect(self) -> None:
+        sock = socket.create_connection(
+            (self._pinned_connect_host, self.port),
+            self.timeout,
+            self.source_address,
+        )
+        self.sock = self._context.wrap_socket(sock, server_hostname=self.host)
+
+
 def _read_response_excerpt(response: HTTPResponse) -> str:
     try:
         raw = response.read(_RESPONSE_EXCERPT_MAX + 1)
@@ -58,17 +95,22 @@ def post_resolved_webhook(
 ) -> WebhookPostResult:
     req_headers = dict(headers)
     req_headers['Host'] = endpoint.host_header
+    tls_hostname = endpoint.host_header.split(':')[0]
     if endpoint.scheme == 'https':
         context = ssl.create_default_context()
-        conn: HTTPConnection | HTTPSConnection = HTTPSConnection(
-            endpoint.connect_host,
+        conn: HTTPConnection | HTTPSConnection = PinnedHTTPSConnection(
+            tls_hostname,
             endpoint.port,
+            connect_host=endpoint.connect_host,
             timeout=timeout,
             context=context,
-            server_hostname=endpoint.host_header.split(':')[0],
         )
     else:
-        conn = HTTPConnection(endpoint.connect_host, endpoint.port, timeout=timeout)
+        conn = HTTPConnection(
+            _socket_connect_host(endpoint.connect_host),
+            endpoint.port,
+            timeout=timeout,
+        )
     try:
         conn.request('POST', endpoint.path, body=body, headers=req_headers)
         response = conn.getresponse()
