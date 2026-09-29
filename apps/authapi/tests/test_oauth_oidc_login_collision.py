@@ -69,13 +69,8 @@ class OidcLoginCollisionTests(TestCase):
                 company_oauth_client_id=client.id,
             )
 
-        with patch(
-            'apps.authapi.oauth.get_provider_catalog',
-            return_value=self._catalog_with_openid_connect_supported(),
-        ), patch(
-            'apps.authapi.views.get_provider_catalog',
-            return_value=self._catalog_with_openid_connect_supported(),
-        ):
+        catalog = self._catalog_with_openid_connect_supported()
+        with patch('apps.authapi.provider_registry.get_provider_catalog', return_value=catalog):
             user_a, created_a, profile_a, err_a = _login_with(app_a, issuer_a)
             user_b, created_b, profile_b, err_b = _login_with(app_b, issuer_b)
         self.assertIsNone(err_a)

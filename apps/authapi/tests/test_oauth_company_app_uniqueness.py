@@ -82,7 +82,7 @@ class OAuthCompanyAppUniquenessApiTests(APITestCase):
         for idx, slug_path in enumerate(('keycloak-a', 'keycloak-b'), start=1):
             server_url = f'{PUBLIC_HOST}/{slug_path}/.well-known/openid-configuration'
             with patch(
-                'apps.authapi.oauth.get_provider_catalog',
+                'apps.authapi.provider_registry.get_provider_catalog',
                 return_value=self._catalog_with_keycloak_supported(),
             ):
                 response = self.client.post(
@@ -103,7 +103,7 @@ class OAuthCompanyAppUniquenessApiTests(APITestCase):
     def test_duplicate_keycloak_instance_returns_409(self):
         server_url = f'{PUBLIC_HOST}/same-kc/.well-known/openid-configuration'
         with patch(
-            'apps.authapi.oauth.get_provider_catalog',
+            'apps.authapi.provider_registry.get_provider_catalog',
             return_value=self._catalog_with_keycloak_supported(),
         ):
             first = self.client.post(
