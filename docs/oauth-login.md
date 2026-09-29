@@ -134,9 +134,10 @@ Content-Type: application/json
 
 | Item | Behavior |
 |------|----------|
-| **Auth** | Bearer JWT (or session) for the subject only — there is no user id in the path |
+| **Auth** | Session access JWT for the subject only (not personal access tokens). The token `iat` must fall within `SELF_SERVICE_ACCOUNT_DELETE_MAX_IAT_AGE` (default 5 minutes); sign in or refresh if it is older |
+| **Multi-company** | If the user belongs to more than one company, the API returns **409** until other memberships are removed (SCIM deprovision, admin, or equivalent). Self-service delete hard-deletes the global user for every company |
 | **Confirmation** | JSON body must include `"confirm": true` |
-| **Response** | `204 No Content` on success |
+| **Response** | `204 No Content` on success; **403** for PAT or stale token; **409** when multiple company memberships remain |
 | **Sessions** | Revokes all refresh sessions and personal access tokens; optional `refresh_token` in the body is revoked like logout; the current access token is denylisted |
 | **Data removal** | Hard-deletes the `User` row (same as Django admin delete). Cascades remove company memberships, OAuth `SocialAccount` links, preferences, PAT metadata, refresh session rows, and SCIM bridge fields tied to the user |
 | **Action events** | Emits [`identity.user.deleted`](actions.md) **once per company membership** with `data.source: "self"` so Action rules (email, webhooks) can run |

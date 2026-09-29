@@ -40,7 +40,7 @@ When `POSTGRES_DATABASE_URL` is set and `DEBUG=false`, connections use `ssl_requ
 
 ## Trusted proxies and client IP
 
-Login audit and rate limits derive client IP from `REMOTE_ADDR` unless the direct peer is listed in `TRUSTED_PROXY_IPS` (comma-separated IPs or CIDRs). When trusted, the first hop of `X-Forwarded-For` is used.
+Login audit and rate limits derive client IP from `REMOTE_ADDR` unless the direct peer is listed in `TRUSTED_PROXY_IPS` (comma-separated IPs or CIDRs). When the peer is trusted, the service walks `X-Forwarded-For` **from the right** (closest to identity-service), skips hops that match `TRUSTED_PROXY_IPS` (including CIDR ranges), and uses the first untrusted address as the client IP. That ignores a client-controlled leftmost spoof entry when Traefik, Coolify, or nginx append the real chain.
 
 Example (nginx on the same host):
 
@@ -54,7 +54,17 @@ Example (private load balancer subnet):
 TRUSTED_PROXY_IPS=10.0.0.0/8
 ```
 
-Without trusted proxies, clients cannot spoof audit IPs by sending `X-Forwarded-For` directly.
+Example (Coolify / Traefik forwarding to Gunicorn): list the Traefik container or ingress subnet in `TRUSTED_PROXY_IPS` so `REMOTE_ADDR` is the proxy while the client IP is taken from the rightmost untrusted `X-Forwarded-For` hop.
+
+Without trusted proxies, clients cannot spoof audit IPs by sending `X-Forwarded-For` directly; the app uses `REMOTE_ADDR` only.
+
+## Self-service account deletion
+
+`DELETE /api/v1/user` hard-deletes the global Django user. Guards:
+
+- Personal access tokens are rejected (**403**).
+- Session access JWTs must have `iat` within `SELF_SERVICE_ACCOUNT_DELETE_MAX_IAT_AGE` (default **5m**). Sign in or refresh the token before deleting.
+- Users with more than one company membership get **409** until other memberships are removed; the endpoint does not remove a single company only.
 
 ## Personal access token lifetime
 

@@ -48,13 +48,35 @@ def _ip_in_trusted_proxies(ip: str, trusted: tuple[str, ...]) -> bool:
     return False
 
 
+def _xff_hops(xff: str) -> list[str]:
+    return [part.strip() for part in xff.split(',') if part.strip()]
+
+
+def _client_ip_from_xff(xff: str, trusted: tuple[str, ...]) -> str | None:
+    """
+    Walk ``X-Forwarded-For`` from the right (closest to this server).
+
+    Skip hops listed in ``trusted``; return the first untrusted address (the client).
+    """
+    hops = _xff_hops(xff)
+    if not hops:
+        return None
+    for hop in reversed(hops):
+        if _ip_in_trusted_proxies(hop, trusted):
+            continue
+        return hop
+    return None
+
+
 def get_client_ip(request: HttpRequest) -> str | None:
     """
     Best-effort client IP for audit and rate limiting.
 
-    ``X-Forwarded-For`` is used only when ``REMOTE_ADDR`` is listed in
-    ``settings.TRUSTED_PROXY_IPS``. Otherwise ``REMOTE_ADDR`` is returned so
-    clients cannot spoof audit IPs by sending XFF headers directly.
+    When ``REMOTE_ADDR`` is listed in ``settings.TRUSTED_PROXY_IPS``, parse
+    ``X-Forwarded-For`` from the right and use the first hop that is not a trusted
+    proxy (supports comma-separated chains and CIDR entries in ``TRUSTED_PROXY_IPS``).
+    Otherwise return ``REMOTE_ADDR`` so clients cannot spoof audit IPs by sending
+    ``X-Forwarded-For`` directly to the app.
     """
     remote = request.META.get('REMOTE_ADDR')
     remote_addr = remote.strip() if isinstance(remote, str) and remote.strip() else None
@@ -62,7 +84,9 @@ def get_client_ip(request: HttpRequest) -> str | None:
     if remote_addr and trusted and _ip_in_trusted_proxies(remote_addr, trusted):
         xff = request.META.get('HTTP_X_FORWARDED_FOR')
         if isinstance(xff, str) and xff.strip():
-            return xff.split(',')[0].strip()
+            from_xff = _client_ip_from_xff(xff.strip(), trusted)
+            if from_xff:
+                return from_xff
     if remote_addr:
         return remote_addr
     return None

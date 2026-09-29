@@ -106,7 +106,8 @@ Concurrency ≈ `workers × threads`. Under-provisioned pools can queue even sim
 
 | Variable | Purpose |
 | -------- | ------- |
-| `TRUSTED_PROXY_IPS` | Comma-separated IPs/CIDRs; when `REMOTE_ADDR` matches, `X-Forwarded-For` is used for audit and rate limits |
+| `TRUSTED_PROXY_IPS` | Comma-separated IPs/CIDRs; when `REMOTE_ADDR` matches, client IP is the rightmost untrusted hop in `X-Forwarded-For` (see [security-hardening.md](security-hardening.md)) |
+| `SELF_SERVICE_ACCOUNT_DELETE_MAX_IAT_AGE` | Max age of access JWT `iat` for `DELETE /api/v1/user` (default `5m`; not PATs) |
 | `AUTH_RATE_LIMIT_ENABLED` | `true` — disable only for debugging |
 | `AUTH_RATE_LIMIT_OAUTH`, `_TOKEN_REFRESH`, `_SETTINGS`, `_ADMIN_LOGIN`, `_PAT` | Per-endpoint limits (see [security-hardening.md](security-hardening.md)) |
 | `SECURE_SSL_REDIRECT`, `SECURE_HSTS_SECONDS`, `SESSION_COOKIE_SECURE`, `CSRF_COOKIE_SECURE` | HTTPS defaults when `DEBUG=false` |

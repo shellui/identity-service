@@ -13,16 +13,30 @@ class ClientIpTests(TestCase):
         request.META['HTTP_X_FORWARDED_FOR'] = '198.51.100.5, 203.0.113.1'
         self.assertEqual(get_client_ip(request), '203.0.113.10')
 
-    @override_settings(TRUSTED_PROXY_IPS=('203.0.113.1',))
-    def test_uses_xff_first_hop_from_trusted_proxy(self):
+    @override_settings(TRUSTED_PROXY_IPS=('203.0.113.1', '203.0.113.99'))
+    def test_uses_rightmost_untrusted_hop_from_trusted_proxy(self):
         request = self.factory.get('/')
         request.META['REMOTE_ADDR'] = '203.0.113.1'
         request.META['HTTP_X_FORWARDED_FOR'] = '198.51.100.5, 203.0.113.99'
+        self.assertEqual(get_client_ip(request), '198.51.100.5')
+
+    @override_settings(TRUSTED_PROXY_IPS=('203.0.113.1', '203.0.113.99'))
+    def test_ignores_spoofed_leftmost_xff_entry(self):
+        request = self.factory.get('/')
+        request.META['REMOTE_ADDR'] = '203.0.113.1'
+        request.META['HTTP_X_FORWARDED_FOR'] = '1.2.3.4, 198.51.100.5, 203.0.113.99'
         self.assertEqual(get_client_ip(request), '198.51.100.5')
 
     @override_settings(TRUSTED_PROXY_IPS=('10.0.0.0/8',))
     def test_trusted_proxy_cidr(self):
         request = self.factory.get('/')
         request.META['REMOTE_ADDR'] = '10.1.2.3'
+        request.META['HTTP_X_FORWARDED_FOR'] = '198.51.100.8'
+        self.assertEqual(get_client_ip(request), '198.51.100.8')
+
+    @override_settings(TRUSTED_PROXY_IPS=('203.0.113.1',))
+    def test_single_hop_xff_when_peer_is_trusted(self):
+        request = self.factory.get('/')
+        request.META['REMOTE_ADDR'] = '203.0.113.1'
         request.META['HTTP_X_FORWARDED_FOR'] = '198.51.100.8'
         self.assertEqual(get_client_ip(request), '198.51.100.8')

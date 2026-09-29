@@ -171,6 +171,12 @@ SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 # only when REMOTE_ADDR matches one of these entries. See docs/security-hardening.md.
 TRUSTED_PROXY_IPS = _env_csv('TRUSTED_PROXY_IPS', ())
 
+# Self-service DELETE /api/v1/user: access JWT ``iat`` must be within this age (not PATs).
+SELF_SERVICE_ACCOUNT_DELETE_MAX_IAT_AGE = _env_duration(
+    'SELF_SERVICE_ACCOUNT_DELETE_MAX_IAT_AGE',
+    timedelta(minutes=5),
+)
+
 # Loopback OAuth redirect targets (127.0.0.1 / localhost / ::1) are allowed only when DEBUG or
 # OAUTH_ALLOW_LOOPBACK_REDIRECTS=true (local CLI / dev shells).
 OAUTH_ALLOW_LOOPBACK_REDIRECTS = _env_bool('OAUTH_ALLOW_LOOPBACK_REDIRECTS', DEBUG)
