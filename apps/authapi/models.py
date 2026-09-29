@@ -247,7 +247,7 @@ class MagicLinkToken(models.Model):
     """
     One-time company-scoped magic link for passwordless email login.
 
-    The raw ``token`` is stored for lookup (same pattern as OAuth session delivery codes).
+    Only a SHA-256 hash of the token is stored; the raw secret exists only in email and verify requests.
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -264,7 +264,7 @@ class MagicLinkToken(models.Model):
         related_name='magic_link_tokens',
     )
     email = models.EmailField(max_length=254, db_index=True)
-    token = models.CharField(max_length=64, unique=True, db_index=True)
+    token_hash = models.CharField(max_length=64, unique=True, db_index=True)
     redirect_to = models.CharField(max_length=2048)
     expires_at = models.DateTimeField(db_index=True)
     consumed_at = models.DateTimeField(null=True, blank=True, db_index=True)

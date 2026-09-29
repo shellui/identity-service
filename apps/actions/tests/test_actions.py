@@ -134,6 +134,10 @@ class WebhookHandlerTests(TestCase):
     def test_ssrf_blocks_private_ip(self):
         with self.assertRaises(SSRFError):
             validate_webhook_url('http://127.0.0.1/hook')
+        with self.assertRaises(SSRFError):
+            validate_webhook_url('http://100.100.100.200/latest/meta-data/')
+        with self.assertRaises(SSRFError):
+            validate_webhook_url('http://[::ffff:127.0.0.1]/hook')
         with self.assertRaises(WebhookDeliveryError):
             from apps.actions.handlers.webhook import deliver_webhook_action
 

@@ -28,6 +28,13 @@ from apps.actions.scim_hooks import (
 )
 from apps.scim.provisioning_events import OPERATION_CREATE, OPERATION_RENAME, record_group_display_name_conflict
 from apps.scim.models import ScimProvisioningEvent
+from apps.scim.identity_guard import (
+    SCIM_UNIQUENESS_DETAIL,
+    assert_scim_identity_change_allowed,
+    find_existing_user_for_scim_post,
+    reject_scim_password,
+    scim_user_identity_locked,
+)
 from apps.scim.user_bridge import ScimUserBridge
 from django_scim.utils import get_base_scim_location_getter
 
@@ -134,10 +141,33 @@ class ShellUIScimUser(_ShellUIResourceTypeMixin, SCIMUser):
 
     def from_dict(self, d):
         body = dict(d)
+        reject_scim_password(body)
         active = body.pop('active', None)
         if active is not None:
             self._pending_membership_active = bool(active)
         super().from_dict(body)
+
+    def _link_existing_user_on_create(self, company) -> bool:
+        user = self.obj.user
+        existing = find_existing_user_for_scim_post(email=user.email, username=user.username)
+        if existing is None:
+            return False
+        if scim_user_identity_locked(existing, company.pk):
+            raise exceptions.IntegrityError(
+                detail=SCIM_UNIQUENESS_DETAIL,
+                scim_type='uniqueness',
+            )
+        self.obj = ScimUserBridge(existing)
+        return True
+
+    def _assert_can_persist_user(self, company) -> None:
+        user = self.obj.user
+        assert_scim_identity_change_allowed(
+            user=user,
+            company_id=company.pk,
+            new_email=user.email or '',
+            new_username=user.username or '',
+        )
 
     def _emit_membership_change(self, company, user, *, was_enabled: bool, enabled: bool) -> None:
         if was_enabled == enabled:
@@ -151,15 +181,25 @@ class ShellUIScimUser(_ShellUIResourceTypeMixin, SCIMUser):
         company = self._company
         user = self.obj.user
         is_new = user.pk is None
-        was_enabled = False if is_new else is_company_access_enabled(company, user)
         if is_new:
             if not user.username:
                 user.username = (user.email or self.obj.scim_username or '').strip()
             if not user.username:
                 raise exceptions.BadRequestError('userName or primary email is required.')
-            if not user.has_usable_password():
+            if self._link_existing_user_on_create(company):
+                user = self.obj.user
+                is_new = False
+            elif not user.has_usable_password():
                 user.set_unusable_password()
-        self.obj.user.save()
+        was_enabled = False if is_new else is_company_access_enabled(company, user)
+        self._assert_can_persist_user(company)
+        try:
+            self.obj.user.save()
+        except DjangoIntegrityError as exc:
+            raise exceptions.IntegrityError(
+                detail=SCIM_UNIQUENESS_DETAIL,
+                scim_type='uniqueness',
+            ) from exc
         self.obj.save_scim_fields()
         enabled = True if self._pending_membership_active is None else self._pending_membership_active
         set_company_access(company, user, enabled=enabled)
@@ -189,6 +229,10 @@ class ShellUIScimUser(_ShellUIResourceTypeMixin, SCIMUser):
             self._pending_membership_active = enabled
             self._emit_membership_change(company, user, was_enabled=was_enabled, enabled=enabled)
             return
+        if path and path.first_path == ('password', None, None):
+            raise exceptions.BadRequestError(
+                'Password must not be sent in SCIM user resources.',
+            )
         super().handle_replace(path, value, operation)
 
 

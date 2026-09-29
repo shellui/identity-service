@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import secrets
 import uuid
 from datetime import timedelta
@@ -16,6 +17,10 @@ from apps.companies.models import Company
 from .models import MagicLinkToken
 
 MAGIC_LINK_VERIFY_PATH = '/api/v1/magic-link/verify'
+
+
+def hash_magic_link_token(raw: str) -> str:
+    return hashlib.sha256((raw or '').encode('utf-8')).hexdigest()
 
 
 def magic_link_globally_enabled() -> bool:
@@ -61,8 +66,12 @@ def build_magic_link_verify_url(
     return f'{base}{MAGIC_LINK_VERIFY_PATH}?{query}'
 
 
-def magic_link_url_for_request(request_id: str | uuid.UUID | None) -> str | None:
-    if not request_id:
+def magic_link_url_for_request(
+    request_id: str | uuid.UUID | None,
+    *,
+    raw_token: str | None = None,
+) -> str | None:
+    if not request_id or not raw_token:
         return None
     try:
         row = MagicLinkToken.objects.get(pk=request_id)
@@ -70,7 +79,7 @@ def magic_link_url_for_request(request_id: str | uuid.UUID | None) -> str | None
         return None
     if row.consumed_at is not None or row.expires_at <= timezone.now():
         return None
-    return build_magic_link_verify_url(token=row.token, company_id=row.company_id)
+    return build_magic_link_verify_url(token=raw_token, company_id=row.company_id)
 
 
 def create_magic_link_token(
@@ -81,20 +90,21 @@ def create_magic_link_token(
     user=None,
     client_timezone: str = '',
     client_device_id: str | None = None,
-) -> MagicLinkToken:
+) -> tuple[MagicLinkToken, str]:
     normalized = (email or '').strip().lower()
-    token = secrets.token_urlsafe(32)
+    raw_token = secrets.token_urlsafe(32)
     expires_at = timezone.now() + magic_link_ttl()
-    return MagicLinkToken.objects.create(
+    row = MagicLinkToken.objects.create(
         company=company,
         email=normalized,
         user=user,
-        token=token,
+        token_hash=hash_magic_link_token(raw_token),
         redirect_to=redirect_to,
         expires_at=expires_at,
         client_timezone=(client_timezone or '')[:64],
         client_device_id=(client_device_id or '')[:128] or None,
     )
+    return row, raw_token
 
 
 def redeem_magic_link_token(
@@ -105,20 +115,28 @@ def redeem_magic_link_token(
     token = (raw_token or '').strip()
     if not token:
         return None, 'Missing token.'
-    try:
+    token_hash = hash_magic_link_token(token)
+    now = timezone.now()
+    updated = MagicLinkToken.objects.filter(
+        token_hash=token_hash,
+        company_id=company_id,
+        consumed_at__isnull=True,
+        expires_at__gt=now,
+    ).update(consumed_at=now)
+    if updated == 0:
         row = (
-            MagicLinkToken.objects.select_related('company', 'user')
-            .get(token=token, company_id=company_id)
+            MagicLinkToken.objects.filter(token_hash=token_hash, company_id=company_id)
+            .only('consumed_at', 'expires_at')
+            .first()
         )
-    except MagicLinkToken.DoesNotExist:
-        return None, 'Invalid or expired magic link.'
-
-    if row.consumed_at is not None:
-        return None, 'Magic link already used.'
-
-    if row.expires_at <= timezone.now():
+        if row is None:
+            return None, 'Invalid or expired magic link.'
+        if row.consumed_at is not None:
+            return None, 'Magic link already used.'
         return None, 'Magic link expired.'
 
-    row.consumed_at = timezone.now()
-    row.save(update_fields=['consumed_at'])
+    row = MagicLinkToken.objects.select_related('company', 'user').get(
+        token_hash=token_hash,
+        company_id=company_id,
+    )
     return row, None

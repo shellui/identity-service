@@ -34,8 +34,12 @@ def build_webhook_config(
     """
     cfg = dict(existing or {})
     generated_secret: str | None = None
+    previous_url = (existing.get('url') or '').strip()
+    url_changed = False
     if url is not None or not partial:
-        cfg['url'] = (url if url is not None else cfg.get('url') or '').strip()
+        new_url = (url if url is not None else cfg.get('url') or '').strip()
+        url_changed = url is not None and new_url != previous_url
+        cfg['url'] = new_url
     if not cfg.get('url'):
         raise ValidationError('Webhook url is required.')
 
@@ -73,9 +77,10 @@ def build_webhook_config(
             cfg['allow_private_urls'] = True
         elif allow_private_urls is False:
             cfg.pop('allow_private_urls', None)
-    elif not partial:
-        if existing.get('allow_private_urls'):
-            cfg['allow_private_urls'] = True
+    elif url_changed:
+        cfg.pop('allow_private_urls', None)
+    elif not partial and existing.get('allow_private_urls'):
+        cfg['allow_private_urls'] = True
     return cfg, generated_secret
 
 
