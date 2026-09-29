@@ -21,89 +21,36 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
 -->
 
-## [Unreleased]
-
-### 🐛 Bug Fixes
-
-- **Webhook test send:** Admin "Send test event" generates fresh UUIDs and current timestamps in sample payload fields (for example `request_id`, `token_id`, `expires_at`) so repeated tests do not dedupe on fixed catalog examples. The events catalog `sample_envelope` preview keeps stable documented examples.
-- **Webhook HTTPS delivery:** Shellui webhook POSTs use a pinned TCP connect to the resolved IP while TLS SNI and certificate verification target the original hostname, fixing `server_hostname` errors on every HTTPS webhook.
-
-### 🚨 Changed
-
-- **SCIM enabled by default:** `SCIM_ENABLED` now defaults to `true`. Each company enables provisioning with a SCIM bearer token in Shellui admin; revoke the token to disable SCIM for that company. Set `SCIM_ENABLED=false` to hide all SCIM routes as an emergency kill switch. Unauthenticated SCIM requests return **401** with the SCIM Error schema.
-
-### 🚨 Changed
-
-- **n8n webhook polish:** 404 retryable; permanent 4xx set (400, 401, 403, 405, 410, 413, 422); Retry-After on 429/503; UTF-8 JSON signing; `whsec_` secrets; `X-Shellui-Event` and `X-Shellui-Delivery-Attempt` headers; [docs/n8n.md](docs/n8n.md).
-- **Actions are webhook-only.** Email Action rules, template APIs, test-send, and the email channel handler are removed. Magic-link sign-in emails are sent directly by identity (`apps/authapi/magic_link_email.py`, EN/FR templates).
-- **Direct webhook delivery:** matching rules create outbox rows in the same transaction as the domain change; the first delivery runs on `transaction.on_commit` (background thread, 5s timeout default, errors never fail the request).
-- **Retries:** `manage.py retry_webhooks` replaces `drain_action_outbox` (batch, time budget, skip-locked lease, concurrency). Backoff 30s * 2^(n-1) capped at 1h; default 8 attempts; permanent 4xx (except 408/429) go dead.
-- **Admin API:** removed email template endpoints; added `POST /api/v1/actions/rules/<id>/send-test`. Events catalog drops `email_context_fields` / `email_envelope_fields`; adds `sample_envelope`.
-
-### 🗑 Removed
-
-- Action email channel (rules, handlers, default React Email JSON trees, `generate_action_email_defaults`, `drain_action_outbox`).
-
-### 🚨 Changed
-
-- **Action emails send only rule-stored HTML.** Default templates ship as React Email JSON documents (plus subject `.txt`); the `.html` files are removed. The Shellui admin compiles HTML from the document and stores it on the rule; identity substitutes placeholders into that HTML at send time.
-- **Email rules require compiled HTML.** Creating an email rule, or updating its templates/kind/enabling it, without `email_templates[<lang>].html` for at least one language returns **400**; every stored locale entry needs `subject` and `html`. Django admin can only save email rules that already have compiled HTML, or disabled ones (it now also keeps existing `email_templates` on save instead of dropping them).
-- **Existing rules without stored HTML** (saved before this change) fail at delivery with a clear “no compiled HTML template” error and are marked dead without retries. Open them in the Shellui admin, save, then re-queue.
-- **Email template API:** event defaults (`GET …/events/<event_type>/email-template`) return `subject` + `document` (no `html` / `body_html`). Rule templates without stored HTML return the same JSON default (raw subject) instead of a sample-rendered HTML preview.
-- **Language fallback at send:** user preference → deployment default → `en` → any other locale stored on the rule.
+## [0.6.0] - 2026-09-29
 
 ### ✨ Feature
 
-- **Actions admin API:** `POST /api/v1/actions/events/<event_type>/email-template/send-test` — staff or company owner only; renders provided subject/html with `sample_context` and emails solely `request.user.email` (no rule recipients / outbox). Rate-limited (`action_email_test`, default 5/min). Subject prefixed with `[Test]`.
-
-### 🔒 Security
-
-- **Action email substitution:** HTML bodies HTML-escape every `{{ … }}` value; placeholders inside `href`/`src` (and related URL attrs) are restricted to `http(s)` / `mailto` / `tel` / `#`. Subjects use plain mode (no HTML entities) but strip CR/LF.
+- **SCIM 2.0 provisioning:** Sync users and groups (including nested groups) from your identity provider at `/api/v1/companies/<company_id>/scim/v2/`. Create a SCIM token in Shellui admin to turn it on for a company, and revoke it to turn it off. See [docs/scim.md](docs/scim.md).
+- **Magic link sign-in:** Passwordless email login, on by default for new companies. Toggle it per company with `/api/v1/auth-methods`. Emails ship in English and French. See [docs/magic-link.md](docs/magic-link.md).
+- **Webhook actions:** Send `identity.*` events (users, groups, SCIM, magic link) to your own endpoints, such as n8n. Payloads are signed, failed deliveries retry with backoff via `manage.py retry_webhooks`, and admins can send a test event or re-queue deliveries. Closes [#35](https://github.com/shellui/identity-service/issues/35). See [docs/actions.md](docs/actions.md) and [docs/n8n.md](docs/n8n.md).
+- **Account deletion:** Users can delete their own account with `DELETE /api/v1/user`, which also revokes their sessions and tokens.
+- **Redis cache:** Set `REDIS_URL` to share rate limits, logout denylist, and last-seen data across workers.
 
 ### 🛠 Improvements
 
-- **Action email defaults:** regenerates EN/FR templates with a barebones-inspired card layout (muted page background, 640px padded card, centered CTA). Magic-link JSON now uses a TipTap `button` node (not a plain link mark) so `@react-email/editor` applies theme padding/background.
-- **Action email defaults:** TipTap JSON no longer embeds raw HTML (`<strong>`, `<br>`, `<span>`) as text — emphasis uses bold marks / link marks; HTML is only generated for the send path.
-- **Actions events API:** each catalog event includes `sample_context` (`{ envelope, data }`) with the caller’s company and field examples (including email-only `magic_link_url`) for admin WYSIWYG preview substitution.
-
-## [0.6.0] - 2026-09-26
-
-### ✨ Feature
-
-- **SCIM 2.0 (opt-in):** Per-company Users and Groups (including nested groups) at `/api/v1/companies/<company_id>/scim/v2/` via [django-scim2](https://pypi.org/project/django-scim2/), authenticated with bearer tokens (`CompanyScimToken`). See [docs/scim.md](docs/scim.md).
-- **SCIM admin API:** `GET /api/v1/scim`, `GET/POST /api/v1/scim/tokens`, and `POST /api/v1/scim/tokens/<uuid>/revoke` for staff or company owners. Bearer secret is returned once on create.
-- **Magic link login:** Company-scoped passwordless sign-in (`POST /api/v1/magic-link/request`, `GET|POST /api/v1/magic-link/verify`). On by default for new companies; kill switch `MAGIC_LINK_ENABLED`. Toggle via `GET|PATCH|PUT /api/v1/auth-methods`. Emits `identity.auth.magic_link.requested`. See [docs/magic-link.md](docs/magic-link.md).
-- **Action triggers:** Company-scoped `identity.*` events to email or webhook (`ActionRule`, outbox, `manage.py drain_action_outbox`). Closes [#35](https://github.com/shellui/identity-service/issues/35). See [docs/actions.md](docs/actions.md).
-- **Actions admin API:** Company owners and staff can manage action rules, preview email templates, and browse or re-queue delivery logs at `/api/v1/actions/*` (same JWT + `company_id` pattern as SCIM and auth-methods). Per-rule `email_templates` overrides ship in rule config. See [docs/actions.md](docs/actions.md).
-- **Actions admin API:** `GET /api/v1/actions/events/<event_type>/email-template` returns raw default filesystem subject and HTML for a catalog event (for create-rule UX without an existing rule).
-- **Actions admin API:** Event and rule email template GET endpoints accept `languages=en,fr` (or comma-separated `language=`) to return several locale previews in one request. A single locale keeps the existing single-object JSON body.
-- **Actions admin API:** `GET /api/v1/actions/events` documents `payload_fields`, email-only `email_context_fields` (including `magic_link_url` for magic link), and shared `email_envelope_fields` for the template editor insert palette.
-- **Action catalog:** `identity.scim.user.provisioned` / `deprovisioned`, `identity.user.created`, and `identity.user.deleted`. Email templates ship in `en` and `fr` (`ACTIONS_EMAIL_DEFAULT_LANGUAGE`, default `en`). Event payloads include `language` and `region` from `UserPreference`.
-- **Self-service account deletion:** `DELETE /api/v1/user` with `{"confirm": true}` hard-deletes the account, revokes sessions/PATs, and emits `identity.user.deleted` (`source: self`) per membership. See [docs/oauth-login.md](docs/oauth-login.md).
-- **OAuth skip confirm:** `OAUTH_SKIP_CONFIRM_PROVIDERS` (default `google`) skips the account confirmation page when the IdP profile is sufficient. See [docs/oauth-login.md](docs/oauth-login.md).
-- **Redis cache:** Set `REDIS_URL` for shared cache (rate limits, logout denylist, last-seen). Without it, LocMem stays the default.
+- **Faster Google sign-in:** Skip the account confirmation page for providers listed in `OAUTH_SKIP_CONFIRM_PROVIDERS` (default `google`).
+- **Homepage:** Shellui Identity branding, aligned with the other Shellui services.
+- **Django admin:** Browse webhook deliveries and attempts with filters and search.
+- **Deploy check:** `authapi.W002` warns when several Gunicorn workers run without Redis.
 
 ### 🚨 Changed
 
-- **SCIM base URL:** Service-provider path uses the company numeric id (`/api/v1/companies/<id>/scim/v2/`). `GET /api/v1/scim` `base_url` and SCIM resource `location` fields use that id path. Slug-based SCIM URLs are not mounted.
-- **Homepage:** Shellui Identity branding (favicons, title/meta), layout aligned with sibling services, and Tailwind v4 `static/css/site.css` rebuilt by `runserver` when `DEBUG=true`.
-- **Hybrid company groups:** `CompanyGroup.source` is `manual` or `scim`. SCIM only exposes `scim` groups; admin REST manages `manual` ones; SCIM rows are admin read-only. Cross-source `display_name` collisions return **409** and surface on `GET /api/v1/scim`. Django admin always creates `manual` and shows `source` read-only. See [docs/scim.md](docs/scim.md).
-- **JWT `groups` claim:** `user_metadata.groups` lists effective membership (direct + nested ancestors). SCIM User `groups` stay direct-only. See [docs/scim.md](docs/scim.md).
-
-### 🛠 Improvements
-
-- **SCIM URL wiring:** Removed the slug-based SCIM URL mount so the `scim` namespace is unique and startup no longer warns with `urls.W005`.
-- **Action email templates:** Default `identity.*` emails in `en` and `fr` ship as React Email editor document JSON plus flat compiled HTML (welcome-style card layout, Shellui palette). Send path and rule overrides substitute `{{ variable }}` placeholders only; Django `{% %}` layout tags are rejected on save. Admin default template API returns `document`, `subject`, and `html`.
-- **Action delivery admin:** Richer Django admin for **Action deliveries** and **Delivery attempts** (filters, search, inline attempts on outbox, recent deliveries on rules). Operator notes in [docs/actions.md](docs/actions.md).
-- Deploy check `authapi.W002` warns when `DEBUG=false`, LocMem is in use, and `GUNICORN_WORKERS` > 1.
+- **Company groups:** Groups are either `manual` (managed in admin) or `scim` (managed by your identity provider). Name collisions between the two return **409**.
+- **JWT `groups` claim:** Now includes nested parent groups, not only direct memberships.
 
 ### 📚 Documentation
 
-- [AGENTS.md](AGENTS.md) for Shellui writing and design guidelines.
-- [docs/oauth-providers.md](docs/oauth-providers.md): django-allauth provider catalog and enablement checklist.
-- `REDIS_URL` in `.env.example`, [README.md](README.md), and [PUBLISH.md](PUBLISH.md).
-- Docusaurus chrome aligned with [shellui/shellui](https://github.com/shellui/shellui); docs at `https://identity.docs.shellui.com`.
-- Refresh [docs/configuration.md](docs/configuration.md), [docs/scim.md](docs/scim.md), README release line, and Docker Hub / `VERSION=` examples in [PUBLISH.md](PUBLISH.md) and [docs/RELEASES.md](docs/RELEASES.md).
+- Docs site moved to [identity.docs.shellui.com](https://identity.docs.shellui.com) with Shellui styling.
+- New guides for [SCIM](docs/scim.md), [magic link](docs/magic-link.md), [actions](docs/actions.md), [n8n](docs/n8n.md), and [OAuth providers](docs/oauth-providers.md). Refreshed [configuration](docs/configuration.md) and publish guides.
+
+### 🔒 Security
+
+- **Webhook targets:** Private and loopback addresses are blocked, and delivery connects to the checked IP to prevent DNS rebinding.
 
 ## [0.5.1] - 2026-09-24
 
