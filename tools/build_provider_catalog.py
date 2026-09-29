@@ -20,6 +20,20 @@ DEFAULT_SOURCE = ROOT / 'tools' / 'data' / 'allauth_providers_source.json'
 E2E_SLUGS_PATH = ROOT / 'tools' / 'data' / 'oauth_e2e_covered_slugs.json'
 OUT_PATH = ROOT / 'apps' / 'authapi' / 'provider_catalog.json'
 
+# Identity-hosted OAuth in this release (narrow scope; more providers in follow-up PRs).
+SUPPORTED_RELEASE_SLUGS = frozenset(
+    {
+        'apple',
+        'github',
+        'gitlab',
+        'google',
+        'line',
+        'microsoft',
+        'reddit',
+        'shopify',
+    }
+)
+
 EMAIL_POLICY_BY_SLUG: dict[str, str] = {
     'github': 'github_verified_primary',
     'google': 'google_email_verified',
@@ -141,9 +155,12 @@ def _supported(entry: dict, installed: frozenset[str]) -> tuple[bool, str | None
         return False, 'Unsupported protocol.'
     if not _app_has_oauth2_provider(entry.get('app'), installed):
         return False, 'No OAuth2 adapter is available for this provider module.'
+    slug = str(entry.get('docs_slug') or '').strip().lower()
+    if slug not in SUPPORTED_RELEASE_SLUGS:
+        return False, 'Not supported in this release; additional providers ship in follow-up PRs.'
     e2e_slugs = _e2e_covered_slugs()
-    if entry.get('docs_slug') not in e2e_slugs:
-        return False, 'Missing end-to-end OAuth adapter test coverage.'
+    if slug not in e2e_slugs:
+        return False, 'Missing hand-written OAuth adapter test coverage for this release.'
     return True, None
 
 

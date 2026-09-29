@@ -4,6 +4,9 @@ from allauth.socialaccount.models import SocialAccount
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 
+from allauth.socialaccount.models import SocialApp
+
+from apps.authapi.oauth_allauth import sociallogin_userinfo
 from apps.authapi.oauth_user import (
     OAuthProfile,
     extract_oauth_profile,
@@ -11,6 +14,7 @@ from apps.authapi.oauth_user import (
     microsoft_email_trustworthy,
     resolve_oauth_user,
 )
+from apps.authapi.provider_registry import get_provider_catalog
 from apps.companies.access import set_company_access
 from apps.companies.models import Company
 
@@ -151,3 +155,32 @@ class OAuthIdentityResolutionTests(TestCase):
         self.assertIsNone(err)
         assert profile is not None
         self.assertTrue(profile.email_verified_for_link)
+
+    def test_battlenet_extract_oauth_profile_uses_allauth_uid_for_china(self):
+        entry = get_provider_catalog().by_slug()['battlenet']
+        app = SocialApp(provider='battlenet', client_id='bn', secret='s')
+        userinfo = {'id': 7, 'region': 'cn', 'battletag': 'Cn#7'}
+        profile, err = extract_oauth_profile(
+            'battlenet',
+            userinfo,
+            'token',
+            catalog_entry=entry,
+            social_app=app,
+        )
+        self.assertIsNone(err)
+        assert profile is not None
+        self.assertEqual(profile.social_uid, '7-cn')
+        self.assertEqual(profile.provider_id, '7-cn')
+
+    def test_sociallogin_userinfo_propagates_allauth_account_uid(self):
+        from types import SimpleNamespace
+
+        account = SimpleNamespace(
+            uid='7-cn',
+            extra_data={'id': 7, 'region': 'cn', 'battletag': 'Cn#7'},
+        )
+        user = SimpleNamespace(email='', get_full_name=lambda: '')
+        sociallogin = SimpleNamespace(account=account, user=user, state={})
+        data = sociallogin_userinfo(sociallogin)
+        self.assertEqual(data['_allauth_account_uid'], '7-cn')
+        self.assertEqual(data['id'], 7)

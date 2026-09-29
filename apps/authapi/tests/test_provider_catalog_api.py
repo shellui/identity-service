@@ -114,6 +114,13 @@ class OAuthProviderCatalogApiTests(APITestCase):
         slugs = {item['docs_slug'] for item in response.data['providers']}
         self.assertIn('twitter', slugs)
 
+    def test_catalog_omits_hidden_providers(self):
+        self.client.force_authenticate(user=self.owner)
+        response = self.client.get(self._url('/api/v1/oauth-provider-catalog'))
+        self.assertEqual(response.status_code, 200)
+        slugs = {item['docs_slug'] for item in response.data['providers']}
+        self.assertNotIn('edmodo', slugs)
+
 
 @override_settings(
     ALLOWED_HOSTS=['testserver', 'localhost', '127.0.0.1'],

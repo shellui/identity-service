@@ -11,7 +11,7 @@ from unittest.mock import patch
 from apps.authapi.provider_registry import get_provider_catalog
 from apps.companies.access import set_company_access
 from apps.companies.models import Company, CompanyOAuthClient
-from apps.authapi.tests.oauth_real_provider_harness import PUBLIC_HOST
+PUBLIC_HOST = 'https://example.com'
 from apps.companies.oauth_client_uniqueness import compute_oauth_client_dedupe_key
 
 User = get_user_model()

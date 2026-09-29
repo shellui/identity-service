@@ -189,9 +189,8 @@ def sociallogin_userinfo(sociallogin) -> dict[str, Any]:
         data['email'] = sociallogin.user.email
     if sociallogin.user.get_full_name() and 'name' not in data:
         data['name'] = sociallogin.user.get_full_name()
-    if account.uid and 'id' not in data and 'sub' not in data:
-        data['id'] = account.uid
-        data['sub'] = account.uid
+    if account.uid:
+        data['_allauth_account_uid'] = account.uid
     if isinstance(extra.get('id_token'), dict):
         data['_verified_id_token_claims'] = extra['id_token']
     state = getattr(sociallogin, 'state', None)

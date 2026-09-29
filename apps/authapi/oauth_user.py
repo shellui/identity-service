@@ -77,6 +77,35 @@ class OAuthProfile:
     userinfo: dict
 
 
+def _provider_uid_from_userinfo(
+    *,
+    info: dict,
+    entry: ProviderCatalogEntry | None,
+    social_app,
+) -> str:
+    stored = info.get('_allauth_account_uid')
+    if isinstance(stored, str) and stored.strip():
+        return stored.strip()
+    if entry is not None and social_app is not None:
+        from django.test import RequestFactory
+
+        from allauth.socialaccount.providers import registry
+
+        request = RequestFactory().get('/')
+        try:
+            provider = registry.get_class(entry.allauth_id)(request, app=social_app)
+            return str(provider.extract_uid(info)).strip()
+        except (KeyError, TypeError, ValueError):
+            pass
+    return str(
+        info.get('id')
+        or info.get('sub')
+        or info.get('userPrincipalName')
+        or info.get('mail')
+        or ''
+    ).strip()
+
+
 def _truthy_claim(value: object) -> bool:
     return value is True or value == 'true' or value == 1 or value == '1'
 
@@ -230,13 +259,11 @@ def extract_oauth_profile(
     else:
         social_provider = entry.allauth_id if entry is not None else key
 
-    provider_id = str(
-        info.get('id')
-        or info.get('sub')
-        or info.get('userPrincipalName')
-        or info.get('mail')
-        or ''
-    ).strip()
+    provider_id = _provider_uid_from_userinfo(
+        info=info,
+        entry=entry,
+        social_app=social_app,
+    )
     if not provider_id:
         return None, 'OAuth provider did not return a user id.'
 
