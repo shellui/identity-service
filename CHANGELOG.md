@@ -23,6 +23,10 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 ## [Unreleased]
 
+### 🐛 Bug Fixes
+
+- **Webhook HTTPS delivery:** Shellui webhook POSTs use a pinned TCP connect to the resolved IP while TLS SNI and certificate verification target the original hostname, fixing `server_hostname` errors on every HTTPS webhook.
+
 ### 🚨 Changed
 
 - **SCIM enabled by default:** `SCIM_ENABLED` now defaults to `true`. Each company enables provisioning with a SCIM bearer token in Shellui admin; revoke the token to disable SCIM for that company. Set `SCIM_ENABLED=false` to hide all SCIM routes as an emergency kill switch. Unauthenticated SCIM requests return **401** with the SCIM Error schema.
