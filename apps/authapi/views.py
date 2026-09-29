@@ -49,7 +49,13 @@ from apps.companies.redirect_allowlist import (
 )
 from .renderers import PrometheusTextRenderer
 from .login_audit import oauth_provider_redirect_uri, record_login_event
-from .oauth_state import build_oauth_state, parse_oauth_state
+from .oauth_state import (
+    build_oauth_state,
+    oauth_state_nonce_cookie_value,
+    parse_oauth_state,
+    verify_oauth_state_request,
+)
+from .oauth_user import OAuthProfile, decode_oauth_id_token_claims, extract_oauth_profile, resolve_oauth_user
 from .oauth_confirm import build_oauth_confirm_token, parse_oauth_confirm_token
 from .oauth_session_code import (
     OAUTH_SESSION_CODE_PARAM,
@@ -71,11 +77,13 @@ from .models import LoginEvent, PersonalAccessToken, UserPreference
 from .user_activity import touch_user_last_seen
 from .throttling import rate_limit
 from .oauth import (
+    OAuthTokenBundle,
     SUPPORTED_OAUTH_PROVIDERS,
     build_authorize_url,
     exchange_code_for_token,
     fetch_provider_userinfo,
     get_provider_config,
+    resolve_oauth_client,
     should_skip_oauth_confirm,
 )
 from .serializers import (
@@ -183,41 +191,33 @@ def _admin_user_group_rows(user: User, company: Company) -> list[dict]:
     )
 
 
-def _extract_user_data(provider: str, userinfo: dict, access_token: str) -> tuple[str, str, str, str | None]:
-    provider_id = str(
-        userinfo.get('id')
-        or userinfo.get('sub')
-        or userinfo.get('userPrincipalName')
-        or userinfo.get('mail')
+def _resolve_oauth_login_user(
+    *,
+    provider: str,
+    company: Company,
+    userinfo: dict,
+    token_bundle: OAuthTokenBundle,
+    company_oauth_client_id: int | None,
+) -> tuple[User | None, bool, OAuthProfile | None, str | None]:
+    resolved = resolve_oauth_client(
+        provider,
+        company_id=company.id,
+        company_oauth_client_id=company_oauth_client_id,
     )
-    email = userinfo.get('email') or userinfo.get('mail') or userinfo.get('userPrincipalName')
-    full_name = userinfo.get('name') or userinfo.get('displayName') or ''
-
-    if provider == 'github' and not email:
-        req = urllib.request.Request(
-            'https://api.github.com/user/emails',
-            headers={
-                'Authorization': f'Bearer {access_token}',
-                'Accept': 'application/json',
-            },
-        )
-        with urllib.request.urlopen(req, timeout=20) as response:
-            emails = json.loads(response.read().decode('utf-8'))
-        primary = next((item for item in emails if item.get('primary')), None)
-        if primary:
-            email = primary.get('email')
-
-    if not email:
-        email = f'{provider_id}@{provider}.local'
-
-    if not full_name:
-        full_name = email.split('@')[0]
-
-    avatar_url = userinfo.get('avatar_url') or userinfo.get('picture') or userinfo.get('photo')
-    if not isinstance(avatar_url, str) or not avatar_url.strip():
-        avatar_url = None
-
-    return provider_id, email.lower(), full_name, avatar_url
+    id_claims = decode_oauth_id_token_claims(token_bundle.id_token)
+    profile, perror = extract_oauth_profile(
+        provider,
+        userinfo,
+        token_bundle.access_token,
+        tenant=resolved.tenant,
+        id_token_claims=id_claims,
+    )
+    if perror or profile is None:
+        return None, False, None, perror or 'Invalid provider profile.'
+    user, created, uerror = resolve_oauth_user(provider=provider, profile=profile)
+    if uerror or user is None:
+        return None, False, profile, uerror
+    return user, created, profile, None
 
 
 def _normalize_avatar_url(value: object) -> str | None:
@@ -412,6 +412,7 @@ def _issue_shellui_tokens(
     *,
     oauth_provider: str | None = None,
     prior_app_metadata: dict | None = None,
+    prior_auth_time: int | None = None,
     family_id: uuid.UUID | None = None,
 ) -> dict:
     refresh = ShellUIRefreshToken.for_user(user)
@@ -450,6 +451,14 @@ def _issue_shellui_tokens(
     )
     bind_access_session(access=access, session_id=session.id)
     now_ts = int(datetime.now(timezone.utc).timestamp())
+    if oauth_provider:
+        auth_time = now_ts
+    elif prior_auth_time is not None:
+        auth_time = int(prior_auth_time)
+    else:
+        auth_time = now_ts
+    access['auth_time'] = auth_time
+    refresh['auth_time'] = auth_time
     expires_at = int(access['exp'])
     return {
         'access_token': str(access),
@@ -1216,7 +1225,7 @@ class SocialLoginView(APIView):
         client_tz = serializer.validated_data.get('client_timezone') or ''
         client_dev = serializer.validated_data.get('client_device_id') or None
         try:
-            access_token = exchange_code_for_token(
+            token_bundle = exchange_code_for_token(
                 provider=provider,
                 code=serializer.validated_data['code'],
                 redirect_uri=redirect_uri,
@@ -1225,11 +1234,34 @@ class SocialLoginView(APIView):
             )
             userinfo = fetch_provider_userinfo(
                 provider,
-                access_token,
+                token_bundle.access_token,
                 company_id=company.id,
                 company_oauth_client_id=company_oauth_client_id,
             )
-            provider_id, email, full_name, avatar_url = _extract_user_data(provider, userinfo, access_token)
+            user, created, profile, resolve_err = _resolve_oauth_login_user(
+                provider=provider,
+                company=company,
+                userinfo=userinfo,
+                token_bundle=token_bundle,
+                company_oauth_client_id=company_oauth_client_id,
+            )
+            if resolve_err or profile is None or user is None:
+                record_login_event(
+                    request=request,
+                    outcome=LoginEvent.OUTCOME_FAILURE,
+                    provider=provider,
+                    user=None,
+                    company=company,
+                    failure_reason=resolve_err or 'oauth_user_resolution_failed',
+                    client_timezone=client_tz,
+                    client_device_id=client_dev,
+                )
+                return Response(
+                    {'detail': resolve_err or 'Could not resolve OAuth account.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            avatar_url = profile.avatar_url
+            email = profile.email
         except Exception as exc:
             record_login_event(
                 request=request,
@@ -1246,23 +1278,14 @@ class SocialLoginView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        user, created = User.objects.get_or_create(
-            email=email,
-            defaults={
-                'username': f'{provider}_{provider_id}',
-                'first_name': full_name.split(' ')[0],
-                'last_name': ' '.join(full_name.split(' ')[1:]),
-            },
-        )
-        if not created:
-            if not user.first_name and full_name:
-                user.first_name = full_name.split(' ')[0]
-            if not user.last_name and ' ' in full_name:
-                user.last_name = ' '.join(full_name.split(' ')[1:])
-            user.save(update_fields=['first_name', 'last_name'])
         emit_oauth_user_created_if_new(company, user, created=created, oauth_provider=provider)
         join = apply_company_join(company, user, email=email)
-        _link_social_account(user=user, provider=provider, provider_id=provider_id, userinfo=userinfo)
+        _link_social_account(
+            user=user,
+            provider=provider,
+            provider_id=profile.provider_id,
+            userinfo=userinfo,
+        )
 
         cache.set(
             f"shellui:user_metadata:{user.id}",
@@ -1506,7 +1529,7 @@ class ShellUIAuthorizeView(APIView):
             )
         switch_account = str(request.GET.get('switch_account', '')).strip().lower() in ('1', 'true', 'yes')
         token_delivery = _resolve_token_delivery(request=request)
-        state = build_oauth_state(
+        state, state_nonce = build_oauth_state(
             provider=provider,
             redirect_to=redirect_to,
             company_id=company.id,
@@ -1524,7 +1547,17 @@ class ShellUIAuthorizeView(APIView):
             company_oauth_client_id=company_oauth_client_id,
             switch_account=switch_account,
         )
-        return HttpResponseRedirect(authorize_url)
+        response = HttpResponseRedirect(authorize_url)
+        cookie = oauth_state_nonce_cookie_value(state_nonce)
+        response.set_cookie(
+            cookie['key'],
+            cookie['value'],
+            max_age=cookie['max_age'],
+            httponly=cookie['httponly'],
+            samesite=cookie['samesite'],
+            secure=cookie['secure'],
+        )
+        return response
 
 
 @extend_schema_view(
@@ -1564,7 +1597,8 @@ class ShellUIOAuthCallbackView(APIView):
 
     def get(self, request):
         code = request.GET.get('code', '').strip()
-        state_payload, state_err = parse_oauth_state(request.GET.get('state'))
+        state_raw = request.GET.get('state')
+        state_payload, state_err = verify_oauth_state_request(state_raw, request)
         if state_err or not state_payload:
             return _shellui_oauth_bounce_or_json(
                 request,
@@ -1629,7 +1663,7 @@ class ShellUIOAuthCallbackView(APIView):
             )
         callback_url = oauth_provider_redirect_uri(request)
         try:
-            access_token = exchange_code_for_token(
+            token_bundle = exchange_code_for_token(
                 provider=provider,
                 code=code,
                 redirect_uri=callback_url,
@@ -1638,11 +1672,42 @@ class ShellUIOAuthCallbackView(APIView):
             )
             userinfo = fetch_provider_userinfo(
                 provider,
-                access_token,
+                token_bundle.access_token,
                 company_id=company.id,
                 company_oauth_client_id=company_oauth_client_id,
             )
-            provider_id, email, full_name, avatar_url = _extract_user_data(provider, userinfo, access_token)
+            user, created, profile, resolve_err = _resolve_oauth_login_user(
+                provider=provider,
+                company=company,
+                userinfo=userinfo,
+                token_bundle=token_bundle,
+                company_oauth_client_id=company_oauth_client_id,
+            )
+            if resolve_err or profile is None or user is None:
+                record_login_event(
+                    request=request,
+                    outcome=LoginEvent.OUTCOME_FAILURE,
+                    provider=provider,
+                    user=None,
+                    company=company,
+                    failure_reason=resolve_err or 'oauth_user_resolution_failed',
+                    client_timezone=client_tz,
+                    client_device_id=client_dev,
+                )
+                bounced = _shellui_oauth_bounce_or_json(
+                    request,
+                    message=resolve_err or 'Could not resolve OAuth account.',
+                    error_code='oauth_identity_failed',
+                    redirect_to_raw=redirect_to,
+                )
+                if isinstance(bounced, HttpResponseRedirect):
+                    return bounced
+                return Response(
+                    {'detail': resolve_err or 'Could not resolve OAuth account.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            avatar_url = profile.avatar_url
+            email = profile.email
         except Exception as exc:
             record_login_event(
                 request=request,
@@ -1664,23 +1729,14 @@ class ShellUIOAuthCallbackView(APIView):
                 return bounced
             return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
-        user, created = User.objects.get_or_create(
-            email=email,
-            defaults={
-                'username': f'{provider}_{provider_id}',
-                'first_name': full_name.split(' ')[0],
-                'last_name': ' '.join(full_name.split(' ')[1:]),
-            },
-        )
-        if not created:
-            if not user.first_name and full_name:
-                user.first_name = full_name.split(' ')[0]
-            if not user.last_name and ' ' in full_name:
-                user.last_name = ' '.join(full_name.split(' ')[1:])
-            user.save(update_fields=['first_name', 'last_name'])
         emit_oauth_user_created_if_new(company, user, created=created, oauth_provider=provider)
         join = apply_company_join(company, user, email=email)
-        _link_social_account(user=user, provider=provider, provider_id=provider_id, userinfo=userinfo)
+        _link_social_account(
+            user=user,
+            provider=provider,
+            provider_id=profile.provider_id,
+            userinfo=userinfo,
+        )
 
         cache.set(
             f"shellui:user_metadata:{user.id}",
@@ -1916,7 +1972,7 @@ class ShellUIOAuthExchangeView(APIView):
         client_tz = validated.get('client_timezone') or ''
         client_dev = validated.get('client_device_id') or None
         try:
-            access_token = exchange_code_for_token(
+            token_bundle = exchange_code_for_token(
                 provider=provider,
                 code=code,
                 redirect_uri=redirect_uri,
@@ -1925,11 +1981,34 @@ class ShellUIOAuthExchangeView(APIView):
             )
             userinfo = fetch_provider_userinfo(
                 provider,
-                access_token,
+                token_bundle.access_token,
                 company_id=company.id,
                 company_oauth_client_id=company_oauth_client_id,
             )
-            provider_id, email, full_name, avatar_url = _extract_user_data(provider, userinfo, access_token)
+            user, created, profile, resolve_err = _resolve_oauth_login_user(
+                provider=provider,
+                company=company,
+                userinfo=userinfo,
+                token_bundle=token_bundle,
+                company_oauth_client_id=company_oauth_client_id,
+            )
+            if resolve_err or profile is None or user is None:
+                record_login_event(
+                    request=request,
+                    outcome=LoginEvent.OUTCOME_FAILURE,
+                    provider=provider,
+                    user=None,
+                    company=company,
+                    failure_reason=resolve_err or 'oauth_user_resolution_failed',
+                    client_timezone=client_tz,
+                    client_device_id=client_dev,
+                )
+                return Response(
+                    {'detail': resolve_err or 'Could not resolve OAuth account.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            avatar_url = profile.avatar_url
+            email = profile.email
         except Exception as exc:
             record_login_event(
                 request=request,
@@ -1943,23 +2022,14 @@ class ShellUIOAuthExchangeView(APIView):
             )
             return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
-        user, created = User.objects.get_or_create(
-            email=email,
-            defaults={
-                'username': f'{provider}_{provider_id}',
-                'first_name': full_name.split(' ')[0],
-                'last_name': ' '.join(full_name.split(' ')[1:]),
-            },
-        )
-        if not created:
-            if not user.first_name and full_name:
-                user.first_name = full_name.split(' ')[0]
-            if not user.last_name and ' ' in full_name:
-                user.last_name = ' '.join(full_name.split(' ')[1:])
-            user.save(update_fields=['first_name', 'last_name'])
         emit_oauth_user_created_if_new(company, user, created=created, oauth_provider=provider)
         join = apply_company_join(company, user, email=email)
-        _link_social_account(user=user, provider=provider, provider_id=provider_id, userinfo=userinfo)
+        _link_social_account(
+            user=user,
+            provider=provider,
+            provider_id=profile.provider_id,
+            userinfo=userinfo,
+        )
 
         cache.set(
             f"shellui:user_metadata:{user.id}",
@@ -2081,15 +2151,23 @@ class ShellUITokenView(APIView):
             prior_avatar = _normalize_avatar_url(prior_meta.get('avatar_url'))
 
         prior_app = refresh.get('app_metadata')
+        prior_auth_time = refresh.get('auth_time')
         touch_user_last_seen(user)
 
         assert session is not None
         revoke_refresh_session(session)
+        prior_auth_int = None
+        if prior_auth_time is not None:
+            try:
+                prior_auth_int = int(prior_auth_time)
+            except (TypeError, ValueError):
+                prior_auth_int = None
         payload = _issue_shellui_tokens(
             user,
             company=company,
             avatar_url=prior_avatar,
             prior_app_metadata=prior_app if isinstance(prior_app, dict) else None,
+            prior_auth_time=prior_auth_int,
             family_id=session.family_id,
         )
         return Response(payload)

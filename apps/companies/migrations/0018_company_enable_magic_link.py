@@ -12,7 +12,7 @@ class Migration(migrations.Migration):
             model_name='company',
             name='enable_magic_link',
             field=models.BooleanField(
-                default=True,
+                default=False,
                 help_text=(
                     'When true (default for new companies), users can request passwordless email magic links '
                     'for this company. Requires deployment MAGIC_LINK_ENABLED.'

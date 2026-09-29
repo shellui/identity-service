@@ -4,6 +4,7 @@ from allauth.socialaccount.models import SocialApp
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
+from apps.authapi.oauth import OAuthTokenBundle
 from apps.companies.models import Company, CompanyOAuthClient, CompanyOAuthRedirect
 
 
@@ -70,12 +71,19 @@ class LegacyOAuthRedirectUriAllowlistTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn('authorize_url', response.data)
 
-    @patch('apps.authapi.views.exchange_code_for_token', return_value='provider-access')
+    @patch(
+        'apps.authapi.oauth_user._fetch_github_verified_primary_email',
+        return_value=('octocat@example.com', True),
+    )
+    @patch(
+        'apps.authapi.views.exchange_code_for_token',
+        return_value=OAuthTokenBundle(access_token='provider-access'),
+    )
     @patch(
         'apps.authapi.views.fetch_provider_userinfo',
         return_value={'id': 1, 'login': 'octocat', 'email': 'octocat@example.com', 'name': 'Octo Cat'},
     )
-    def test_social_login_rejects_non_allowlisted_redirect_uri(self, _userinfo, _exchange):
+    def test_social_login_rejects_non_allowlisted_redirect_uri(self, _userinfo, _exchange, _gh):
         response = self.client.post(
             f'/api/v1/providers/github/login/?company_id={self.company.id}',
             {
@@ -88,12 +96,19 @@ class LegacyOAuthRedirectUriAllowlistTests(TestCase):
         self.assertIn('not allowed', str(response.data.get('error', '')).lower())
         self.assertFalse(_exchange.called)
 
-    @patch('apps.authapi.views.exchange_code_for_token', return_value='provider-access')
+    @patch(
+        'apps.authapi.oauth_user._fetch_github_verified_primary_email',
+        return_value=('octocat@example.com', True),
+    )
+    @patch(
+        'apps.authapi.views.exchange_code_for_token',
+        return_value=OAuthTokenBundle(access_token='provider-access'),
+    )
     @patch(
         'apps.authapi.views.fetch_provider_userinfo',
         return_value={'id': 1, 'login': 'octocat', 'email': 'octocat@example.com', 'name': 'Octo Cat'},
     )
-    def test_social_login_allows_allowlisted_redirect_uri(self, _userinfo, exchange):
+    def test_social_login_allows_allowlisted_redirect_uri(self, _userinfo, exchange, _gh):
         response = self.client.post(
             f'/api/v1/providers/github/login/?company_id={self.company.id}',
             {
@@ -105,12 +120,19 @@ class LegacyOAuthRedirectUriAllowlistTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(exchange.called)
 
-    @patch('apps.authapi.views.exchange_code_for_token', return_value='provider-access')
+    @patch(
+        'apps.authapi.oauth_user._fetch_github_verified_primary_email',
+        return_value=('octocat@example.com', True),
+    )
+    @patch(
+        'apps.authapi.views.exchange_code_for_token',
+        return_value=OAuthTokenBundle(access_token='provider-access'),
+    )
     @patch(
         'apps.authapi.views.fetch_provider_userinfo',
         return_value={'id': 1, 'login': 'octocat', 'email': 'octocat@example.com', 'name': 'Octo Cat'},
     )
-    def test_oauth_exchange_rejects_non_allowlisted_redirect_uri(self, _userinfo, _exchange):
+    def test_oauth_exchange_rejects_non_allowlisted_redirect_uri(self, _userinfo, _exchange, _gh):
         response = self.client.post(
             f'/api/v1/oauth/exchange?company_id={self.company.id}',
             {
@@ -124,12 +146,19 @@ class LegacyOAuthRedirectUriAllowlistTests(TestCase):
         self.assertIn('not allowed', str(response.data.get('error', '')).lower())
         self.assertFalse(_exchange.called)
 
-    @patch('apps.authapi.views.exchange_code_for_token', return_value='provider-access')
+    @patch(
+        'apps.authapi.oauth_user._fetch_github_verified_primary_email',
+        return_value=('octocat@example.com', True),
+    )
+    @patch(
+        'apps.authapi.views.exchange_code_for_token',
+        return_value=OAuthTokenBundle(access_token='provider-access'),
+    )
     @patch(
         'apps.authapi.views.fetch_provider_userinfo',
         return_value={'id': 1, 'login': 'octocat', 'email': 'octocat@example.com', 'name': 'Octo Cat'},
     )
-    def test_oauth_exchange_allows_allowlisted_redirect_uri(self, _userinfo, exchange):
+    def test_oauth_exchange_allows_allowlisted_redirect_uri(self, _userinfo, exchange, _gh):
         response = self.client.post(
             f'/api/v1/oauth/exchange?company_id={self.company.id}',
             {

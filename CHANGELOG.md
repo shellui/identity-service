@@ -26,7 +26,7 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 ### ✨ Feature
 
 - **SCIM 2.0 provisioning:** Sync users and groups (including nested groups) from your identity provider at `/api/v1/companies/<company_id>/scim/v2/`. Create a SCIM token in Shellui admin to turn it on for a company, and revoke it to turn it off. See [docs/scim.md](docs/scim.md).
-- **Magic link sign-in:** Passwordless email login, on by default for new companies. Toggle it per company with `/api/v1/auth-methods`. Emails ship in English and French. See [docs/magic-link.md](docs/magic-link.md).
+- **Magic link sign-in:** Passwordless email login, on by default for new companies created after upgrade (existing companies stay off until enabled). Toggle it per company with `/api/v1/auth-methods`. Emails ship in English and French. See [docs/magic-link.md](docs/magic-link.md).
 - **Webhook actions:** Send `identity.*` events (users, groups, SCIM, magic link) to your own endpoints, such as n8n. Payloads are signed, failed deliveries retry with backoff via `manage.py retry_webhooks`, and admins can send a test event or re-queue deliveries. Closes [#35](https://github.com/shellui/identity-service/issues/35). See [docs/actions.md](docs/actions.md) and [docs/n8n.md](docs/n8n.md).
 - **Account deletion:** Users can delete their own account with `DELETE /api/v1/user`, which also revokes their sessions and tokens.
 - **Redis cache:** Set `REDIS_URL` to share rate limits, logout denylist, and last-seen data across workers.
@@ -53,8 +53,10 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 - **Webhook targets:** Private and loopback addresses are blocked, and delivery connects to the checked IP to prevent DNS rebinding. Non-global addresses (including CGNAT `100.64.0.0/10`) are rejected. Changing a webhook URL clears a superuser-only private-URL allowance.
 - **SCIM:** Company SCIM tokens can no longer change global email, username, or password for users shared across companies or for staff accounts. Duplicate-email user creation returns a generic SCIM uniqueness error.
 - **Magic link:** Sign-in links are redeemed with a single atomic update; only a hash of the token is stored. Per-company request rate limits no longer block other clients.
-- **Self-service account deletion:** `DELETE /api/v1/user` rejects personal access tokens, requires a recently issued session access JWT (`SELF_SERVICE_ACCOUNT_DELETE_MAX_IAT_AGE`, default 5m), and returns **409** when the user still belongs to more than one company.
+- **Self-service account deletion:** `DELETE /api/v1/user` rejects personal access tokens, requires a recent interactive sign-in (`auth_time` within `SELF_SERVICE_ACCOUNT_DELETE_MAX_IAT_AGE`, default 5m; refresh keeps the original `auth_time`), and returns **409** when the user still belongs to more than one company.
 - **Client IP behind proxies:** With `TRUSTED_PROXY_IPS` set, audit and rate limits use the rightmost untrusted `X-Forwarded-For` hop instead of the client-controlled leftmost entry.
+- **OAuth account linking:** Shellui links social accounts by provider user id first. Email is used to find an existing user only when the provider proves the address (Google `email_verified`, GitHub verified primary email, Microsoft `xms_edov` or a dedicated tenant). OAuth `state` is bound to an HttpOnly cookie nonce and is single-use.
+- **Magic link hardening:** Webhook payloads include `user_id` and locale fields only when the user already belongs to that company. Browser verify uses GET for confirmation and POST to consume the token. Plain-text email templates preserve query string characters in sign-in links.
 
 ## [0.5.1] - 2026-09-24
 

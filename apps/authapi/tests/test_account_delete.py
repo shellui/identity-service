@@ -143,7 +143,7 @@ class SelfServiceAccountDeleteTests(TestCase):
     def test_stale_access_token_rejected(self):
         access = ShellUIAccessToken.for_user(self.user)
         access['company_id'] = self.company.id
-        access['iat'] = int((timezone.now() - timedelta(minutes=10)).timestamp())
+        access['auth_time'] = int((timezone.now() - timedelta(minutes=10)).timestamp())
         response = self.client.delete(
             '/api/v1/user',
             {'confirm': True},
@@ -157,7 +157,7 @@ class SelfServiceAccountDeleteTests(TestCase):
     def test_recent_access_token_allowed_within_configured_window(self):
         access = ShellUIAccessToken.for_user(self.user)
         access['company_id'] = self.company.id
-        access['iat'] = int((timezone.now() - timedelta(minutes=10)).timestamp())
+        access['auth_time'] = int((timezone.now() - timedelta(minutes=10)).timestamp())
         user_id = self.user.pk
         response = self.client.delete(
             '/api/v1/user',
@@ -167,6 +167,53 @@ class SelfServiceAccountDeleteTests(TestCase):
         )
         self.assertEqual(response.status_code, 204)
         self.assertFalse(User.objects.filter(pk=user_id).exists())
+
+    def test_refresh_preserves_auth_time(self):
+        tokens = self._tokens()
+        import jwt
+
+        decoded = jwt.decode(
+            tokens['access_token'],
+            options={'verify_signature': False},
+            algorithms=['HS256'],
+        )
+        original_auth_time = decoded['auth_time']
+        refreshed = self.client.post(
+            '/api/v1/token?grant_type=refresh_token',
+            {'refresh_token': tokens['refresh_token']},
+            format='json',
+        )
+        self.assertEqual(refreshed.status_code, 200)
+        new_access = jwt.decode(
+            refreshed.data['access_token'],
+            options={'verify_signature': False},
+            algorithms=['HS256'],
+        )
+        self.assertEqual(new_access['auth_time'], original_auth_time)
+
+    @override_settings(SELF_SERVICE_ACCOUNT_DELETE_MAX_IAT_AGE=timedelta(seconds=0))
+    def test_refreshed_token_with_old_auth_time_gets_403(self):
+        tokens = self._tokens()
+        import jwt
+        from apps.authapi.tokens import ShellUIRefreshToken
+
+        refresh = ShellUIRefreshToken(tokens['refresh_token'])
+        refresh['auth_time'] = int((timezone.now() - timedelta(hours=2)).timestamp())
+        refresh['company_id'] = self.company.id
+        stale_refresh = str(refresh)
+        refreshed = self.client.post(
+            '/api/v1/token?grant_type=refresh_token',
+            {'refresh_token': stale_refresh},
+            format='json',
+        )
+        self.assertEqual(refreshed.status_code, 200)
+        delete_resp = self.client.delete(
+            '/api/v1/user',
+            {'confirm': True},
+            HTTP_AUTHORIZATION=f'Bearer {refreshed.data["access_token"]}',
+            format='json',
+        )
+        self.assertEqual(delete_resp.status_code, 403)
 
     def test_multi_company_membership_returns_409(self):
         set_company_access(self.other_company, self.user, enabled=True)
