@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from django.db import migrations
+import jwt
+from django.db import IntegrityError, migrations, models, transaction
 
 
 def _issuer_from_extra(extra: dict) -> str:
@@ -15,6 +16,19 @@ def _issuer_from_extra(extra: dict) -> str:
         iss = id_token.get('iss')
         if isinstance(iss, str) and iss.strip():
             return iss.strip().rstrip('/')
+    if isinstance(id_token, str) and id_token.strip():
+        try:
+            claims = jwt.decode(
+                id_token.strip(),
+                options={'verify_signature': False},
+                algorithms=['RS256', 'HS256', 'RS384', 'RS512'],
+            )
+        except Exception:
+            claims = {}
+        if isinstance(claims, dict):
+            iss = claims.get('iss')
+            if isinstance(iss, str) and iss.strip():
+                return iss.strip().rstrip('/')
     userinfo = extra.get('userinfo')
     if isinstance(userinfo, dict):
         iss = userinfo.get('iss')
@@ -23,34 +37,101 @@ def _issuer_from_extra(extra: dict) -> str:
     return ''
 
 
+def _issuer_for_app(app) -> str:
+    settings = app.settings if isinstance(app.settings, dict) else {}
+    server_url = str(settings.get('server_url') or '').strip().rstrip('/')
+    return server_url
+
+
+def _provider_id_for_app(app) -> str:
+    sub_id = str(getattr(app, 'provider_id', '') or '').strip()
+    if sub_id:
+        return sub_id
+    settings = app.settings if isinstance(app.settings, dict) else {}
+    return str(settings.get('provider_id') or '').strip()
+
+
 def forwards(apps, schema_editor):
     SocialAccount = apps.get_model('socialaccount', 'SocialAccount')
-    SocialApp = apps.get_model('socialaccount', 'SocialApp')
+    SocialToken = apps.get_model('socialaccount', 'SocialToken')
+    Audit = apps.get_model('authapi', 'OidcSocialAccountKeyMigration')
+    migrated_ids: set[int] = set()
+
+    def _migrate_account(account, *, provider_id: str, issuer: str) -> None:
+        if not provider_id or not issuer:
+            return
+        raw_uid = str(account.uid or '').strip()
+        if '|' in raw_uid:
+            _, _, raw_uid = raw_uid.partition('|')
+        if not raw_uid:
+            return
+        new_uid = f'{issuer}|{raw_uid}'
+        new_provider = provider_id
+        if account.provider == new_provider and account.uid == new_uid:
+            return
+        Audit.objects.create(
+            social_account_id=account.id,
+            old_provider=str(account.provider or ''),
+            old_uid=str(account.uid or ''),
+        )
+        account.provider = new_provider
+        account.uid = new_uid
+        try:
+            with transaction.atomic():
+                account.save(update_fields=['provider', 'uid'])
+        except IntegrityError:
+            existing = (
+                SocialAccount.objects.filter(provider=new_provider, uid=new_uid)
+                .exclude(pk=account.pk)
+                .select_related('user')
+                .first()
+            )
+            if existing is None:
+                raise
+            account.user = existing.user
+            account.save(update_fields=['user'])
+            account.delete()
+        migrated_ids.add(account.id)
+
+    for token in SocialToken.objects.filter(
+        account__provider='openid_connect',
+    ).select_related('account', 'app'):
+        account = token.account
+        if account.id in migrated_ids:
+            continue
+        app = token.app
+        if str(getattr(app, 'provider', '') or '') != 'openid_connect':
+            continue
+        provider_id = _provider_id_for_app(app)
+        extra = account.extra_data if isinstance(account.extra_data, dict) else {}
+        issuer = _issuer_from_extra(extra) or _issuer_for_app(app)
+        _migrate_account(account, provider_id=provider_id, issuer=issuer)
+
     for account in SocialAccount.objects.filter(provider='openid_connect').iterator():
-        uid = str(account.uid or '').strip()
-        if '|' in uid:
+        if account.id in migrated_ids:
             continue
         extra = account.extra_data if isinstance(account.extra_data, dict) else {}
         issuer = _issuer_from_extra(extra)
-        if issuer:
-            account.uid = f'{issuer}|{uid}'
-            account.save(update_fields=['uid'])
-    for app in SocialApp.objects.filter(provider='openid_connect').iterator():
-        settings = app.settings if isinstance(app.settings, dict) else {}
-        sub_id = str(getattr(app, 'provider_id', '') or settings.get('provider_id') or '').strip()
-        if sub_id and app.provider == 'openid_connect':
-            for account in SocialAccount.objects.filter(provider='openid_connect', uid__contains='|'):
-                pass
-            # New accounts use provider_id as SocialAccount.provider at link time.
+        provider_id = str(extra.get('provider_id') or '').strip()
+        if not issuer and not provider_id:
+            continue
+        if not provider_id:
+            provider_id = 'openid_connect'
+        _migrate_account(account, provider_id=provider_id, issuer=issuer)
 
 
 def backwards(apps, schema_editor):
     SocialAccount = apps.get_model('socialaccount', 'SocialAccount')
-    for account in SocialAccount.objects.filter(uid__contains='|').iterator():
-        prefix, _, rest = str(account.uid).partition('|')
-        if prefix.startswith('http') and rest:
-            account.uid = rest
-            account.save(update_fields=['uid'])
+    Audit = apps.get_model('authapi', 'OidcSocialAccountKeyMigration')
+    for row in Audit.objects.all().order_by('id'):
+        try:
+            account = SocialAccount.objects.get(pk=row.social_account_id)
+        except SocialAccount.DoesNotExist:
+            continue
+        account.provider = row.old_provider
+        account.uid = row.old_uid
+        account.save(update_fields=['provider', 'uid'])
+    Audit.objects.all().delete()
 
 
 class Migration(migrations.Migration):
@@ -60,5 +141,15 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
+        migrations.CreateModel(
+            name='OidcSocialAccountKeyMigration',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('social_account_id', models.BigIntegerField(db_index=True)),
+                ('old_provider', models.CharField(max_length=200)),
+                ('old_uid', models.CharField(max_length=255)),
+                ('migrated_at', models.DateTimeField(auto_now_add=True)),
+            ],
+        ),
         migrations.RunPython(forwards, backwards),
     ]

@@ -64,6 +64,9 @@ jobs:
         run: |
           uv run python -c "import importlib.metadata, json; from pathlib import Path; cat=json.loads(Path('apps/authapi/provider_catalog.json').read_text()); assert cat['allauth_version']==importlib.metadata.version('django-allauth')"
 
+      - name: Verify allauth registry matches provider source snapshot
+        run: uv run python tools/verify_allauth_registry_snapshot.py
+
       - name: Django system checks
         run: uv run python manage.py check
 

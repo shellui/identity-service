@@ -99,9 +99,66 @@ def apply_oauth_adapter_settings(
     if slug == 'jupyterhub':
         base = str(settings.get('API_URL') or '').strip().rstrip('/')
         if base:
-            adapter.access_token_url = f'{base}/token'
-            adapter.authorize_url = f'{base}/authorize'
-            adapter.profile_url = f'{base}/user'
+            adapter.access_token_url = f'{base}/hub/api/oauth2/token'
+            adapter.authorize_url = f'{base}/hub/api/oauth2/authorize'
+            adapter.profile_url = f'{base}/hub/api/user'
+
+    if slug == 'edx':
+        base = str(settings.get('EDX_URL') or settings.get('API_URL') or '').strip().rstrip('/')
+        if base:
+            adapter.provider_base_url = base
+            adapter.access_token_url = f'{base}/oauth2/access_token'
+            adapter.authorize_url = f'{base}/oauth2/authorize/'
+            adapter.profile_url = f'{base}/api/user/v1/me'
+
+    if slug == 'mailcow':
+        server = str(settings.get('SERVER') or settings.get('API_URL') or '').strip().rstrip('/')
+        if server:
+            adapter.server = server
+            adapter.access_token_url = f'{server}/oauth/token'
+            adapter.authorize_url = f'{server}/oauth/authorize'
+            adapter.profile_url = f'{server}/oauth/profile'
+
+    if slug == 'mediawiki':
+        rest_api = str(settings.get('REST_API') or settings.get('MEDIAWIKI_URL') or '').strip().rstrip('/')
+        if rest_api:
+            adapter.REST_API = rest_api
+            adapter.access_token_url = f'{rest_api}/oauth2/access_token'
+            adapter.authorize_url = f'{rest_api}/oauth2/authorize'
+            adapter.profile_url = f'{rest_api}/oauth2/resource/profile'
+
+    if slug == 'gitea':
+        web_url = str(settings.get('GITEA_URL') or settings.get('API_URL') or '').strip().rstrip('/')
+        if web_url:
+            adapter.api_url = f'{web_url}/api/v1'
+            adapter.access_token_url = f'{web_url}/login/oauth/access_token'
+            adapter.authorize_url = f'{web_url}/login/oauth/authorize'
+            adapter.profile_url = f'{web_url}/api/v1/user'
+
+    if slug == 'gitlab':
+        base = str(settings.get('gitlab_url') or 'https://gitlab.com').strip().rstrip('/')
+        _bind_adapter_url_properties(
+            adapter,
+            authorize_url=f'{base}/oauth/authorize',
+            access_token_url=f'{base}/oauth/token',
+            profile_url=f'{base}/api/v4/user',
+        )
+
+    if slug == 'nextcloud':
+        server = str(settings.get('server') or '').strip().rstrip('/')
+        if server:
+            adapter._server_override = server
+
+    if slug == 'sharefile':
+        subdomain = str(settings.get('SUBDOMAIN') or 'secure').strip()
+        apicp = str(settings.get('APICP') or 'sharefile.com').strip()
+        base = str(settings.get('API_URL') or settings.get('DEFAULT_URL') or '').strip().rstrip('/')
+        if base:
+            adapter.provider_default_url = base
+        adapter.access_token_url = f'https://{subdomain}.{apicp}/oauth/token'
+        adapter.authorize_url = f'https://{subdomain}.{apicp}/oauth/authorize'
+        if base:
+            adapter.profile_url = f'{base}/oauth/userinfo'
 
     if slug == 'lemonldap':
         base = str(settings.get('LEMONLDAP_URL') or '').strip().rstrip('/')

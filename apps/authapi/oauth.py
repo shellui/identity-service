@@ -14,6 +14,7 @@ from apps.authapi.oauth_allauth import (
     get_identity_oauth2_adapter,
     sociallogin_userinfo,
 )
+from apps.authapi.oauth_request_context import oauth_allauth_request
 from apps.authapi.oauth_social_account import bind_oauth_social_app
 from apps.authapi.provider_registry import (
     ProviderCatalogEntry,
@@ -69,9 +70,11 @@ def _resolve_company_client(
     provider: str,
     company_id: int | None,
     company_oauth_client_id: int | None,
+    *,
+    require_supported: bool = True,
 ) -> ResolvedOAuthClient | None:
     entry = resolve_catalog_slug(provider)
-    if not entry or not entry.supported:
+    if not entry or (require_supported and not entry.supported):
         return None
     if not company_id:
         return None
@@ -118,8 +121,14 @@ def resolve_oauth_client(
     *,
     company_id: int | None = None,
     company_oauth_client_id: int | None = None,
+    require_supported: bool = True,
 ) -> ResolvedOAuthClient:
-    selected = _resolve_company_client(provider, company_id, company_oauth_client_id)
+    selected = _resolve_company_client(
+        provider,
+        company_id,
+        company_oauth_client_id,
+        require_supported=require_supported,
+    )
     if not selected:
         raise ValueError(
             f'No OAuth client configured for provider {provider!r} and company {company_id!r}.'
@@ -167,6 +176,7 @@ def build_authorize_url(
     company_oauth_client_id: int | None = None,
     switch_account: bool = False,
     pkce_params: dict | None = None,
+    require_supported: bool = True,
 ) -> str:
     if request is None:
         raise ValueError('HTTP request is required to build provider authorize URLs.')
@@ -174,6 +184,7 @@ def build_authorize_url(
         provider,
         company_id=company_id,
         company_oauth_client_id=company_oauth_client_id,
+        require_supported=require_supported,
     )
     social_app = get_social_app_for_client(resolved)
     bind_oauth_social_app(request, social_app)
@@ -244,22 +255,23 @@ def fetch_provider_userinfo(
     )
     social_app = get_social_app_for_client(resolved)
     bind_oauth_social_app(request, social_app)
-    oauth2_adapter = get_identity_oauth2_adapter(
-        request,
-        social_app=social_app,
-        callback_url=redirect_uri or '',
-    )
-    token_response: dict[str, Any] = {'access_token': access_token}
-    if id_token:
-        token_response['id_token'] = id_token
-    token = oauth2_adapter.parse_token(token_response)
-    sociallogin = oauth2_adapter.complete_login(
-        request,
-        social_app,
-        token,
-        response=token_response,
-    )
-    return sociallogin_userinfo(sociallogin)
+    with oauth_allauth_request(request, social_app=social_app):
+        oauth2_adapter = get_identity_oauth2_adapter(
+            request,
+            social_app=social_app,
+            callback_url=redirect_uri or '',
+        )
+        token_response: dict[str, Any] = {'access_token': access_token}
+        if id_token:
+            token_response['id_token'] = id_token
+        token = oauth2_adapter.parse_token(token_response)
+        sociallogin = oauth2_adapter.complete_login(
+            request,
+            social_app,
+            token,
+            response=token_response,
+        )
+        return sociallogin_userinfo(sociallogin)
 
 
 def complete_oauth_social_login(

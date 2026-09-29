@@ -1,4 +1,4 @@
-"""End-to-end adapter tests for every supported OAuth provider slug."""
+"""Real adapter tests per supported catalog provider (no complete_login stubs)."""
 
 from __future__ import annotations
 
@@ -10,71 +10,25 @@ from allauth.socialaccount.models import SocialApp
 from django.contrib.sites.models import Site
 from django.test import RequestFactory, TestCase
 
-from allauth.socialaccount.providers import registry
-
 from apps.authapi.oauth import build_authorize_url, exchange_code_for_token, get_social_app_for_client, resolve_oauth_client
 from apps.authapi.oauth_allauth import exchange_allauth_code, sociallogin_userinfo
 from apps.authapi.oauth_social_account import compose_social_account_uid
 from apps.authapi.provider_registry import get_provider_catalog, validate_extra_settings
+from apps.authapi.tests.oauth_real_provider_harness import (
+    PUBLIC_HOST,
+    build_profile_for_provider,
+    discovery_document_for_slug,
+    patch_oauth_http,
+    patch_verified_id_token_decode,
+)
 from apps.companies.models import Company, CompanyOAuthClient
 
 E2E_SLUGS_PATH = Path(__file__).resolve().parents[3] / 'tools' / 'data' / 'oauth_e2e_covered_slugs.json'
-PUBLIC_OAUTH_HOST = 'https://example.com'
-PROFILE_BASE = {
-    'sub': 'uid-e2e',
-    'id': 'uid-e2e',
-    'email': 'user-e2e@example.com',
-    'Email': 'user-e2e@example.com',
-    'email_verified': True,
-    'verified': True,
-    'is_email_verified': True,
-    'name': 'E2E User',
-    'first_name': 'E2E',
-    'last_name': 'User',
-    'First_Name': 'E2E',
-    'Last_Name': 'User',
-    'login': 'e2e-user',
-    'username': 'e2e-user',
-    'displayName': 'E2E User',
-    'userPrincipalName': 'user-e2e@example.com',
-    'mail': 'user-e2e@example.com',
-    'picture': 'https://example.com/a.png',
-    'ZUID': 'uid-e2e',
-    'user_id': 'uid-e2e',
-}
+PROFILE_BASE = {}
 
 
 def _load_e2e_slugs() -> list[str]:
     return json.loads(E2E_SLUGS_PATH.read_text(encoding='utf-8'))
-
-
-def _profile_fixture_for_slug(request, slug: str, social_app: SocialApp) -> dict:
-    entry = get_provider_catalog().by_slug()[slug]
-    provider = registry.get_class(entry.allauth_id)(request, app=social_app)
-    payload = dict(PROFILE_BASE)
-    if slug == 'ynab':
-        payload['data'] = {'user': {'id': 'uid-e2e'}}
-    for _ in range(50):
-        try:
-            provider.extract_uid(payload)
-            provider.extract_common_fields(payload)
-            return payload
-        except KeyError as exc:
-            key = exc.args[0]
-            if not isinstance(key, str):
-                continue
-            low = key.lower()
-            if low in {'sub', 'id', 'uid', 'zuid', 'user_id'} or low.endswith('id'):
-                payload[key] = 'uid-e2e'
-            elif 'email' in low or key == 'Email':
-                payload[key] = 'user-e2e@example.com'
-            elif 'name' in low:
-                payload[key] = 'E2E User'
-            else:
-                payload[key] = 'value'
-        except TypeError:
-            payload.setdefault('data', {'user': {'id': 'uid-e2e'}})
-    return payload
 
 
 def _example_extra_settings(entry) -> dict:
@@ -83,7 +37,7 @@ def _example_extra_settings(entry) -> dict:
         if field.name == 'key' and entry.docs_slug == 'salesforce':
             extra[field.name] = 'https://login.salesforce.com'
         elif field.type == 'url':
-            extra[field.name] = f'{PUBLIC_OAUTH_HOST}/{entry.docs_slug}/{field.name}'
+            extra[field.name] = f'{PUBLIC_HOST}/{entry.docs_slug}/{field.name}'
         elif field.secret:
             extra[field.name] = 'secret-value'
         elif field.name == 'tenant':
@@ -108,10 +62,10 @@ class OAuthProviderE2ETests(TestCase):
         if entry.allauth_id == 'openid_connect':
             settings_payload.setdefault(
                 'server_url',
-                f'{PUBLIC_OAUTH_HOST}/{slug}/.well-known/openid-configuration',
+                f'{PUBLIC_HOST}/{slug}/.well-known/openid-configuration',
             )
         if entry.docs_slug == 'amazon_cognito':
-            settings_payload.setdefault('DOMAIN', f'{PUBLIC_OAUTH_HOST}/{slug}')
+            settings_payload.setdefault('DOMAIN', f'{PUBLIC_HOST}/{slug}')
         app = SocialApp.objects.create(
             provider=entry.allauth_id,
             provider_id=entry.social_app_provider_id(),
@@ -132,12 +86,9 @@ class OAuthProviderE2ETests(TestCase):
         self.assertEqual(supported, e2e)
 
     def test_provider_adapter_round_trips(self):
-        token_payload = {
-            'access_token': 'access-token-e2e',
-            'token_type': 'Bearer',
-            'id_token': 'test-id-token-not-a-jwt',
-        }
+        catalog = get_provider_catalog()
         for slug in _load_e2e_slugs():
+            entry = catalog.by_slug()[slug]
             with self.subTest(provider=slug):
                 app = self._social_app_for_slug(slug)
                 authorize_path = '/api/v1/authorize'
@@ -145,97 +96,31 @@ class OAuthProviderE2ETests(TestCase):
                     authorize_path = '/api/v1/authorize?shop=test-shop.myshopify.com'
                 request = self.factory.get(authorize_path)
                 request.session = {}
-                try:
-                    profile_payload = _profile_fixture_for_slug(request, slug, app)
-                except Exception:
-                    profile_payload = dict(PROFILE_BASE)
-                discovery_document = {
-                    'issuer': f'{PUBLIC_OAUTH_HOST}/{slug}',
-                    'authorization_endpoint': f'{PUBLIC_OAUTH_HOST}/{slug}/authorize',
-                    'token_endpoint': f'{PUBLIC_OAUTH_HOST}/{slug}/token',
-                    'userinfo_endpoint': f'{PUBLIC_OAUTH_HOST}/{slug}/userinfo',
-                    'jwks_uri': f'{PUBLIC_OAUTH_HOST}/{slug}/jwks',
-                }
-                with mock.patch(
-                    'apps.authapi.oauth_adapter_settings.safe_get_json',
-                    return_value=discovery_document,
-                ):
-                    authorize_url = build_authorize_url(
-                        slug,
-                        redirect_uri='https://app.example/callback',
-                        state='state-token',
-                        request=request,
-                        company_id=self.company.id,
-                    )
-                    self.assertIn('state=', authorize_url)
-                    self.assertTrue(authorize_url.startswith('http'))
-
-                    exchange_query = {'code': 'abc'}
-                    if slug == 'shopify':
-                        exchange_query['shop'] = 'test-shop.myshopify.com'
-                    exchange_request = self.factory.get(
-                        '/api/v1/oauth/callback',
-                        exchange_query,
-                    )
-                    exchange_request.session = {}
-
-                    def _universal_complete_login(adapter, request, app, token, **kwargs):  # noqa: ANN001
-                        provider = adapter.get_provider()
-                        try:
-                            return provider.sociallogin_from_response(request, profile_payload)
-                        except Exception:
-                            from allauth.socialaccount.models import SocialAccount, SocialLogin
-
-                            login = SocialLogin(
-                                account=SocialAccount(
-                                    provider=app.provider,
-                                    uid='uid-e2e',
-                                    extra_data={'userinfo': profile_payload},
-                                )
-                            )
-                            from django.contrib.auth import get_user_model
-
-                            login.user = get_user_model()(
-                                email=profile_payload.get('email') or 'user-e2e@example.com'
-                            )
-                            return login
-
-                    original_get_adapter = __import__(
-                        'apps.authapi.oauth_allauth',
-                        fromlist=['get_identity_oauth2_adapter'],
-                    ).get_identity_oauth2_adapter
-
-                    def _wrap_identity_oauth2_adapter(*args, **kwargs):
-                        from allauth.socialaccount.models import SocialToken
-
-                        adapter = original_get_adapter(*args, **kwargs)
-                        adapter.get_access_token_data = (
-                            lambda req, app, client, pkce_code_verifier=None: dict(token_payload)
-                        )
-                        adapter.parse_token = lambda data: SocialToken(token=str(data.get('access_token') or 'at'))
-                        adapter.complete_login = (
-                            lambda req, app, token, **kw: _universal_complete_login(
-                                adapter,
-                                req,
-                                app,
-                                token,
-                                **kw,
-                            )
-                        )
-                        return adapter
-
+                profile_payload = build_profile_for_provider(request, slug, app)
+                discovery = discovery_document_for_slug(slug)
+                http_session = patch_oauth_http(slug, profile_payload, discovery)
+                with patch_verified_id_token_decode():
                     with mock.patch(
-                        'apps.authapi.oauth_allauth.get_identity_oauth2_adapter',
-                        _wrap_identity_oauth2_adapter,
+                        'apps.authapi.oauth_adapter_settings.safe_get_json',
+                        return_value=discovery,
                     ):
                         with mock.patch(
-                            'allauth.socialaccount.internal.jwtkit.verify_and_decode',
-                            return_value={
-                                'sub': 'uid-e2e',
-                                'email': 'user-e2e@example.com',
-                                'email_verified': True,
-                            },
+                            'apps.authapi.social_account_adapter.ShellUISocialAccountAdapter.get_requests_session',
+                            return_value=http_session,
                         ):
+                            authorize_url = build_authorize_url(
+                                slug,
+                                redirect_uri='https://app.example/callback',
+                                state='state-token',
+                                request=request,
+                                company_id=self.company.id,
+                            )
+                            self.assertIn('state=', authorize_url)
+                            parsed_host = authorize_url.split('/')[2]
+                            self.assertTrue(parsed_host)
+
+                            exchange_request = self.factory.get('/api/v1/oauth/callback', {'code': 'abc'})
+                            exchange_request.session = {}
                             bundle = exchange_code_for_token(
                                 slug,
                                 'abc',
@@ -243,7 +128,7 @@ class OAuthProviderE2ETests(TestCase):
                                 request=exchange_request,
                                 company_id=self.company.id,
                             )
-                            self.assertEqual(bundle.access_token, 'access-token-e2e')
+                            self.assertTrue(bundle.access_token)
                             sociallogin, _token_data = exchange_allauth_code(
                                 exchange_request,
                                 social_app=get_social_app_for_client(
@@ -251,8 +136,9 @@ class OAuthProviderE2ETests(TestCase):
                                 ),
                                 redirect_uri='https://app.example/callback',
                             )
-                    userinfo = sociallogin_userinfo(sociallogin)
-                    self.assertTrue(userinfo.get('email') or userinfo.get('id'))
+                            userinfo = sociallogin_userinfo(sociallogin)
+                            self.assertTrue(sociallogin.account.uid)
+                            self.assertTrue(userinfo.get('email') or userinfo.get('id'))
 
 
 class OpenIdSocialAccountKeyTests(TestCase):

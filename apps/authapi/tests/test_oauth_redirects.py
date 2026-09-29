@@ -323,16 +323,17 @@ class OAuthAuthorizeCallbackTests(TestCase):
         )
         self.assertEqual(response.status_code, 400)
 
-    def _google_oauth_client(self):
-        google_app = SocialApp.objects.create(
-            provider='google',
-            name='Google Test',
-            client_id='gid',
-            secret='gsecret',
+    def _discord_oauth_client(self):
+        discord_app = SocialApp.objects.create(
+            provider='discord',
+            name='Discord Test',
+            client_id='did',
+            secret='dsecret',
+            settings={'catalog_slug': 'discord'},
         )
         return CompanyOAuthClient.objects.create(
             company=self.company,
-            social_app=google_app,
+            social_app=discord_app,
             is_active=True,
         )
 
@@ -343,21 +344,22 @@ class OAuthAuthorizeCallbackTests(TestCase):
     @patch(
         'apps.authapi.views.fetch_provider_userinfo',
         return_value={
-            'sub': 'google-sub',
-            'email': 'google.user@example.com',
-            'name': 'Google User',
-            'email_verified': True,
-            'picture': 'https://example.com/g.png',
+            'id': 'discord-sub',
+            'email': 'discord.user@example.com',
+            'username': 'discorduser',
+            'verified': True,
+            'avatar': 'https://example.com/d.png',
         },
     )
-    def test_google_callback_skips_confirm_by_default(self, _userinfo, exchange):
-        google_client = self._google_oauth_client()
+    @override_settings(OAUTH_SKIP_CONFIRM_PROVIDERS=['discord'])
+    def test_discord_callback_skips_confirm_when_configured(self, _userinfo, exchange):
+        discord_client = self._discord_oauth_client()
         redirect_to = 'https://shell.example.com/login/callback'
         state, _nonce = build_oauth_state(
-            provider='google',
+            provider='discord',
             redirect_to=redirect_to,
             company_id=self.company.id,
-            company_oauth_client_id=google_client.id,
+            company_oauth_client_id=discord_client.id,
         )
         callback = self._oauth_callback(state)
         self.assertEqual(callback.status_code, 302)
@@ -398,26 +400,26 @@ class OAuthAuthorizeCallbackTests(TestCase):
     @patch(
         'apps.authapi.views.fetch_provider_userinfo',
         return_value={
-            'sub': 'google-sub',
-            'email': 'google.user@example.com',
-            'name': 'Google User',
-            'email_verified': True,
+            'id': 'discord-sub',
+            'email': 'discord.user@example.com',
+            'username': 'discorduser',
+            'verified': True,
         },
     )
-    def test_empty_skip_list_google_shows_confirm(self, _userinfo, _exchange):
-        google_client = self._google_oauth_client()
+    def test_empty_skip_list_discord_shows_confirm(self, _userinfo, _exchange):
+        discord_client = self._discord_oauth_client()
         redirect_to = 'https://shell.example.com/login/callback'
         state, _nonce = build_oauth_state(
-            provider='google',
+            provider='discord',
             redirect_to=redirect_to,
             company_id=self.company.id,
-            company_oauth_client_id=google_client.id,
+            company_oauth_client_id=discord_client.id,
         )
         callback = self._oauth_callback(state)
         self.assertEqual(callback.status_code, 200)
         self.assertIn(b'Confirm your account', callback.content)
 
-    @override_settings(OAUTH_SKIP_CONFIRM_PROVIDERS=['googl'])
+    @override_settings(OAUTH_SKIP_CONFIRM_PROVIDERS=['discrod'])
     @patch(
         'apps.authapi.views.exchange_code_for_token',
         return_value=OAuthTokenBundle(access_token='provider-access'),
@@ -425,20 +427,20 @@ class OAuthAuthorizeCallbackTests(TestCase):
     @patch(
         'apps.authapi.views.fetch_provider_userinfo',
         return_value={
-            'sub': 'google-sub',
-            'email': 'google.user@example.com',
-            'name': 'Google User',
-            'email_verified': True,
+            'id': 'discord-sub',
+            'email': 'discord.user@example.com',
+            'username': 'discorduser',
+            'verified': True,
         },
     )
     def test_typo_in_skip_list_ignored(self, _userinfo, _exchange):
-        google_client = self._google_oauth_client()
+        discord_client = self._discord_oauth_client()
         redirect_to = 'https://shell.example.com/login/callback'
         state, _nonce = build_oauth_state(
-            provider='google',
+            provider='discord',
             redirect_to=redirect_to,
             company_id=self.company.id,
-            company_oauth_client_id=google_client.id,
+            company_oauth_client_id=discord_client.id,
         )
         callback = self._oauth_callback(state)
         self.assertEqual(callback.status_code, 200)
@@ -451,20 +453,20 @@ class OAuthAuthorizeCallbackTests(TestCase):
     @patch(
         'apps.authapi.views.fetch_provider_userinfo',
         return_value={
-            'sub': 'google-sub',
-            'email': 'google.user@example.com',
-            'name': 'Google User',
-            'email_verified': True,
+            'id': 'discord-sub',
+            'email': 'discord.user@example.com',
+            'username': 'discorduser',
+            'verified': True,
         },
     )
     def test_callback_rejects_missing_oauth_state_cookie(self, _userinfo, _exchange):
         redirect_to = 'https://shell.example.com/login/callback'
-        google_client = self._google_oauth_client()
+        discord_client = self._discord_oauth_client()
         state, _nonce = build_oauth_state(
-            provider='google',
+            provider='discord',
             redirect_to=redirect_to,
             company_id=self.company.id,
-            company_oauth_client_id=google_client.id,
+            company_oauth_client_id=discord_client.id,
         )
         callback = self.client.get(
             '/api/v1/oauth/callback',
@@ -479,23 +481,23 @@ class OAuthAuthorizeCallbackTests(TestCase):
     @patch(
         'apps.authapi.views.fetch_provider_userinfo',
         return_value={
-            'sub': 'google-sub',
-            'email': 'google.user@example.com',
-            'name': 'Google User',
-            'email_verified': True,
+            'id': 'discord-sub',
+            'email': 'discord.user@example.com',
+            'username': 'discorduser',
+            'verified': True,
         },
     )
     def test_callback_rejects_reused_oauth_state(self, _userinfo, _exchange):
         redirect_to = 'https://shell.example.com/login/callback'
-        google_client = self._google_oauth_client()
+        discord_client = self._discord_oauth_client()
         state, _nonce = build_oauth_state(
-            provider='google',
+            provider='discord',
             redirect_to=redirect_to,
             company_id=self.company.id,
-            company_oauth_client_id=google_client.id,
+            company_oauth_client_id=discord_client.id,
         )
         first = self._oauth_callback(state)
-        self.assertEqual(first.status_code, 302)
+        self.assertEqual(first.status_code, 200)
         second = self._oauth_callback(state)
         self.assertEqual(second.status_code, 400)
 

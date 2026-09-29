@@ -5,19 +5,17 @@ from __future__ import annotations
 import types
 from typing import Any
 
-from allauth.core import context as allauth_context
 from allauth.socialaccount.adapter import get_adapter
 from allauth.socialaccount.models import SocialApp
 from django.core.exceptions import ImproperlyConfigured, MultipleObjectsReturned
 
 from apps.authapi.oauth_adapter_settings import apply_oauth_adapter_settings
+from apps.authapi.oauth_request_context import oauth_allauth_request
 from apps.authapi.oauth_social_account import bind_oauth_social_app
 from apps.authapi.provider_registry import ProviderCatalogEntry, catalog_entry_for_social_app
 
 
 def _provider_for_social_app(request, social_app: SocialApp):
-    bind_oauth_social_app(request, social_app)
-    allauth_context.request = request
     adapter = get_adapter(request)
     lookup = social_app.provider_id or social_app.provider
     try:
@@ -53,8 +51,10 @@ def _ensure_delegate_get_client_uses_identity_callback(delegate, callback_url: s
 
 
 def split_pkce_authorize_params(request, social_app: SocialApp) -> tuple[dict[str, str], str | None]:
-    provider = _provider_for_social_app(request, social_app)
-    params = dict(provider.get_pkce_params())
+    bind_oauth_social_app(request, social_app)
+    with oauth_allauth_request(request, social_app=social_app):
+        provider = _provider_for_social_app(request, social_app)
+        params = dict(provider.get_pkce_params())
     verifier = params.pop('code_verifier', None)
     if isinstance(verifier, str):
         verifier = verifier.strip() or None
@@ -99,22 +99,22 @@ def build_allauth_authorize_url(
     switch_account: bool = False,
     pkce_params: dict | None = None,
 ) -> str:
-    provider = _provider_for_social_app(request, social_app)
-    oauth2_adapter = get_identity_oauth2_adapter(
-        request,
-        social_app=social_app,
-        callback_url=redirect_uri,
-    )
-    client = oauth2_adapter.get_client(request, social_app)
-    client.state = state
-    scope = provider.get_scope()
-    auth_params = dict(provider.get_auth_params())
-    auth_params.update(authorize_extras_for_entry(entry, switch_account=switch_account))
-    if pkce_params:
-        auth_params.update(pkce_params)
-    else:
-        auth_params.update(provider.get_pkce_params())
-    return client.get_redirect_url(oauth2_adapter.authorize_url, scope, auth_params)
+    bind_oauth_social_app(request, social_app)
+    with oauth_allauth_request(request, social_app=social_app):
+        provider = _provider_for_social_app(request, social_app)
+        oauth2_adapter = get_identity_oauth2_adapter(
+            request,
+            social_app=social_app,
+            callback_url=redirect_uri,
+        )
+        client = oauth2_adapter.get_client(request, social_app)
+        client.state = state
+        scope = provider.get_scope()
+        auth_params = dict(provider.get_auth_params())
+        auth_params.update(authorize_extras_for_entry(entry, switch_account=switch_account))
+        if pkce_params is not None:
+            auth_params.update(pkce_params)
+        return client.get_redirect_url(oauth2_adapter.authorize_url, scope, auth_params)
 
 
 def exchange_allauth_code(
@@ -124,39 +124,44 @@ def exchange_allauth_code(
     redirect_uri: str,
     pkce_code_verifier: str | None = None,
 ) -> tuple[Any, dict[str, Any]]:
-    oauth2_adapter = get_identity_oauth2_adapter(
-        request,
-        social_app=social_app,
-        callback_url=redirect_uri,
-    )
-    client = oauth2_adapter.get_client(request, social_app)
-    apple_post = getattr(request, 'shellui_apple_oauth_post', None)
-    if isinstance(apple_post, dict):
-        original_get_token = oauth2_adapter.get_access_token_data
+    bind_oauth_social_app(request, social_app)
+    with oauth_allauth_request(request, social_app=social_app):
+        oauth2_adapter = get_identity_oauth2_adapter(
+            request,
+            social_app=social_app,
+            callback_url=redirect_uri,
+        )
+        client = oauth2_adapter.get_client(request, social_app)
+        apple_post = getattr(request, 'shellui_apple_oauth_post', None)
+        if isinstance(apple_post, dict):
+            original_get_token = oauth2_adapter.get_access_token_data
 
-        def _get_access_token_data(req, app, oauth_client, pkce_code_verifier=None):  # noqa: ANN001
-            data = original_get_token(req, app, oauth_client, pkce_code_verifier=pkce_code_verifier)
-            if apple_post.get('id_token'):
-                data['id_token'] = apple_post['id_token']
-            if apple_post.get('user'):
-                data['user'] = apple_post['user']
-            return data
+            def _get_access_token_data(req, app, oauth_client, pkce_code_verifier=None):  # noqa: ANN001
+                data = original_get_token(
+                    req,
+                    app,
+                    oauth_client,
+                    pkce_code_verifier=pkce_code_verifier,
+                )
+                if apple_post.get('user'):
+                    data['user'] = apple_post['user']
+                return data
 
-        oauth2_adapter.get_access_token_data = _get_access_token_data
-    access_token_data = oauth2_adapter.get_access_token_data(
-        request,
-        social_app,
-        client,
-        pkce_code_verifier=pkce_code_verifier,
-    )
-    token = oauth2_adapter.parse_token(access_token_data)
-    sociallogin = oauth2_adapter.complete_login(
-        request,
-        social_app,
-        token,
-        response=access_token_data,
-    )
-    return sociallogin, access_token_data
+            oauth2_adapter.get_access_token_data = _get_access_token_data
+        access_token_data = oauth2_adapter.get_access_token_data(
+            request,
+            social_app,
+            client,
+            pkce_code_verifier=pkce_code_verifier,
+        )
+        token = oauth2_adapter.parse_token(access_token_data)
+        sociallogin = oauth2_adapter.complete_login(
+            request,
+            social_app,
+            token,
+            response=access_token_data,
+        )
+        return sociallogin, access_token_data
 
 
 def sociallogin_userinfo(sociallogin) -> dict[str, Any]:

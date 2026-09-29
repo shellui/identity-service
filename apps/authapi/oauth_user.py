@@ -11,6 +11,7 @@ from dataclasses import dataclass
 import jwt
 from allauth.socialaccount.models import SocialAccount
 from django.contrib.auth import get_user_model
+from django.db import IntegrityError, transaction
 
 from apps.authapi.provider_registry import ProviderCatalogEntry, resolve_catalog_slug
 from apps.authapi.oauth_social_account import compose_social_account_uid, social_account_provider_key
@@ -215,8 +216,8 @@ def extract_oauth_profile(
     info = userinfo if isinstance(userinfo, dict) else {}
     claims = id_token_claims if isinstance(id_token_claims, dict) else {}
     nested_claims = info.get('_id_token_claims') if isinstance(info.get('_id_token_claims'), dict) else {}
-    if nested_claims:
-        claims = {**claims, **nested_claims}
+    if nested_claims and not claims:
+        claims = nested_claims
     if social_app is not None and entry is not None:
         social_provider = social_account_provider_key(entry=entry, social_app=social_app)
     else:
@@ -293,27 +294,76 @@ def resolve_oauth_user(*, provider: str, profile: OAuthProfile) -> tuple[User | 
     if existing is not None:
         return existing.user, False, None
 
-    if not profile.email_verified_for_link:
-        uid_email = f'{social_uid}@{social_key}.local'
-        user = User.objects.create(
-            username=f'{social_key}_{social_uid}'[:150],
-            email=uid_email,
-            first_name=profile.full_name.split(' ')[0],
-            last_name=' '.join(profile.full_name.split(' ')[1:]),
-        )
-        user.set_unusable_password()
-        user.save()
-        return user, True, None
+    uid_local_part = f'{social_key}_{social_uid}'
+    if len(uid_local_part) > 150:
+        uid_local_part = f'{social_key}_{hash(social_uid) & 0xFFFFFFFFFFFF:x}'
 
-    user, created = get_or_create_user_for_oauth(
-        email=profile.email,
-        defaults={
-            'username': f'{social_key}_{social_uid}'[:150],
-            'first_name': profile.full_name.split(' ')[0],
-            'last_name': ' '.join(profile.full_name.split(' ')[1:]),
-        },
-    )
-    if not created:
-        _backfill_user_names_from_profile(user, profile)
+    with transaction.atomic():
+        existing = (
+            SocialAccount.objects.select_for_update()
+            .filter(provider=social_key, uid=social_uid)
+            .select_related('user')
+            .first()
+        )
+        if existing is not None:
+            return existing.user, False, None
+
+        if not profile.email_verified_for_link:
+            uid_email = f'{social_uid}@{social_key}.local'
+            user, created = User.objects.get_or_create(
+                email=uid_email,
+                defaults={
+                    'username': uid_local_part[:150],
+                    'first_name': profile.full_name.split(' ')[0],
+                    'last_name': ' '.join(profile.full_name.split(' ')[1:]),
+                },
+            )
+            if created:
+                user.set_unusable_password()
+                user.save(update_fields=['password'])
+            try:
+                SocialAccount.objects.create(
+                    provider=social_key,
+                    uid=social_uid,
+                    user=user,
+                    extra_data=profile.userinfo,
+                )
+            except IntegrityError:
+                linked = (
+                    SocialAccount.objects.filter(provider=social_key, uid=social_uid)
+                    .select_related('user')
+                    .first()
+                )
+                if linked is None:
+                    raise
+                return linked.user, False, None
+            return user, created, None
+
+        user, created = get_or_create_user_for_oauth(
+            email=profile.email,
+            defaults={
+                'username': uid_local_part[:150],
+                'first_name': profile.full_name.split(' ')[0],
+                'last_name': ' '.join(profile.full_name.split(' ')[1:]),
+            },
+        )
+        if not created:
+            _backfill_user_names_from_profile(user, profile)
+        try:
+            SocialAccount.objects.create(
+                provider=social_key,
+                uid=social_uid,
+                user=user,
+                extra_data=profile.userinfo,
+            )
+        except IntegrityError:
+            linked = (
+                SocialAccount.objects.filter(provider=social_key, uid=social_uid)
+                .select_related('user')
+                .first()
+            )
+            if linked is None:
+                raise
+            return linked.user, False, None
 
     return user, created, None

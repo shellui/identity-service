@@ -39,6 +39,15 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 ### 🚨 Changed
 
 - **OAuth provider catalog v2:** `console_url` entries are `{kind, url, form}` with optional `placeholders` (no embedded English). Extra settings schema exposes `name`, `type`, `required`, and `secret` only; Shellui admin translates by field name. `GET /api/v1/oauth-provider-catalog` adds `console_link_kinds` and `console_link_forms` for admin mapping.
+- **Honest `supported` count:** `supported: true` follows `tools/data/oauth_e2e_covered_slugs.json`, which is regenerated only for providers that pass the real adapter harness (`tools/audit_oauth_provider_coverage.py`). **62** providers supported in this release (not 97).
+
+### 🔒 Security
+
+- OpenID Connect migration **0014** rekeys existing `SocialAccount` rows to `(provider_id, issuer|sub)` with audit-backed reverse.
+- OAuth uses `request_context` plus a `ContextVar` for the company `SocialApp` (no `allauth_context.request` assignment).
+- Apple `form_post` bridges via a single-use cookie; POST `id_token` must verify against Apple JWKS and nonce before use.
+- SSRF-safe OAuth HTTP pins resolved IPs; hostname resolution rejects mixed public/private answers.
+- PKCE and OAuth state consumption use atomic `cache.add`.
 
 ### 📚 Documentation
 

@@ -4,10 +4,8 @@ from __future__ import annotations
 
 from urllib.parse import urljoin, urlparse
 
-import requests
-from requests import Response
-
 from apps.actions.ssrf import SSRFError, resolve_webhook_endpoint
+from apps.authapi.oauth_pinned_http import pinned_get_json, pinned_requests_session_for_url
 
 MAX_OAUTH_FETCH_BYTES = 512 * 1024
 MAX_REDIRECTS = 5
@@ -38,43 +36,21 @@ def safe_get_json(
     headers: dict | None = None,
     timeout: float = 20,
 ) -> dict:
-    """GET JSON from a public URL; block private targets and unsafe redirects."""
-    current = assert_public_http_url(url)
-    session = requests.Session()
-    redirects = 0
-    while True:
-        response = session.get(
-            current,
-            headers=headers or {},
-            timeout=timeout,
-            allow_redirects=False,
-            stream=True,
-        )
-        if response.status_code in {301, 302, 303, 307, 308}:
-            redirects += 1
-            if redirects > MAX_REDIRECTS:
-                raise SSRFError('Too many redirects.')
-            location = response.headers.get('Location', '')
-            current = _validate_redirect_location(current, location)
-            response.close()
-            continue
-        response.raise_for_status()
-        chunks: list[bytes] = []
-        total = 0
-        for chunk in response.iter_content(chunk_size=65536):
-            if not chunk:
-                continue
-            total += len(chunk)
-            if total > MAX_OAUTH_FETCH_BYTES:
-                raise SSRFError('OAuth discovery response is too large.')
-            chunks.append(chunk)
-        raw = b''.join(chunks).decode('utf-8', errors='replace')
-        import json
+    """GET JSON from a public URL; block private targets and pin the resolved IP."""
+    assert_public_http_url(url)
+    return pinned_get_json(
+        url,
+        headers=headers,
+        timeout=timeout,
+        max_redirects=MAX_REDIRECTS,
+        max_bytes=MAX_OAUTH_FETCH_BYTES,
+    )
 
-        data = json.loads(raw)
-        if not isinstance(data, dict):
-            raise SSRFError('OAuth discovery response must be a JSON object.')
-        return data
+
+def oauth_requests_session_for_url(url: str):
+    """Pinned ``requests.Session`` for OAuth token, userinfo, and JWKS fetches."""
+    cleaned = assert_public_http_url(url)
+    return pinned_requests_session_for_url(cleaned)
 
 
 def validate_oidc_discovery_document(document: dict) -> None:

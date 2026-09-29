@@ -50,12 +50,14 @@ from apps.companies.redirect_allowlist import (
 from .renderers import PrometheusTextRenderer
 from .login_audit import oauth_provider_redirect_uri, record_login_event
 from .oauth_state import (
+    apple_oauth_bridge_cookie_value,
     build_oauth_state,
+    consume_apple_oauth_bridge_payload,
+    consume_apple_form_post_state_once,
     consume_oauth_pkce_verifier,
     oauth_state_nonce_cookie_value,
     parse_oauth_state,
-    stash_apple_oauth_post_payload,
-    consume_apple_oauth_post_payload,
+    stash_apple_oauth_bridge_payload,
     stash_oauth_pkce_verifier,
     verify_oauth_state_request,
 )
@@ -1718,9 +1720,14 @@ class ShellUIOAuthCallbackView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
-        """Apple Sign in with form_post: stash POST body, then 303 to GET callback."""
+        """Apple Sign in with form_post: verify POST, bridge via single-use cookie, 303 to GET."""
+        import secrets
+
+        from apps.authapi.oauth_id_token import verify_apple_id_token_for_bridge
+        from apps.authapi.oauth import get_social_app_for_client, resolve_oauth_client
+
         code = (request.POST.get('code') or '').strip()
-        state_raw = request.POST.get('state')
+        state_raw = (request.POST.get('state') or '').strip()
         payload, state_err = parse_oauth_state(state_raw)
         if state_err or not payload:
             return _shellui_oauth_bounce_or_json(
@@ -1736,16 +1743,60 @@ class ShellUIOAuthCallbackView(APIView):
                 error_code='invalid_oauth_callback_method',
                 redirect_to_raw=payload.get('redirect_to'),
             )
-        stash_apple_oauth_post_payload(
-            payload['nonce'],
-            {
-                'id_token': (request.POST.get('id_token') or '').strip(),
-                'user': (request.POST.get('user') or '').strip(),
-            },
+        if not consume_apple_form_post_state_once(state_raw):
+            return _shellui_oauth_bounce_or_json(
+                request,
+                message='OAuth state already used.',
+                error_code='invalid_oauth_state',
+                redirect_to_raw=payload.get('redirect_to'),
+            )
+        try:
+            resolved = resolve_oauth_client(
+                'apple',
+                company_id=int(payload['company_id']),
+                company_oauth_client_id=payload.get('company_oauth_client_id'),
+            )
+            social_app = get_social_app_for_client(resolved)
+        except Exception:
+            return _shellui_oauth_bounce_or_json(
+                request,
+                message='Apple OAuth client is not configured for this company.',
+                error_code='oauth_client_unavailable',
+                redirect_to_raw=payload.get('redirect_to'),
+            )
+        bridge_payload: dict = {}
+        raw_id_token = (request.POST.get('id_token') or '').strip()
+        if raw_id_token:
+            try:
+                verify_apple_id_token_for_bridge(
+                    request,
+                    social_app=social_app,
+                    id_token=raw_id_token,
+                    expected_nonce=str(payload.get('nonce') or ''),
+                )
+            except Exception:
+                return _shellui_oauth_bounce_or_json(
+                    request,
+                    message=_OAUTH_SIGNIN_FAILED_DETAIL,
+                    error_code='invalid_oauth_state',
+                    redirect_to_raw=payload.get('redirect_to'),
+                )
+            bridge_payload['user'] = (request.POST.get('user') or '').strip()
+        bridge_token = secrets.token_urlsafe(32)
+        stash_apple_oauth_bridge_payload(bridge_token, bridge_payload)
+        query = urlencode({'code': code, 'state': state_raw})
+        redirect_url = f'{request.build_absolute_uri(request.path)}?{query}'
+        response = HttpResponseRedirect(redirect_url, status=303)
+        cookie = apple_oauth_bridge_cookie_value(bridge_token)
+        response.set_cookie(
+            cookie['key'],
+            cookie['value'],
+            max_age=cookie['max_age'],
+            httponly=cookie['httponly'],
+            samesite=cookie['samesite'],
+            secure=cookie['secure'],
         )
-        query = urlencode({'code': code, 'state': (state_raw or '').strip()})
-        redirect_url = f"{request.build_absolute_uri(request.path)}?{query}"
-        return HttpResponseRedirect(redirect_url, status=303)
+        return response
 
     def get(self, request):
         code = request.GET.get('code', '').strip()
@@ -1814,7 +1865,10 @@ class ShellUIOAuthCallbackView(APIView):
                 redirect_to_raw=redirect_to,
             )
         callback_url = oauth_provider_redirect_uri(request)
-        apple_post = consume_apple_oauth_post_payload(state_payload.get('nonce') or '')
+        from .oauth_state import OAUTH_APPLE_BRIDGE_COOKIE
+
+        bridge_token = (request.COOKIES.get(OAUTH_APPLE_BRIDGE_COOKIE) or '').strip()
+        apple_post = consume_apple_oauth_bridge_payload(bridge_token) if bridge_token else None
         if apple_post:
             request.shellui_apple_oauth_post = apple_post
         try:
@@ -3100,9 +3154,16 @@ class ShellUIAdminOAuthClientListView(APIView):
                 {'error': f"Provider '{social_app.provider}' is not supported."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        if CompanyOAuthClient.objects.filter(social_app=social_app).exclude(company=company).exists():
+        if CompanyOAuthClient.objects.filter(social_app=social_app).exists():
             return Response(
-                {'error': 'This SocialApp belongs to another company.'},
+                {'error': 'This SocialApp is already mapped. Create a new OAuth key instead.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        app_settings = social_app.settings if isinstance(social_app.settings, dict) else {}
+        owner_company_id = app_settings.get('created_by_company_id')
+        if owner_company_id is None or int(owner_company_id) != int(company.id):
+            return Response(
+                {'error': 'This SocialApp cannot be attached to your company.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         if not str(social_app.client_id).strip() or not str(social_app.secret).strip():
@@ -3244,6 +3305,7 @@ class ShellUIAdminOAuthSocialAppListView(APIView):
         social_settings, settings_err = _merge_social_app_settings(entry, validated)
         if settings_err:
             return Response({'error': settings_err}, status=status.HTTP_400_BAD_REQUEST)
+        social_settings['created_by_company_id'] = int(company.id)
         app = SocialApp.objects.create(
             provider=entry.allauth_id,
             provider_id=entry.social_app_provider_id(),
