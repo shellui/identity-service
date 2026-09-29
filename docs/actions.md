@@ -103,32 +103,20 @@ Each POST includes:
 
 | Header | Meaning |
 | ------ | ------- |
-| `webhook-id` | Same as envelope `id` |
+| `webhook-id` | Same as envelope `id` (stable across retries for one delivery) |
 | `webhook-timestamp` | Unix seconds |
 | `webhook-signature` | `v1,<base64(hmac_sha256)>` |
+| `X-Shellui-Event` | Catalog event type (for example `identity.user.created`) |
+| `X-Shellui-Delivery-Attempt` | Attempt number for this outbox row (1 on first try) |
+| `User-Agent` | `shellui-identity-actions/1.0` |
 
-Signed content: `{webhook-id}.{webhook-timestamp}.{raw_body}` (UTF-8), HMAC-SHA256 with your `secret`.
+Signed content: `{webhook-id}.{webhook-timestamp}.{raw_body}` (UTF-8), HMAC-SHA256 with your signing key.
 
-Example verification (Python):
+JSON body: compact separators, keys sorted, UTF-8 (`ensure_ascii=false`). Verify signatures against the **raw HTTP body**, not a re-serialized JSON object.
 
-```python
-import base64
-import hashlib
-import hmac
+**Secrets:** prefer Standard Webhooks form `whsec_<base64>` (identity decodes the suffix as the HMAC key). Plain string secrets still work for existing rules.
 
-
-def verify_webhook(secret: str, webhook_id: str, timestamp: str, body: bytes, signature_header: str) -> bool:
-    prefix = "v1,"
-    if not signature_header.startswith(prefix):
-        return False
-    expected = hmac.new(
-        secret.encode("utf-8"),
-        f"{webhook_id}.{timestamp}.".encode("utf-8") + body,
-        hashlib.sha256,
-    ).digest()
-    got = base64.b64decode(signature_header[len(prefix) :])
-    return hmac.compare_digest(expected, got)
-```
+Step-by-step n8n setup: [Using Shellui webhooks with n8n](n8n.md).
 
 Reject requests with timestamps too far from clock skew if you enforce replay protection.
 
@@ -140,10 +128,21 @@ Before delivery, identity **resolves the webhook hostname once**, rejects privat
 
 ## Delivery, retries, and cron
 
-- After commit, identity attempts delivery once in a background thread (bounded timeout; errors never fail the user request).
-- Failed deliveries schedule `next_attempt_at` with exponential backoff: **30s * 2^(attempt-1)**, capped at **1 hour**, up to **`ACTIONS_OUTBOX_MAX_ATTEMPTS`** (default **8**), then status **`dead`**.
-- **Permanent failures** (most HTTP 4xx except **408** and **429**, SSRF block, disabled/deleted rule) go **dead** without further retries.
-- Each attempt is logged in **Delivery attempts** (HTTP status, error excerpt, duration).
+- After commit, identity attempts delivery once in a background thread (**5s** default timeout via `ACTIONS_WEBHOOK_TIMEOUT_SECONDS`; errors never fail the user request).
+- Failed deliveries schedule `next_attempt_at` with exponential backoff: **30s * 2^(attempt-1)**, capped at **1 hour**, unless **429** or **503** returns **Retry-After** (then the larger of backoff and Retry-After applies, still capped at 1 hour).
+- Up to **`ACTIONS_OUTBOX_MAX_ATTEMPTS`** (default **8**), then status **`dead`**.
+
+| Outcome | Retry? |
+| ------- | ------ |
+| 2xx | No (delivered) |
+| 404, 408, 409, 425, 429 | Yes (404 covers inactive n8n workflows) |
+| 400, 401, 403, 405, 410, 413, 422 | No (dead) |
+| 5xx | Yes |
+| Timeouts, connection errors | Yes |
+| SSRF block (private URL not allowed) | No (dead) |
+| Disabled/deleted rule | No (dead) |
+
+Each attempt is logged in **Delivery attempts** (HTTP status, error excerpt, duration).
 
 Retry pending rows with:
 

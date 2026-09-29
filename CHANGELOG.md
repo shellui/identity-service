@@ -25,6 +25,7 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 ### 🚨 Changed
 
+- **n8n webhook polish:** 404 retryable; permanent 4xx set (400, 401, 403, 405, 410, 413, 422); Retry-After on 429/503; UTF-8 JSON signing; `whsec_` secrets; `X-Shellui-Event` and `X-Shellui-Delivery-Attempt` headers; [docs/n8n.md](docs/n8n.md).
 - **Actions are webhook-only.** Email Action rules, template APIs, test-send, and the email channel handler are removed. Magic-link sign-in emails are sent directly by identity (`apps/authapi/magic_link_email.py`, EN/FR templates).
 - **Direct webhook delivery:** matching rules create outbox rows in the same transaction as the domain change; the first delivery runs on `transaction.on_commit` (background thread, 5s timeout default, errors never fail the request).
 - **Retries:** `manage.py retry_webhooks` replaces `drain_action_outbox` (batch, time budget, skip-locked lease, concurrency). Backoff 30s * 2^(n-1) capped at 1h; default 8 attempts; permanent 4xx (except 408/429) go dead.
