@@ -8,7 +8,6 @@ import unicodedata
 import urllib.request
 from dataclasses import dataclass
 
-import jwt
 from allauth.socialaccount.models import SocialAccount
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
@@ -78,21 +77,6 @@ class OAuthProfile:
     userinfo: dict
 
 
-def decode_oauth_id_token_claims(id_token: str | None) -> dict:
-    raw = (id_token or '').strip()
-    if not raw:
-        return {}
-    try:
-        claims = jwt.decode(
-            raw,
-            options={'verify_signature': False},
-            algorithms=['RS256', 'HS256', 'RS384', 'RS512'],
-        )
-    except Exception:
-        return {}
-    return claims if isinstance(claims, dict) else {}
-
-
 def _truthy_claim(value: object) -> bool:
     return value is True or value == 'true' or value == 1 or value == '1'
 
@@ -114,8 +98,9 @@ def microsoft_email_trustworthy(
         from apps.authapi.oauth_id_token import microsoft_tenant_guid_for_domain
 
         expected = microsoft_tenant_guid_for_domain(configured)
-        if expected:
-            return bool(tid) and tid.lower() == expected.lower()
+        if not expected:
+            return False
+        return bool(tid) and tid.lower() == expected.lower()
     return _truthy_claim(id_token_claims.get('xms_edov'))
 
 

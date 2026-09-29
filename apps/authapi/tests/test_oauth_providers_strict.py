@@ -21,13 +21,18 @@ def _load_e2e_slugs() -> list[str]:
     return json.loads(E2E_SLUGS_PATH.read_text(encoding='utf-8'))
 
 
-def _example_extra_settings(entry) -> dict:
+def _example_extra_settings(entry, *, company_slug: str) -> dict:
     extra: dict = {}
     for field in entry.extra_settings_schema:
         if field.name == 'key' and entry.docs_slug == 'salesforce':
             extra[field.name] = 'https://login.salesforce.com'
         elif field.type == 'url':
-            extra[field.name] = f'https://{entry.docs_slug}.example.com'
+            if field.name == 'GITEA_URL':
+                extra[field.name] = f'https://gitea.{company_slug}.example.com'
+            elif field.name in {'REST_API', 'MEDIAWIKI_URL'}:
+                extra[field.name] = f'https://wiki.{company_slug}.example.com'
+            else:
+                extra[field.name] = f'https://{entry.docs_slug}.example.com'
         elif field.secret:
             extra[field.name] = 'secret-value'
         elif field.name == 'tenant':
@@ -54,7 +59,7 @@ class OAuthStrictProviderTests(TestCase):
         for slug in _load_e2e_slugs():
             entry = catalog.by_slug()[slug]
             with self.subTest(provider=slug):
-                settings_payload = _example_extra_settings(entry)
+                settings_payload = _example_extra_settings(entry, company_slug=self.company.slug)
                 if entry.allauth_id == 'openid_connect':
                     settings_payload['server_url'] = f'https://{slug}.example.com/.well-known/openid-configuration'
                 app = SocialApp.objects.create(
@@ -78,3 +83,17 @@ class OAuthStrictProviderTests(TestCase):
                     company_id=self.company.id,
                 )
                 self.assertIsNone(err, err)
+
+    def test_battlenet_china_uid_suffix(self):
+        from allauth.socialaccount.providers import registry
+
+        request = self.factory.get('/')
+        app = SocialApp.objects.create(
+            provider='battlenet',
+            name='bn',
+            client_id='bn-client',
+            secret='secret',
+        )
+        provider = registry.get_class('battlenet')(request, app=app)
+        profile = {'id': 7, 'battletag': 'Cn#7', 'region': 'cn'}
+        self.assertEqual(provider.extract_uid(profile), '7-cn')

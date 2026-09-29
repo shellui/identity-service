@@ -196,17 +196,6 @@ class OAuthMockHttpsServer:
                 key = (host, self.command.upper(), path)
                 handler = route_map.get(key)
                 if handler is None:
-                    best: tuple[int, RouteHandler] | None = None
-                    for (h, method, route_path), candidate in route_map.items():
-                        if h != host or method != self.command.upper():
-                            continue
-                        if path == route_path or path.startswith(route_path):
-                            score = len(route_path)
-                            if best is None or score > best[0]:
-                                best = (score, candidate)
-                    if best is not None:
-                        handler = best[1]
-                if handler is None:
                     self.send_response(404)
                     self.end_headers()
                     self.wfile.write(b'not found')

@@ -29,9 +29,10 @@ from apps.authapi.tests.oauth_strict_harness import run_strict_provider_round_tr
 from apps.companies.models import Company, CompanyOAuthClient
 
 OUT_PATH = ROOT / 'tools' / 'data' / 'oauth_e2e_covered_slugs.json'
+HIDDEN_PROVIDER_SLUGS = frozenset({'edmodo'})
 
 
-def _example_extra_settings(entry) -> dict:
+def _example_extra_settings(entry, *, company_slug: str = 'strict-audit-co') -> dict:
     extra: dict = {}
     for field in entry.extra_settings_schema:
         if field.name == 'key' and entry.docs_slug == 'salesforce':
@@ -43,6 +44,10 @@ def _example_extra_settings(entry) -> dict:
                 extra[field.name] = 'https://okta.example.com'
             elif field.name == 'DOMAIN':
                 extra[field.name] = 'https://cognito.example.com'
+            elif field.name == 'GITEA_URL':
+                extra[field.name] = f'https://gitea.{company_slug}.example.com'
+            elif field.name in {'REST_API', 'MEDIAWIKI_URL'}:
+                extra[field.name] = f'https://wiki.{company_slug}.example.com'
             else:
                 extra[field.name] = f'https://{entry.docs_slug}.example.com'
         elif field.secret:
@@ -58,11 +63,11 @@ def _example_extra_settings(entry) -> dict:
 def _try_slug(slug: str, *, company: Company, site: Site, factory: RequestFactory) -> str | None:
     catalog = get_provider_catalog()
     entry = catalog.by_slug().get(slug)
-    if entry is None or entry.legacy:
+    if entry is None or entry.legacy or entry.docs_slug in HIDDEN_PROVIDER_SLUGS:
         return 'legacy or missing'
     if entry.protocol not in {'OAuth2', 'OpenID Connect'}:
         return f'protocol {entry.protocol}'
-    settings_payload = _example_extra_settings(entry)
+    settings_payload = _example_extra_settings(entry, company_slug=company.slug)
     if entry.allauth_id == 'openid_connect':
         settings_payload['server_url'] = f'https://{slug}.example.com/.well-known/openid-configuration'
     if entry.docs_slug == 'salesforce':
@@ -99,7 +104,12 @@ def main() -> int:
     failures: dict[str, str] = {}
     for entry in catalog.providers:
         slug = entry.docs_slug
-        if entry.legacy or entry.protocol not in {'OAuth2', 'OpenID Connect'}:
+        if (
+            entry.legacy
+            or entry.hidden
+            or entry.docs_slug in HIDDEN_PROVIDER_SLUGS
+            or entry.protocol not in {'OAuth2', 'OpenID Connect'}
+        ):
             continue
         err = _try_slug(slug, company=company, site=site, factory=factory)
         if err:

@@ -44,8 +44,13 @@ class SocialAuthorizeViewTests(TestCase):
             f'&company_oauth_client_id={client.id}&redirect_uri=https://shell.example.com/cb',
         )
         self.assertEqual(response.status_code, 200)
+        from urllib.parse import parse_qs, urlparse
+
         url = response.data['authorize_url']
         self.assertIn('nonce=', url)
         from apps.authapi.oauth_state import OAUTH_STATE_NONCE_COOKIE
 
         self.assertIn(OAUTH_STATE_NONCE_COOKIE, response.cookies)
+        nonce = parse_qs(urlparse(url).query).get('nonce', [''])[0]
+        self.assertTrue(nonce)
+        self.assertEqual(response.cookies[OAUTH_STATE_NONCE_COOKIE].value, nonce)

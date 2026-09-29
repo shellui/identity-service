@@ -455,6 +455,7 @@ def _catalog_provider_payload(request, entry, *, include_unsupported: bool) -> d
         'name': entry.name,
         'tier': entry.tier,
         'legacy': entry.legacy,
+        'hidden': entry.hidden,
         'replaced_by': entry.replaced_by,
         'protocol': entry.protocol,
         'supported': entry.supported,
@@ -3274,6 +3275,8 @@ class ShellUIAdminOAuthProviderCatalogView(APIView):
         catalog = get_provider_catalog()
         providers = []
         for entry in catalog.providers:
+            if entry.hidden:
+                continue
             if entry.legacy and not include_legacy:
                 continue
             providers.append(_catalog_provider_payload(request, entry, include_unsupported=include_legacy))

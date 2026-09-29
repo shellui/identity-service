@@ -38,6 +38,7 @@ class ProviderCatalogEntry:
     name: str
     tier: str
     legacy: bool
+    hidden: bool
     replaced_by: str | None
     protocol: str
     app: str
@@ -66,6 +67,7 @@ class ProviderCatalogEntry:
             name=str(raw.get('name') or raw['docs_slug']),
             tier=str(raw.get('tier') or 'other'),
             legacy=bool(raw.get('legacy')),
+            hidden=bool(raw.get('hidden')),
             replaced_by=(str(raw['replaced_by']).strip() or None) if raw.get('replaced_by') else None,
             protocol=str(raw.get('protocol') or ''),
             app=str(raw.get('app') or ''),

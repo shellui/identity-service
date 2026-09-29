@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import time
 
 import jwt
 from allauth.socialaccount.internal import jwtkit
@@ -27,7 +28,22 @@ MICROSOFT_JWKS_URL = 'https://login.microsoftonline.com/common/discovery/v2.0/ke
 GOOGLE_JWKS_URL = 'https://www.googleapis.com/oauth2/v3/certs'
 APPLE_JWKS_URL = 'https://appleid.apple.com/auth/keys'
 
-_microsoft_domain_tid_cache: dict[str, str] = {}
+_MICROSOFT_DOMAIN_TID_CACHE_TTL_SECONDS = 3600
+_microsoft_domain_tid_cache: dict[str, tuple[str | None, float]] = {}
+
+
+def _read_microsoft_domain_tid_cache(key: str) -> str | None | object:
+    cached = _microsoft_domain_tid_cache.get(key)
+    if not cached:
+        return _CACHE_MISS
+    guid, expires_at = cached
+    if expires_at <= time.monotonic():
+        _microsoft_domain_tid_cache.pop(key, None)
+        return _CACHE_MISS
+    return guid
+
+
+_CACHE_MISS = object()
 
 
 def microsoft_tenant_guid_for_domain(tenant: str) -> str | None:
@@ -35,24 +51,27 @@ def microsoft_tenant_guid_for_domain(tenant: str) -> str | None:
     key = (tenant or '').strip().lower()
     if not key or _TENANT_GUID_RE.match(key):
         return key if _TENANT_GUID_RE.match(key or '') else None
-    cached = _microsoft_domain_tid_cache.get(key)
-    if cached:
-        return cached
+    cached = _read_microsoft_domain_tid_cache(key)
+    if cached is not _CACHE_MISS:
+        return cached  # type: ignore[return-value]
     discovery_url = f'https://login.microsoftonline.com/{tenant}/v2.0/.well-known/openid-configuration'
+    guid: str | None = None
     try:
         discovery = fetch_oidc_discovery(discovery_url)
+        issuer = str(discovery.get('issuer') or '').strip().rstrip('/')
+        if issuer:
+            tail = issuer.rsplit('/', 2)
+            if len(tail) >= 2 and tail[-1] == 'v2.0':
+                candidate = tail[-2]
+                if _TENANT_GUID_RE.match(candidate):
+                    guid = candidate
     except Exception:
-        return None
-    issuer = str(discovery.get('issuer') or '').strip().rstrip('/')
-    if not issuer:
-        return None
-    tail = issuer.rsplit('/', 2)
-    if len(tail) >= 2 and tail[-1] == 'v2.0':
-        guid = tail[-2]
-        if _TENANT_GUID_RE.match(guid):
-            _microsoft_domain_tid_cache[key] = guid
-            return guid
-    return None
+        guid = None
+    _microsoft_domain_tid_cache[key] = (
+        guid,
+        time.monotonic() + _MICROSOFT_DOMAIN_TID_CACHE_TTL_SECONDS,
+    )
+    return guid
 
 
 def _issuer_from_unverified_jwt(raw: str) -> str:

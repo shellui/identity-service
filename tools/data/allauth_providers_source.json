@@ -1544,6 +1544,7 @@
     "id": "edmodo",
     "provider_id": null,
     "docs_slug": "edmodo",
+    "hidden": true,
     "app": "allauth.socialaccount.providers.edmodo",
     "name": "Edmodo",
     "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/edmodo.html",

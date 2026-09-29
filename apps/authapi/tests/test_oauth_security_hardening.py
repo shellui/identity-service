@@ -78,13 +78,70 @@ class OAuthSecurityHardeningTests(TestCase):
             )
         )
         with patch('apps.authapi.oauth_id_token.microsoft_tenant_guid_for_domain', return_value=None):
-            self.assertTrue(
+            self.assertFalse(
                 microsoft_email_trustworthy(
                     tenant='contoso.onmicrosoft.com',
                     configured_tenant='contoso.onmicrosoft.com',
                     id_token_claims={'tid': 'different-guid', 'xms_edov': True},
                 )
             )
+
+    def test_microsoft_extract_oauth_profile_domain_tenant_requires_matching_tid(self):
+        entry = get_provider_catalog().by_slug()['microsoft']
+        domain = 'contoso.onmicrosoft.com'
+        expected_tid = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
+        userinfo = {
+            'id': 'ms-user-id',
+            'mail': 'user@contoso.com',
+            'userPrincipalName': 'user@contoso.com',
+        }
+        with patch(
+            'apps.authapi.oauth_id_token.microsoft_tenant_guid_for_domain',
+            return_value=expected_tid,
+        ):
+            profile, err = extract_oauth_profile(
+                'microsoft',
+                userinfo,
+                'access-token',
+                tenant=domain,
+                id_token_claims={'tid': expected_tid},
+                catalog_entry=entry,
+            )
+            self.assertIsNone(err)
+            self.assertTrue(profile.email_verified_for_link)
+
+            profile, err = extract_oauth_profile(
+                'microsoft',
+                userinfo,
+                'access-token',
+                tenant=domain,
+                id_token_claims={'tid': 'wrong-tenant-guid'},
+                catalog_entry=entry,
+            )
+            self.assertIsNone(profile)
+            self.assertIn('tenant', (err or '').lower())
+
+            profile, err = extract_oauth_profile(
+                'microsoft',
+                userinfo,
+                'access-token',
+                tenant=domain,
+                id_token_claims={},
+                catalog_entry=entry,
+            )
+            self.assertIsNone(profile)
+            self.assertIn('verified id token', (err or '').lower())
+
+    def test_microsoft_domain_tid_lookup_failure_is_cached(self):
+        from apps.authapi import oauth_id_token as ms_id_token
+
+        ms_id_token._microsoft_domain_tid_cache.clear()
+        domain = 'missing.onmicrosoft.com'
+        with patch('apps.authapi.oauth_id_token.fetch_oidc_discovery', side_effect=OSError('offline')):
+            self.assertIsNone(ms_id_token.microsoft_tenant_guid_for_domain(domain))
+            self.assertEqual(ms_id_token.fetch_oidc_discovery.call_count, 1)
+            self.assertIsNone(ms_id_token.microsoft_tenant_guid_for_domain(domain))
+            self.assertEqual(ms_id_token.fetch_oidc_discovery.call_count, 1)
 
     def test_microsoft_jwks_verification_uses_common_keys_and_tenant_guid_issuer(self):
         signing = generate_oauth_test_signing_key(kid='ms-kid')

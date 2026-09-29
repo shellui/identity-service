@@ -57,6 +57,12 @@ EXTRA_SCHEMA_OVERRIDES: dict[str, list[dict]] = {
     'github_enterprise': [{'name': 'GITHUB_URL', 'type': 'url', 'required': True, 'secret': False}],
 }
 
+HIDDEN_PROVIDER_SLUGS = frozenset(
+    {
+        'edmodo',
+    }
+)
+
 OIDC_SERVER_URL_SLUGS = frozenset(
     {
         'openid_connect',
@@ -116,7 +122,14 @@ def _app_has_oauth2_provider(app_path: str | None, installed: frozenset[str]) ->
     return app_path in installed
 
 
+def _catalog_hidden(entry: dict) -> bool:
+    slug = str(entry.get('docs_slug') or '').strip().lower()
+    return bool(entry.get('hidden')) or slug in HIDDEN_PROVIDER_SLUGS
+
+
 def _supported(entry: dict, installed: frozenset[str]) -> tuple[bool, str | None]:
+    if _catalog_hidden(entry):
+        return False, 'Provider service is no longer available.'
     if entry.get('legacy'):
         return False, 'Legacy provider; use the replacement listed in the catalog.'
     protocol = entry.get('protocol') or ''
@@ -163,6 +176,7 @@ def build_entry(raw: dict, *, installed: frozenset[str]) -> dict:
         'name': raw.get('name'),
         'tier': raw.get('tier'),
         'legacy': bool(raw.get('legacy')),
+        'hidden': _catalog_hidden(raw),
         'replaced_by': raw.get('replaced_by'),
         'protocol': raw.get('protocol'),
         'app': raw.get('app'),

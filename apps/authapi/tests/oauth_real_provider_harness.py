@@ -52,6 +52,32 @@ PROFILE_SEED_OVERRIDES: dict[str, dict[str, Any]] = {
         'email_verified': True,
         'name': 'User Salesforce',
     },
+    'line': {
+        'userId': 'U-line-strict-uid',
+        'displayName': 'User Line',
+    },
+    'reddit': {
+        'name': 'reddit_strict_user',
+        'sub': 'decoy-sub-must-not-be-uid',
+        'id': 'decoy-id',
+    },
+    'battlenet': {
+        'id': 424242,
+        'battletag': 'Player#4242',
+        'region': 'us',
+    },
+    'github': {
+        'id': 12345,
+        'login': 'github-strict-user',
+        'name': 'GitHub Strict User',
+        'email': 'user-github@example.com',
+    },
+    'gitlab': {
+        'id': 99,
+        'username': 'gitlab-strict-user',
+        'email': 'user-gitlab@example.com',
+        'name': 'GitLab Strict User',
+    },
 }
 
 
