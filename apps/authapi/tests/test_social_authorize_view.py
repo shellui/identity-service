@@ -46,4 +46,6 @@ class SocialAuthorizeViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         url = response.data['authorize_url']
         self.assertIn('nonce=', url)
-        self.assertTrue(any(c.startswith('oauth_state_nonce=') for c in response.cookies.keys()))
+        from apps.authapi.oauth_state import OAUTH_STATE_NONCE_COOKIE
+
+        self.assertIn(OAUTH_STATE_NONCE_COOKIE, response.cookies)

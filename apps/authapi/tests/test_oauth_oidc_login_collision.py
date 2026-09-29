@@ -3,6 +3,9 @@ from django.contrib.auth import get_user_model
 from django.contrib.sites.models import Site
 from django.test import RequestFactory, TestCase
 
+from dataclasses import replace
+from unittest.mock import patch
+
 from apps.authapi.oauth import OAuthTokenBundle
 from apps.authapi.provider_registry import get_provider_catalog
 from apps.authapi.views import _resolve_oauth_login_user
@@ -35,6 +38,16 @@ class OidcLoginCollisionTests(TestCase):
         CompanyOAuthClient.objects.create(company=self.company, social_app=app, is_active=True)
         return app
 
+    def _catalog_with_openid_connect_supported(self):
+        catalog = get_provider_catalog()
+        patched = []
+        for entry in catalog.providers:
+            if entry.docs_slug == 'openid_connect':
+                patched.append(replace(entry, supported=True, unsupported_reason=None))
+            else:
+                patched.append(entry)
+        return replace(catalog, providers=tuple(patched))
+
     def test_same_sub_different_issuers_create_distinct_users_via_login_resolver(self):
         issuer_a = 'https://issuer-a.example.com'
         issuer_b = 'https://issuer-b.example.com'
@@ -56,8 +69,15 @@ class OidcLoginCollisionTests(TestCase):
                 company_oauth_client_id=client.id,
             )
 
-        user_a, created_a, profile_a, err_a = _login_with(app_a, issuer_a)
-        user_b, created_b, profile_b, err_b = _login_with(app_b, issuer_b)
+        with patch(
+            'apps.authapi.oauth.get_provider_catalog',
+            return_value=self._catalog_with_openid_connect_supported(),
+        ), patch(
+            'apps.authapi.views.get_provider_catalog',
+            return_value=self._catalog_with_openid_connect_supported(),
+        ):
+            user_a, created_a, profile_a, err_a = _login_with(app_a, issuer_a)
+            user_b, created_b, profile_b, err_b = _login_with(app_b, issuer_b)
         self.assertIsNone(err_a)
         self.assertIsNone(err_b)
         self.assertTrue(created_a)
