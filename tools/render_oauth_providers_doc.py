@@ -29,6 +29,7 @@ def _icon_cell(icon: dict) -> str:
 
 
 def _console_links(console_url: list) -> str:
+    """Plain-text console URLs (avoid lychee failures on IdP login redirects)."""
     links = []
     for item in console_url or []:
         if not isinstance(item, dict):
@@ -36,8 +37,8 @@ def _console_links(console_url: list) -> str:
         url = str(item.get('url') or item.get('text') or '').strip()
         if not url.startswith('http'):
             continue
-        label = str(item.get('label') or item.get('text') or 'Developer console').strip()
-        links.append(f'[{label}]({url})')
+        label = str(item.get('label') or 'Developer console').strip()
+        links.append(f'{label}: `{url}`')
     return '<br />'.join(links) if links else '—'
 
 

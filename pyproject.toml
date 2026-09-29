@@ -25,6 +25,7 @@ dependencies = [
     "django-scim2==0.23.0",
     "redis==8.1.0",
     "html2text==2025.4.15",
+    "pyjwt>=2.14.0",
 ]
 
 [dependency-groups]
