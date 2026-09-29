@@ -45,7 +45,7 @@ def _console_links(console_url: list) -> str:
 def _extra_settings(entry: dict) -> str:
     schema = entry.get('extra_settings_schema') or []
     if not schema:
-        return '—'
+        return '-'
     parts = []
     for field in schema:
         req = 'required' if field.get('required') else 'optional'
@@ -59,11 +59,11 @@ def render_provider_row(entry: dict) -> str:
     if not entry.get('supported') and entry.get('unsupported_reason'):
         supported = f"No. {entry['unsupported_reason']}"
     docs_url = entry.get('docs_url') or ''
-    docs_link = f"[allauth docs]({docs_url})" if docs_url else '—'
+    docs_link = f"[allauth docs]({docs_url})" if docs_url else '-'
     return (
         f"| {_icon_cell(entry.get('icon') or {})} {entry.get('name')} "
         f"| `{entry.get('docs_slug')}` "
-        f"| {entry.get('protocol') or '—'} "
+        f"| {entry.get('protocol') or '-'} "
         f"| {_console_links(entry.get('console_url') or [])} "
         f"| {docs_link} "
         f"| {_extra_settings(entry)} "
