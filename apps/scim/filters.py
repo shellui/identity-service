@@ -1,10 +1,36 @@
-from django_scim.filters import GroupFilterQuery, UserFilterQuery
+from django_scim.filters import FilterQuery, GroupFilterQuery, UserFilterQuery
 
 from apps.companies.models import CompanyGroup
 from apps.scim.context import get_scim_company
 
 
-class ShellUIUserFilterQuery(UserFilterQuery):
+class _TenantScopedFilterQuery(FilterQuery):
+    """Wrap parsed SCIM filter SQL so tenant AND clauses cannot bind inside OR expressions."""
+
+    @classmethod
+    def get_raw_args(cls, q, request=None):
+        sql, params = q.sql, list(q.params)
+        if sql and q.where_sql:
+            upper = sql.upper()
+            where_idx = upper.find(' WHERE ')
+            if where_idx != -1:
+                prefix = sql[: where_idx + len(' WHERE ')]
+                predicate = sql[where_idx + len(' WHERE ') :].rstrip().rstrip(';')
+                sql = f'{prefix}({predicate})'
+        extra_sql, extra_params = cls.get_extras(q, request)
+        if extra_sql:
+            if "'%s'" in extra_sql:
+                raise ValueError(
+                    'Dangerous use of quotes around place holder. Please see '
+                    'https://docs.djangoproject.com/en/2.2/ref/models/querysets/#extra '
+                    'for more details.'
+                )
+            sql = sql.rstrip(';') + extra_sql + ';'
+            params += extra_params
+        return sql, params
+
+
+class ShellUIUserFilterQuery(_TenantScopedFilterQuery, UserFilterQuery):
     """Company membership is applied via queryset hooks; drop ``active`` from SQL filters."""
 
     attr_map = {
@@ -26,7 +52,7 @@ class ShellUIUserFilterQuery(UserFilterQuery):
         return sql, [company.pk]
 
 
-class ShellUIGroupFilterQuery(GroupFilterQuery):
+class ShellUIGroupFilterQuery(_TenantScopedFilterQuery, GroupFilterQuery):
     attr_map = {
         ('displayName', None, None): 'display_name',
     }

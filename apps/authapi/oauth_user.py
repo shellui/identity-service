@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import logging
+import unicodedata
 import urllib.request
 from dataclasses import dataclass
 
@@ -11,6 +13,53 @@ from allauth.socialaccount.models import SocialAccount
 from django.contrib.auth import get_user_model
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
+
+
+def normalize_oauth_email(email: str) -> str:
+    return unicodedata.normalize('NFKC', (email or '').strip()).casefold()
+
+
+def get_or_create_user_for_oauth(*, email: str, defaults: dict) -> tuple[User, bool]:
+    """
+    Resolve a user by email without raising MultipleObjectsReturned.
+
+    Matches are case-insensitive. When several rows share the same email, the lowest pk wins
+    and a warning is logged so operators can run duplicate-email cleanup.
+    """
+    normalized = normalize_oauth_email(email)
+    if not normalized:
+        raise ValueError('OAuth email is required.')
+
+    matches = list(User.objects.filter(email__iexact=normalized).order_by('pk')[:2])
+    if len(matches) >= 2:
+        logger.warning(
+            'Multiple users share email %r (pks include %s and %s); OAuth will use pk=%s',
+            normalized,
+            matches[0].pk,
+            matches[1].pk,
+            matches[0].pk,
+        )
+    if matches:
+        return matches[0], False
+
+    create_defaults = {**defaults, 'email': normalized}
+    user = User.objects.create(**create_defaults)
+    user.set_unusable_password()
+    user.save(update_fields=['password'])
+    return user, True
+
+
+def _backfill_user_names_from_profile(user: User, profile: OAuthProfile) -> None:
+    updates: list[str] = []
+    if not user.first_name and profile.full_name:
+        user.first_name = profile.full_name.split(' ')[0]
+        updates.append('first_name')
+    if not user.last_name and ' ' in profile.full_name:
+        user.last_name = ' '.join(profile.full_name.split(' ')[1:])
+        updates.append('last_name')
+    if updates:
+        user.save(update_fields=updates)
 
 
 @dataclass(frozen=True)
@@ -176,27 +225,15 @@ def resolve_oauth_user(*, provider: str, profile: OAuthProfile) -> tuple[User | 
         user.save()
         return user, True, None
 
-    user = User.objects.filter(email__iexact=profile.email).first()
-    created = False
-    if user is None:
-        created = True
-        user = User.objects.create(
-            username=f'{key}_{profile.provider_id}',
-            email=profile.email,
-            first_name=profile.full_name.split(' ')[0],
-            last_name=' '.join(profile.full_name.split(' ')[1:]),
-        )
-        user.set_unusable_password()
-        user.save()
-    else:
-        updates: list[str] = []
-        if not user.first_name and profile.full_name:
-            user.first_name = profile.full_name.split(' ')[0]
-            updates.append('first_name')
-        if not user.last_name and ' ' in profile.full_name:
-            user.last_name = ' '.join(profile.full_name.split(' ')[1:])
-            updates.append('last_name')
-        if updates:
-            user.save(update_fields=updates)
+    user, created = get_or_create_user_for_oauth(
+        email=profile.email,
+        defaults={
+            'username': f'{key}_{profile.provider_id}',
+            'first_name': profile.full_name.split(' ')[0],
+            'last_name': ' '.join(profile.full_name.split(' ')[1:]),
+        },
+    )
+    if not created:
+        _backfill_user_names_from_profile(user, profile)
 
     return user, created, None

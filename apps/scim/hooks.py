@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from django.contrib.auth import get_user_model
 
+from apps.companies.models import CompanyMembership
 from apps.scim.context import get_scim_company
 from apps.scim.routing import scim_path_prefix_for_company
 
@@ -22,7 +23,11 @@ def _user_filter_kwargs_getter():
         company = get_scim_company(request)
         if company is None:
             return {'pk__in': []}
-        filters = {'companies': company}
+        member_user_ids = CompanyMembership.objects.filter(company=company).values_list(
+            'user_id',
+            flat=True,
+        )
+        filters = {'pk__in': list(member_user_ids)}
         if uuid:
             filters['pk'] = uuid
         return filters

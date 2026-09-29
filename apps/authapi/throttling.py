@@ -11,7 +11,7 @@ from rest_framework import status
 from rest_framework.renderers import JSONRenderer
 from rest_framework.response import Response
 
-from .login_audit import get_client_ip
+from .login_audit import client_ip_rate_limit_key, get_client_ip
 
 if TYPE_CHECKING:
     from django.http import HttpRequest
@@ -52,7 +52,7 @@ def check_rate_limit(
     if window is not None:
         resolved_window = window
 
-    key_identity = identity or get_client_ip(request) or 'unknown'
+    key_identity = identity or client_ip_rate_limit_key(get_client_ip(request))
     cache_key = _cache_key(scope, key_identity)
     try:
         count = cache.incr(cache_key)

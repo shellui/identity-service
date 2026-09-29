@@ -943,9 +943,16 @@ def _require_staff_or_company_owner(request):
     company, cerr = _required_company_from_request(request, user=user)
     if cerr:
         return None, None, cerr
-    if user.is_staff or _is_user_company_owner(user, company):
+    if user.is_staff:
         return user, company, None
-    return None, None, Response({'error': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
+    if not _is_user_company_owner(user, company):
+        return None, None, Response({'error': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
+    if not is_company_access_enabled(company, user):
+        return None, None, Response(
+            {'error': 'Company access is disabled for this user.'},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    return user, company, None
 
 
 def _require_enabled_company_member(request):
@@ -2622,15 +2629,34 @@ class ShellUIAdminUserDetailView(APIView):
 
         if 'group_ids' in validated:
             requested_ids = set(validated['group_ids'])
-            company_groups = CompanyGroup.objects.filter(company=company).order_by('id')
-            existing_ids = set(company_groups.values_list('id', flat=True))
-            missing_ids = sorted(requested_ids - existing_ids)
-            if missing_ids:
+            scim_in_request = CompanyGroup.objects.filter(
+                company=company,
+                source=CompanyGroup.SOURCE_SCIM,
+                pk__in=requested_ids,
+            )
+            if scim_in_request.exists():
+                scim_ids = sorted(scim_in_request.values_list('pk', flat=True))
                 return Response(
-                    {'error': f'Unknown group ids for this company: {missing_ids}.'},
+                    {
+                        'error': (
+                            'SCIM-managed groups cannot be changed through admin user PATCH. '
+                            f'Remove SCIM group ids from group_ids: {scim_ids}.'
+                        ),
+                    },
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-            for g in company_groups:
+            manual_groups = CompanyGroup.objects.filter(
+                company=company,
+                source=CompanyGroup.SOURCE_MANUAL,
+            ).order_by('id')
+            existing_manual_ids = set(manual_groups.values_list('id', flat=True))
+            missing_ids = sorted(requested_ids - existing_manual_ids)
+            if missing_ids:
+                return Response(
+                    {'error': f'Unknown manual group ids for this company: {missing_ids}.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            for g in manual_groups:
                 if g.id in requested_ids:
                     g.members.add(target)
                 else:

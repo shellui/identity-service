@@ -7,6 +7,7 @@ from django.test import TestCase
 from apps.authapi.oauth_user import (
     OAuthProfile,
     extract_oauth_profile,
+    get_or_create_user_for_oauth,
     microsoft_email_trustworthy,
     resolve_oauth_user,
 )
@@ -104,6 +105,30 @@ class OAuthIdentityResolutionTests(TestCase):
         )
         self.assertIsNone(profile)
         self.assertIn('Microsoft', err or '')
+
+    def test_duplicate_email_rows_use_lowest_pk(self):
+        first = User.objects.create_user(username='u1', email='dup@example.com', password='x')
+        User.objects.create_user(username='u2', email='DUP@example.com', password='x')
+        profile = OAuthProfile(
+            provider_id='sub-dup',
+            email='dup@example.com',
+            full_name='Dup User',
+            avatar_url=None,
+            email_verified_for_link=True,
+            userinfo={'email_verified': True},
+        )
+        user, created, err = resolve_oauth_user(provider='google', profile=profile)
+        self.assertIsNone(err)
+        self.assertFalse(created)
+        self.assertEqual(user.pk, first.pk)
+
+    def test_get_or_create_user_for_oauth_helper(self):
+        user, created = get_or_create_user_for_oauth(
+            email='new@example.com',
+            defaults={'username': 'oauth_new'},
+        )
+        self.assertTrue(created)
+        self.assertEqual(user.email, 'new@example.com')
 
     def test_microsoft_dedicated_tenant_allows_profile(self):
         profile, err = extract_oauth_profile(
