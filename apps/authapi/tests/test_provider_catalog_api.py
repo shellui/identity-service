@@ -14,7 +14,7 @@ class ProviderRegistryTests(APITestCase):
     def test_catalog_loads_all_entries(self):
         catalog = get_provider_catalog()
         self.assertEqual(len(catalog.providers), 114)
-        self.assertEqual(len(catalog.supported_slugs()), 62)
+        self.assertEqual(len(catalog.supported_slugs()), 67)
 
     def test_microsoft_extra_settings_validation(self):
         entry = get_provider_catalog().by_slug()['microsoft']
@@ -89,6 +89,15 @@ class OAuthProviderCatalogApiTests(APITestCase):
         url = linkedin.console_url[0]['url']
         self.assertNotIn('newapp=', url)
         self.assertEqual(linkedin.console_url[0]['kind'], 'app_registration')
+
+    def test_catalog_includes_multiple_allowed(self):
+        self.client.force_authenticate(user=self.owner)
+        response = self.client.get(self._url('/api/v1/oauth-provider-catalog'))
+        self.assertEqual(response.status_code, 200)
+        github = next(item for item in response.data['providers'] if item['docs_slug'] == 'github')
+        keycloak = next(item for item in response.data['providers'] if item['docs_slug'] == 'keycloak')
+        self.assertFalse(github['multiple_allowed'])
+        self.assertTrue(keycloak['multiple_allowed'])
 
     def test_catalog_include_legacy(self):
         self.client.force_authenticate(user=self.owner)

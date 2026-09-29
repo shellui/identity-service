@@ -71,6 +71,82 @@ def verify_apple_id_token_for_bridge(
     return claims
 
 
+MICROSOFT_JWKS_URL = 'https://login.microsoftonline.com/common/discovery/v2.0/keys'
+GOOGLE_JWKS_URL = 'https://www.googleapis.com/oauth2/v3/certs'
+APPLE_JWKS_URL = 'https://appleid.apple.com/auth/keys'
+
+
+def _verify_raw_id_token(
+    *,
+    entry: ProviderCatalogEntry,
+    social_app: SocialApp,
+    raw: str,
+) -> dict:
+    """Verify a JWT id_token with provider JWKS (allauth jwtkit)."""
+    token = raw.strip()
+    if not token:
+        return {}
+    try:
+        if entry.docs_slug == 'microsoft' or entry.allauth_id == 'microsoft':
+            tenant = str((social_app.settings or {}).get('tenant') or 'common').strip()
+            issuer = f'https://login.microsoftonline.com/{tenant}/v2.0'
+            return jwtkit.verify_and_decode(
+                credential=token,
+                keys_url=MICROSOFT_JWKS_URL,
+                issuer=issuer,
+                audience=[social_app.client_id],
+                lookup_kid=jwtkit.lookup_kid_jwk,
+            )
+        if entry.docs_slug == 'google' or entry.allauth_id == 'google':
+            return jwtkit.verify_and_decode(
+                credential=token,
+                keys_url=GOOGLE_JWKS_URL,
+                issuer='https://accounts.google.com',
+                audience=[social_app.client_id],
+                lookup_kid=jwtkit.lookup_kid_jwk,
+            )
+        if entry.allauth_id == 'openid_connect':
+            settings_data = social_app.settings if isinstance(social_app.settings, dict) else {}
+            issuer = str(settings_data.get('server_url') or '').strip().rstrip('/')
+            if not issuer:
+                return {}
+            jwks_url = f'{issuer}/jwks' if not issuer.endswith('jwks') else issuer
+            if 'openid-configuration' in issuer or issuer.endswith('/'):
+                jwks_url = f'{issuer.rstrip("/")}/jwks'
+            return jwtkit.verify_and_decode(
+                credential=token,
+                keys_url=jwks_url,
+                issuer=issuer,
+                audience=[social_app.client_id],
+                lookup_kid=jwtkit.lookup_kid_jwk,
+            )
+    except OAuth2Error:
+        return {}
+    except Exception:
+        return {}
+    return {}
+
+
+def verified_login_id_token_claims(
+    *,
+    entry: ProviderCatalogEntry | None,
+    social_app: SocialApp,
+    id_token_raw: str | None,
+    userinfo: dict,
+) -> dict:
+    """Claims safe for account linking (JWKS-verified or allauth-verified dict)."""
+    info = userinfo if isinstance(userinfo, dict) else {}
+    verified = info.get('_verified_id_token_claims')
+    if isinstance(verified, dict) and verified:
+        return dict(verified)
+    if entry is None:
+        return {}
+    raw = (id_token_raw or '').strip()
+    if not raw:
+        return {}
+    return _verify_raw_id_token(entry=entry, social_app=social_app, raw=raw)
+
+
 def verified_id_token_claims_from_sociallogin(
     *,
     entry: ProviderCatalogEntry | None,

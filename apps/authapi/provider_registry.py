@@ -50,6 +50,7 @@ class ProviderCatalogEntry:
     extra_settings_schema: tuple[ExtraSettingField, ...]
     icon: dict[str, Any]
     notes: str
+    multiple_allowed: bool
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> ProviderCatalogEntry:
@@ -79,6 +80,7 @@ class ProviderCatalogEntry:
             extra_settings_schema=schema,
             icon=dict(raw.get('icon') or {}),
             notes=str(raw.get('notes') or ''),
+            multiple_allowed=bool(raw.get('multiple_allowed')),
         )
 
     def social_app_provider(self) -> str:

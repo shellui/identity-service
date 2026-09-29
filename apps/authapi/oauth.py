@@ -60,6 +60,10 @@ def _match_social_app_provider(entry: ProviderCatalogEntry, social_app: SocialAp
     if provider != entry.allauth_id.lower():
         return False
     if entry.allauth_id == 'openid_connect':
+        settings_data = social_app.settings if isinstance(getattr(social_app, 'settings', None), dict) else {}
+        catalog_slug = str(settings_data.get('catalog_slug') or '').strip().lower()
+        if catalog_slug and catalog_slug == entry.docs_slug.lower():
+            return True
         sub_id = str(getattr(social_app, 'provider_id', '') or '').strip().lower()
         expected = entry.social_app_provider_id().lower()
         return sub_id == expected

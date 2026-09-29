@@ -14,8 +14,56 @@ from apps.authapi.provider_registry import get_provider_catalog
 
 PUBLIC_HOST = 'https://example.com'
 
+PROFILE_SEED_OVERRIDES: dict[str, dict[str, Any]] = {
+    'apple': {
+        'sub': 'uid-apple',
+        'email': 'user-apple@example.com',
+        'email_verified': True,
+        'name': {'firstName': 'User', 'lastName': 'Apple'},
+    },
+    'slack': {
+        'ok': True,
+        'team': {'id': 'T-SLACK', 'name': 'Slack Team'},
+        'user': {
+            'id': 'U-SLACK',
+            'name': 'User Slack',
+            'email': 'user-slack@example.com',
+        },
+        'email': 'user-slack@example.com',
+        'email_verified': True,
+    },
+    'shopify': {
+        'shop': {
+            'id': 12345,
+            'email': 'user-shopify@example.com',
+            'name': 'Test Shop',
+            'myshopify_domain': 'test-shop.myshopify.com',
+        }
+    },
+    'nextcloud': {
+        'id': 'uid-nextcloud',
+        'displayname': 'User Nextcloud',
+        'email': 'user-nextcloud@example.com',
+    },
+    'salesforce': {
+        'sub': 'uid-salesforce',
+        'user_id': 'uid-salesforce',
+        'email': 'user-salesforce@example.com',
+        'email_verified': True,
+        'name': 'User Salesforce',
+    },
+}
+
 
 def build_profile_for_provider(request, slug: str, social_app: SocialApp) -> dict:
+    if slug in PROFILE_SEED_OVERRIDES:
+        seed = dict(PROFILE_SEED_OVERRIDES[slug])
+        entry = get_provider_catalog().by_slug()[slug]
+        provider = registry.get_class(entry.allauth_id)(request, app=social_app)
+        provider.extract_uid(seed)
+        provider.extract_common_fields(seed)
+        return seed
+
     entry = get_provider_catalog().by_slug()[slug]
     provider = registry.get_class(entry.allauth_id)(request, app=social_app)
     seed: dict[str, Any] = {
@@ -32,8 +80,6 @@ def build_profile_for_provider(request, slug: str, social_app: SocialApp) -> dic
     }
     if slug == 'ynab':
         seed['data'] = {'user': {'id': f'uid-{slug}'}}
-    if slug == 'nextcloud':
-        seed['id'] = f'uid-{slug}'
     for _ in range(80):
         try:
             provider.extract_uid(seed)
@@ -69,22 +115,17 @@ class MockOAuthHttpRouter:
         self.discovery = discovery or {}
 
     def request(self, method, url, **kwargs):  # noqa: ANN001
-        import requests
-
         parsed = urlparse(str(url))
         path = parsed.path or '/'
-        method_upper = str(method).upper()
         if path.endswith('openid-configuration') or path.endswith('.well-known/openid-configuration'):
             return _json_response(self.discovery or {})
-        if 'oauth/access_token' in path or path.endswith('/token') or 'access_token' in path:
-            body = {
-                'access_token': f'access-{self.slug}',
-                'token_type': 'Bearer',
-                'id_token': self._unsigned_id_token(),
-            }
-            if self.slug == 'facebook':
-                return _json_response(body, status=200)
-            return _json_response(body)
+        if (
+            'oauth/access_token' in path
+            or path.endswith('/token')
+            or 'access_token' in path
+            or 'openid.connect.token' in path
+        ):
+            return _json_response(self._token_body())
         if 'api.github.com' in parsed.netloc:
             if path.endswith('/user/emails'):
                 return _json_response(
@@ -97,32 +138,48 @@ class MockOAuthHttpRouter:
                     ]
                 )
             return _json_response(self.profile)
+        if 'slack.com' in parsed.netloc and 'userInfo' in path:
+            return _json_response({**self.profile, 'ok': True})
+        if 'shop.json' in path:
+            return _json_response(self.profile if 'shop' in self.profile else {'shop': self.profile})
+        if self.slug == 'nextcloud' and '/ocs/' in path:
+            return _json_response({'ocs': {'data': self.profile}})
         if 'userinfo' in path or '/user' in path or '/me' in path or '/profile' in path:
             return _json_response(self.profile)
         if 'keys' in path or 'jwks' in path:
             return _json_response({'keys': []})
-        if method_upper == 'GET':
+        if str(method).upper() == 'GET':
             return _json_response(self.profile)
         return _json_response({'access_token': f'access-{self.slug}', 'token_type': 'Bearer'})
+
+    def _token_body(self) -> dict:
+        body: dict[str, Any] = {
+            'access_token': f'access-{self.slug}',
+            'token_type': 'Bearer',
+            'id_token': self._unsigned_id_token(),
+        }
+        if self.slug == 'nextcloud':
+            body['user_id'] = self.profile.get('id') or 'uid-nextcloud'
+        return body
 
     def _unsigned_id_token(self) -> str:
         import base64
 
+        issuer = self.discovery.get('issuer', f'{PUBLIC_HOST}/{self.slug}')
+        payload_data: dict[str, Any] = {
+            'sub': self.profile.get('sub') or self.profile.get('id') or f'uid-{self.slug}',
+            'email': self.profile.get('email') or f'user-{self.slug}@example.com',
+            'email_verified': True,
+            'iss': issuer,
+        }
+        if self.slug == 'microsoft':
+            payload_data['tid'] = 'contoso.onmicrosoft.com'
         header = base64.urlsafe_b64encode(b'{"alg":"none"}').decode().rstrip('=')
-        payload = base64.urlsafe_b64encode(
-            json.dumps(
-                {
-                    'sub': self.profile.get('sub') or self.profile.get('id'),
-                    'email': self.profile.get('email'),
-                    'email_verified': True,
-                    'iss': self.discovery.get('issuer', f'{PUBLIC_HOST}/{self.slug}'),
-                }
-            ).encode()
-        ).decode().rstrip('=')
+        payload = base64.urlsafe_b64encode(json.dumps(payload_data).encode()).decode().rstrip('=')
         return f'{header}.{payload}.'
 
 
-def _json_response(data: dict, *, status: int = 200):
+def _json_response(data: dict | list, *, status: int = 200):
     import requests
 
     response = requests.Response()
@@ -190,9 +247,32 @@ def discovery_document_for_slug(slug: str) -> dict:
     }
 
 
-def authorize_request_factory(slug: str) -> RequestFactory:
-    factory = RequestFactory()
-    path = '/api/v1/authorize'
+def authorize_get_path(slug: str) -> str:
     if slug == 'shopify':
-        path = '/api/v1/authorize?shop=test-shop.myshopify.com'
-    return factory, path
+        return '/api/v1/authorize?shop=test-shop.myshopify.com'
+    return '/api/v1/authorize'
+
+
+def _ephemeral_apple_audit_certificate_key() -> str:
+    """Generate a throwaway EC key for Apple OAuth client_secret JWT in tests (not committed)."""
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+
+    key = ec.generate_private_key(ec.SECP256R1())
+    return key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    ).decode()
+
+
+def prepare_social_app_for_audit(slug: str, app: SocialApp) -> None:
+    settings_data = dict(app.settings or {})
+    if slug == 'salesforce':
+        app.key = 'https://login.salesforce.com'
+        app.save(update_fields=['key'])
+    if slug == 'apple':
+        app.key = 'APPLE-TEAM-ID'
+        settings_data['certificate_key'] = _ephemeral_apple_audit_certificate_key()
+        app.settings = settings_data
+        app.save(update_fields=['key', 'settings'])

@@ -85,6 +85,15 @@ def _default_extra_schema(entry: dict) -> list[dict]:
     return []
 
 
+def _multiple_allowed(entry: dict) -> bool:
+    allauth_id = str(entry.get('id') or '').strip().lower()
+    if allauth_id == 'saml':
+        return True
+    if allauth_id == 'openid_connect':
+        return True
+    return False
+
+
 def _email_link_policy(entry: dict) -> str:
     slug = entry['docs_slug']
     if slug in EMAIL_POLICY_BY_SLUG:
@@ -166,6 +175,7 @@ def build_entry(raw: dict, *, installed: frozenset[str]) -> dict:
         'extra_settings_schema': normalize_extra_settings_schema(_default_extra_schema(raw)),
         'icon': icon,
         'notes': raw.get('notes') or '',
+        'multiple_allowed': _multiple_allowed(raw),
     }
 
 

@@ -154,6 +154,16 @@ def _email_verified_for_link_from_policy(
         ), None
 
     if policy == 'google_email_verified':
+        claim_email = claims.get('email')
+        if (
+            claims
+            and _truthy_claim(claims.get('email_verified'))
+            and isinstance(claim_email, str)
+            and claim_email.strip()
+        ):
+            if isinstance(info.get('email'), str) and claim_email.strip().lower() == str(info.get('email')).strip().lower():
+                return True, None, None
+            return False, None, None
         return _truthy_claim(info.get('email_verified')), None, None
 
     if policy == 'discord_email_verified':
@@ -163,6 +173,10 @@ def _email_verified_for_link_from_policy(
         return _truthy_claim(info.get('is_email_verified')), None, None
 
     if policy == 'microsoft_tenant':
+        if not claims or not str(claims.get('tid') or '').strip():
+            return False, (
+                'Microsoft sign-in requires a verified ID token from your tenant.'
+            ), None
         if not microsoft_email_trustworthy(
             tenant=tenant,
             id_token_claims=claims,
@@ -178,6 +192,8 @@ def _email_verified_for_link_from_policy(
         return False, None, None
 
     if policy == 'oidc_email_verified_or_uid_only':
+        if not claims or not str(claims.get('iss') or '').strip():
+            return False, None, None
         claim_email = claims.get('email')
         if (
             _truthy_claim(claims.get('email_verified'))
@@ -215,9 +231,6 @@ def extract_oauth_profile(
     policy = entry.email_link_policy if entry is not None else 'uid_only'
     info = userinfo if isinstance(userinfo, dict) else {}
     claims = id_token_claims if isinstance(id_token_claims, dict) else {}
-    nested_claims = info.get('_id_token_claims') if isinstance(info.get('_id_token_claims'), dict) else {}
-    if nested_claims and not claims:
-        claims = nested_claims
     if social_app is not None and entry is not None:
         social_provider = social_account_provider_key(entry=entry, social_app=social_app)
     else:

@@ -177,7 +177,10 @@ def sociallogin_userinfo(sociallogin) -> dict[str, Any]:
         data['id'] = account.uid
         data['sub'] = account.uid
     if isinstance(extra.get('id_token'), dict):
-        data['_id_token_claims'] = extra['id_token']
+        data['_verified_id_token_claims'] = extra['id_token']
+    state = getattr(sociallogin, 'state', None)
+    if isinstance(state, dict) and isinstance(state.get('id_token'), dict):
+        data['_verified_id_token_claims'] = state['id_token']
     return data
 
 

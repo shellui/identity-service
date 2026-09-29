@@ -12,8 +12,8 @@
       "replaced_by": null,
       "protocol": "OAuth2",
       "app": "allauth.socialaccount.providers.apple",
-      "supported": false,
-      "unsupported_reason": "Missing end-to-end OAuth adapter test coverage.",
+      "supported": true,
+      "unsupported_reason": null,
       "email_link_policy": "oauth2_email_verified_or_uid_only",
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/apple.html",
       "console_url": [
@@ -51,7 +51,8 @@
         "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/apple.svg",
         "verified_http_200": true
       },
-      "notes": "Create an App ID and a Services ID, register a private key, then configure client_id, the Key ID as secret, the Team ID as key and the private key as certificate_key."
+      "notes": "Create an App ID and a Services ID, register a private key, then configure client_id, the Key ID as secret, the Team ID as key and the private key as certificate_key.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "auth0",
@@ -91,7 +92,8 @@
         "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/auth0.svg",
         "verified_http_200": true
       },
-      "notes": "Create an application in the Auth0 dashboard to get a key and secret, set the callback URL and set AUTH0_URL to your tenant domain."
+      "notes": "Create an application in the Auth0 dashboard to get a key and secret, set the callback URL and set AUTH0_URL to your tenant domain.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "bitbucket",
@@ -129,7 +131,8 @@
         "verified_http_200": true,
         "brand_guidelines": "https://atlassian.design/foundations/logos"
       },
-      "notes": "Create an OAuth consumer in your Bitbucket account settings with Account:Read permission, and use its Key as client_id."
+      "notes": "Create an OAuth consumer in your Bitbucket account settings with Account:Read permission, and use its Key as client_id.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "discord",
@@ -163,7 +166,8 @@
         "verified_http_200": true,
         "brand_guidelines": "https://discord.com/branding"
       },
-      "notes": "Create an application in the Discord developer portal, add the redirect URI, and make sure the identify scope is requested."
+      "notes": "Create an application in the Discord developer portal, add the redirect URI, and make sure the identify scope is requested.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "facebook",
@@ -197,7 +201,8 @@
         "verified_http_200": true,
         "brand_guidelines": "https://about.meta.com/brand/resources/facebook/logo"
       },
-      "notes": "Create a Facebook app, put http://localhost:8000 under Website with Facebook Login during development, and get it reviewed by Facebook before going public."
+      "notes": "Create a Facebook app, put http://localhost:8000 under Website with Facebook Login during development, and get it reviewed by Facebook before going public.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "github",
@@ -231,7 +236,8 @@
         "verified_http_200": true,
         "brand_guidelines": "https://github.com/logos"
       },
-      "notes": "Register a new OAuth app in GitHub settings, set the callback URL, and optionally set SCOPE or GITHUB_URL for Enterprise."
+      "notes": "Register a new OAuth app in GitHub settings, set the callback URL, and optionally set SCOPE or GITHUB_URL for Enterprise.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "gitlab",
@@ -266,7 +272,8 @@
         "verified_http_200": true,
         "brand_guidelines": "https://about.gitlab.com/handbook/marketing/corporate-marketing/brand-activation/trademark-guidelines/"
       },
-      "notes": "Register an OAuth application in GitLab as described in the GitLab docs, and set GITLAB_URL for a private server."
+      "notes": "Register an OAuth application in GitLab as described in the GitLab docs, and set GITLAB_URL for a private server.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "google",
@@ -300,7 +307,8 @@
         "verified_http_200": true,
         "brand_guidelines": "https://about.google/brand-resource-center/brand-elements/"
       },
-      "notes": "Create a project and an OAuth client ID (web application) in the Google console, add the authorized redirect URI, fill in the OAuth consent screen, then create the SocialApp."
+      "notes": "Create a project and an OAuth client ID (web application) in the Google console, add the authorized redirect URI, fill in the OAuth consent screen, then create the SocialApp.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "linkedin",
@@ -344,7 +352,8 @@
         "hex": "64748B",
         "title": "LinkedIn"
       },
-      "notes": "Create a LinkedIn developer app, then add an openid_connect app with provider_id linkedin and server_url https://www.linkedin.com/oauth."
+      "notes": "Create a LinkedIn developer app, then add an openid_connect app with provider_id linkedin and server_url https://www.linkedin.com/oauth.",
+      "multiple_allowed": true
     },
     {
       "docs_slug": "microsoft",
@@ -382,7 +391,8 @@
         "hex": "64748B",
         "title": "Microsoft"
       },
-      "notes": "Register an app in the Azure portal App registrations to get a key and secret, and set the tenant setting (for example organizations for single tenant apps)."
+      "notes": "Register an app in the Azure portal App registrations to get a key and secret, and set the tenant setting (for example organizations for single tenant apps).",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "okta",
@@ -417,7 +427,8 @@
         "verified_http_200": true,
         "brand_guidelines": "https://www.okta.com/terms-of-use-for-okta-content/"
       },
-      "notes": "Create an OIDC app in Okta and set OKTA_BASE_URL to your Okta domain."
+      "notes": "Create an OIDC app in Okta and set OKTA_BASE_URL to your Okta domain.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "slack",
@@ -429,8 +440,8 @@
       "replaced_by": null,
       "protocol": "OAuth2",
       "app": "allauth.socialaccount.providers.slack",
-      "supported": false,
-      "unsupported_reason": "Missing end-to-end OAuth adapter test coverage.",
+      "supported": true,
+      "unsupported_reason": null,
       "email_link_policy": "oauth2_email_verified_or_uid_only",
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/slack.html",
       "console_url": [
@@ -448,7 +459,8 @@
         "hex": "64748B",
         "title": "Slack"
       },
-      "notes": "Create a new Slack app to get a key and secret, and set the callback URL."
+      "notes": "Create a new Slack app to get a key and secret, and set the callback URL.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "twitter_oauth2",
@@ -492,7 +504,8 @@
         "brand_guidelines": "https://about.x.com/en/who-we-are/brand-toolkit",
         "note": "X logo."
       },
-      "notes": "Create an X app with OAuth 2.0 enabled and the callback URL, then copy the OAuth 2.0 client ID and secret into a SocialApp."
+      "notes": "Create an X app with OAuth 2.0 enabled and the callback URL, then copy the OAuth 2.0 client ID and secret into a SocialApp.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "oauth2",
@@ -517,7 +530,8 @@
         "hex": "64748B",
         "title": "OAuth 2.0"
       },
-      "notes": "Protocol reference page, not a provider: documents auth_params and other options shared by all OAuth2 based providers."
+      "notes": "Protocol reference page, not a provider: documents auth_params and other options shared by all OAuth2 based providers.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "openid",
@@ -548,7 +562,8 @@
           "lucide": "KeyRound"
         }
       },
-      "notes": "Install the openid extra; no credentials are needed, optionally list predefined OpenID servers in SERVERS."
+      "notes": "Install the openid extra; no credentials are needed, optionally list predefined OpenID servers in SERVERS.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "openid_connect",
@@ -586,7 +601,8 @@
           "lucide": "KeyRound"
         }
       },
-      "notes": "Register a client with each OpenID Connect server, then add one APPS entry per server with a provider_id and server_url; the callback uses that provider_id."
+      "notes": "Register a client with each OpenID Connect server, then add one APPS entry per server with a provider_id and server_url; the callback uses that provider_id.",
+      "multiple_allowed": true
     },
     {
       "docs_slug": "saml",
@@ -611,7 +627,8 @@
         "hex": "64748B",
         "title": "SAML"
       },
-      "notes": "Install the saml extra, add one APPS entry per organization with its IdP entity ID and metadata URL (or SSO URL and certificate), map attributes, and give the IdP the ACS and metadata URLs."
+      "notes": "Install the saml extra, add one APPS entry per organization with its IdP entity ID and metadata URL (or SSO URL and certificate), map attributes, and give the IdP the ACS and metadata URLs.",
+      "multiple_allowed": true
     },
     {
       "docs_slug": "23andme",
@@ -642,7 +659,8 @@
         "hex": "64748B",
         "title": "23andMe"
       },
-      "notes": "Register an app on the 23andMe developer site to get a key and secret, and set the callback URL."
+      "notes": "Register an app on the 23andMe developer site to get a key and secret, and set the callback URL.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "500px",
@@ -675,7 +693,8 @@
         "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/500px.svg",
         "verified_http_200": true
       },
-      "notes": "Create an application in your 500px settings to get a key and secret, and set the callback URL."
+      "notes": "Create an application in your 500px settings to get a key and secret, and set the callback URL.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "agave",
@@ -711,7 +730,8 @@
         "hex": "64748B",
         "title": "AgaveAPI"
       },
-      "notes": "Sign up for an Agave account, create the client with the Agave CLI client-create command, and set API_URL if you are not on the public tenant."
+      "notes": "Sign up for an Agave account, create the client with the Agave CLI client-create command, and set API_URL if you are not on the public tenant.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "amazon",
@@ -742,7 +762,8 @@
         "hex": "64748B",
         "title": "Amazon"
       },
-      "notes": "Register the app in Login with Amazon to get a key and secret, and use an https callback URL."
+      "notes": "Register the app in Login with Amazon to get a key and secret, and use an https callback URL.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "amazon_cognito",
@@ -780,7 +801,8 @@
         "hex": "64748B",
         "title": "Amazon Cognito"
       },
-      "notes": "Create a Cognito User Pool and an App Client with a secret, enable the authorization code grant and scopes, create a domain prefix, then set DOMAIN."
+      "notes": "Create a Cognito User Pool and an App Client with a secret, enable the authorization code grant and scopes, create a domain prefix, then set DOMAIN.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "atlassian",
@@ -814,7 +836,8 @@
         "verified_http_200": true,
         "brand_guidelines": "https://atlassian.design/foundations/logos"
       },
-      "notes": "In the Atlassian developer console, create an app, configure OAuth 2.0 (3LO) authorization with the callback URL, add an API under Permissions, then create the SocialApp."
+      "notes": "In the Atlassian developer console, create an app, configure OAuth 2.0 (3LO) authorization with the callback URL, add an API under Permissions, then create the SocialApp.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "authelia",
@@ -855,7 +878,8 @@
         "verified_http_200": true,
         "brand_guidelines": "https://www.authelia.com/reference/guides/branding"
       },
-      "notes": "Register a client in your Authelia OIDC configuration, then add an openid_connect app with provider_id authelia and server_url pointing at your instance."
+      "notes": "Register a client in your Authelia OIDC configuration, then add an openid_connect app with provider_id authelia and server_url pointing at your instance.",
+      "multiple_allowed": true
     },
     {
       "docs_slug": "authentiq",
@@ -886,7 +910,8 @@
         "hex": "64748B",
         "title": "Authentiq"
       },
-      "notes": "Sign in to the Authentiq dashboard with your Authentiq ID, register the app and redirect URL, and optionally choose scopes."
+      "notes": "Sign in to the Authentiq dashboard with your Authentiq ID, register the app and redirect URL, and optionally choose scopes.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "baidu",
@@ -913,7 +938,8 @@
         "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/baidu.svg",
         "verified_http_200": true
       },
-      "notes": "The page only links to the Baidu OAuth2 documentation; register an app with Baidu and create the SocialApp."
+      "notes": "The page only links to the Baidu OAuth2 documentation; register an app with Baidu and create the SocialApp.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "basecamp",
@@ -946,7 +972,8 @@
         "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/basecamp.svg",
         "verified_http_200": true
       },
-      "notes": "Register the app at 37signals integrate to get a key and secret, and set the callback URL."
+      "notes": "Register the app at 37signals integrate to get a key and secret, and set the callback URL.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "battlenet",
@@ -979,7 +1006,8 @@
         "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/battledotnet.svg",
         "verified_http_200": true
       },
-      "notes": "Create a client on the Blizzard developer portal, set the callback URL, and optionally configure SCOPE and REGION."
+      "notes": "Create a client on the Blizzard developer portal, set the callback URL, and optionally configure SCOPE and REGION.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "box",
@@ -1013,7 +1041,8 @@
         "verified_http_200": true,
         "brand_guidelines": "https://www.box.com/en-gb/about-us/press"
       },
-      "notes": "Create an app in the Box developer console to get a key and secret, and set the callback URL."
+      "notes": "Create an app in the Box developer console to get a key and secret, and set the callback URL.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "cern",
@@ -1057,7 +1086,8 @@
         "hex": "64748B",
         "title": "CERN"
       },
-      "notes": "Register the application in the CERN Application Portal, then add an openid_connect app with provider_id cern and the CERN server_url."
+      "notes": "Register the application in the CERN Application Portal, then add an openid_connect app with provider_id cern and the CERN server_url.",
+      "multiple_allowed": true
     },
     {
       "docs_slug": "cilogon",
@@ -1088,7 +1118,8 @@
         "hex": "64748B",
         "title": "CILogon"
       },
-      "notes": "Register an OIDC client with CILogon to get a key and secret, then create the SocialApp."
+      "notes": "Register an OIDC client with CILogon to get a key and secret, then create the SocialApp.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "clever",
@@ -1113,7 +1144,8 @@
         "hex": "64748B",
         "title": "Clever"
       },
-      "notes": "The page only links to the Clever OAuth2 documentation; register an app with Clever and create the SocialApp."
+      "notes": "The page only links to the Clever OAuth2 documentation; register an app with Clever and create the SocialApp.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "dataporten",
@@ -1144,7 +1176,8 @@
         "hex": "64748B",
         "title": "Dataporten"
       },
-      "notes": "Follow the Dataporten getting started guide to register the app, and set the callback URL."
+      "notes": "Follow the Dataporten getting started guide to register the app, and set the callback URL.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "daum",
@@ -1175,7 +1208,8 @@
         "hex": "64748B",
         "title": "daum"
       },
-      "notes": "Register the app in the Daum developer console to get a key and secret, and set the callback URL."
+      "notes": "Register the app in the Daum developer console to get a key and secret, and set the callback URL.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "digitalocean",
@@ -1209,7 +1243,8 @@
         "verified_http_200": true,
         "brand_guidelines": "https://www.digitalocean.com/press/"
       },
-      "notes": "Register an OAuth application in DigitalOcean settings, set the callback URL, and set SCOPE if you need write access."
+      "notes": "Register an OAuth application in DigitalOcean settings, set the callback URL, and set SCOPE if you need write access.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "dingtalk",
@@ -1234,7 +1269,8 @@
         "hex": "64748B",
         "title": "DingTalk"
       },
-      "notes": "The page only links to the DingTalk OAuth2 documentation; register an app with DingTalk, then configure client_id and secret."
+      "notes": "The page only links to the DingTalk OAuth2 documentation; register an app with DingTalk, then configure client_id and secret.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "discogs",
@@ -1267,7 +1303,8 @@
         "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/discogs.svg",
         "verified_http_200": true
       },
-      "notes": "Create an app in your Discogs developer settings, set the callback URL, and use the Consumer Key and Secret."
+      "notes": "Create an app in your Discogs developer settings, set the callback URL, and use the Consumer Key and Secret.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "doximity",
@@ -1298,7 +1335,8 @@
         "hex": "64748B",
         "title": "Doximity"
       },
-      "notes": "Request API keys from Doximity, and set the callback URL."
+      "notes": "Request API keys from Doximity, and set the callback URL.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "draugiem",
@@ -1331,7 +1369,8 @@
         "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/draugiemdotlv.svg",
         "verified_http_200": true
       },
-      "notes": "Create a Draugiem application to get a key and secret, and set the callback URL."
+      "notes": "Create a Draugiem application to get a key and secret, and set the callback URL.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "drip",
@@ -1362,7 +1401,8 @@
         "hex": "64748B",
         "title": "Drip"
       },
-      "notes": "Register the app in your Drip account, set the callback URL, and make sure the application is active."
+      "notes": "Register the app in your Drip account, set the callback URL, and make sure the application is active.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "dropbox",
@@ -1395,7 +1435,8 @@
         "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/dropbox.svg",
         "verified_http_200": true
       },
-      "notes": "Create an app in the Dropbox developer console to get a key and secret, and set the callback URL."
+      "notes": "Create an app in the Dropbox developer console to get a key and secret, and set the callback URL.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "dwolla",
@@ -1426,7 +1467,8 @@
         "hex": "64748B",
         "title": "Dwolla"
       },
-      "notes": "Create an application in the Dwolla dashboard, set the callback URL, and configure SCOPE and the sandbox environment if needed."
+      "notes": "Create an application in the Dwolla dashboard, set the callback URL, and configure SCOPE and the sandbox environment if needed.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "edmodo",
@@ -1451,7 +1493,8 @@
         "hex": "64748B",
         "title": "Edmodo"
       },
-      "notes": "The page only links to the Edmodo Connect documentation; register an app and optionally set SCOPE."
+      "notes": "The page only links to the Edmodo Connect documentation; register an app and optionally set SCOPE.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "edx",
@@ -1485,7 +1528,8 @@
         "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/edx.svg",
         "verified_http_200": true
       },
-      "notes": "Register an OAuth2 client on your Open edX installation and set EDX_URL to that installation."
+      "notes": "Register an OAuth2 client on your Open edX installation and set EDX_URL to that installation.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "eveonline",
@@ -1516,7 +1560,8 @@
         "hex": "64748B",
         "title": "Eve Online"
       },
-      "notes": "Create an application on the EVE Online developer site; if tokens are stored, give it CREST Access and a scope such as publicData."
+      "notes": "Create an application on the EVE Online developer site; if tokens are stored, give it CREST Access and a scope such as publicData.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "eventbrite",
@@ -1547,7 +1592,8 @@
         "hex": "64748B",
         "title": "Eventbrite"
       },
-      "notes": "In Account Settings, App Management, create a new app and use the callback URL for both Application URL and OAuth Redirect URI."
+      "notes": "In Account Settings, App Management, create a new app and use the callback URL for both Application URL and OAuth Redirect URI.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "evernote",
@@ -1581,7 +1627,8 @@
         "verified_http_200": true,
         "brand_guidelines": "https://evernote.com/about-us"
       },
-      "notes": "Register your application with Evernote and set EVERNOTE_HOSTNAME to evernote.com for production use."
+      "notes": "Register your application with Evernote and set EVERNOTE_HOSTNAME to evernote.com for production use.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "exist",
@@ -1612,7 +1659,8 @@
         "hex": "64748B",
         "title": "Exist"
       },
-      "notes": "Register an app on the Exist apps page, set the callback URL, and configure SCOPE for the attributes you need."
+      "notes": "Register an app on the Exist apps page, set the callback URL, and configure SCOPE for the attributes you need.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "feishu",
@@ -1643,7 +1691,8 @@
         "hex": "64748B",
         "title": "Feishu"
       },
-      "notes": "In the Feishu developer console create a self-built application to get app_id and app_secret, and add the redirect URL to its security settings."
+      "notes": "In the Feishu developer console create a self-built application to get app_id and app_secret, and add the redirect URL to its security settings.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "figma",
@@ -1677,7 +1726,8 @@
         "verified_http_200": true,
         "brand_guidelines": "https://www.figma.com/using-the-figma-brand/"
       },
-      "notes": "Create an app in the Figma developer settings to get a key and secret, and set the callback URL."
+      "notes": "Create an app in the Figma developer settings to get a key and secret, and set the callback URL.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "fxa",
@@ -1706,7 +1756,8 @@
         "brand_guidelines": "https://mozilla.design/firefox/logos-usage/",
         "note": "Firefox brand icon; Firefox Accounts is now Mozilla accounts."
       },
-      "notes": "Currently limited to Mozilla relying services; configure SCOPE and endpoints if needed."
+      "notes": "Currently limited to Mozilla relying services; configure SCOPE and endpoints if needed.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "flickr",
@@ -1739,7 +1790,8 @@
         "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/flickr.svg",
         "verified_http_200": true
       },
-      "notes": "Create a Flickr app to get a key and secret, and optionally set the perms auth parameter."
+      "notes": "Create a Flickr app to get a key and secret, and optionally set the perms auth parameter.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "frontier",
@@ -1770,7 +1822,8 @@
         "hex": "64748B",
         "title": "Frontier"
       },
-      "notes": "Apply for access at Frontier, create a client in the Developer Zone to get the Client ID and Shared Key, then create the SocialApp."
+      "notes": "Apply for access at Frontier, create a client in the Developer Zone to get the Client ID and Shared Key, then create the SocialApp.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "gitea",
@@ -1810,7 +1863,8 @@
         "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/gitea.svg",
         "verified_http_200": true
       },
-      "notes": "Create an OAuth2 application in your Gitea user settings, set the callback URL, and set GITEA_URL when self-hosting."
+      "notes": "Create an OAuth2 application in your Gitea user settings, set the callback URL, and set GITEA_URL when self-hosting.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "globus",
@@ -1841,7 +1895,8 @@
         "hex": "64748B",
         "title": "Globus"
       },
-      "notes": "Register an application on the Globus developer site and optionally add scopes."
+      "notes": "Register an application on the Globus developer site and optionally add scopes.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "gumroad",
@@ -1881,7 +1936,8 @@
         "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/gumroad.svg",
         "verified_http_200": true
       },
-      "notes": "Follow the Gumroad help article to create an API application, and set the callback URL."
+      "notes": "Follow the Gumroad help article to create an API application, and set the callback URL.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "hubspot",
@@ -1915,7 +1971,8 @@
         "verified_http_200": true,
         "brand_guidelines": "https://www.hubspot.com/style-guide"
       },
-      "notes": "Create an app as described in the HubSpot developer docs to get a key and secret, and set the callback URL."
+      "notes": "Create an app as described in the HubSpot developer docs to get a key and secret, and set the callback URL.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "instagram",
@@ -1949,7 +2006,8 @@
         "verified_http_200": true,
         "brand_guidelines": "https://about.meta.com/brand/resources/instagram"
       },
-      "notes": "Register a client on the Instagram developer site to get a key and secret, and set the callback URL."
+      "notes": "Register a client on the Instagram developer site to get a key and secret, and set the callback URL.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "jupyterhub",
@@ -1991,7 +2049,8 @@
         "brand_guidelines": "https://github.com/jupyter/design",
         "note": "Jupyter project icon (no separate JupyterHub icon)."
       },
-      "notes": "Configure an OAuth client on your JupyterHub following its services auth docs, and set API_URL to your hub."
+      "notes": "Configure an OAuth client on your JupyterHub following its services auth docs, and set API_URL to your hub.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "kakao",
@@ -2024,7 +2083,8 @@
         "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/kakao.svg",
         "verified_http_200": true
       },
-      "notes": "Register an app on Kakao Developers to get a key, and set the callback URL."
+      "notes": "Register an app on Kakao Developers to get a key, and set the callback URL.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "keycloak",
@@ -2064,7 +2124,8 @@
         "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/keycloak.svg",
         "verified_http_200": true
       },
-      "notes": "Create a client in your Keycloak realm, then add an openid_connect app with provider_id keycloak and the realm discovery URL as server_url."
+      "notes": "Create a client in your Keycloak realm, then add an openid_connect app with provider_id keycloak and the realm discovery URL as server_url.",
+      "multiple_allowed": true
     },
     {
       "docs_slug": "klaviyo",
@@ -2095,7 +2156,8 @@
         "hex": "64748B",
         "title": "Klaviyo"
       },
-      "notes": "Create an OAuth app in your Klaviyo account, set the callback URL, and use its Client ID and Secret."
+      "notes": "Create an OAuth app in your Klaviyo account, set the callback URL, and use its Client ID and Secret.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "lemonldap",
@@ -2127,7 +2189,8 @@
         "hex": "64748B",
         "title": "LemonLDAP::NG"
       },
-      "notes": "Create an OpenID Connect Relying Party in LemonLDAP::NG exporting email, name and preferred_username, and set LEMONLDAP_URL."
+      "notes": "Create an OpenID Connect Relying Party in LemonLDAP::NG exporting email, name and preferred_username, and set LEMONLDAP_URL.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "lichess",
@@ -2154,7 +2217,8 @@
         "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/lichess.svg",
         "verified_http_200": true
       },
-      "notes": "No Lichess app registration is needed; generate your own random client ID and secret and set them in APP."
+      "notes": "No Lichess app registration is needed; generate your own random client ID and secret and set them in APP.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "line",
@@ -2188,7 +2252,8 @@
         "verified_http_200": true,
         "brand_guidelines": "https://line.me/en/logo"
       },
-      "notes": "Create a LINE Login channel in the LINE developers console, set the callback URL, and use the channel ID and secret."
+      "notes": "Create a LINE Login channel in the LINE developers console, set the callback URL, and use the channel ID and secret.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "mailchimp",
@@ -2227,7 +2292,8 @@
         "verified_http_200": true,
         "brand_guidelines": "https://mailchimp.com/about/brand-assets"
       },
-      "notes": "Log in to Mailchimp, go to Profile, Extras, API keys, register an OAuth2 app on your usX admin subdomain, and use an https callback URL."
+      "notes": "Log in to Mailchimp, go to Profile, Extras, API keys, register an OAuth2 app on your usX admin subdomain, and use an https callback URL.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "mailcow",
@@ -2265,7 +2331,8 @@
         "hex": "64748B",
         "title": "Mailcow"
       },
-      "notes": "Register an OAuth app in Mailcow following its Nextcloud guide, then set SERVER and the APP credentials."
+      "notes": "Register an OAuth app in Mailcow following its Nextcloud guide, then set SERVER and the APP credentials.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "mediawiki",
@@ -2303,7 +2370,8 @@
         "hex": "64748B",
         "title": "MediaWiki"
       },
-      "notes": "Propose an OAuth consumer on Meta-Wiki (or your wiki), and set REST_API, USERPAGE_TEMPLATE and a descriptive USER_AGENT."
+      "notes": "Propose an OAuth consumer on Meta-Wiki (or your wiki), and set REST_API, USERPAGE_TEMPLATE and a descriptive USER_AGENT.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "miro",
@@ -2336,7 +2404,8 @@
         "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/miro.svg",
         "verified_http_200": true
       },
-      "notes": "Create an app in your Miro profile settings to get the Client ID and Secret, and set the callback URL."
+      "notes": "Create an app in your Miro profile settings to get the Client ID and Secret, and set the callback URL.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "naver",
@@ -2370,7 +2439,8 @@
         "verified_http_200": true,
         "brand_guidelines": "https://developers.naver.com/docs/login/bi/bi.md"
       },
-      "notes": "Register an app on Naver Developers to get a key and secret, and set the callback URL."
+      "notes": "Register an app on Naver Developers to get a key and secret, and set the callback URL.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "netiq",
@@ -2402,7 +2472,8 @@
         "hex": "64748B",
         "title": "NetIQ/Microfocus AccessManager (NAM)"
       },
-      "notes": "Ask the administrator of your NetIQ AccessManager to register the app, then set NETIQ_URL."
+      "notes": "Ask the administrator of your NetIQ AccessManager to register the app, then set NETIQ_URL.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "nextcloud",
@@ -2414,8 +2485,8 @@
       "replaced_by": null,
       "protocol": "OAuth2",
       "app": "allauth.socialaccount.providers.nextcloud",
-      "supported": false,
-      "unsupported_reason": "Missing end-to-end OAuth adapter test coverage.",
+      "supported": true,
+      "unsupported_reason": null,
       "email_link_policy": "oauth2_email_verified_or_uid_only",
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/nextcloud.html",
       "console_url": [
@@ -2446,7 +2517,8 @@
         "verified_http_200": true,
         "brand_guidelines": "https://nextcloud.com/trademarks/"
       },
-      "notes": "Add an OAuth2 client in your Nextcloud admin security settings, then configure the app with settings.server."
+      "notes": "Add an OAuth2 client in your Nextcloud admin security settings, then configure the app with settings.server.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "notion",
@@ -2479,7 +2551,8 @@
         "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/notion.svg",
         "verified_http_200": true
       },
-      "notes": "Create a public Notion integration with the read user information including email capability, and paste the localhost callback URL as its redirect URL."
+      "notes": "Create a public Notion integration with the read user information including email capability, and paste the localhost callback URL as its redirect URL.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "odnoklassniki",
@@ -2512,7 +2585,8 @@
         "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/odnoklassniki.svg",
         "verified_http_200": true
       },
-      "notes": "Register the app with Odnoklassniki (OK.ru) following their wiki to get a key and secret, and set the callback URL."
+      "notes": "Register the app with Odnoklassniki (OK.ru) following their wiki to get a key and secret, and set the callback URL.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "openstreetmap",
@@ -2546,7 +2620,8 @@
         "verified_http_200": true,
         "brand_guidelines": "https://wiki.osmfoundation.org/wiki/Trademark_Policy"
       },
-      "notes": "The builtin OAuth 1.0 provider is legacy; register an OAuth 2 app on OpenStreetMap and configure it as an openid_connect app instead."
+      "notes": "The builtin OAuth 1.0 provider is legacy; register an OAuth 2 app on OpenStreetMap and configure it as an openid_connect app instead.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "orcid",
@@ -2574,7 +2649,8 @@
         "verified_http_200": true,
         "brand_guidelines": "https://info.orcid.org/brand-guidelines/"
       },
-      "notes": "Works out of the box with the production public API; set BASE_DOMAIN and MEMBER_API for sandbox or member API use."
+      "notes": "Works out of the box with the production public API; set BASE_DOMAIN and MEMBER_API for sandbox or member API use.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "patreon",
@@ -2608,7 +2684,8 @@
         "verified_http_200": true,
         "brand_guidelines": "https://www.patreon.com/brand"
       },
-      "notes": "Register a client in the Patreon portal, set the callback URL, and choose the API VERSION."
+      "notes": "Register a client in the Patreon portal, set the callback URL, and choose the API VERSION.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "paypal",
@@ -2642,7 +2719,8 @@
         "verified_http_200": true,
         "brand_guidelines": "https://newsroom.paypal-corp.com/media-resources"
       },
-      "notes": "Create an app on the PayPal developer site, check the required attributes, set the callback URL, and choose MODE live or test."
+      "notes": "Create an app on the PayPal developer site, check the required attributes, set the callback URL, and choose MODE live or test.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "pinterest",
@@ -2670,7 +2748,8 @@
         "verified_http_200": true,
         "brand_guidelines": "https://business.pinterest.com/en/brand-guidelines"
       },
-      "notes": "The page only links to the Pinterest OAuth documentation; register an app and set SCOPE and API_VERSION."
+      "notes": "The page only links to the Pinterest OAuth documentation; register an app and set SCOPE and API_VERSION.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "pocket",
@@ -2701,7 +2780,8 @@
         "hex": "64748B",
         "title": "Pocket"
       },
-      "notes": "Create an app on the Pocket developer site to get a consumer key."
+      "notes": "Create an app on the Pocket developer site to get a consumer key.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "questrade",
@@ -2737,7 +2817,8 @@
         "hex": "64748B",
         "title": "Questrade"
       },
-      "notes": "Follow the Questrade getting started guide to create a personal app in the App Hub, and use an https callback URL."
+      "notes": "Follow the Questrade getting started guide to create a personal app in the App Hub, and use an https callback URL.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "quickbooks",
@@ -2771,7 +2852,8 @@
         "verified_http_200": true,
         "brand_guidelines": "https://design.intuit.com/quickbooks/brand"
       },
-      "notes": "Create an app on the Intuit developer site, set the callback URL, and optionally enable SANDBOX and extra scopes."
+      "notes": "Create an app on the Intuit developer site, set the callback URL, and optionally enable SANDBOX and extra scopes.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "reddit",
@@ -2805,7 +2887,8 @@
         "verified_http_200": true,
         "brand_guidelines": "https://www.redditinc.com/brand"
       },
-      "notes": "Create an app in your Reddit preferences, set the callback URL, and set a compliant USER_AGENT."
+      "notes": "Create an app in your Reddit preferences, set the callback URL, and set a compliant USER_AGENT.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "salesforce",
@@ -2817,8 +2900,8 @@
       "replaced_by": null,
       "protocol": "OAuth2",
       "app": "allauth.socialaccount.providers.salesforce",
-      "supported": false,
-      "unsupported_reason": "Missing end-to-end OAuth adapter test coverage.",
+      "supported": true,
+      "unsupported_reason": null,
       "email_link_policy": "oauth2_email_verified_or_uid_only",
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/salesforce.html",
       "console_url": [],
@@ -2837,7 +2920,8 @@
         "hex": "64748B",
         "title": "Salesforce"
       },
-      "notes": "Create a Connected App with OAuth (scopes id and openid) in a Salesforce org, then create the SocialApp with the login URL in the key field."
+      "notes": "Create a Connected App with OAuth (scopes id and openid) in a Salesforce org, then create the SocialApp with the login URL in the key field.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "sharefile",
@@ -2869,7 +2953,8 @@
         "hex": "64748B",
         "title": "ShareFile"
       },
-      "notes": "Register an API client with ShareFile and set SUBDOMAIN, plus APICP and DEFAULT_URL if needed."
+      "notes": "Register an API client with ShareFile and set SUBDOMAIN, plus APICP and DEFAULT_URL if needed.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "shopify",
@@ -2881,8 +2966,8 @@
       "replaced_by": null,
       "protocol": "OAuth2",
       "app": "allauth.socialaccount.providers.shopify",
-      "supported": false,
-      "unsupported_reason": "Missing end-to-end OAuth adapter test coverage.",
+      "supported": true,
+      "unsupported_reason": null,
       "email_link_policy": "oauth2_email_verified_or_uid_only",
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/shopify.html",
       "console_url": [],
@@ -2897,7 +2982,8 @@
         "verified_http_200": true,
         "brand_guidelines": "https://www.shopify.com/brand-assets"
       },
-      "notes": "Set the App URL to /accounts/shopify/login/ and the redirection URL to the callback, and pass the shop parameter when logging in."
+      "notes": "Set the App URL to /accounts/shopify/login/ and the redirection URL to the callback, and pass the shop parameter when logging in.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "snapchat",
@@ -2931,7 +3017,8 @@
         "verified_http_200": true,
         "brand_guidelines": "https://www.snapchat.com/brand-guidelines"
       },
-      "notes": "Create an app in the Snap Kit portal to get a key and secret, and set the callback URL."
+      "notes": "Create an app in the Snap Kit portal to get a key and secret, and set the callback URL.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "soundcloud",
@@ -2964,7 +3051,8 @@
         "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/soundcloud.svg",
         "verified_http_200": true
       },
-      "notes": "Register a SoundCloud app using OAuth2, set the callback URL, and migrate existing uids to URNs when upgrading past 65.10.0."
+      "notes": "Register a SoundCloud app using OAuth2, set the callback URL, and migrate existing uids to URNs when upgrading past 65.10.0.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "stackexchange",
@@ -2998,7 +3086,8 @@
         "verified_http_200": true,
         "brand_guidelines": "https://stackoverflow.com/legal/trademark-guidance"
       },
-      "notes": "Register an OAuth app on Stack Apps without Client Side Flow (localhost as OAuth domain for development), and set SITE."
+      "notes": "Register an OAuth app on Stack Apps without Client Side Flow (localhost as OAuth domain for development), and set SITE.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "steam",
@@ -3032,7 +3121,8 @@
         "verified_http_200": true,
         "brand_guidelines": "https://partner.steamgames.com/doc/marketing/branding"
       },
-      "notes": "Install the steam extra, register a Steam Web API key, and put it in both the client_id and secret fields."
+      "notes": "Install the steam extra, register a Steam Web API key, and put it in both the client_id and secret fields.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "stocktwits",
@@ -3063,7 +3153,8 @@
         "hex": "64748B",
         "title": "Stocktwits"
       },
-      "notes": "Register an app on Stocktwits with an external site domain, and use the consumer key and secret."
+      "notes": "Register an app on Stocktwits with an external site domain, and use the consumer key and secret.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "strava",
@@ -3096,7 +3187,8 @@
         "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/strava.svg",
         "verified_http_200": true
       },
-      "notes": "Register the app on the Strava API settings page (only the callback domain is needed) to get a key and secret."
+      "notes": "Register the app on the Strava API settings page (only the callback domain is needed) to get a key and secret.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "stripe",
@@ -3134,7 +3226,8 @@
         "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/stripe.svg",
         "verified_http_200": true
       },
-      "notes": "Register the OAuth app in Stripe Connect settings for the client_id, set the callback, and use your Stripe API secret key as secret."
+      "notes": "Register the OAuth app in Stripe Connect settings for the client_id, set the callback, and use your Stripe API secret key as secret.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "telegram",
@@ -3161,7 +3254,8 @@
         "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/telegram.svg",
         "verified_http_200": true
       },
-      "notes": "Create a Telegram bot, use its id as client_id and its token as secret, and optionally tune auth_date_validity."
+      "notes": "Create a Telegram bot, use its id as client_id and its token as secret, and optionally tune auth_date_validity.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "tiktok",
@@ -3199,7 +3293,8 @@
         "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/tiktok.svg",
         "verified_http_200": true
       },
-      "notes": "Sign up as a TikTok developer, create an app, complete the unreleased app integration assessment and app review, and use a fixed https callback URL."
+      "notes": "Sign up as a TikTok developer, create an app, complete the unreleased app integration assessment and app review, and use a fixed https callback URL.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "trainingpeaks",
@@ -3230,7 +3325,8 @@
         "hex": "64748B",
         "title": "TrainingPeaks"
       },
-      "notes": "Request an API partnership from TrainingPeaks including the athlete:profile scope, and set USE_PRODUCTION when going live."
+      "notes": "Request an API partnership from TrainingPeaks including the athlete:profile scope, and set USE_PRODUCTION when going live.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "trello",
@@ -3264,7 +3360,8 @@
         "verified_http_200": true,
         "brand_guidelines": "https://atlassian.design/foundations/logos"
       },
-      "notes": "Get your application key and secret from the Trello app-key page, and optionally change the scope via AUTH_PARAMS."
+      "notes": "Get your application key and secret from the Trello app-key page, and optionally change the scope via AUTH_PARAMS.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "tumblr_oauth2",
@@ -3303,7 +3400,8 @@
         "verified_http_200": true,
         "brand_guidelines": "https://www.tumblr.com/logo"
       },
-      "notes": "Register a Tumblr app with the callback URL, then copy the OAuth2 Client ID and Secret into a SocialApp."
+      "notes": "Register a Tumblr app with the callback URL, then copy the OAuth2 Client ID and Secret into a SocialApp.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "twitch",
@@ -3337,7 +3435,8 @@
         "verified_http_200": true,
         "brand_guidelines": "https://brand.twitch.tv"
       },
-      "notes": "Register an application in the Twitch developer console to get a key and secret, and set the callback URL."
+      "notes": "Register an application in the Twitch developer console to get a key and secret, and set the callback URL.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "untappd",
@@ -3375,7 +3474,8 @@
         "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/untappd.svg",
         "verified_http_200": true
       },
-      "notes": "Register an Untappd API app with the callback URL, copy the Client ID and Secret from the API dashboard, and set a USER_AGENT."
+      "notes": "Register an Untappd API app with the callback URL, copy the Client ID and Secret from the API dashboard, and set a USER_AGENT.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "vimeo",
@@ -3409,7 +3509,8 @@
         "verified_http_200": true,
         "brand_guidelines": "https://press.vimeo.com/brand-guidelines"
       },
-      "notes": "Create an app on the Vimeo developer site to get a key and secret."
+      "notes": "Create an app on the Vimeo developer site to get a key and secret.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "vimeo_oauth2",
@@ -3443,7 +3544,8 @@
         "verified_http_200": true,
         "brand_guidelines": "https://press.vimeo.com/brand-guidelines"
       },
-      "notes": "Create an app on the Vimeo developer site to get a key and secret, and set the callback URL."
+      "notes": "Create an app on the Vimeo developer site to get a key and secret, and set the callback URL.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "vk",
@@ -3477,7 +3579,8 @@
         "verified_http_200": true,
         "brand_guidelines": "https://vk.com/brand"
       },
-      "notes": "Create a VK app with http://localhost or https://localhost as site address, and configure client_id, secret and SCOPE."
+      "notes": "Create a VK app with http://localhost or https://localhost as site address, and configure client_id, secret and SCOPE.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "wahoo",
@@ -3508,7 +3611,8 @@
         "hex": "64748B",
         "title": "Wahoo"
       },
-      "notes": "Register an app on the Wahoo developer portal and request additional scopes for workout data if needed."
+      "notes": "Register an app on the Wahoo developer portal and request additional scopes for workout data if needed.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "weibo",
@@ -3542,7 +3646,8 @@
         "verified_http_200": true,
         "note": "Listed as Sina Weibo in Simple Icons."
       },
-      "notes": "Register an app on Weibo Open, and use a port-less callback URL (run the dev server on port 80)."
+      "notes": "Register an app on Weibo Open, and use a port-less callback URL (run the dev server on port 80).",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "weixin",
@@ -3571,7 +3676,8 @@
         "brand_guidelines": "https://wechat.design/brand/main-brand",
         "note": "Weixin is WeChat in Simple Icons."
       },
-      "notes": "The page only links to the Weixin OAuth2 documentation; register an app and set AUTHORIZE_URL for the media platform if needed."
+      "notes": "The page only links to the Weixin OAuth2 documentation; register an app and set AUTHORIZE_URL for the media platform if needed.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "windowslive",
@@ -3602,7 +3708,8 @@
         "hex": "64748B",
         "title": "Windows Live"
       },
-      "notes": "Register an app, generate a new password as client secret, and set the callback URL."
+      "notes": "Register an app, generate a new password as client secret, and set the callback URL.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "twitter",
@@ -3645,7 +3752,8 @@
         "brand_guidelines": "https://about.x.com/en/who-we-are/brand-toolkit",
         "note": "X logo."
       },
-      "notes": "Create an X app with the 127.0.0.1 callback URL, enable Sign in with X, and copy the consumer key and secret into a SocialApp."
+      "notes": "Create an X app with the 127.0.0.1 callback URL, enable Sign in with X, and copy the consumer key and secret into a SocialApp.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "xing",
@@ -3678,7 +3786,8 @@
         "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/xing.svg",
         "verified_http_200": true
       },
-      "notes": "Create an application on the Xing developer site to get a key and secret, using http://localhost:8000 during development."
+      "notes": "Create an application on the Xing developer site to get a key and secret, using http://localhost:8000 during development.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "yahoo",
@@ -3709,7 +3818,8 @@
         "hex": "64748B",
         "title": "Yahoo"
       },
-      "notes": "Create a Yahoo app with the OpenID Connect Email and Profile permissions and an https redirect URL, and copy the ID and secret without leading spaces."
+      "notes": "Create a Yahoo app with the OpenID Connect Email and Profile permissions and an https redirect URL, and copy the ID and secret without leading spaces.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "yandex",
@@ -3740,7 +3850,8 @@
         "hex": "64748B",
         "title": "Yandex"
       },
-      "notes": "Create a Yandex OAuth client with the Yandex.Passport API email and name permissions."
+      "notes": "Create a Yandex OAuth client with the Yandex.Passport API email and name permissions.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "ynab",
@@ -3771,7 +3882,8 @@
         "hex": "64748B",
         "title": "YNAB"
       },
-      "notes": "Register an OAuth app in YNAB developer settings, set the callback URL, and set SCOPE to an empty string for write access."
+      "notes": "Register an OAuth app in YNAB developer settings, set the callback URL, and set SCOPE to an empty string for write access.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "zoho",
@@ -3804,7 +3916,8 @@
         "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/zoho.svg",
         "verified_http_200": true
       },
-      "notes": "Add a Server-based Application in the Zoho API console and set the authorized redirect URI."
+      "notes": "Add a Server-based Application in the Zoho API console and set the authorized redirect URI.",
+      "multiple_allowed": false
     },
     {
       "docs_slug": "zoom",
@@ -3838,7 +3951,8 @@
         "verified_http_200": true,
         "brand_guidelines": "https://brand.zoom.us/usage-legal/"
       },
-      "notes": "Create an app in the Zoom Marketplace with the user:read scope and set the callback URL."
+      "notes": "Create an app in the Zoom Marketplace with the user:read scope and set the callback URL.",
+      "multiple_allowed": false
     }
   ]
 }

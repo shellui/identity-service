@@ -16,12 +16,15 @@ from apps.authapi.oauth_social_account import compose_social_account_uid
 from apps.authapi.provider_registry import get_provider_catalog, validate_extra_settings
 from apps.authapi.tests.oauth_real_provider_harness import (
     PUBLIC_HOST,
+    authorize_get_path,
     build_profile_for_provider,
     discovery_document_for_slug,
     patch_oauth_http,
     patch_verified_id_token_decode,
+    prepare_social_app_for_audit,
 )
 from apps.companies.models import Company, CompanyOAuthClient
+from tools.audit_oauth_provider_coverage import _try_slug
 
 E2E_SLUGS_PATH = Path(__file__).resolve().parents[3] / 'tools' / 'data' / 'oauth_e2e_covered_slugs.json'
 PROFILE_BASE = {}
@@ -77,6 +80,7 @@ class OAuthProviderE2ETests(TestCase):
         )
         app.sites.add(self.site)
         CompanyOAuthClient.objects.create(company=self.company, social_app=app, is_active=True)
+        prepare_social_app_for_audit(slug, app)
         return app
 
     def test_all_catalog_supported_slugs_have_e2e_entry(self):
@@ -91,10 +95,7 @@ class OAuthProviderE2ETests(TestCase):
             entry = catalog.by_slug()[slug]
             with self.subTest(provider=slug):
                 app = self._social_app_for_slug(slug)
-                authorize_path = '/api/v1/authorize'
-                if slug == 'shopify':
-                    authorize_path = '/api/v1/authorize?shop=test-shop.myshopify.com'
-                request = self.factory.get(authorize_path)
+                request = self.factory.get(authorize_get_path(slug))
                 request.session = {}
                 profile_payload = build_profile_for_provider(request, slug, app)
                 discovery = discovery_document_for_slug(slug)
@@ -119,7 +120,13 @@ class OAuthProviderE2ETests(TestCase):
                             parsed_host = authorize_url.split('/')[2]
                             self.assertTrue(parsed_host)
 
-                            exchange_request = self.factory.get('/api/v1/oauth/callback', {'code': 'abc'})
+                            exchange_query = {'code': 'abc'}
+                            if slug == 'shopify':
+                                exchange_query['shop'] = 'test-shop.myshopify.com'
+                            exchange_request = self.factory.get(
+                                '/api/v1/oauth/callback',
+                                exchange_query,
+                            )
                             exchange_request.session = {}
                             bundle = exchange_code_for_token(
                                 slug,
@@ -139,6 +146,18 @@ class OAuthProviderE2ETests(TestCase):
                             userinfo = sociallogin_userinfo(sociallogin)
                             self.assertTrue(sociallogin.account.uid)
                             self.assertTrue(userinfo.get('email') or userinfo.get('id'))
+
+
+class OAuthProviderAuditSlugTests(TestCase):
+    def test_slack_audit_harness_passes(self):
+        company = Company.objects.create(name='Slack Audit', slug='slack-audit')
+        err = _try_slug(
+            'slack',
+            company=company,
+            site=Site.objects.get_current(),
+            factory=RequestFactory(),
+        )
+        self.assertIsNone(err, err)
 
 
 class OpenIdSocialAccountKeyTests(TestCase):

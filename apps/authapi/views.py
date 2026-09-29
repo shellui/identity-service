@@ -34,6 +34,11 @@ from . import metrics as auth_metrics
 from apps.companies.group_graph import effective_group_display_names_for_user, effective_group_ids_for_user
 from apps.companies.group_display_name import first_display_name_conflict
 from apps.companies.models import Company, CompanyGroup, CompanyOAuthClient, CompanyOAuthRedirect
+from apps.companies.oauth_client_uniqueness import (
+    compute_dedupe_key_for_new_app,
+    find_duplicate_company_oauth_client,
+    find_duplicate_for_social_app,
+)
 from apps.companies.access import (
     JoinDecision,
     apply_company_join,
@@ -220,10 +225,14 @@ def _resolve_oauth_login_user(
         company_oauth_client_id=company_oauth_client_id,
     )
     social_app = get_social_app_for_client(resolved)
-    id_claims: dict = {}
-    nested = userinfo.get('_id_token_claims') if isinstance(userinfo.get('_id_token_claims'), dict) else {}
-    if nested:
-        id_claims = nested
+    from apps.authapi.oauth_id_token import verified_login_id_token_claims
+
+    id_claims = verified_login_id_token_claims(
+        entry=resolved.catalog_entry,
+        social_app=social_app,
+        id_token_raw=token_bundle.id_token,
+        userinfo=userinfo,
+    )
     profile, perror = extract_oauth_profile(
         provider,
         userinfo,
@@ -352,6 +361,10 @@ def _social_app_matches_catalog_entry(social_app: SocialApp, entry) -> bool:
     if str(social_app.provider).strip().lower() != entry.allauth_id.lower():
         return False
     if entry.allauth_id == 'openid_connect':
+        settings_data = social_app.settings if isinstance(getattr(social_app, 'settings', None), dict) else {}
+        catalog_slug = str(settings_data.get('catalog_slug') or '').strip().lower()
+        if catalog_slug and catalog_slug == entry.docs_slug.lower():
+            return True
         sub = str(getattr(social_app, 'provider_id', '') or '').strip().lower()
         return sub == entry.social_app_provider_id().lower()
     return True
@@ -459,6 +472,7 @@ def _catalog_provider_payload(request, entry, *, include_unsupported: bool) -> d
             }
             for field in entry.extra_settings_schema
         ],
+        'multiple_allowed': entry.multiple_allowed,
     }
 
 
@@ -481,6 +495,16 @@ def _merge_social_app_settings(entry, validated: dict, *, existing: dict | None 
         base[key] = value
     base['catalog_slug'] = entry.docs_slug
     return base, None
+
+
+def _oauth_duplicate_provider_response(existing_social_app_id: int) -> Response:
+    return Response(
+        {
+            'error_code': 'oauth_app_duplicate_provider',
+            'social_app_id': existing_social_app_id,
+        },
+        status=status.HTTP_409_CONFLICT,
+    )
 
 
 def _generated_social_app_name(provider: str, company: Company) -> str:
@@ -3178,6 +3202,9 @@ class ShellUIAdminOAuthClientListView(APIView):
                 is_active=bool(validated.get('is_active', True)),
             )
         except IntegrityError:
+            duplicate = find_duplicate_for_social_app(company.id, social_app)
+            if duplicate is not None:
+                return _oauth_duplicate_provider_response(duplicate.social_app_id)
             return Response(
                 {'error': 'This SocialApp is already mapped for this company.'},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -3296,15 +3323,13 @@ class ShellUIAdminOAuthSocialAppListView(APIView):
                 {'error': f"Provider '{docs_slug}' is not supported."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        for row in CompanyOAuthClient.objects.filter(company=company).select_related('social_app'):
-            if social_app_catalog_slug(row.social_app) == entry.docs_slug:
-                return Response(
-                    {'error': f"Provider '{docs_slug}' is already configured for this company."},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
         social_settings, settings_err = _merge_social_app_settings(entry, validated)
         if settings_err:
             return Response({'error': settings_err}, status=status.HTTP_400_BAD_REQUEST)
+        dedupe_key = compute_dedupe_key_for_new_app(entry, settings=social_settings)
+        duplicate = find_duplicate_company_oauth_client(company.id, dedupe_key=dedupe_key)
+        if duplicate is not None:
+            return _oauth_duplicate_provider_response(duplicate.social_app_id)
         social_settings['created_by_company_id'] = int(company.id)
         app = SocialApp.objects.create(
             provider=entry.allauth_id,
@@ -3324,11 +3349,18 @@ class ShellUIAdminOAuthSocialAppListView(APIView):
             app.sites.add(current_site)
         except Exception:
             pass
-        mapping, _created = CompanyOAuthClient.objects.get_or_create(
-            company=company,
-            social_app=app,
-            defaults={'is_active': True},
-        )
+        try:
+            mapping, _created = CompanyOAuthClient.objects.get_or_create(
+                company=company,
+                social_app=app,
+                defaults={'is_active': True},
+            )
+        except IntegrityError:
+            duplicate = find_duplicate_for_social_app(company.id, app)
+            if duplicate is not None:
+                app.delete()
+                return _oauth_duplicate_provider_response(duplicate.social_app_id)
+            raise
         return Response(
             {
                 'social_app': _oauth_social_app_payload(company, app),
@@ -3397,7 +3429,15 @@ class ShellUIAdminOAuthSocialAppDetailView(APIView):
             else:
                 settings_data.pop('tenant', None)
         app.settings = settings_data
+        duplicate = find_duplicate_for_social_app(
+            company.id,
+            app,
+            exclude_company_oauth_client_id=mapping.id,
+        )
+        if duplicate is not None:
+            return _oauth_duplicate_provider_response(duplicate.social_app_id)
         app.save()
+        mapping.save()
         app.refresh_from_db()
         return Response(_oauth_social_app_payload(company, app))
 

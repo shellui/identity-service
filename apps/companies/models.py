@@ -212,6 +212,8 @@ class CompanyOAuthClient(models.Model):
         on_delete=models.CASCADE,
         related_name='company_oauth_clients',
     )
+    catalog_slug = models.CharField(max_length=128, blank=True, default='')
+    dedupe_key = models.CharField(max_length=512, null=True, blank=True)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -223,7 +225,18 @@ class CompanyOAuthClient(models.Model):
                 fields=['company', 'social_app'],
                 name='company_oauth_client_unique_social_app_per_company',
             ),
+            models.UniqueConstraint(
+                fields=['company', 'dedupe_key'],
+                name='company_oauth_client_unique_dedupe_per_company',
+            ),
         ]
+
+    def save(self, *args, **kwargs):
+        if self.social_app_id:
+            from apps.companies.oauth_client_uniqueness import sync_company_oauth_client_uniqueness_fields
+
+            sync_company_oauth_client_uniqueness_fields(self)
+        super().save(*args, **kwargs)
 
     def __str__(self) -> str:
         return f'{self.company_id}:{self.social_app.provider}:{self.social_app.name}'

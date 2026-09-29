@@ -28,10 +28,12 @@ from apps.authapi.oauth_allauth import exchange_allauth_code
 from apps.authapi.provider_registry import get_provider_catalog, validate_extra_settings
 from apps.authapi.tests.oauth_real_provider_harness import (
     PUBLIC_HOST,
+    authorize_get_path,
     build_profile_for_provider,
     discovery_document_for_slug,
     patch_oauth_http,
     patch_verified_id_token_decode,
+    prepare_social_app_for_audit,
 )
 from apps.companies.models import Company, CompanyOAuthClient
 from unittest import mock
@@ -73,7 +75,8 @@ def _try_slug(slug: str, *, company: Company, site: Site, factory: RequestFactor
     )
     app.sites.add(site)
     CompanyOAuthClient.objects.create(company=company, social_app=app, is_active=True)
-    request = factory.get('/api/v1/authorize')
+    prepare_social_app_for_audit(slug, app)
+    request = factory.get(authorize_get_path(slug))
     request.session = {}
     try:
         profile_payload = build_profile_for_provider(request, slug, app)
@@ -98,7 +101,10 @@ def _try_slug(slug: str, *, company: Company, site: Site, factory: RequestFactor
                     )
                     if not authorize_url.startswith('http'):
                         return 'authorize url missing'
-                    exchange_request = factory.get('/api/v1/oauth/callback', {'code': 'abc'})
+                    exchange_query = {'code': 'abc'}
+                    if slug == 'shopify':
+                        exchange_query['shop'] = 'test-shop.myshopify.com'
+                    exchange_request = factory.get('/api/v1/oauth/callback', exchange_query)
                     exchange_request.session = {}
                     exchange_allauth_code(
                         exchange_request,
