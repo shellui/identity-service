@@ -28,6 +28,8 @@ from apps.actions.scim_hooks import (
 )
 from apps.scim.provisioning_events import OPERATION_CREATE, OPERATION_RENAME, record_group_display_name_conflict
 from apps.scim.models import ScimProvisioningEvent
+from apps.authapi.account_lifecycle import invalidate_user_company_auth_state
+from apps.scim.email_normalization import normalize_scim_email
 from apps.scim.identity_guard import (
     SCIM_UNIQUENESS_DETAIL,
     assert_scim_identity_change_allowed,
@@ -160,14 +162,23 @@ class ShellUIScimUser(_ShellUIResourceTypeMixin, SCIMUser):
         self.obj = ScimUserBridge(existing)
         return True
 
+    def _apply_scim_email_normalization(self, user) -> None:
+        if user.email:
+            user.email = normalize_scim_email(user.email)
+
     def _assert_can_persist_user(self, company) -> None:
         user = self.obj.user
+        self._apply_scim_email_normalization(user)
         assert_scim_identity_change_allowed(
             user=user,
             company_id=company.pk,
             new_email=user.email or '',
             new_username=user.username or '',
         )
+
+    def _revoke_company_credentials_if_disabled(self, company, user, *, enabled: bool) -> None:
+        if not enabled:
+            invalidate_user_company_auth_state(user, company)
 
     def _emit_membership_change(self, company, user, *, was_enabled: bool, enabled: bool) -> None:
         if was_enabled == enabled:
@@ -203,6 +214,7 @@ class ShellUIScimUser(_ShellUIResourceTypeMixin, SCIMUser):
         self.obj.save_scim_fields()
         enabled = True if self._pending_membership_active is None else self._pending_membership_active
         set_company_access(company, user, enabled=enabled)
+        self._revoke_company_credentials_if_disabled(company, user, enabled=enabled)
         if is_new:
             emit_user_provisioned(company, user)
         else:
@@ -212,6 +224,7 @@ class ShellUIScimUser(_ShellUIResourceTypeMixin, SCIMUser):
         company = self._company
         user = self.obj.user
         set_company_access(company, user, enabled=False)
+        invalidate_user_company_auth_state(user, company)
         emit_user_deprovisioned(company, user)
 
     def handle_replace(
@@ -226,6 +239,7 @@ class ShellUIScimUser(_ShellUIResourceTypeMixin, SCIMUser):
             was_enabled = is_company_access_enabled(company, user)
             enabled = bool(value)
             set_company_access(company, user, enabled=enabled)
+            self._revoke_company_credentials_if_disabled(company, user, enabled=enabled)
             self._pending_membership_active = enabled
             self._emit_membership_change(company, user, was_enabled=was_enabled, enabled=enabled)
             return

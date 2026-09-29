@@ -124,7 +124,11 @@ Company login access still uses `CompanyMembership`, not group membership.
 | `id` | Django user pk (string) |
 | `groups[]` | Direct membership in **`source=scim`** groups only |
 
-**Deprovision user:** `DELETE` or `active: false` disables company membership; user row retained.
+**Deprovision user:** `DELETE` or `active: false` disables company membership; user row retained. Shellui also revokes that user's refresh sessions and personal access tokens for the same company so deprovisioned owners cannot keep calling admin APIs.
+
+**Email and userName guardrails:** Primary email is stored normalized (Unicode NFKC, lowercase). Non-ASCII local parts are rejected. A company SCIM token cannot assign an email already held by another user, change email or userName for staff, superusers, users shared across companies, users with no company membership, or the internal SCIM provisioner account.
+
+**POST Users and existing accounts:** When the IdP POSTs a user that already exists on the platform (matching email or userName), Shellui returns **409** with a generic uniqueness error instead of linking the account. That blocks orphan takeover and cross-tenant linking, but it can reveal that an address is already registered when the IdP retries the same email. A **201** response only means Shellui created a new user row for that company; treat **409** as "handle in the IdP or Shellui admin" without assuming which tenant owns the account.
 
 ---
 

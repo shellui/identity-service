@@ -5,6 +5,12 @@ from django.contrib.auth import get_user_model
 _PROVISIONER_USERNAME = 'scim-provisioner@system.local'
 
 
+def is_scim_provisioner_user(user) -> bool:
+    if user is None or not getattr(user, 'pk', None):
+        return False
+    return (getattr(user, 'username', None) or '') == _PROVISIONER_USERNAME
+
+
 def get_scim_provisioner_user():
     User = get_user_model()
     user, _created = User.objects.get_or_create(
