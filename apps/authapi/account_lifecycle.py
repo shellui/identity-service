@@ -7,7 +7,7 @@ from django.utils import timezone
 
 from apps.actions.user_hooks import emit_user_deleted_for_all_companies
 
-from .models import PersonalAccessToken
+from .models import PersonalAccessToken, RefreshTokenSession
 from .refresh_sessions import revoke_all_refresh_sessions_for_user
 
 
@@ -16,6 +16,21 @@ def invalidate_user_auth_state(user) -> None:
     revoke_all_refresh_sessions_for_user(user)
     PersonalAccessToken.objects.filter(user=user, revoked_at__isnull=True).update(revoked_at=timezone.now())
     cache.delete(f'shellui:user_metadata:{user.id}')
+
+
+def invalidate_user_company_auth_state(user, company) -> None:
+    """Revoke refresh sessions and PATs scoped to one company (SCIM deprovisioning)."""
+    now = timezone.now()
+    RefreshTokenSession.objects.filter(
+        user=user,
+        company=company,
+        revoked_at__isnull=True,
+    ).update(revoked_at=now)
+    PersonalAccessToken.objects.filter(
+        user=user,
+        company=company,
+        revoked_at__isnull=True,
+    ).update(revoked_at=now)
 
 
 def delete_user_account(user, *, source: str) -> None:
