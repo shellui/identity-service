@@ -4,7 +4,7 @@ Welcome to **Shellui identity-service** — a Django backend that provides Shell
 
 **Current docs target:** release **v0.6.0** on **`develop`** (Redis shared cache, enterprise SCIM).
 
-Live site: [https://identity.docs.shellui.com](https://identity.docs.shellui.com) · Project setup: [README.md](https://github.com/shellui/identity-service/blob/develop/README.md) on GitHub.
+Live site: [https://identity.docs.shellui.com](https://identity.docs.shellui.com) · Project setup: [README.md](https://github.com/shellui/identity-service/blob/main/README.md) on GitHub.
 
 ---
 
@@ -28,7 +28,7 @@ Live site: [https://identity.docs.shellui.com](https://identity.docs.shellui.com
 
 ## Quick start (operators)
 
-1. Copy [`.env.example`](https://github.com/shellui/identity-service/blob/develop/.env.example) and set `SECRET_KEY`, JWT keys, `JWT_ISSUER`, and `JWT_AUDIENCE` for production.
+1. Copy [`.env.example`](https://github.com/shellui/identity-service/blob/main/.env.example) and set `SECRET_KEY`, JWT keys, `JWT_ISSUER`, and `JWT_AUDIENCE` for production.
 2. Point load balancers at **`GET /health/live`**.
 3. Register IdP callbacks at `{identity-host}/api/v1/oauth/callback` and configure company redirect allowlists — [OAuth login](oauth-login.md).
 4. For multi-worker production, set **`REDIS_URL`** — [Configuration](configuration.md).
