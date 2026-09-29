@@ -1,1 +1,0 @@
-[Shellui] Fin d'accès à {{ envelope.company.name }}

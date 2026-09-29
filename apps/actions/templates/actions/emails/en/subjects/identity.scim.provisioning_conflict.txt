@@ -1,1 +1,0 @@
-[Shellui] SCIM conflict in {{ envelope.company.name }}: {{ data.display_name }}

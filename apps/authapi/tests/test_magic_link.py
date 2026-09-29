@@ -8,8 +8,9 @@ from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
 
+from django.core import mail
+
 from apps.actions.models import ActionOutbox, ActionRule
-from apps.actions.tests.email_templates import email_rule_config
 from apps.authapi.magic_link import build_magic_link_verify_url, redeem_magic_link_token
 from apps.authapi.models import MagicLinkToken
 from apps.companies.access import set_company_access
@@ -128,7 +129,8 @@ class MagicLinkAuthTests(TestCase):
                 'secret': 'whsec_test',
             },
         )
-        self._request_link()
+        with self.captureOnCommitCallbacks(execute=True):
+            self._request_link()
         outbox = ActionOutbox.objects.filter(event_type='identity.auth.magic_link.requested').first()
         self.assertIsNotNone(outbox)
         data = outbox.envelope['data']
@@ -140,27 +142,18 @@ class MagicLinkAuthTests(TestCase):
         row = MagicLinkToken.objects.get(pk=data['request_id'])
         self.assertNotIn(row.token, body)
 
-    def test_email_template_context_includes_magic_link_url(self):
-        from apps.actions.handlers.email import _email_action_data
-
-        ActionRule.objects.create(
-            company=self.company,
-            event_type='identity.auth.magic_link.requested',
-            action_kind=ActionRule.ACTION_EMAIL,
-            enabled=True,
-            config=email_rule_config(
-                'identity.auth.magic_link.requested',
-                recipients=['ops@example.com'],
-                include_payload_email=True,
-            ),
-        )
-        self._request_link()
-        outbox = ActionOutbox.objects.filter(event_type='identity.auth.magic_link.requested').first()
-        self.assertIsNotNone(outbox)
-        self.assertNotIn('magic_link_url', outbox.envelope.get('data') or {})
-        enriched = _email_action_data(outbox.envelope)
-        self.assertIn('magic_link_url', enriched)
-        self.assertIn('token=', enriched['magic_link_url'])
+    @override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
+    def test_magic_link_request_sends_email(self):
+        mail.outbox.clear()
+        with self.captureOnCommitCallbacks(execute=True):
+            self._request_link()
+        self.assertEqual(len(mail.outbox), 1)
+        msg = mail.outbox[0]
+        self.assertEqual(msg.to, ['member@example.com'])
+        self.assertIn('Sign in', msg.subject)
+        html_part = msg.alternatives[0][0]
+        self.assertIn('token=', html_part)
+        self.assertNotIn('magic_link_url', html_part)
 
     def test_build_verify_url_uses_jwt_issuer(self):
         row = MagicLinkToken.objects.create(

@@ -20,16 +20,16 @@ class UserLifecycleEmitTests(TestCase):
             company=self.company,
             name='Created',
             event_type='identity.user.created',
-            action_kind=ActionRule.ACTION_EMAIL,
-            config={'recipients': ['ops@life.test']},
+            action_kind=ActionRule.ACTION_WEBHOOK,
+            config={'url': 'https://example.com/h', 'secret': 's'},
         )
         for company in (self.company, self.other):
             ActionRule.objects.create(
                 company=company,
                 name='Deleted',
                 event_type='identity.user.deleted',
-                action_kind=ActionRule.ACTION_EMAIL,
-                config={'recipients': [f'ops@{company.slug}.test']},
+                action_kind=ActionRule.ACTION_WEBHOOK,
+                config={'url': 'https://example.com/h', 'secret': 's'},
             )
 
     def test_oauth_created_emits_once_for_company(self):
@@ -77,8 +77,8 @@ class UserAdminDeleteEmitTests(TestCase):
             company=self.company,
             name='Del',
             event_type='identity.user.deleted',
-            action_kind=ActionRule.ACTION_EMAIL,
-            config={'recipients': ['ops@del.test']},
+            action_kind=ActionRule.ACTION_WEBHOOK,
+            config={'url': 'https://example.com/h', 'secret': 's'},
         )
         self.staff = User.objects.create_superuser(
             username='staff',

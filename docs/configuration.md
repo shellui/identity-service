@@ -151,10 +151,12 @@ Documented in [SCIM](scim.md). Available on **`develop`** after migrations.
 | `IDENTITY_SERVICE_PORT` | Local/docker-compose port hint |
 | `SENTRY_DSN`, `SENTRY_ENVIRONMENT`, `SENTRY_RELEASE`, `SENTRY_TRACES_SAMPLE_RATE` | Optional error reporting |
 | `EMAIL_*`, `DEFAULT_FROM_EMAIL` | SMTP for company access notifications ([company-access.md](company-access.md)) |
-| `ACTIONS_WEBHOOK_TIMEOUT_SECONDS` | Webhook POST timeout (default `10`) — see [actions.md](actions.md) |
-| `ACTIONS_OUTBOX_MAX_ATTEMPTS` | Outbox delivery retries (default `5`) |
+| `ACTIONS_WEBHOOK_TIMEOUT_SECONDS` | Webhook POST timeout (default `5`) — see [actions.md](actions.md) |
+| `ACTIONS_OUTBOX_MAX_ATTEMPTS` | Outbox delivery retries (default `8`) |
 | `ACTIONS_WEBHOOK_ALLOW_PRIVATE` | Allow webhooks to private IPs (default `false`) |
-| `ACTIONS_EMAIL_DEFAULT_LANGUAGE` | Default locale for action email templates (default `en`) |
+| `ACTIONS_WEBHOOK_RETRY_LEASE_SECONDS` | Retry worker lease (default `120`) |
+| `ACTIONS_WEBHOOK_DISPATCH_WORKERS` | Post-commit delivery thread pool size (default `4`) |
+| `MAGIC_LINK_EMAIL_DEFAULT_LANGUAGE` | Magic-link email locale fallback (default `en`) |
 
 ---
 

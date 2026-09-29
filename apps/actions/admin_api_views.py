@@ -1,39 +1,23 @@
 from __future__ import annotations
 
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.template import TemplateDoesNotExist
 from django.utils.dateparse import parse_datetime
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema, extend_schema_view
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.actions.admin_email_template_query import requested_email_template_languages
-from apps.actions.email_test_send import send_action_email_test_to_self
-from apps.actions.email_template_preview import (
-    default_event_email_template,
-    effective_email_template,
-    sample_email_context,
-)
+from apps.actions.envelope import build_envelope
 from apps.actions.models import ActionOutbox, ActionRule, DeliveryAttempt
-from apps.actions.registry import (
-    SHARED_EMAIL_ENVELOPE_FIELDS,
-    all_event_types,
-    event_field_doc_dict,
-    get_event_type,
-)
-from apps.actions.rule_config import (
-    build_email_config,
-    build_webhook_config,
-    mask_config_for_response,
-)
+from apps.actions.registry import all_event_types, event_field_doc_dict, get_event_type
+from apps.actions.rule_config import build_webhook_config, mask_config_for_response
 from apps.actions.serializers import ActionRuleCreateSerializer, ActionRuleUpdateSerializer
+from apps.actions.webhook_test_send import send_webhook_test_for_rule
 from apps.authapi.permissions import ShellUIPermission
 from apps.authapi.serializers import ShellUIOpenAPISerializer
-from apps.authapi.throttling import rate_limit
 from apps.authapi.views import _require_staff_or_company_owner
 
-SUPPORTED_ACTION_KINDS = [ActionRule.ACTION_EMAIL, ActionRule.ACTION_WEBHOOK]
+SUPPORTED_ACTION_KINDS = [ActionRule.ACTION_WEBHOOK]
 
 
 def _action_rule_payload(rule: ActionRule) -> dict:
@@ -101,46 +85,33 @@ def _apply_rule_config(
     partial: bool,
 ) -> Response | None:
     existing = dict(rule.config or {})
-    kind = data.get('action_kind', rule.action_kind)
-    event_type = data.get('event_type', rule.event_type)
     is_superuser = bool(getattr(actor, 'is_superuser', False))
     try:
-        if kind == ActionRule.ACTION_EMAIL:
-            rule.config = build_email_config(
-                existing=existing,
-                recipients=data.get('recipients') if 'recipients' in data else (None if partial else existing.get('recipients')),
-                include_payload_email=data.get('include_payload_email')
-                if 'include_payload_email' in data
-                else (None if partial else existing.get('include_payload_email')),
-                email_templates=data.get('email_templates') if 'email_templates' in data else None,
-                event_type=event_type,
-                partial=partial,
-                # Metadata-only PATCHes (rename, disable) stay allowed on legacy rules
-                # that predate compiled templates.
-                require_templates=(
-                    not partial
-                    or 'email_templates' in data
-                    or 'action_kind' in data
-                    or data.get('enabled') is True
-                ),
-            )
-        elif kind == ActionRule.ACTION_WEBHOOK:
-            rule.config = build_webhook_config(
-                existing=existing,
-                url=data.get('url') if 'url' in data else (None if partial else existing.get('url')),
-                secret=data.get('secret') if 'secret' in data else None,
-                authorization_header=data.get('authorization_header')
-                if 'authorization_header' in data
-                else None,
-                allow_private_urls=data.get('allow_private_urls')
-                if 'allow_private_urls' in data
-                else None,
-                is_superuser=is_superuser,
-                partial=partial,
-            )
+        rule.config = build_webhook_config(
+            existing=existing,
+            url=data.get('url') if 'url' in data else (None if partial else existing.get('url')),
+            secret=data.get('secret') if 'secret' in data else None,
+            authorization_header=data.get('authorization_header')
+            if 'authorization_header' in data
+            else None,
+            allow_private_urls=data.get('allow_private_urls')
+            if 'allow_private_urls' in data
+            else None,
+            is_superuser=is_superuser,
+            partial=partial,
+        )
     except DjangoValidationError as exc:
         return _validation_error_response(exc)
     return None
+
+
+def _sample_payload(event_type: str, company) -> dict:
+    event = get_event_type(event_type)
+    data = {}
+    for field in event.payload_fields:
+        if field.example is not None:
+            data[field.name] = field.example
+    return build_envelope(event_type=event_type, company=company, data=data)
 
 
 @extend_schema_view(
@@ -166,164 +137,12 @@ class ShellUIAdminActionEventsView(APIView):
                     'label': event.label,
                     'description': event.description,
                     'emit_by_default': event.emit_by_default,
-                    'payload_email_field': event.email_payload_email_field,
                     'supported_action_kinds': list(SUPPORTED_ACTION_KINDS),
                     'payload_fields': [event_field_doc_dict(f) for f in event.payload_fields],
-                    'email_context_fields': [
-                        event_field_doc_dict(f) for f in event.email_context_fields
-                    ],
-                    # Ready-made { envelope, data } for admin WYSIWYG preview substitution.
-                    'sample_context': sample_email_context(
-                        event_type=event.id,
-                        company=company,
-                    ),
+                    'sample_envelope': _sample_payload(event.id, company),
                 }
             )
-        return Response(
-            {
-                'results': results,
-                'email_envelope_fields': [
-                    event_field_doc_dict(f) for f in SHARED_EMAIL_ENVELOPE_FIELDS
-                ],
-            }
-        )
-
-
-@extend_schema_view(
-    get=extend_schema(
-        tags=['actions-admin'],
-        summary='Default filesystem email template for an event type (staff or company owner)',
-        parameters=[
-            OpenApiParameter(
-                name='language',
-                type=str,
-                location=OpenApiParameter.QUERY,
-                required=False,
-                description=(
-                    'Single locale (e.g. en). Comma-separated values use the batch response shape. '
-                    'Prefer ``languages`` for multiple locales.'
-                ),
-            ),
-            OpenApiParameter(
-                name='languages',
-                type=str,
-                location=OpenApiParameter.QUERY,
-                required=False,
-                description=(
-                    'Comma-separated locale codes (e.g. en,fr). One code returns the legacy single-object '
-                    'body; two or more return ``event_type`` and a ``templates`` map. Invalid codes yield 400.'
-                ),
-            ),
-        ],
-        responses={
-            200: OpenApiResponse(
-                description=(
-                    'Single locale: subject, html, document, language, and source. '
-                    'Multiple locales: event_type and templates keyed by language code.'
-                ),
-            ),
-            400: OpenApiResponse(description='Invalid language code(s).'),
-        },
-        operation_id='api_v1_actions_events_email_template',
-    ),
-)
-class ShellUIAdminActionEventEmailTemplateView(APIView):
-    permission_classes = [ShellUIPermission]
-    serializer_class = ShellUIOpenAPISerializer
-
-    def get(self, request, event_type):
-        _actor, _company, err = _require_staff_or_company_owner(request)
-        if err:
-            return err
-        try:
-            get_event_type(event_type)
-        except ValueError:
-            return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
-        languages, lang_err = requested_email_template_languages(request)
-        if lang_err:
-            return lang_err
-        if isinstance(languages, list):
-            templates: dict[str, dict] = {}
-            for code in languages:
-                try:
-                    templates[code] = default_event_email_template(
-                        event_type=event_type,
-                        language=code,
-                    )
-                except TemplateDoesNotExist:
-                    continue
-            if not templates:
-                return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
-            return Response({'event_type': event_type, 'templates': templates})
-        try:
-            payload = default_event_email_template(event_type=event_type, language=languages)
-        except TemplateDoesNotExist:
-            return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
-        return Response(payload)
-
-
-@rate_limit(
-    'action_email_test',
-    identity=lambda request: str(getattr(getattr(request, 'user', None), 'pk', '') or ''),
-)
-@extend_schema_view(
-    post=extend_schema(
-        tags=['actions-admin'],
-        summary='Send a test copy of an action email to the authenticated user',
-        description=(
-            'Renders the provided subject/html with sample_context and emails only '
-            '``request.user.email``. Staff or company owner required. Rate-limited.'
-        ),
-        request={
-            'application/json': {
-                'type': 'object',
-                'properties': {
-                    'language': {'type': 'string', 'example': 'en'},
-                    'subject': {'type': 'string'},
-                    'html': {'type': 'string'},
-                },
-                'required': ['html'],
-            }
-        },
-        responses={
-            200: OpenApiResponse(description='Test email accepted for delivery'),
-            400: OpenApiResponse(description='Missing html, user email, or invalid payload'),
-            404: OpenApiResponse(description='Unknown event type'),
-            429: OpenApiResponse(description='Rate limited'),
-        },
-        operation_id='api_v1_actions_events_email_template_send_test',
-    ),
-)
-class ShellUIAdminActionEventEmailTemplateSendTestView(APIView):
-    permission_classes = [ShellUIPermission]
-    serializer_class = ShellUIOpenAPISerializer
-
-    def post(self, request, event_type):
-        actor, company, err = _require_staff_or_company_owner(request)
-        if err:
-            return err
-        try:
-            get_event_type(event_type)
-        except ValueError:
-            return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
-
-        raw = request.data if isinstance(request.data, dict) else {}
-        language = raw.get('language') if isinstance(raw.get('language'), str) else None
-        subject = raw.get('subject') if isinstance(raw.get('subject'), str) else ''
-        html = raw.get('html') if isinstance(raw.get('html'), str) else ''
-
-        try:
-            result = send_action_email_test_to_self(
-                user_email=getattr(actor, 'email', '') or '',
-                event_type=event_type,
-                company=company,
-                language=language,
-                subject=subject,
-                html=html,
-            )
-        except ValueError as exc:
-            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
-        return Response(result, status=status.HTTP_200_OK)
+        return Response({'results': results})
 
 
 @extend_schema_view(
@@ -363,7 +182,7 @@ class ShellUIAdminActionRuleListCreateView(APIView):
             description=data.get('description') or '',
             event_type=data['event_type'],
             enabled=data.get('enabled', True),
-            action_kind=data['action_kind'],
+            action_kind=ActionRule.ACTION_WEBHOOK,
             config={},
         )
         cfg_err = _apply_rule_config(rule, data, actor=actor, partial=False)
@@ -418,12 +237,13 @@ class ShellUIAdminActionRuleDetailView(APIView):
         serializer = ActionRuleUpdateSerializer(data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
-        for field in ('name', 'description', 'event_type', 'enabled', 'action_kind'):
+        for field in ('name', 'description', 'event_type', 'enabled'):
             if field in data:
                 setattr(rule, field, data[field])
         cfg_err = _apply_rule_config(rule, data, actor=actor, partial=True)
         if cfg_err:
             return cfg_err
+        rule.action_kind = ActionRule.ACTION_WEBHOOK
         rule.save()
         return Response(_action_rule_payload(rule))
 
@@ -436,48 +256,21 @@ class ShellUIAdminActionRuleDetailView(APIView):
 
 
 @extend_schema_view(
-    get=extend_schema(
+    post=extend_schema(
         tags=['actions-admin'],
-        summary='Effective email template for an action rule (staff or company owner)',
-        parameters=[
-            OpenApiParameter(
-                name='language',
-                type=str,
-                location=OpenApiParameter.QUERY,
-                required=False,
-                description=(
-                    'Single locale (e.g. en). Comma-separated values use the batch response shape. '
-                    'Prefer ``languages`` for multiple locales.'
-                ),
-            ),
-            OpenApiParameter(
-                name='languages',
-                type=str,
-                location=OpenApiParameter.QUERY,
-                required=False,
-                description=(
-                    'Comma-separated locale codes (e.g. en,fr). One code returns the legacy single-object '
-                    'body; two or more return a ``templates`` map. Invalid codes yield 400.'
-                ),
-            ),
-        ],
+        summary='Send a sample webhook for an action rule (staff or company owner)',
+        operation_id='api_v1_actions_rules_send_test',
         responses={
-            200: OpenApiResponse(
-                description=(
-                    'Single locale: subject, html, document, language, and source. '
-                    'Multiple locales: templates keyed by language code.'
-                ),
-            ),
-            400: OpenApiResponse(description='Invalid language code(s).'),
+            200: OpenApiResponse(description='Sample webhook accepted by the endpoint'),
+            400: OpenApiResponse(description='Delivery failed'),
         },
-        operation_id='api_v1_actions_rules_email_template',
     ),
 )
-class ShellUIAdminActionRuleEmailTemplateView(APIView):
+class ShellUIAdminActionRuleSendTestView(APIView):
     permission_classes = [ShellUIPermission]
     serializer_class = ShellUIOpenAPISerializer
 
-    def get(self, request, pk):
+    def post(self, request, pk):
         _actor, company, err = _require_staff_or_company_owner(request)
         if err:
             return err
@@ -485,31 +278,13 @@ class ShellUIAdminActionRuleEmailTemplateView(APIView):
             rule = ActionRule.objects.get(pk=pk, company=company)
         except ActionRule.DoesNotExist:
             return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
-        if rule.action_kind != ActionRule.ACTION_EMAIL:
-            return Response(
-                {'error': 'Email templates apply only to email action rules.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        languages, lang_err = requested_email_template_languages(request)
-        if lang_err:
-            return lang_err
-        if isinstance(languages, list):
-            templates: dict[str, dict] = {}
-            for code in languages:
-                templates[code] = effective_email_template(
-                    rule_config=rule.config or {},
-                    event_type=rule.event_type,
-                    company=company,
-                    language=code,
-                )
-            return Response({'templates': templates})
-        payload = effective_email_template(
-            rule_config=rule.config or {},
-            event_type=rule.event_type,
-            company=company,
-            language=languages,
-        )
-        return Response(payload)
+        if not rule.enabled:
+            return Response({'error': 'Rule is disabled.'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            result = send_webhook_test_for_rule(rule=rule, company=company)
+        except Exception as exc:  # noqa: BLE001
+            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(result, status=status.HTTP_200_OK)
 
 
 @extend_schema_view(
@@ -639,6 +414,7 @@ class ShellUIAdminActionDeliveryRequeueView(APIView):
             status=ActionOutbox.STATUS_PENDING,
             next_attempt_at=None,
             last_error='',
+            locked_until=None,
         )
         row.refresh_from_db()
         return Response(_delivery_payload(row))

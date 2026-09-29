@@ -25,6 +25,17 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 ### 🚨 Changed
 
+- **Actions are webhook-only.** Email Action rules, template APIs, test-send, and the email channel handler are removed. Magic-link sign-in emails are sent directly by identity (`apps/authapi/magic_link_email.py`, EN/FR templates).
+- **Direct webhook delivery:** matching rules create outbox rows in the same transaction as the domain change; the first delivery runs on `transaction.on_commit` (background thread, 5s timeout default, errors never fail the request).
+- **Retries:** `manage.py retry_webhooks` replaces `drain_action_outbox` (batch, time budget, skip-locked lease, concurrency). Backoff 30s * 2^(n-1) capped at 1h; default 8 attempts; permanent 4xx (except 408/429) go dead.
+- **Admin API:** removed email template endpoints; added `POST /api/v1/actions/rules/<id>/send-test`. Events catalog drops `email_context_fields` / `email_envelope_fields`; adds `sample_envelope`.
+
+### 🗑 Removed
+
+- Action email channel (rules, handlers, default React Email JSON trees, `generate_action_email_defaults`, `drain_action_outbox`).
+
+### 🚨 Changed
+
 - **Action emails send only rule-stored HTML.** Default templates ship as React Email JSON documents (plus subject `.txt`); the `.html` files are removed. The Shellui admin compiles HTML from the document and stores it on the rule; identity substitutes placeholders into that HTML at send time.
 - **Email rules require compiled HTML.** Creating an email rule, or updating its templates/kind/enabling it, without `email_templates[<lang>].html` for at least one language returns **400**; every stored locale entry needs `subject` and `html`. Django admin can only save email rules that already have compiled HTML, or disabled ones (it now also keeps existing `email_templates` on save instead of dropping them).
 - **Existing rules without stored HTML** (saved before this change) fail at delivery with a clear “no compiled HTML template” error and are marked dead without retries. Open them in the Shellui admin, save, then re-queue.

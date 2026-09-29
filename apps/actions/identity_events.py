@@ -29,8 +29,6 @@ register_event(
         label='SCIM user provisioned',
         description='Company access was enabled for a user via SCIM (create or re-enable). The user account may already exist.',
         payload_fields=_USER,
-        email_subject_template='[Shellui] You have access to {{ envelope.company.name }}',
-        email_payload_email_field='email',
     )
 )
 
@@ -40,8 +38,6 @@ register_event(
         label='SCIM user deprovisioned',
         description='Company access was disabled via SCIM (deprovision). The user account is not deleted.',
         payload_fields=_USER,
-        email_subject_template='[Shellui] Access ended for {{ envelope.company.name }}',
-        email_payload_email_field='email',
     )
 )
 
@@ -51,8 +47,6 @@ register_event(
         label='User account created',
         description='A new Django user row was created (OAuth first sign-in or admin), scoped to the company in context.',
         payload_fields=_ACCOUNT_USER,
-        email_subject_template='[Shellui] Welcome to {{ envelope.company.name }}',
-        email_payload_email_field='email',
     )
 )
 
@@ -62,8 +56,6 @@ register_event(
         label='User account deleted',
         description='The user account was permanently deleted. Emitted once per company membership before removal.',
         payload_fields=_USER,
-        email_subject_template='[Shellui] Account removed from {{ envelope.company.name }}: {{ data.email|default:"user" }}',
-        email_payload_email_field='email',
     )
 )
 
@@ -75,8 +67,6 @@ register_event(
         payload_fields=_USER
         + (EventFieldDoc('changed_fields', 'List of changed attribute names', ['displayName']),),
         emit_by_default=False,
-        email_subject_template='[Shellui] Profile updated in {{ envelope.company.name }}: {{ data.email|default:"user" }}',
-        email_payload_email_field='email',
     )
 )
 
@@ -93,7 +83,6 @@ register_event(
         label='Group created',
         description='A company group was created.',
         payload_fields=_GROUP,
-        email_subject_template='[Shellui] New group in {{ envelope.company.name }}: {{ data.display_name }}',
     )
 )
 
@@ -104,7 +93,6 @@ register_event(
         description='Group metadata (display name, external id) changed.',
         payload_fields=_GROUP
         + (EventFieldDoc('changed_fields', 'Changed fields', ['display_name']),),
-        email_subject_template='[Shellui] Group updated in {{ envelope.company.name }}: {{ data.display_name }}',
     )
 )
 
@@ -114,7 +102,6 @@ register_event(
         label='Group deleted',
         description='A company group was removed.',
         payload_fields=_GROUP,
-        email_subject_template='[Shellui] Group removed from {{ envelope.company.name }}: {{ data.display_name }}',
     )
 )
 
@@ -129,7 +116,6 @@ register_event(
             EventFieldDoc('user_ids', 'Affected user ids when applicable', [1, 2]),
             EventFieldDoc('nested_group_ids', 'Affected nested group ids', []),
         ),
-        email_subject_template='[Shellui] Membership changed for {{ data.display_name }} in {{ envelope.company.name }}',
     )
 )
 
@@ -143,7 +129,6 @@ register_event(
             EventFieldDoc('name', 'Operator label for the token', 'Okta prod'),
             EventFieldDoc('token_prefix', 'First characters shown in admin', 'abc123'),
         ),
-        email_subject_template='[Shellui] New SCIM token for {{ envelope.company.name }}: {{ data.name|default:data.token_prefix }}',
     )
 )
 
@@ -157,7 +142,6 @@ register_event(
             EventFieldDoc('name', 'Operator label', 'Okta prod'),
             EventFieldDoc('token_prefix', 'Prefix shown in admin', 'abc123'),
         ),
-        email_subject_template='[Shellui] SCIM token revoked for {{ envelope.company.name }}: {{ data.name|default:data.token_prefix }}',
     )
 )
 
@@ -167,22 +151,13 @@ register_event(
         label='Magic link requested',
         description=(
             'A user requested a passwordless email sign-in link for this company. '
-            'Webhook payloads omit the secret; email templates receive magic_link_url at send time.'
+            'Webhook payloads include request_id and expires_at but omit the sign-in secret and URL.'
         ),
         payload_fields=_USER
         + (
             EventFieldDoc('request_id', 'Magic link request UUID', '00000000-0000-0000-0000-000000000001'),
             EventFieldDoc('expires_at', 'ISO8601 expiry for the link', '2026-09-25T10:00:00+00:00'),
         ),
-        email_context_fields=(
-            EventFieldDoc(
-                'magic_link_url',
-                'One-time sign-in URL injected at email send time (omitted from webhook payloads)',
-                'https://identity.example.com/api/v1/magic-link/verify?token=abc&company_id=1',
-            ),
-        ),
-        email_subject_template='[Shellui] Sign in to {{ envelope.company.name }}',
-        email_payload_email_field='email',
     )
 )
 
@@ -199,6 +174,5 @@ register_event(
             EventFieldDoc('http_status', 'HTTP status recorded', 409),
             EventFieldDoc('channel', 'Provisioning channel', 'scim'),
         ),
-        email_subject_template='[Shellui] SCIM conflict in {{ envelope.company.name }}: {{ data.display_name }}',
     )
 )

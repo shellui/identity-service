@@ -4,26 +4,14 @@ from apps.actions.admin_api_views import (
     ShellUIAdminActionDeliveryDetailView,
     ShellUIAdminActionDeliveryListView,
     ShellUIAdminActionDeliveryRequeueView,
-    ShellUIAdminActionEventEmailTemplateSendTestView,
-    ShellUIAdminActionEventEmailTemplateView,
     ShellUIAdminActionEventsView,
     ShellUIAdminActionRuleDetailView,
-    ShellUIAdminActionRuleEmailTemplateView,
     ShellUIAdminActionRuleListCreateView,
+    ShellUIAdminActionRuleSendTestView,
 )
 
 urlpatterns = [
     path('events', ShellUIAdminActionEventsView.as_view(), name='shellui-admin-actions-events'),
-    path(
-        'events/<path:event_type>/email-template/send-test',
-        ShellUIAdminActionEventEmailTemplateSendTestView.as_view(),
-        name='shellui-admin-actions-event-email-template-send-test',
-    ),
-    path(
-        'events/<path:event_type>/email-template',
-        ShellUIAdminActionEventEmailTemplateView.as_view(),
-        name='shellui-admin-actions-event-email-template',
-    ),
     path('rules', ShellUIAdminActionRuleListCreateView.as_view(), name='shellui-admin-actions-rules'),
     path(
         'rules/<int:pk>',
@@ -31,9 +19,9 @@ urlpatterns = [
         name='shellui-admin-actions-rule-detail',
     ),
     path(
-        'rules/<int:pk>/email-template',
-        ShellUIAdminActionRuleEmailTemplateView.as_view(),
-        name='shellui-admin-actions-rule-email-template',
+        'rules/<int:pk>/send-test',
+        ShellUIAdminActionRuleSendTestView.as_view(),
+        name='shellui-admin-actions-rule-send-test',
     ),
     path('deliveries', ShellUIAdminActionDeliveryListView.as_view(), name='shellui-admin-actions-deliveries'),
     path(

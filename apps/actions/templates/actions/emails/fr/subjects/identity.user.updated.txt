@@ -1,1 +1,0 @@
-[Shellui] Profil mis à jour dans {{ envelope.company.name }} : {{ data.email|default:"utilisateur" }}

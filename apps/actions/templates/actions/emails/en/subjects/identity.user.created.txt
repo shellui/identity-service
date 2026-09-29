@@ -1,1 +1,0 @@
-[Shellui] Welcome to {{ envelope.company.name }}
