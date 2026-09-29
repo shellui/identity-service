@@ -17,7 +17,12 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
 from apps.actions.ssrf import ResolvedWebhookEndpoint
-from apps.actions.webhook_transport import PinnedHTTPSConnection, post_resolved_webhook, post_webhook_url
+from apps.actions.webhook_transport import (
+    PinnedHTTPSConnection,
+    _tls_server_name,
+    post_resolved_webhook,
+    post_webhook_url,
+)
 
 
 def _self_signed_localhost_cert() -> tuple[bytes, bytes]:
@@ -50,6 +55,30 @@ def _free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.bind(('127.0.0.1', 0))
         return int(sock.getsockname()[1])
+
+
+class TlsServerNameTests(TestCase):
+    def _endpoint(self, host_header: str) -> ResolvedWebhookEndpoint:
+        return ResolvedWebhookEndpoint(
+            original_url='https://example/hook',
+            scheme='https',
+            connect_host='127.0.0.1',
+            port=443,
+            host_header=host_header,
+            path='/hook',
+        )
+
+    def test_plain_hostname(self) -> None:
+        self.assertEqual(_tls_server_name(self._endpoint('example.com')), 'example.com')
+
+    def test_hostname_with_port(self) -> None:
+        self.assertEqual(_tls_server_name(self._endpoint('example.com:8443')), 'example.com')
+
+    def test_ipv6_literal_with_port(self) -> None:
+        self.assertEqual(_tls_server_name(self._endpoint('[::1]:8443')), '::1')
+
+    def test_ipv6_literal_without_port(self) -> None:
+        self.assertEqual(_tls_server_name(self._endpoint('[2001:db8::1]')), '2001:db8::1')
 
 
 class PinnedHTTPSConnectionUnitTests(TestCase):

@@ -38,6 +38,20 @@ class WebhookPostResult:
     retry_after_seconds: int | None = None
 
 
+def _tls_server_name(endpoint: ResolvedWebhookEndpoint) -> str:
+    """Hostname for TLS SNI and certificate verification from the HTTP Host value."""
+    host_header = endpoint.host_header
+    if host_header.startswith('['):
+        end = host_header.find(']')
+        if end == -1:
+            return host_header
+        return host_header[1:end]
+    _head, sep, tail = host_header.rpartition(':')
+    if sep and tail.isdigit():
+        return _head
+    return host_header
+
+
 def _socket_connect_host(connect_host: str) -> str:
     """Normalize connect addresses for ``socket.create_connection``."""
     try:
@@ -95,7 +109,7 @@ def post_resolved_webhook(
 ) -> WebhookPostResult:
     req_headers = dict(headers)
     req_headers['Host'] = endpoint.host_header
-    tls_hostname = endpoint.host_header.split(':')[0]
+    tls_hostname = _tls_server_name(endpoint)
     if endpoint.scheme == 'https':
         context = ssl.create_default_context()
         conn: HTTPConnection | HTTPSConnection = PinnedHTTPSConnection(
