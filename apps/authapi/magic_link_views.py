@@ -58,7 +58,6 @@ def _magic_link_rate_limits(request, *, company_id: int, email: str) -> Response
     buckets = [
         f'ip:{ip}',
         f'email:{email}:{company_id}',
-        f'company:{company_id}',
     ]
     for bucket in buckets:
         limited = check_rate_limit(request, scope='magic_link', identity=bucket)
@@ -121,7 +120,7 @@ class ShellUIMagicLinkRequestView(APIView):
         client_tz = serializer.validated_data.get('client_timezone') or ''
         client_dev = serializer.validated_data.get('client_device_id') or None
 
-        row = create_magic_link_token(
+        row, raw_token = create_magic_link_token(
             company=company,
             email=email,
             redirect_to=redirect_to,
@@ -137,7 +136,13 @@ class ShellUIMagicLinkRequestView(APIView):
 
         def _after_commit() -> None:
             try:
-                send_magic_link_email(row=row, company=company, user=existing, language=pref_lang)
+                send_magic_link_email(
+                    row=row,
+                    company=company,
+                    user=existing,
+                    language=pref_lang,
+                    raw_token=raw_token,
+                )
             except Exception:  # noqa: BLE001
                 import logging
 

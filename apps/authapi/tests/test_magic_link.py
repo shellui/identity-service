@@ -1,4 +1,5 @@
 import json
+import re
 from datetime import timedelta
 from unittest.mock import patch
 
@@ -11,7 +12,12 @@ from rest_framework.test import APIClient
 from django.core import mail
 
 from apps.actions.models import ActionOutbox, ActionRule
-from apps.authapi.magic_link import build_magic_link_verify_url, redeem_magic_link_token
+from apps.authapi.magic_link import (
+    build_magic_link_verify_url,
+    create_magic_link_token,
+    hash_magic_link_token,
+    redeem_magic_link_token,
+)
 from apps.authapi.models import MagicLinkToken
 from apps.companies.access import set_company_access
 from apps.companies.models import Company, CompanyOAuthRedirect
@@ -45,7 +51,7 @@ class MagicLinkAuthTests(TestCase):
         )
         set_company_access(self.company, self.user, enabled=True)
 
-    def _request_link(self, email='member@example.com', company=None):
+    def _request_link(self, email='member@example.com', company=None, **extra_headers):
         company = company or self.company
         return self.client.post(
             '/api/v1/magic-link/request',
@@ -55,7 +61,14 @@ class MagicLinkAuthTests(TestCase):
                 'redirect_to': self.redirect_to,
             },
             format='json',
+            **extra_headers,
         )
+
+    def _raw_token_from_email(self) -> str:
+        body = mail.outbox[0].body
+        match = re.search(r'token=([^&\s]+)', body)
+        self.assertIsNotNone(match)
+        return match.group(1)
 
     def test_new_company_defaults_magic_link_enabled(self):
         fresh = Company.objects.create(name='Fresh', slug='fresh-co')
@@ -67,14 +80,17 @@ class MagicLinkAuthTests(TestCase):
         self.assertTrue(response.data['enable_magic_link'])
         self.assertIn('magic_link', response.data['methods'])
 
+    @override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
     def test_request_and_consume_success(self):
-        response = self._request_link()
+        mail.outbox.clear()
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self._request_link()
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.data['ok'])
-        row = MagicLinkToken.objects.get(company=self.company, email='member@example.com')
+        raw = self._raw_token_from_email()
         payload = self.client.post(
             '/api/v1/magic-link/verify',
-            {'token': row.token, 'company_id': self.company.id},
+            {'token': raw, 'company_id': self.company.id},
             format='json',
         )
         self.assertEqual(payload.status_code, 200)
@@ -82,19 +98,23 @@ class MagicLinkAuthTests(TestCase):
 
         again = self.client.post(
             '/api/v1/magic-link/verify',
-            {'token': row.token, 'company_id': self.company.id},
+            {'token': raw, 'company_id': self.company.id},
             format='json',
         )
         self.assertEqual(again.status_code, 400)
 
     def test_expired_token_rejected(self):
-        self._request_link()
-        row = MagicLinkToken.objects.get(company=self.company)
-        row.expires_at = timezone.now() - timedelta(minutes=1)
-        row.save(update_fields=['expires_at'])
+        raw = 'expired-raw-token'
+        MagicLinkToken.objects.create(
+            company=self.company,
+            email='member@example.com',
+            token_hash=hash_magic_link_token(raw),
+            redirect_to=self.redirect_to,
+            expires_at=timezone.now() - timedelta(minutes=1),
+        )
         response = self.client.post(
             '/api/v1/magic-link/verify',
-            {'token': row.token, 'company_id': self.company.id},
+            {'token': raw, 'company_id': self.company.id},
             format='json',
         )
         self.assertEqual(response.status_code, 400)
@@ -118,6 +138,27 @@ class MagicLinkAuthTests(TestCase):
         second = self._request_link()
         self.assertEqual(second.status_code, 429)
 
+    @override_settings(
+        AUTH_RATE_LIMIT_ENABLED=True,
+        AUTH_RATE_LIMITS={'magic_link': {'limit': 10, 'window': 60}},
+        EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend',
+        TRUSTED_PROXY_IPS=('127.0.0.1',),
+    )
+    def test_other_ip_not_blocked_after_many_company_requests(self):
+        mail.outbox.clear()
+        with self.captureOnCommitCallbacks(execute=True):
+            for i in range(10):
+                response = self._request_link(
+                    email=f'random{i}@example.com',
+                    HTTP_X_FORWARDED_FOR='1.2.3.4',
+                )
+                self.assertEqual(response.status_code, 200, response.data)
+        response = self._request_link(
+            email='member@example.com',
+            HTTP_X_FORWARDED_FOR='5.6.7.8',
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+
     def test_action_emit_without_secret_in_envelope(self):
         ActionRule.objects.create(
             company=self.company,
@@ -130,7 +171,11 @@ class MagicLinkAuthTests(TestCase):
             },
         )
         with self.captureOnCommitCallbacks(execute=True):
-            self._request_link()
+            with patch(
+                'apps.authapi.magic_link_views.send_magic_link_email',
+                return_value=None,
+            ):
+                self._request_link()
         outbox = ActionOutbox.objects.filter(event_type='identity.auth.magic_link.requested').first()
         self.assertIsNotNone(outbox)
         data = outbox.envelope['data']
@@ -140,7 +185,7 @@ class MagicLinkAuthTests(TestCase):
         self.assertNotIn('magic_link_url', data)
         body = json.dumps(outbox.envelope)
         row = MagicLinkToken.objects.get(pk=data['request_id'])
-        self.assertNotIn(row.token, body)
+        self.assertNotIn(row.token_hash, body)
 
     @override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
     def test_magic_link_request_sends_email(self):
@@ -151,37 +196,53 @@ class MagicLinkAuthTests(TestCase):
         msg = mail.outbox[0]
         self.assertEqual(msg.to, ['member@example.com'])
         self.assertIn('Sign in', msg.subject)
-        row = MagicLinkToken.objects.get(company=self.company, email='member@example.com')
+        raw = self._raw_token_from_email()
         self.assertIn('token=', msg.body)
-        self.assertIn(row.token, msg.body)
+        self.assertIn(raw, msg.body)
         self.assertEqual(len(msg.alternatives), 1)
         html_part, mime = msg.alternatives[0]
         self.assertEqual(mime, 'text/html')
         self.assertIn('token=', html_part)
-        self.assertIn(row.token, html_part)
+        self.assertIn(raw, html_part)
+        row = MagicLinkToken.objects.get(company=self.company, email='member@example.com')
+        self.assertEqual(row.token_hash, hash_magic_link_token(raw))
 
     def test_build_verify_url_uses_jwt_issuer(self):
-        row = MagicLinkToken.objects.create(
-            company=self.company,
-            email='x@example.com',
-            token='abc123',
-            redirect_to=self.redirect_to,
-            expires_at=timezone.now() + timedelta(minutes=10),
-        )
-        url = build_magic_link_verify_url(token=row.token, company_id=self.company.id)
+        url = build_magic_link_verify_url(token='abc123', company_id=self.company.id)
         self.assertTrue(url.startswith('https://auth.example.com/api/v1/magic-link/verify'))
 
     def test_redeem_marks_consumed(self):
-        row = MagicLinkToken.objects.create(
+        row, raw = create_magic_link_token(
             company=self.company,
             email='member@example.com',
-            user=self.user,
-            token='tok',
             redirect_to=self.redirect_to,
-            expires_at=timezone.now() + timedelta(minutes=10),
+            user=self.user,
         )
-        redeemed, err = redeem_magic_link_token(raw_token='tok', company_id=self.company.id)
+        redeemed, err = redeem_magic_link_token(raw_token=raw, company_id=self.company.id)
         self.assertIsNone(err)
         self.assertIsNotNone(redeemed)
         row.refresh_from_db()
         self.assertIsNotNone(row.consumed_at)
+
+    def test_double_redeem_returns_already_used(self):
+        _row, raw = create_magic_link_token(
+            company=self.company,
+            email='member@example.com',
+            redirect_to=self.redirect_to,
+            user=self.user,
+        )
+        first, err1 = redeem_magic_link_token(raw_token=raw, company_id=self.company.id)
+        self.assertIsNone(err1)
+        self.assertIsNotNone(first)
+        second, err2 = redeem_magic_link_token(raw_token=raw, company_id=self.company.id)
+        self.assertIsNone(second)
+        self.assertEqual(err2, 'Magic link already used.')
+
+    def test_token_hash_stored_not_plaintext(self):
+        row, raw = create_magic_link_token(
+            company=self.company,
+            email='member@example.com',
+            redirect_to=self.redirect_to,
+        )
+        self.assertEqual(row.token_hash, hash_magic_link_token(raw))
+        self.assertFalse(MagicLinkToken.objects.filter(token_hash=raw).exists())

@@ -58,7 +58,7 @@ Flow and allowlist: [OAuth login](oauth-login.md).
 | -------- | ------- | ------- |
 | `MAGIC_LINK_ENABLED` | `true` | Global kill switch for magic-link request/verify endpoints |
 | `MAGIC_LINK_TTL_SECONDS` | `1800` | One-time link lifetime (seconds) |
-| `AUTH_RATE_LIMIT_MAGIC_LINK` | `10` | Requests per minute bucket (IP, email+company, and company) |
+| `AUTH_RATE_LIMIT_MAGIC_LINK` | `10` | Requests per minute bucket (per client IP and per email+company) |
 
 Links are built from **`JWT_ISSUER`** (HTTPS when `DEBUG=false`). See [magic-link.md](magic-link.md).
 

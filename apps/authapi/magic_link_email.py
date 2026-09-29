@@ -38,8 +38,15 @@ def _render(template_name: str, context: dict, *, language: str) -> str:
     raise TemplateDoesNotExist(template_name)
 
 
-def send_magic_link_email(*, row, company: Company, user=None, language: str | None = None) -> None:
-    magic_link_url = magic_link_url_for_request(row.pk)
+def send_magic_link_email(
+    *,
+    row,
+    company: Company,
+    user=None,
+    language: str | None = None,
+    raw_token: str,
+) -> None:
+    magic_link_url = magic_link_url_for_request(row.pk, raw_token=raw_token)
     if not magic_link_url:
         return
 
