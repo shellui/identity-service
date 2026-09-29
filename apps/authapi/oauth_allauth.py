@@ -2,48 +2,53 @@
 
 from __future__ import annotations
 
+import types
 from typing import Any
 
+from allauth.core import context as allauth_context
 from allauth.socialaccount.adapter import get_adapter
 from allauth.socialaccount.models import SocialApp
-from allauth.socialaccount.providers.oauth2.views import OAuth2Adapter
+from django.core.exceptions import ImproperlyConfigured, MultipleObjectsReturned
 
+from apps.authapi.oauth_social_account import bind_oauth_social_app
 from apps.authapi.provider_registry import ProviderCatalogEntry, catalog_entry_for_social_app
 
 
-class IdentityHostedOAuth2Adapter(OAuth2Adapter):
-    """OAuth2 adapter that uses the identity-service callback URL."""
-
-    def __init__(self, request, provider_id: str, *, callback_url: str, delegate: OAuth2Adapter):
-        super().__init__(request)
-        self.provider_id = provider_id
-        self._callback_url = callback_url
-        self._delegate = delegate
-
-    def __getattr__(self, name):
-        if name.startswith('_'):
-            raise AttributeError(name)
-        return getattr(self._delegate, name)
-
-    def get_callback_url(self, request, app):
-        return self._callback_url
-
-    def complete_login(self, request, app, token, **kwargs):
-        return self._delegate.complete_login(request, app, token, **kwargs)
-
-    def parse_token(self, data):
-        return self._delegate.parse_token(data)
-
-
 def _provider_for_social_app(request, social_app: SocialApp):
+    bind_oauth_social_app(request, social_app)
+    allauth_context.request = request
     adapter = get_adapter(request)
     lookup = social_app.provider_id or social_app.provider
-    if lookup:
-        try:
-            return adapter.get_provider(request, provider=lookup, client_id=social_app.client_id)
-        except Exception:
-            pass
-    return social_app.get_provider(request)
+    try:
+        return adapter.get_provider(
+            request,
+            provider=lookup,
+            client_id=social_app.client_id,
+        )
+    except SocialApp.DoesNotExist as exc:
+        raise ImproperlyConfigured(
+            f'SocialApp {social_app.pk} is not configured for provider {lookup!r}.'
+        ) from exc
+    except MultipleObjectsReturned as exc:
+        raise ImproperlyConfigured(
+            f'Multiple SocialApp rows match provider {lookup!r} and client_id.'
+        ) from exc
+
+
+def _patch_delegate_callback(delegate, callback_url: str) -> None:
+    delegate.get_callback_url = types.MethodType(
+        lambda self, request, app: callback_url,
+        delegate,
+    )
+
+
+def split_pkce_authorize_params(request, social_app: SocialApp) -> tuple[dict[str, str], str | None]:
+    provider = _provider_for_social_app(request, social_app)
+    params = dict(provider.get_pkce_params())
+    verifier = params.pop('code_verifier', None)
+    if isinstance(verifier, str):
+        verifier = verifier.strip() or None
+    return params, verifier
 
 
 def get_identity_oauth2_adapter(
@@ -51,16 +56,11 @@ def get_identity_oauth2_adapter(
     *,
     social_app: SocialApp,
     callback_url: str,
-) -> IdentityHostedOAuth2Adapter:
+):
     provider = _provider_for_social_app(request, social_app)
     delegate = provider.get_oauth2_adapter(request)
-    provider_id = str(getattr(delegate, 'provider_id', None) or social_app.provider)
-    return IdentityHostedOAuth2Adapter(
-        request,
-        provider_id,
-        callback_url=callback_url,
-        delegate=delegate,
-    )
+    _patch_delegate_callback(delegate, callback_url)
+    return delegate
 
 
 def authorize_extras_for_entry(entry: ProviderCatalogEntry, *, switch_account: bool) -> dict[str, str]:
@@ -83,7 +83,8 @@ def build_allauth_authorize_url(
     redirect_uri: str,
     state: str,
     switch_account: bool = False,
-) -> tuple[str, str | None]:
+    pkce_params: dict | None = None,
+) -> str:
     provider = _provider_for_social_app(request, social_app)
     oauth2_adapter = get_identity_oauth2_adapter(
         request,
@@ -95,11 +96,11 @@ def build_allauth_authorize_url(
     scope = provider.get_scope()
     auth_params = dict(provider.get_auth_params())
     auth_params.update(authorize_extras_for_entry(entry, switch_account=switch_account))
-    pkce_params = provider.get_pkce_params()
-    code_verifier = pkce_params.pop('code_verifier', None)
-    auth_params.update(pkce_params)
-    url = client.get_redirect_url(oauth2_adapter.authorize_url, scope, auth_params)
-    return url, code_verifier
+    if pkce_params:
+        auth_params.update(pkce_params)
+    else:
+        auth_params.update(provider.get_pkce_params())
+    return client.get_redirect_url(oauth2_adapter.authorize_url, scope, auth_params)
 
 
 def exchange_allauth_code(
@@ -134,7 +135,8 @@ def exchange_allauth_code(
 def sociallogin_userinfo(sociallogin) -> dict[str, Any]:
     account = sociallogin.account
     extra = account.extra_data if isinstance(account.extra_data, dict) else {}
-    data = dict(extra)
+    nested = extra.get('userinfo') if isinstance(extra.get('userinfo'), dict) else {}
+    data = dict(nested) if nested else dict(extra)
     if sociallogin.user.email and 'email' not in data:
         data['email'] = sociallogin.user.email
     if sociallogin.user.get_full_name() and 'name' not in data:
@@ -142,6 +144,8 @@ def sociallogin_userinfo(sociallogin) -> dict[str, Any]:
     if account.uid and 'id' not in data and 'sub' not in data:
         data['id'] = account.uid
         data['sub'] = account.uid
+    if isinstance(extra.get('id_token'), dict):
+        data['_id_token_claims'] = extra['id_token']
     return data
 
 

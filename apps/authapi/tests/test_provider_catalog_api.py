@@ -14,7 +14,7 @@ class ProviderRegistryTests(APITestCase):
     def test_catalog_loads_all_entries(self):
         catalog = get_provider_catalog()
         self.assertEqual(len(catalog.providers), 114)
-        self.assertGreater(len(catalog.supported_slugs()), 90)
+        self.assertEqual(len(catalog.supported_slugs()), 3)
 
     def test_microsoft_extra_settings_validation(self):
         entry = get_provider_catalog().by_slug()['microsoft']
@@ -87,7 +87,7 @@ class OAuthSocialAppExtraSettingsTests(APITestCase):
         response = self.client.post(
             f'/api/v1/oauth-social-apps?company_id={self.company.id}',
             {
-                'docs_slug': 'discord',
+                'docs_slug': 'microsoft',
                 'client_id': 'cid',
                 'client_secret': 'secret',
                 'extra_settings': {'not_a_field': 'x'},
@@ -97,16 +97,37 @@ class OAuthSocialAppExtraSettingsTests(APITestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn('Unknown extra setting', response.data['error'])
 
-    def test_create_openid_connect_requires_server_url(self):
-        response = self.client.post(
-            f'/api/v1/oauth-social-apps?company_id={self.company.id}',
-            {
-                'docs_slug': 'keycloak',
-                'client_id': 'cid',
-                'client_secret': 'secret',
-                'extra_settings': {},
-            },
-            format='json',
+    def test_create_rejects_private_server_url(self):
+        entry = get_provider_catalog().by_slug()['keycloak']
+        _normalized, errors = validate_extra_settings(
+            entry,
+            {'server_url': 'http://127.0.0.1/openid'},
         )
-        self.assertEqual(response.status_code, 400)
-        self.assertIn('server_url', response.data['error'])
+        self.assertTrue(errors)
+
+    def test_social_app_list_is_company_scoped_and_redacts_secrets(self):
+        app = SocialApp.objects.create(
+            provider='apple',
+            name='apple-co',
+            client_id='aid',
+            secret='secret',
+            settings={'catalog_slug': 'apple', 'certificate_key': 'PRIVATE'},
+        )
+        CompanyOAuthClient.objects.create(company=self.company, social_app=app, is_active=True)
+        other = Company.objects.create(name='Other', slug='other-co')
+        other_app = SocialApp.objects.create(
+            provider='google',
+            name='other-google',
+            client_id='gid',
+            secret='gsec',
+            settings={'catalog_slug': 'google'},
+        )
+        CompanyOAuthClient.objects.create(company=other, social_app=other_app, is_active=True)
+        response = self.client.get(f'/api/v1/oauth-social-apps?company_id={self.company.id}')
+        self.assertEqual(response.status_code, 200)
+        ids = {row['id'] for row in response.data['social_apps']}
+        self.assertIn(app.id, ids)
+        self.assertNotIn(other_app.id, ids)
+        apple_row = next(row for row in response.data['social_apps'] if row['id'] == app.id)
+        self.assertNotIn('certificate_key', apple_row['extra_settings'])
+        self.assertTrue(apple_row['extra_settings'].get('certificate_key_set'))

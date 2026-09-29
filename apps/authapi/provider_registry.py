@@ -8,6 +8,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from apps.actions.ssrf import SSRFError, resolve_webhook_endpoint
+
 CATALOG_PATH = Path(__file__).resolve().parent / 'provider_catalog.json'
 
 
@@ -172,7 +174,14 @@ def validate_extra_settings(
             if field.required and not partial:
                 errors.append(f'Setting {field.name!r} cannot be empty.')
             continue
-        normalized[field.name] = value.strip() if isinstance(value, str) else value
+        normalized_value = value.strip() if isinstance(value, str) else value
+        if field.type == 'url' and isinstance(normalized_value, str):
+            try:
+                resolve_webhook_endpoint(normalized_value, allow_private=False)
+            except SSRFError as exc:
+                errors.append(f'{field.name}: {exc}')
+                continue
+        normalized[field.name] = normalized_value
     for key in incoming:
         if key not in {f.name for f in entry.extra_settings_schema}:
             errors.append(f'Unknown extra setting {key!r}.')

@@ -14,6 +14,7 @@ from apps.authapi.oauth_allauth import (
     get_identity_oauth2_adapter,
     sociallogin_userinfo,
 )
+from apps.authapi.oauth_social_account import bind_oauth_social_app
 from apps.authapi.provider_registry import (
     ProviderCatalogEntry,
     catalog_entry_for_social_app,
@@ -165,7 +166,8 @@ def build_authorize_url(
     company_id: int | None = None,
     company_oauth_client_id: int | None = None,
     switch_account: bool = False,
-) -> tuple[str, str | None]:
+    pkce_params: dict | None = None,
+) -> str:
     if request is None:
         raise ValueError('HTTP request is required to build provider authorize URLs.')
     resolved = resolve_oauth_client(
@@ -174,16 +176,17 @@ def build_authorize_url(
         company_oauth_client_id=company_oauth_client_id,
     )
     social_app = get_social_app_for_client(resolved)
+    bind_oauth_social_app(request, social_app)
     signed_state = state or str(uuid.uuid4())
-    url, pkce = build_allauth_authorize_url(
+    return build_allauth_authorize_url(
         request,
         entry=resolved.catalog_entry,
         social_app=social_app,
         redirect_uri=redirect_uri,
         state=signed_state,
         switch_account=switch_account,
+        pkce_params=pkce_params,
     )
-    return url, pkce
 
 
 def exchange_code_for_token(
@@ -240,6 +243,7 @@ def fetch_provider_userinfo(
         company_oauth_client_id=company_oauth_client_id,
     )
     social_app = get_social_app_for_client(resolved)
+    bind_oauth_social_app(request, social_app)
     oauth2_adapter = get_identity_oauth2_adapter(
         request,
         social_app=social_app,

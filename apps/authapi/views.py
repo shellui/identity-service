@@ -51,10 +51,13 @@ from .renderers import PrometheusTextRenderer
 from .login_audit import oauth_provider_redirect_uri, record_login_event
 from .oauth_state import (
     build_oauth_state,
+    consume_oauth_pkce_verifier,
     oauth_state_nonce_cookie_value,
     parse_oauth_state,
+    stash_oauth_pkce_verifier,
     verify_oauth_state_request,
 )
+from .oauth_allauth import split_pkce_authorize_params
 from .oauth_user import OAuthProfile, decode_oauth_id_token_claims, extract_oauth_profile, resolve_oauth_user
 from .oauth_confirm import build_oauth_confirm_token, parse_oauth_confirm_token
 from .oauth_session_code import (
@@ -83,6 +86,7 @@ from .oauth import (
     exchange_code_for_token,
     fetch_provider_userinfo,
     get_provider_config,
+    get_social_app_for_client,
     resolve_oauth_client,
     should_skip_oauth_confirm,
     social_app_catalog_slug,
@@ -211,6 +215,7 @@ def _resolve_oauth_login_user(
         company_id=company.id,
         company_oauth_client_id=company_oauth_client_id,
     )
+    social_app = get_social_app_for_client(resolved)
     id_claims = decode_oauth_id_token_claims(token_bundle.id_token)
     profile, perror = extract_oauth_profile(
         provider,
@@ -218,6 +223,8 @@ def _resolve_oauth_login_user(
         token_bundle.access_token,
         tenant=resolved.tenant,
         id_token_claims=id_claims,
+        catalog_entry=resolved.catalog_entry,
+        social_app=social_app,
     )
     if perror or profile is None:
         return None, False, None, perror or 'Invalid provider profile.'
@@ -411,11 +418,7 @@ def _oauth_social_app_payload(company: Company, app: SocialApp) -> dict:
         'name': app.name,
         'client_id': app.client_id,
         'tenant': str(app_settings.get('tenant') or ''),
-        'extra_settings': {
-            key: value
-            for key, value in app_settings.items()
-            if key not in {'catalog_slug', 'tenant'}
-        },
+        'extra_settings': _public_extra_settings_for_app(app),
         'is_linked': mapping is not None,
         'mapping_id': mapping.id if mapping is not None else None,
         'mapping_is_active': bool(mapping.is_active) if mapping is not None else False,
@@ -591,18 +594,30 @@ def _issue_personal_access_token(
     return row, str(access)
 
 
-def _link_social_account(user: User, provider: str, provider_id: str, userinfo: dict) -> None:
-    # Persist provider payload in DB so one user can have multiple linked auth methods.
-    entry = resolve_catalog_slug(provider)
-    account_provider = entry.allauth_id if entry is not None else str(provider).strip().lower()
+def _link_social_account(user: User, profile: OAuthProfile, userinfo: dict) -> None:
     SocialAccount.objects.update_or_create(
-        provider=account_provider,
-        uid=provider_id,
+        provider=profile.social_provider,
+        uid=profile.social_uid,
         defaults={
             'user': user,
             'extra_data': userinfo if isinstance(userinfo, dict) else {},
         },
     )
+
+
+def _public_extra_settings_for_app(app: SocialApp) -> dict:
+    entry = resolve_catalog_slug(social_app_catalog_slug(app))
+    app_settings = app.settings if isinstance(app.settings, dict) else {}
+    secret_fields = {field.name for field in entry.extra_settings_schema if field.secret} if entry else set()
+    public: dict = {}
+    for key, value in app_settings.items():
+        if key in {'catalog_slug', 'tenant'}:
+            continue
+        if key in secret_fields:
+            public[f'{key}_set'] = bool(str(value or '').strip())
+        else:
+            public[key] = value
+    return public
 
 
 def _build_callback_redirect(redirect_to: str, payload: dict, provider: str) -> str:
@@ -829,6 +844,10 @@ def _render_oauth_confirm_page(
             'error_message': error_message,
         },
     )
+
+
+_OAUTH_SIGNIN_FAILED_DETAIL = 'OAuth sign-in failed. Try again or contact your administrator.'
+_OAUTH_SIGNIN_FAILED_REASON = 'oauth_signin_failed'
 
 
 def _shellui_oauth_bounce_or_json(
@@ -1268,7 +1287,7 @@ class SocialAuthorizeView(APIView):
         )
         if rerr or not redirect_uri:
             return Response({'error': rerr or 'Invalid redirect_uri.'}, status=status.HTTP_400_BAD_REQUEST)
-        authorize_url, _pkce = build_authorize_url(
+        authorize_url = build_authorize_url(
             provider=provider,
             redirect_uri=redirect_uri,
             request=request,
@@ -1356,30 +1375,25 @@ class SocialLoginView(APIView):
                 )
             avatar_url = profile.avatar_url
             email = profile.email
-        except Exception as exc:
+        except Exception:
             record_login_event(
                 request=request,
                 outcome=LoginEvent.OUTCOME_FAILURE,
                 provider=provider,
                 user=None,
                 company=company,
-                failure_reason=str(exc),
+                failure_reason=_OAUTH_SIGNIN_FAILED_REASON,
                 client_timezone=client_tz,
                 client_device_id=client_dev,
             )
             return Response(
-                {'detail': str(exc)},
+                {'detail': _OAUTH_SIGNIN_FAILED_DETAIL},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
         emit_oauth_user_created_if_new(company, user, created=created, oauth_provider=provider)
         join = apply_company_join(company, user, email=email)
-        _link_social_account(
-            user=user,
-            provider=provider,
-            provider_id=profile.provider_id,
-            userinfo=userinfo,
-        )
+        _link_social_account(user=user, profile=profile, userinfo=userinfo)
 
         cache.set(
             f"shellui:user_metadata:{user.id}",
@@ -1632,8 +1646,16 @@ class ShellUIAuthorizeView(APIView):
             client_device_id=client_dev,
             token_delivery=token_delivery,
         )
-        # Provider always returns to this service; bounce target is in signed state.
-        authorize_url, pkce_verifier = build_authorize_url(
+        resolved_oauth = resolve_oauth_client(
+            provider,
+            company_id=company.id,
+            company_oauth_client_id=company_oauth_client_id,
+        )
+        social_app = get_social_app_for_client(resolved_oauth)
+        pkce_params, pkce_verifier = split_pkce_authorize_params(request, social_app)
+        if pkce_verifier:
+            stash_oauth_pkce_verifier(state_nonce, pkce_verifier)
+        authorize_url = build_authorize_url(
             provider=provider,
             redirect_uri=oauth_provider_redirect_uri(request),
             state=state,
@@ -1641,28 +1663,8 @@ class ShellUIAuthorizeView(APIView):
             company_id=company.id,
             company_oauth_client_id=company_oauth_client_id,
             switch_account=switch_account,
+            pkce_params=pkce_params if pkce_verifier else None,
         )
-        if pkce_verifier:
-            state, state_nonce = build_oauth_state(
-                provider=provider,
-                redirect_to=redirect_to,
-                company_id=company.id,
-                company_oauth_client_id=company_oauth_client_id,
-                client_timezone=client_tz or None,
-                client_device_id=client_dev,
-                token_delivery=token_delivery,
-                pkce_code_verifier=pkce_verifier,
-                nonce=state_nonce,
-            )
-            authorize_url, _ignored_pkce = build_authorize_url(
-                provider=provider,
-                redirect_uri=oauth_provider_redirect_uri(request),
-                state=state,
-                request=request,
-                company_id=company.id,
-                company_oauth_client_id=company_oauth_client_id,
-                switch_account=switch_account,
-            )
         response = HttpResponseRedirect(authorize_url)
         cookie = oauth_state_nonce_cookie_value(state_nonce)
         response.set_cookie(
@@ -1786,7 +1788,7 @@ class ShellUIOAuthCallbackView(APIView):
                 request=request,
                 company_id=company.id,
                 company_oauth_client_id=company_oauth_client_id,
-                pkce_code_verifier=state_payload.get('pkce_code_verifier'),
+                pkce_code_verifier=consume_oauth_pkce_verifier(state_payload.get('nonce') or ''),
             )
             userinfo = fetch_provider_userinfo(
                 provider,
@@ -1829,35 +1831,30 @@ class ShellUIOAuthCallbackView(APIView):
                 )
             avatar_url = profile.avatar_url
             email = profile.email
-        except Exception as exc:
+        except Exception:
             record_login_event(
                 request=request,
                 outcome=LoginEvent.OUTCOME_FAILURE,
                 provider=provider,
                 user=None,
                 company=company,
-                failure_reason=str(exc),
+                failure_reason=_OAUTH_SIGNIN_FAILED_REASON,
                 client_timezone=client_tz,
                 client_device_id=client_dev,
             )
             bounced = _shellui_oauth_bounce_or_json(
                 request,
-                message=str(exc),
+                message=_OAUTH_SIGNIN_FAILED_DETAIL,
                 error_code='token_exchange_failed',
                 redirect_to_raw=redirect_to,
             )
             if isinstance(bounced, HttpResponseRedirect):
                 return bounced
-            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'detail': _OAUTH_SIGNIN_FAILED_DETAIL}, status=status.HTTP_400_BAD_REQUEST)
 
         emit_oauth_user_created_if_new(company, user, created=created, oauth_provider=provider)
         join = apply_company_join(company, user, email=email)
-        _link_social_account(
-            user=user,
-            provider=provider,
-            provider_id=profile.provider_id,
-            userinfo=userinfo,
-        )
+        _link_social_account(user=user, profile=profile, userinfo=userinfo)
 
         cache.set(
             f"shellui:user_metadata:{user.id}",
@@ -2134,27 +2131,22 @@ class ShellUIOAuthExchangeView(APIView):
                 )
             avatar_url = profile.avatar_url
             email = profile.email
-        except Exception as exc:
+        except Exception:
             record_login_event(
                 request=request,
                 outcome=LoginEvent.OUTCOME_FAILURE,
                 provider=provider,
                 user=None,
                 company=company,
-                failure_reason=str(exc),
+                failure_reason=_OAUTH_SIGNIN_FAILED_REASON,
                 client_timezone=client_tz,
                 client_device_id=client_dev,
             )
-            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'detail': _OAUTH_SIGNIN_FAILED_DETAIL}, status=status.HTTP_400_BAD_REQUEST)
 
         emit_oauth_user_created_if_new(company, user, created=created, oauth_provider=provider)
         join = apply_company_join(company, user, email=email)
-        _link_social_account(
-            user=user,
-            provider=provider,
-            provider_id=profile.provider_id,
-            userinfo=userinfo,
-        )
+        _link_social_account(user=user, profile=profile, userinfo=userinfo)
 
         cache.set(
             f"shellui:user_metadata:{user.id}",
@@ -3071,6 +3063,11 @@ class ShellUIAdminOAuthClientListView(APIView):
                 {'error': f"Provider '{social_app.provider}' is not supported."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        if CompanyOAuthClient.objects.filter(social_app=social_app).exclude(company=company).exists():
+            return Response(
+                {'error': 'This SocialApp belongs to another company.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         if not str(social_app.client_id).strip() or not str(social_app.secret).strip():
             return Response(
                 {'error': 'Selected SocialApp is missing client_id or secret.'},
@@ -3166,12 +3163,12 @@ class ShellUIAdminOAuthSocialAppListView(APIView):
         if err:
             return err
         enabled_providers = set(_supported_oauth_providers())
-        apps = SocialApp.objects.all().order_by('provider', 'name', 'id')
-        rows = [
-            _oauth_social_app_payload(company, app)
-            for app in apps
-            if social_app_catalog_slug(app) in enabled_providers
-        ]
+        company_app_ids = CompanyOAuthClient.objects.filter(company=company).values_list(
+            'social_app_id',
+            flat=True,
+        )
+        apps = SocialApp.objects.filter(id__in=company_app_ids).order_by('provider', 'name', 'id')
+        rows = [_oauth_social_app_payload(company, app) for app in apps]
         return Response(
             {
                 'providers': sorted(enabled_providers),

@@ -12,7 +12,8 @@ import jwt
 from allauth.socialaccount.models import SocialAccount
 from django.contrib.auth import get_user_model
 
-from apps.authapi.provider_registry import resolve_catalog_slug
+from apps.authapi.provider_registry import ProviderCatalogEntry, resolve_catalog_slug
+from apps.authapi.oauth_social_account import compose_social_account_uid, social_account_provider_key
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -67,6 +68,8 @@ def _backfill_user_names_from_profile(user: User, profile: OAuthProfile) -> None
 @dataclass(frozen=True)
 class OAuthProfile:
     provider_id: str
+    social_provider: str
+    social_uid: str
     email: str
     full_name: str
     avatar_url: str | None
@@ -93,10 +96,16 @@ def _truthy_claim(value: object) -> bool:
     return value is True or value == 'true' or value == 1 or value == '1'
 
 
-def microsoft_email_trustworthy(*, tenant: str | None, id_token_claims: dict) -> bool:
-    tenant_norm = (tenant or 'common').strip().lower()
+def microsoft_email_trustworthy(
+    *,
+    tenant: str | None,
+    id_token_claims: dict,
+    configured_tenant: str | None = None,
+) -> bool:
+    tenant_norm = (configured_tenant or tenant or 'common').strip().lower()
+    tid = str(id_token_claims.get('tid') or '').strip().lower()
     if tenant_norm and tenant_norm != 'common':
-        return True
+        return bool(tid) and tid == tenant_norm
     return _truthy_claim(id_token_claims.get('xms_edov'))
 
 
@@ -147,7 +156,11 @@ def _email_verified_for_link_from_policy(
         return _truthy_claim(info.get('email_verified')), None, None
 
     if policy == 'microsoft_tenant':
-        if not microsoft_email_trustworthy(tenant=tenant, id_token_claims=claims):
+        if not microsoft_email_trustworthy(
+            tenant=tenant,
+            id_token_claims=claims,
+            configured_tenant=tenant,
+        ):
             return False, (
                 'Microsoft sign-in requires a verified work account or a company-configured tenant. '
                 'Ask your administrator to restrict sign-in to your organization tenant.'
@@ -157,11 +170,24 @@ def _email_verified_for_link_from_policy(
             return True, None, ms_email.strip().lower()
         return False, None, None
 
-    if policy in {'oidc_email_verified_or_uid_only', 'oauth2_email_verified_or_uid_only'}:
+    if policy == 'oidc_email_verified_or_uid_only':
+        claim_email = claims.get('email')
+        if (
+            _truthy_claim(claims.get('email_verified'))
+            and isinstance(claim_email, str)
+            and claim_email.strip()
+            and isinstance(info.get('email'), str)
+            and claim_email.strip().lower() == str(info.get('email')).strip().lower()
+        ):
+            return True, None, None
+        return False, None, None
+
+    if policy == 'oauth2_email_verified_or_uid_only':
         if _truthy_claim(info.get('email_verified')):
             return True, None, None
-        if _truthy_claim(claims.get('email_verified')):
-            return True, None, None
+        return False, None, None
+
+    if policy == 'uid_only':
         return False, None, None
 
     return False, None, None
@@ -174,13 +200,21 @@ def extract_oauth_profile(
     *,
     tenant: str | None = None,
     id_token_claims: dict | None = None,
+    catalog_entry: ProviderCatalogEntry | None = None,
+    social_app=None,
 ) -> tuple[OAuthProfile | None, str | None]:
     key = str(provider).strip().lower()
-    entry = resolve_catalog_slug(key)
+    entry = catalog_entry or resolve_catalog_slug(key)
     policy = entry.email_link_policy if entry is not None else 'uid_only'
-    social_account_provider = entry.allauth_id if entry is not None else key
     info = userinfo if isinstance(userinfo, dict) else {}
     claims = id_token_claims if isinstance(id_token_claims, dict) else {}
+    nested_claims = info.get('_id_token_claims') if isinstance(info.get('_id_token_claims'), dict) else {}
+    if nested_claims:
+        claims = {**claims, **nested_claims}
+    if social_app is not None and entry is not None:
+        social_provider = social_account_provider_key(entry=entry, social_app=social_app)
+    else:
+        social_provider = entry.allauth_id if entry is not None else key
 
     provider_id = str(
         info.get('id')
@@ -196,7 +230,7 @@ def extract_oauth_profile(
     full_name = info.get('name') or info.get('displayName') or ''
     email_verified_for_link, policy_error, email_override = _email_verified_for_link_from_policy(
         policy=policy,
-        provider_key=social_account_provider,
+        provider_key=social_provider,
         userinfo=info,
         access_token=access_token,
         tenant=tenant,
@@ -208,7 +242,7 @@ def extract_oauth_profile(
         email = email_override
 
     if not email or not str(email).strip():
-        email = f'{provider_id}@{social_account_provider}.local'
+        email = f'{provider_id}@{social_provider}.local'
     else:
         email = str(email).strip().lower()
 
@@ -219,8 +253,17 @@ def extract_oauth_profile(
     if not isinstance(avatar_url, str) or not avatar_url.strip():
         avatar_url = None
 
+    social_uid = compose_social_account_uid(
+        entry=entry,
+        social_app=social_app,
+        raw_uid=provider_id,
+        id_token_claims=claims,
+    ) if social_app is not None else provider_id
+
     return OAuthProfile(
         provider_id=provider_id,
+        social_provider=social_provider,
+        social_uid=social_uid or provider_id,
         email=email,
         full_name=str(full_name),
         avatar_url=avatar_url,
@@ -234,27 +277,21 @@ def resolve_oauth_user(*, provider: str, profile: OAuthProfile) -> tuple[User | 
     Link by (provider, uid) first. Link by email only when ``email_verified_for_link`` is true.
     """
     key = str(provider).strip().lower()
-    entry = resolve_catalog_slug(key)
-    social_key = entry.allauth_id if entry is not None else key
+    social_key = profile.social_provider
+    social_uid = profile.social_uid
     existing = (
-        SocialAccount.objects.filter(provider=social_key, uid=profile.provider_id)
+        SocialAccount.objects.filter(provider=social_key, uid=social_uid)
         .select_related('user')
         .first()
     )
     if existing is not None:
         return existing.user, False, None
 
-    synthetic = profile.email.endswith(f'@{social_key}.local')
-    if not profile.email_verified_for_link and not synthetic:
-        return None, False, (
-            'We could not verify your email with this sign-in provider. '
-            'Use another sign-in method or contact your administrator.'
-        )
-
-    if synthetic:
+    if not profile.email_verified_for_link:
+        uid_email = f'{social_uid}@{social_key}.local'
         user = User.objects.create(
-            username=f'{social_key}_{profile.provider_id}',
-            email=profile.email,
+            username=f'{social_key}_{social_uid}'[:150],
+            email=uid_email,
             first_name=profile.full_name.split(' ')[0],
             last_name=' '.join(profile.full_name.split(' ')[1:]),
         )
@@ -265,7 +302,7 @@ def resolve_oauth_user(*, provider: str, profile: OAuthProfile) -> tuple[User | 
     user, created = get_or_create_user_for_oauth(
         email=profile.email,
         defaults={
-            'username': f'{social_key}_{profile.provider_id}',
+            'username': f'{social_key}_{social_uid}'[:150],
             'first_name': profile.full_name.split(' ')[0],
             'last_name': ' '.join(profile.full_name.split(' ')[1:]),
         },

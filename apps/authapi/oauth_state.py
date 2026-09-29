@@ -13,6 +13,27 @@ OAUTH_STATE_SALT = 'shellui.oauth.authorize.v1'
 OAUTH_STATE_MAX_AGE_SECONDS = 15 * 60
 OAUTH_STATE_NONCE_COOKIE = 'shellui_oauth_state_nonce'
 OAUTH_STATE_USED_CACHE_PREFIX = 'shellui:oauth_state_used:'
+OAUTH_PKCE_CACHE_PREFIX = 'shellui:oauth_pkce:'
+
+
+def stash_oauth_pkce_verifier(nonce: str, verifier: str) -> None:
+    key = str(nonce or '').strip()
+    value = str(verifier or '').strip()
+    if not key or not value:
+        return
+    cache.set(f'{OAUTH_PKCE_CACHE_PREFIX}{key}', value[:128], timeout=OAUTH_STATE_MAX_AGE_SECONDS)
+
+
+def consume_oauth_pkce_verifier(nonce: str) -> str | None:
+    key = str(nonce or '').strip()
+    if not key:
+        return None
+    cache_key = f'{OAUTH_PKCE_CACHE_PREFIX}{key}'
+    value = cache.get(cache_key)
+    if value:
+        cache.delete(cache_key)
+        return str(value)
+    return None
 
 
 def build_oauth_state(
@@ -24,7 +45,6 @@ def build_oauth_state(
     client_timezone: str | None = None,
     client_device_id: str | None = None,
     token_delivery: str | None = None,
-    pkce_code_verifier: str | None = None,
     nonce: str | None = None,
 ) -> tuple[str, str]:
     """
@@ -49,9 +69,6 @@ def build_oauth_state(
     delivery = (token_delivery or '').strip().lower()
     if delivery in {'code', 'fragment'}:
         payload['token_delivery'] = delivery
-    pkce = (pkce_code_verifier or '').strip()
-    if pkce:
-        payload['pkce_code_verifier'] = pkce[:128]
     return signing.dumps(payload, salt=OAUTH_STATE_SALT), state_nonce
 
 
@@ -102,9 +119,6 @@ def parse_oauth_state(state: str | None) -> tuple[dict | None, str | None]:
     delivery = str(payload.get('token_delivery') or '').strip().lower()
     if delivery in {'code', 'fragment'}:
         out['token_delivery'] = delivery
-    pkce = str(payload.get('pkce_code_verifier') or '').strip()
-    if pkce:
-        out['pkce_code_verifier'] = pkce[:128]
     return out, None
 
 

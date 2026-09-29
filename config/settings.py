@@ -307,6 +307,8 @@ ACCOUNT_EMAIL_VERIFICATION = 'none'
 ACCOUNT_SIGNUP_FIELDS = ['email*', 'password1*', 'password2*']
 ACCOUNT_LOGIN_METHODS = {'email'}
 
+SOCIALACCOUNT_ADAPTER = 'apps.authapi.social_account_adapter.ShellUISocialAccountAdapter'
+
 # Transactional email (company access requests / enable notifications).
 # Local default: print to console. Production: set EMAIL_HOST / EMAIL_BACKEND.
 EMAIL_BACKEND = os.getenv(

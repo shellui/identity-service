@@ -71,6 +71,8 @@ EXTRA_SCHEMA_OVERRIDES: dict[str, list[dict]] = {
     ],
 }
 
+SHELLUI_VERIFIED_OAUTH_SLUGS = frozenset({'github', 'google', 'microsoft'})
+
 OIDC_SERVER_URL_SLUGS = frozenset(
     {
         'openid_connect',
@@ -147,6 +149,11 @@ def _supported(entry: dict, installed: frozenset[str]) -> tuple[bool, str | None
         return False, 'Unsupported protocol.'
     if not _app_has_oauth2_provider(entry.get('app'), installed):
         return False, 'No OAuth2 adapter is available for this provider module.'
+    if entry.get('docs_slug') not in SHELLUI_VERIFIED_OAUTH_SLUGS:
+        return (
+            False,
+            'Shellui has not verified this provider on the identity-hosted OAuth adapter yet.',
+        )
     return True, None
 
 

@@ -30,6 +30,8 @@ class OAuthIdentityResolutionTests(TestCase):
     def test_google_unverified_email_does_not_link_existing_user(self):
         profile = OAuthProfile(
             provider_id='attacker-sub',
+            social_provider='google',
+            social_uid='attacker-sub',
             email='victim@example.com',
             full_name='Attacker',
             avatar_url=None,
@@ -37,13 +39,16 @@ class OAuthIdentityResolutionTests(TestCase):
             userinfo={'sub': 'attacker-sub', 'email_verified': False},
         )
         user, created, err = resolve_oauth_user(provider='google', profile=profile)
-        self.assertIsNone(user)
-        self.assertFalse(created)
-        self.assertIn('verify', (err or '').lower())
+        self.assertIsNone(err)
+        self.assertTrue(created)
+        self.assertNotEqual(user.pk, self.victim.pk)
+        self.assertTrue(user.email.endswith('@google.local'))
 
     def test_google_verified_email_links_existing_user(self):
         profile = OAuthProfile(
             provider_id='victim-sub',
+            social_provider='google',
+            social_uid='victim-sub',
             email='victim@example.com',
             full_name='Victim',
             avatar_url=None,
@@ -69,6 +74,8 @@ class OAuthIdentityResolutionTests(TestCase):
         )
         profile = OAuthProfile(
             provider_id='attacker-sub',
+            social_provider='google',
+            social_uid='attacker-sub',
             email='victim@example.com',
             full_name='Attacker',
             avatar_url=None,
@@ -111,6 +118,8 @@ class OAuthIdentityResolutionTests(TestCase):
         User.objects.create_user(username='u2', email='DUP@example.com', password='x')
         profile = OAuthProfile(
             provider_id='sub-dup',
+            social_provider='google',
+            social_uid='sub-dup',
             email='dup@example.com',
             full_name='Dup User',
             avatar_url=None,
@@ -131,12 +140,13 @@ class OAuthIdentityResolutionTests(TestCase):
         self.assertEqual(user.email, 'new@example.com')
 
     def test_microsoft_dedicated_tenant_allows_profile(self):
+        tenant_id = '11111111-1111-1111-1111-111111111111'
         profile, err = extract_oauth_profile(
             'microsoft',
             {'id': 'ms-2', 'mail': 'user@contoso.com'},
             'token',
-            tenant='contoso.onmicrosoft.com',
-            id_token_claims={},
+            tenant=tenant_id,
+            id_token_claims={'tid': tenant_id},
         )
         self.assertIsNone(err)
         assert profile is not None

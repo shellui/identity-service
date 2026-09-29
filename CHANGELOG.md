@@ -25,8 +25,16 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 ### ✨ Feature
 
-- **OAuth provider catalog:** identity-service ships a checked-in django-allauth provider catalog (`apps/authapi/provider_catalog.json`) with **97** OAuth2/OIDC providers wired through allauth adapters on the identity-hosted callback. Admin API: `GET /api/v1/admin/oauth-provider-catalog`. OAuth app CRUD accepts `docs_slug` plus validated `extra_settings`.
+- **OAuth provider catalog:** identity-service ships a checked-in django-allauth provider catalog (`apps/authapi/provider_catalog.json`) covering **114** OAuth2/OIDC providers. **GitHub, Google, and Microsoft** are verified on the identity-hosted OAuth adapter (`supported: true`); other catalog entries are listed for setup reference until adapter coverage expands. Admin API: `GET /api/v1/oauth-provider-catalog`. OAuth app CRUD accepts `docs_slug` plus validated `extra_settings`.
 - **django-allauth 65.19.5:** dependency upgraded to match the provider dataset.
+
+### 🔒 Security
+
+- OpenID Connect `SocialAccount` keys use per-app `provider_id` and issuer-scoped UIDs to prevent cross-issuer `sub` collisions.
+- OAuth SocialApp admin list and attach paths are company-scoped; secret `extra_settings` fields are redacted in API responses.
+- PKCE verifiers are stored server-side (nonce cache), not in signed OAuth `state`.
+- URL-type provider settings are validated against private/loopback addresses at save time (SSRF mitigation for discovery `server_url`).
+- OAuth token exchange failures return a fixed client message instead of exception text.
 
 ### 📚 Documentation
 

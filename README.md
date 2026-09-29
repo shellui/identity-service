@@ -2,12 +2,12 @@
 
 `identity-service` is a Django backend that provides authentication endpoints compatible with Shellui (`backend.type = "shellui"`).
 
-It supports OAuth login for **97** django-allauth OAuth2/OIDC providers (catalog: [docs/oauth-providers.md](docs/oauth-providers.md)), issues JWT tokens, exposes Supabase-like auth routes under `/api/v1/*`, and returns user metadata that Shellui can use (including avatar URL).
+It supports OAuth login for **GitHub, Google, and Microsoft** on the identity-hosted adapter, with a **114**-provider django-allauth catalog for admin setup ([docs/oauth-providers.md](docs/oauth-providers.md)). It issues JWT tokens, exposes Supabase-like auth routes under `/api/v1/*`, and returns user metadata that Shellui can use (including avatar URL).
 
 ## Features
 
 - Shellui-compatible auth API at `/api/v1/*`
-- OAuth login via django-allauth (97 supported OAuth2/OIDC providers — [docs/oauth-providers.md](docs/oauth-providers.md); flow — [docs/oauth-login.md](docs/oauth-login.md))
+- OAuth login via django-allauth (GitHub, Google, Microsoft verified — full catalog in [docs/oauth-providers.md](docs/oauth-providers.md); flow — [docs/oauth-login.md](docs/oauth-login.md))
 - Company join modes: **public**, **domain** allow-list, or **invitation-only** (see [docs/company-access.md](docs/company-access.md))
 - JWT access + refresh token issuance (RS256 with JWKS when `JWT_PRIVATE_KEY` is set)
 - Token refresh endpoint (`grant_type=refresh_token`)
