@@ -21,8 +21,8 @@ class SelfServiceAccountDeleteTests(TestCase):
                 company=company,
                 name='Deleted',
                 event_type='identity.user.deleted',
-                action_kind=ActionRule.ACTION_EMAIL,
-                config={'recipients': [f'ops@{company.slug}.test']},
+                action_kind=ActionRule.ACTION_WEBHOOK,
+                config={'url': 'https://example.com/h', 'secret': 's'},
             )
         self.user = User.objects.create_user(
             username='erase-me',

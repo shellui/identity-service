@@ -15,10 +15,8 @@ def _event_type_field_choices():
 
 
 class ActionRule(models.Model):
-    ACTION_EMAIL = 'email'
     ACTION_WEBHOOK = 'webhook'
     ACTION_KIND_CHOICES = [
-        (ACTION_EMAIL, 'Email'),
         (ACTION_WEBHOOK, 'Webhook'),
     ]
 
@@ -31,7 +29,11 @@ class ActionRule(models.Model):
     description = models.TextField(blank=True)
     event_type = models.CharField(max_length=128, choices=_event_type_field_choices)
     enabled = models.BooleanField(default=True)
-    action_kind = models.CharField(max_length=16, choices=ACTION_KIND_CHOICES)
+    action_kind = models.CharField(
+        max_length=16,
+        choices=ACTION_KIND_CHOICES,
+        default=ACTION_WEBHOOK,
+    )
     config = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -79,6 +81,7 @@ class ActionOutbox(models.Model):
     )
     attempt_count = models.PositiveIntegerField(default=0)
     next_attempt_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    locked_until = models.DateTimeField(null=True, blank=True, db_index=True)
     last_error = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

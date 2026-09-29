@@ -1,1 +1,0 @@
-[Shellui] New group in {{ envelope.company.name }}: {{ data.display_name }}

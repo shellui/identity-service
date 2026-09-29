@@ -1,1 +1,0 @@
-[Shellui] Vous avez accès à {{ envelope.company.name }}

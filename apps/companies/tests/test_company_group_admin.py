@@ -92,8 +92,8 @@ class CompanyGroupAdminTests(TestCase):
             company=self.company,
             name='Groups',
             event_type='identity.group.created',
-            action_kind=ActionRule.ACTION_EMAIL,
-            config={'recipients': ['ops@acme.com']},
+            action_kind=ActionRule.ACTION_WEBHOOK,
+            config={'url': 'https://example.com/h', 'secret': 's'},
         )
         url = reverse('admin:companies_companygroup_add')
         with self.captureOnCommitCallbacks(execute=False):
@@ -112,8 +112,8 @@ class CompanyGroupAdminTests(TestCase):
             company=self.company,
             name='Groups',
             event_type='identity.group.deleted',
-            action_kind=ActionRule.ACTION_EMAIL,
-            config={'recipients': ['ops@acme.com']},
+            action_kind=ActionRule.ACTION_WEBHOOK,
+            config={'url': 'https://example.com/h', 'secret': 's'},
         )
         group = CompanyGroup.objects.create(company=self.company, display_name='Gone')
         url = reverse('admin:companies_companygroup_delete', args=[group.pk])

@@ -1,1 +1,0 @@
-[Shellui] Adhésion modifiée pour {{ data.display_name }} dans {{ envelope.company.name }}

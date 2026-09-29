@@ -1,1 +1,0 @@
-[Shellui] Membership changed for {{ data.display_name }} in {{ envelope.company.name }}

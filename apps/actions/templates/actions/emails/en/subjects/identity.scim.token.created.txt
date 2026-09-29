@@ -1,1 +1,0 @@
-[Shellui] New SCIM token for {{ envelope.company.name }}: {{ data.name|default:data.token_prefix }}

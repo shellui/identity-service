@@ -35,7 +35,7 @@ OAuth providers remain independent — a company can use magic link only, OAuth 
 - **`redirect_to`** must match the company OAuth redirect allowlist (same rules as OAuth login).
 - When magic link is **disabled**, the API returns **403** with `error_code: magic_link_disabled`.
 - When enabled, the API always returns **200** with a generic message (does not reveal whether the email exists).
-- Emits **`identity.auth.magic_link.requested`** when Action rules are configured — configure email delivery in Django admin to send the link (see [actions.md](actions.md)).
+- Sends the sign-in email directly from static Django templates in the repo (`apps/authapi/templates/authapi/magic_link/`, EN and FR, HTML and plain text, locale from user preference with EN fallback). Not configurable in admin or Actions. Optionally emits **`identity.auth.magic_link.requested`** to webhook Action rules (see [actions.md](actions.md)).
 
 Rate limits: `AUTH_RATE_LIMIT_MAGIC_LINK` (default 10/min) per client IP, email+company, and company.
 
@@ -67,7 +67,7 @@ Returns the same JWT payload as `POST /api/v1/token` / OAuth finalize on success
 | **TTL** | `MAGIC_LINK_TTL_SECONDS` (default **1800** = 30 minutes) |
 | **One-time use** | Token invalidated on successful consume |
 | **Link URL** | Built from **`JWT_ISSUER`** (HTTPS required when `DEBUG=false`) |
-| **Secrets in Actions** | Webhook payloads include `request_id`, `email`, `expires_at` — **not** the raw token. Email templates receive `magic_link_url` only at send time. |
+| **Secrets in webhooks** | Webhook payloads include `request_id`, `email`, `expires_at` — **not** the raw token or sign-in URL. The email contains the one-time link only. |
 | **Privacy** | Request endpoint does not enumerate valid emails |
 
 ---

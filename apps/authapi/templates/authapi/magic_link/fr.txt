@@ -1,0 +1,10 @@
+Shellui · {{ company_name }}
+
+Vous y êtes presque!
+
+Merci de vous connecter à {{ company_name }}.
+
+Connectez-vous avec ce lien à usage unique:
+{{ magic_link_url }}
+
+Si vous n'avez pas demandé cet e-mail, ignorez-le.

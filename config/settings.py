@@ -316,12 +316,15 @@ EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'false').strip().lower() in {'1', 'tr
 EMAIL_USE_SSL = os.getenv('EMAIL_USE_SSL', 'false').strip().lower() in {'1', 'true', 'yes', 'on'}
 DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@localhost')
 
-# Action triggers (domain events → email / webhook). DB outbox; no Celery required.
-ACTIONS_WEBHOOK_TIMEOUT_SECONDS = _env_float('ACTIONS_WEBHOOK_TIMEOUT_SECONDS', 10.0)
-ACTIONS_OUTBOX_MAX_ATTEMPTS = _env_int('ACTIONS_OUTBOX_MAX_ATTEMPTS', 5)
+# Action triggers (domain events → webhooks). DB outbox; no Celery required.
+ACTIONS_WEBHOOK_TIMEOUT_SECONDS = _env_float('ACTIONS_WEBHOOK_TIMEOUT_SECONDS', 5.0)
+ACTIONS_OUTBOX_MAX_ATTEMPTS = _env_int('ACTIONS_OUTBOX_MAX_ATTEMPTS', 8)
 ACTIONS_WEBHOOK_ALLOW_PRIVATE = _env_bool('ACTIONS_WEBHOOK_ALLOW_PRIVATE', False)
-ACTIONS_EMAIL_DEFAULT_LANGUAGE = (
-    os.getenv('ACTIONS_EMAIL_DEFAULT_LANGUAGE', 'en').strip().lower() or 'en'
+ACTIONS_WEBHOOK_RETRY_LEASE_SECONDS = _env_int('ACTIONS_WEBHOOK_RETRY_LEASE_SECONDS', 120)
+ACTIONS_WEBHOOK_DISPATCH_WORKERS = _env_int('ACTIONS_WEBHOOK_DISPATCH_WORKERS', 4)
+ACTIONS_WEBHOOK_SYNC_DELIVERY = _env_bool('ACTIONS_WEBHOOK_SYNC_DELIVERY', False)
+MAGIC_LINK_EMAIL_DEFAULT_LANGUAGE = (
+    os.getenv('MAGIC_LINK_EMAIL_DEFAULT_LANGUAGE', 'en').strip().lower() or 'en'
 )
 
 JWT_ACCESS_TOKEN_LIFETIME = _env_duration('JWT_ACCESS_TOKEN_LIFETIME', timedelta(minutes=5))
@@ -450,8 +453,6 @@ AUTH_RATE_LIMITS = {
     'admin_login': {'limit': _env_int('AUTH_RATE_LIMIT_ADMIN_LOGIN', 10), 'window': 300},
     'pat': {'limit': _env_int('AUTH_RATE_LIMIT_PAT', 30), 'window': 60},
     'magic_link': {'limit': _env_int('AUTH_RATE_LIMIT_MAGIC_LINK', 10), 'window': 60},
-    # Staff/owner "send test email to myself" from the actions admin UI.
-    'action_email_test': {'limit': _env_int('AUTH_RATE_LIMIT_ACTION_EMAIL_TEST', 5), 'window': 60},
 }
 
 # Database

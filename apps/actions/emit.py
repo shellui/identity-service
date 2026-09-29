@@ -20,7 +20,7 @@ def emit_event(
     force: bool = False,
 ) -> list[ActionOutbox]:
     """
-    Validate ``event_type``, match enabled ``ActionRule`` rows for ``company``, write outbox rows.
+    Validate ``event_type``, match enabled webhook ``ActionRule`` rows for ``company``, write outbox rows.
 
     Schedules a best-effort delivery attempt after the surrounding database transaction commits.
     """
@@ -33,6 +33,7 @@ def emit_event(
             company=company,
             event_type=event_type,
             enabled=True,
+            action_kind=ActionRule.ACTION_WEBHOOK,
         ).order_by('pk')
     )
     if not rules:

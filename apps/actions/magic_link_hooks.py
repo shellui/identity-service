@@ -12,7 +12,7 @@ def emit_magic_link_requested(company, row, *, user=None) -> None:
     """
     Emit ``identity.auth.magic_link.requested`` without secrets in the webhook payload.
 
-    Email templates receive ``magic_link_url`` at delivery time (see email handler).
+    The sign-in email is sent directly by authapi; webhooks never include the URL or token.
     """
     payload = {
         'request_id': str(row.pk),

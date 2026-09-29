@@ -24,19 +24,11 @@ def _short_text(text: str | None, max_len: int = _SHORT_TEXT_MAX) -> str:
 
 def _config_summary(obj: ActionRule) -> str:
     cfg = obj.config or {}
-    if obj.action_kind == ActionRule.ACTION_EMAIL:
-        count = len(cfg.get('recipients') or [])
-        parts = [f'{count} fixed recipient(s)']
-        if cfg.get('include_payload_email'):
-            parts.append('+ payload email')
-        return ' '.join(parts)
-    if obj.action_kind == ActionRule.ACTION_WEBHOOK:
-        url = (cfg.get('url') or '').strip()
-        if not url:
-            return '—'
-        secret_set = 'secret set' if cfg.get('secret') else 'no secret'
-        return f'{url} ({secret_set})'
-    return '—'
+    url = (cfg.get('url') or '').strip()
+    if not url:
+        return '-'
+    secret_set = 'secret set' if cfg.get('secret') else 'no secret'
+    return f'{url} ({secret_set})'
 
 
 class DeliveryAttemptInline(admin.TabularInline):
@@ -144,16 +136,6 @@ class ActionRuleAdmin(admin.ModelAdmin):
             },
         ),
         (
-            'Email configuration',
-            {
-                'fields': ('email_include_payload_email', 'email_recipients'),
-                'description': (
-                    'Used when action kind is Email. For user and SCIM user events, '
-                    'enable “Also send to email from event payload” to notify the subject user.'
-                ),
-            },
-        ),
-        (
             'Webhook configuration',
             {
                 'fields': (
@@ -163,8 +145,7 @@ class ActionRuleAdmin(admin.ModelAdmin):
                     'webhook_allow_private_urls',
                 ),
                 'description': mark_safe(
-                    'Used when action kind is Webhook. Secrets are write-only in this form '
-                    '(leave blank to keep existing values). '
+                    'Secrets are write-only in this form (leave blank to keep existing values). '
                     '<code>allow_private_urls</code> is honored only when saved by a superuser, '
                     'or set deployment-wide via <code>ACTIONS_WEBHOOK_ALLOW_PRIVATE</code>.'
                 ),
@@ -321,7 +302,7 @@ class ActionOutboxAdmin(admin.ModelAdmin):
         )
         messages.success(
             request,
-            f'Re-queued {updated} outbox row(s). Run manage.py drain_action_outbox to deliver.',
+            f'Re-queued {updated} outbox row(s). Run manage.py retry_webhooks to deliver.',
         )
 
     def has_add_permission(self, request):

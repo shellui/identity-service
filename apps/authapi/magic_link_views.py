@@ -14,6 +14,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.actions.magic_link_hooks import emit_magic_link_requested
+from apps.authapi.magic_link_email import send_magic_link_email
 from apps.actions.user_hooks import emit_user_account_created
 from apps.companies.access import apply_company_join
 from apps.companies.redirect_allowlist import validate_redirect_to_for_company
@@ -128,7 +129,26 @@ class ShellUIMagicLinkRequestView(APIView):
             client_timezone=client_tz,
             client_device_id=client_dev,
         )
-        emit_magic_link_requested(company, row, user=existing)
+        pref_lang = None
+        if existing is not None:
+            pref = getattr(existing, 'preference', None)
+            if pref is not None:
+                pref_lang = getattr(pref, 'language', None)
+
+        def _after_commit() -> None:
+            try:
+                send_magic_link_email(row=row, company=company, user=existing, language=pref_lang)
+            except Exception:  # noqa: BLE001
+                import logging
+
+                logging.getLogger(__name__).exception(
+                    'magic_link_email_failed company_id=%s request_id=%s',
+                    company.pk,
+                    row.pk,
+                )
+            emit_magic_link_requested(company, row, user=existing)
+
+        transaction.on_commit(_after_commit)
         return Response(_GENERIC_REQUEST_OK, status=status.HTTP_200_OK)
 
 

@@ -3,48 +3,13 @@ from __future__ import annotations
 from django import forms
 
 from apps.actions.models import ActionRule
-from apps.actions.registry import get_event_type
-from apps.actions.rule_config import has_compiled_email_template
-
-
-_PAYLOAD_EMAIL_HELP = (
-    'When checked, also send to the email address in the event payload (usually '
-    'data.email for user lifecycle and SCIM access events). '
-    'You can combine this with fixed recipients below. '
-    'If the selected event type has no payload email field, this option has no effect.'
-)
-
-_PAYLOAD_EMAIL_HELP_ACTIVE = (
-    'Recommended for this event type: also deliver to {field} from the event payload '
-    'when present. Combine with fixed recipients or use alone if every event includes an email.'
-)
-
-_PAYLOAD_EMAIL_HELP_INACTIVE = (
-    'The selected event type does not define a payload email field — '
-    'leave this unchecked and use fixed recipients only.'
-)
 
 
 class ActionRuleAdminForm(forms.ModelForm):
-    """Structured config editing; webhook secrets are write-only (blank = keep existing)."""
+    """Structured webhook config; secrets are write-only (blank = keep existing)."""
 
     is_superuser = False
 
-    email_include_payload_email = forms.BooleanField(
-        required=False,
-        label='Also send to email from event payload',
-        help_text=_PAYLOAD_EMAIL_HELP,
-    )
-    email_recipients = forms.CharField(
-        required=False,
-        label='Fixed email recipients (To:)',
-        help_text=(
-            'Comma-separated addresses always included when this rule fires. '
-            'Optional if “Also send to email from event payload” is checked and the event '
-            'type supplies an email (for example user events).'
-        ),
-        widget=forms.TextInput(attrs={'size': 60, 'placeholder': 'ops@example.com, security@example.com'}),
-    )
     webhook_url = forms.URLField(
         required=False,
         label='Webhook URL',
@@ -79,38 +44,15 @@ class ActionRuleAdminForm(forms.ModelForm):
             'action_kind',
         )
 
-    def _selected_event_type(self) -> str | None:
-        if self.data:
-            raw = self.data.get('event_type')
-            if raw:
-                return str(raw)
-        if self.instance and self.instance.pk:
-            return self.instance.event_type
-        return self.initial.get('event_type')
-
-    def _payload_email_field_for_event(self, event_type: str | None) -> str | None:
-        if not event_type:
-            return None
-        try:
-            return get_event_type(event_type).email_payload_email_field
-        except ValueError:
-            return None
-
     def __init__(self, *args, **kwargs):
         self.is_superuser = getattr(self.__class__, 'is_superuser', False)
         super().__init__(*args, **kwargs)
         if not self.is_superuser:
             self.fields.pop('webhook_allow_private_urls', None)
+        if 'action_kind' in self.fields:
+            self.fields['action_kind'].initial = ActionRule.ACTION_WEBHOOK
         cfg = (self.instance.config or {}) if self.instance and self.instance.pk else {}
         if self.instance and self.instance.pk:
-            self.initial.setdefault(
-                'email_recipients',
-                ', '.join(cfg.get('recipients') or []),
-            )
-            self.initial.setdefault(
-                'email_include_payload_email',
-                bool(cfg.get('include_payload_email')),
-            )
             self.initial.setdefault('webhook_url', cfg.get('url') or '')
             if cfg.get('secret'):
                 self.fields['webhook_secret'].help_text = (
@@ -125,65 +67,21 @@ class ActionRuleAdminForm(forms.ModelForm):
                     'webhook_allow_private_urls',
                     bool(cfg.get('allow_private_urls')),
                 )
-        payload_field = self._payload_email_field_for_event(self._selected_event_type())
-        include_field = self.fields['email_include_payload_email']
-        if payload_field:
-            include_field.help_text = _PAYLOAD_EMAIL_HELP_ACTIVE.format(field=payload_field)
-            include_field.widget.attrs.setdefault('class', 'email-payload-toggle')
-        else:
-            include_field.help_text = _PAYLOAD_EMAIL_HELP_INACTIVE
 
     def clean(self):
         cleaned = super().clean()
-        kind = cleaned.get('action_kind')
-        if kind == ActionRule.ACTION_EMAIL:
-            recipients = [
-                part.strip()
-                for part in (cleaned.get('email_recipients') or '').split(',')
-                if part.strip()
-            ]
-            include_payload = bool(cleaned.get('email_include_payload_email'))
-            payload_field = self._payload_email_field_for_event(cleaned.get('event_type'))
-            if not recipients and not (include_payload and payload_field):
-                self.add_error(
-                    'email_recipients',
-                    'Add at least one fixed recipient, or enable payload email for an event '
-                    'type that provides an email address.',
-                )
-            existing = (self.instance.config or {}) if self.instance.pk else {}
-            if cleaned.get('enabled') and not has_compiled_email_template(existing):
-                self.add_error(
-                    'enabled',
-                    'Email rules need a compiled template, which Django admin cannot produce. '
-                    'Create or edit this rule in the Shellui admin (Actions → Rules), '
-                    'or save it here disabled.',
-                )
-        elif kind == ActionRule.ACTION_WEBHOOK:
-            if not (cleaned.get('webhook_url') or '').strip():
-                self.add_error('webhook_url', 'Webhook URL is required.')
-            existing = (self.instance.config or {}) if self.instance.pk else {}
-            secret = (cleaned.get('webhook_secret') or '').strip()
-            if not secret and not existing.get('secret'):
-                self.add_error('webhook_secret', 'Signing secret is required for new webhook rules.')
+        cleaned['action_kind'] = ActionRule.ACTION_WEBHOOK
+        if not (cleaned.get('webhook_url') or '').strip():
+            self.add_error('webhook_url', 'Webhook URL is required.')
+        existing = (self.instance.config or {}) if self.instance.pk else {}
+        secret = (cleaned.get('webhook_secret') or '').strip()
+        if not secret and not existing.get('secret'):
+            self.add_error('webhook_secret', 'Signing secret is required for new webhook rules.')
         return cleaned
 
     def _build_config(self) -> dict:
         cleaned = self.cleaned_data
-        kind = cleaned['action_kind']
         existing = (self.instance.config or {}) if self.instance.pk else {}
-        if kind == ActionRule.ACTION_EMAIL:
-            recipients = [
-                part.strip()
-                for part in (cleaned.get('email_recipients') or '').split(',')
-                if part.strip()
-            ]
-            config = {
-                'recipients': recipients,
-                'include_payload_email': bool(cleaned.get('email_include_payload_email')),
-            }
-            if existing.get('email_templates'):
-                config['email_templates'] = existing['email_templates']
-            return config
         config: dict = {
             'url': (cleaned.get('webhook_url') or '').strip(),
         }
@@ -202,5 +100,6 @@ class ActionRuleAdminForm(forms.ModelForm):
         return config
 
     def save(self, commit=True):
+        self.instance.action_kind = ActionRule.ACTION_WEBHOOK
         self.instance.config = self._build_config()
         return super().save(commit=commit)
