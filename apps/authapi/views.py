@@ -1047,7 +1047,7 @@ def _scim_status_payload(request, company: Company) -> dict:
     active_count = _active_scim_token_count(company)
     configured = active_count > 0
     return {
-        'enabled': bool(getattr(settings, 'SCIM_ENABLED', False)),
+        'enabled': bool(getattr(settings, 'SCIM_ENABLED', True)),
         'base_url': _scim_base_url_for_company(request, company),
         'configured': configured,
         'active_token_count': active_count,
@@ -3647,7 +3647,8 @@ class ShellUIAdminScimStatusView(APIView):
         summary='Create company SCIM bearer token (staff or company owner)',
         request=ShellUIAdminScimTokenCreateSerializer,
         description=(
-            'Returns the bearer secret once in `token`. Requires `SCIM_ENABLED=true` on the deployment.'
+            'Returns the bearer secret once in `token`. Blocked when the deployment emergency kill switch '
+            '`SCIM_ENABLED=false` is set.'
         ),
     ),
 )
@@ -3666,7 +3667,7 @@ class ShellUIAdminScimTokenListCreateView(APIView):
         _actor, company, err = _require_staff_or_company_owner(request)
         if err:
             return err
-        if not getattr(settings, 'SCIM_ENABLED', False):
+        if not getattr(settings, 'SCIM_ENABLED', True):
             return Response(
                 {'error': 'SCIM is not enabled on this identity deployment.'},
                 status=status.HTTP_403_FORBIDDEN,

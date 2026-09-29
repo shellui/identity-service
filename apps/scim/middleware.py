@@ -7,8 +7,9 @@ from django.http import HttpResponse
 from django.utils import timezone
 
 from apps.scim.models import CompanyScimToken
-from apps.scim.routing import resolve_company_from_scim_url_segment
 from apps.scim.provisioner import get_scim_provisioner_user
+from apps.scim.responses import scim_unauthorized_response
+from apps.scim.routing import resolve_company_from_scim_url_segment
 from apps.scim.tokens import hash_scim_token
 
 _SCIM_PATH_RE = re.compile(r'^/api/v1/companies/(?P<segment>\d+)/scim/v2/')
@@ -31,7 +32,7 @@ class ScimBearerAuthMiddleware:
         if not match:
             return self.get_response(request)
 
-        if not getattr(settings, 'SCIM_ENABLED', False):
+        if not getattr(settings, 'SCIM_ENABLED', True):
             return HttpResponse(status=404)
 
         auth_header = request.META.get('HTTP_AUTHORIZATION', '')
@@ -64,6 +65,4 @@ class ScimBearerAuthMiddleware:
 
     @staticmethod
     def _unauthorized():
-        response = HttpResponse(status=401)
-        response['WWW-Authenticate'] = 'Bearer realm="Shellui SCIM"'
-        return response
+        return scim_unauthorized_response()

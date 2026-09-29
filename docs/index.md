@@ -32,7 +32,7 @@ Live site: [https://identity.docs.shellui.com](https://identity.docs.shellui.com
 2. Point load balancers at **`GET /health/live`**.
 3. Register IdP callbacks at `{identity-host}/api/v1/oauth/callback` and configure company redirect allowlists — [OAuth login](oauth-login.md).
 4. For multi-worker production, set **`REDIS_URL`** — [Configuration](configuration.md).
-5. For SCIM, set `SCIM_ENABLED=true` and run migrations — [SCIM](scim.md).
+5. For SCIM, run migrations and create a company SCIM token — [SCIM](scim.md).
 
 ---
 

@@ -25,7 +25,7 @@ Operator-facing changes on the **0.6.0** line (see `CHANGELOG.md`):
 - **OAuth** — session-code delivery, redirect allowlist, company OAuth clients ([oauth-login.md](oauth-login.md)).
 - **Configuration** — consolidated env reference ([configuration.md](configuration.md)).
 - **Redis** — optional `REDIS_URL` shared cache for multi-worker Gunicorn (#26 on `develop`).
-- **SCIM** — enterprise user/group provisioning ([scim.md](scim.md)); set `SCIM_ENABLED=true` after deploy/migrations.
+- **SCIM** — enterprise user/group provisioning ([scim.md](scim.md)); enabled by default after deploy/migrations (per-company bearer token).
 - **Docs site** — Shellui-branded Docusaurus chrome; browse at [identity.docs.shellui.com](https://identity.docs.shellui.com) after tagging.
 
 ## Pre-release checklist

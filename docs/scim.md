@@ -2,7 +2,7 @@
 
 Shellui identity-service can act as a **SCIM 2.0 service provider** for **per-company** user and group provisioning. Each company has its own SCIM base URL and bearer token; provisioned users are normal Django users with **company membership** (`CompanyMembership.is_enabled`), and groups map to **`CompanyGroup`** (SCIM field names, same company scope).
 
-This feature is **opt-in**: set `SCIM_ENABLED=true` on the deployment. When disabled, SCIM URLs return **404**.
+SCIM is available on every deployment by default. Each company turns provisioning on by generating a SCIM bearer token in Shellui admin and off by revoking that token. Set **`SCIM_ENABLED=false`** only as an emergency kill switch for the whole deployment; SCIM URLs then return **404**.
 
 ---
 
@@ -19,10 +19,10 @@ This feature is **opt-in**: set `SCIM_ENABLED=true` on the deployment. When disa
 
 ## Enable on Coolify / Docker
 
-1. Set **`SCIM_ENABLED=true`** on the identity-service container (see [Configuration](configuration.md)).
-2. Run migrations (`apps.scim`, `CompanyGroup` SCIM fields, nested `member_groups`).
-3. Create a **Company SCIM token** (Shellui admin **SCIM** setup or Django admin); copy the bearer secret once.
-4. Configure IdP with base URL + `Authorization: Bearer <token>`.
+1. Run migrations (`apps.scim`, `CompanyGroup` SCIM fields, nested `member_groups`).
+2. Create a **Company SCIM token** (Shellui admin **SCIM** setup or Django admin); copy the bearer secret once.
+3. Configure the IdP with base URL + `Authorization: Bearer <token>`.
+4. Optional: set **`SCIM_ENABLED=false`** on the identity-service container to hide all SCIM routes ([Configuration](configuration.md)).
 
 ---
 

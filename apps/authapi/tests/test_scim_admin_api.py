@@ -13,7 +13,6 @@ User = get_user_model()
 @override_settings(
     ALLOWED_HOSTS=['testserver', 'localhost', '127.0.0.1'],
     AUTH_RATE_LIMIT_ENABLED=False,
-    SCIM_ENABLED=True,
 )
 class ScimAdminApiTests(TestCase):
     def setUp(self):
@@ -35,6 +34,12 @@ class ScimAdminApiTests(TestCase):
         cid = (company or self.company).id
         sep = '&' if '?' in path else '?'
         return f'{path}{sep}company_id={cid}'
+
+    def test_deployment_scim_enabled_by_default(self):
+        self._as_owner()
+        status = self.client.get(self._url('/api/v1/scim'))
+        self.assertEqual(status.status_code, 200, status.data)
+        self.assertTrue(status.data['enabled'])
 
     def test_status_reflects_enabled_and_configuration(self):
         self._as_owner()

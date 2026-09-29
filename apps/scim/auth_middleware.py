@@ -1,7 +1,8 @@
-from django.http.response import HttpResponse
 from django_scim.middleware import SCIMAuthCheckMiddleware
 from django_scim.settings import scim_settings
 from django_scim.utils import get_is_authenticated_predicate
+
+from apps.scim.responses import scim_unauthorized_response
 
 _SCIM_SEGMENT = '/scim/v2/'
 
@@ -16,6 +17,4 @@ class ShelluiSCIMAuthCheckMiddleware(SCIMAuthCheckMiddleware):
         if self.should_log_request(request):
             self.log_request(request)
         if self.should_log_request(request) and not get_is_authenticated_predicate()(request.user):
-            response = HttpResponse(status=401)
-            response['WWW-Authenticate'] = scim_settings.WWW_AUTHENTICATE_HEADER
-            return response
+            return scim_unauthorized_response(www_authenticate=scim_settings.WWW_AUTHENTICATE_HEADER)

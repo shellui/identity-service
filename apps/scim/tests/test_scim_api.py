@@ -22,10 +22,37 @@ def _scim_base(company: Company) -> str:
     return f'/api/v1/companies/{company.pk}/scim/v2'
 
 
-@override_settings(**SCIM_ON)
-class ScimDisabledByDefaultTests(TestCase):
+_SCIM_ERROR_SCHEMA = 'urn:ietf:params:scim:api:messages:2.0:Error'
+
+
+def _assert_scim_auth_error(test, response):
+    test.assertEqual(response.status_code, 401)
+    body = json.loads(response.content)
+    test.assertIn(_SCIM_ERROR_SCHEMA, body['schemas'])
+    test.assertEqual(body['status'], 401)
+
+
+@override_settings(ALLOWED_HOSTS=['testserver'])
+class ScimEnabledByDefaultTests(TestCase):
+    def test_scim_routes_live_without_explicit_env(self):
+        company = Company.objects.create(name='On Co', slug='on-co')
+        client = Client()
+        response = client.get(f'{_scim_base(company)}/ServiceProviderConfig')
+        self.assertEqual(response.status_code, 401)
+        _assert_scim_auth_error(self, response)
+
+    def test_company_without_token_rejects_with_scim_error(self):
+        company = Company.objects.create(name='No Token Co', slug='no-token-co')
+        client = Client()
+        response = client.get(
+            f'{_scim_base(company)}/Users',
+            HTTP_AUTHORIZATION='Bearer not-a-real-token',
+        )
+        self.assertEqual(response.status_code, 401)
+        _assert_scim_auth_error(self, response)
+
     @override_settings(SCIM_ENABLED=False)
-    def test_scim_routes_not_mounted_when_disabled(self):
+    def test_scim_routes_not_mounted_when_kill_switch_off(self):
         company = Company.objects.create(name='Off Co', slug='off-co')
         client = Client()
         response = client.get(f'{_scim_base(company)}/ServiceProviderConfig')
@@ -50,6 +77,7 @@ class ScimApiTests(TestCase):
     def test_unauthorized_without_bearer(self):
         response = self.client.get(f'{_scim_base(self.company)}/Users')
         self.assertEqual(response.status_code, 401)
+        _assert_scim_auth_error(self, response)
 
     def test_wrong_company_id_rejected(self):
         other = Company.objects.create(name='Other', slug='other-co')
@@ -115,6 +143,7 @@ class ScimApiTests(TestCase):
             HTTP_AUTHORIZATION=self.auth_header,
         )
         self.assertEqual(response.status_code, 401)
+        _assert_scim_auth_error(self, response)
 
     def _provision_user(self, email: str) -> User:
         payload = {
