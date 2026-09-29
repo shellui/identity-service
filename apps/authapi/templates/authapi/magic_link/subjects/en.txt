@@ -1,1 +1,1 @@
-[Shellui] Sign in to {{ company_name }}
+{% autoescape off %}[Shellui] Sign in to {{ company_name }}{% endautoescape %}

@@ -3,6 +3,7 @@ import urllib.parse
 import urllib.request
 import uuid
 from dataclasses import dataclass
+from typing import Any
 
 from django.db.utils import OperationalError, ProgrammingError
 from apps.companies.models import CompanyOAuthClient
@@ -19,6 +20,12 @@ class ProviderConfig:
     token_url: str
     userinfo_url: str
     scope: str
+
+
+@dataclass(frozen=True)
+class OAuthTokenBundle:
+    access_token: str
+    id_token: str | None = None
 
 
 @dataclass(frozen=True)
@@ -163,7 +170,7 @@ def exchange_code_for_token(
     *,
     company_id: int | None = None,
     company_oauth_client_id: int | None = None,
-) -> str:
+) -> OAuthTokenBundle:
     config = get_provider_config(
         provider,
         company_id=company_id,
@@ -186,11 +193,13 @@ def exchange_code_for_token(
         },
     )
     with urllib.request.urlopen(req, timeout=20) as response:
-        data = json.loads(response.read().decode('utf-8'))
+        data: dict[str, Any] = json.loads(response.read().decode('utf-8'))
     access_token = data.get('access_token')
     if not access_token:
         raise ValueError('No access token returned by provider.')
-    return access_token
+    id_token = data.get('id_token')
+    id_str = id_token.strip() if isinstance(id_token, str) and id_token.strip() else None
+    return OAuthTokenBundle(access_token=str(access_token), id_token=id_str)
 
 
 def fetch_provider_userinfo(

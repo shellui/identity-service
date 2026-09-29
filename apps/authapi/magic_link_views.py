@@ -4,9 +4,14 @@ from __future__ import annotations
 
 import uuid
 
+from urllib.parse import urlencode
+
 from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.http import HttpResponseRedirect
+from django.shortcuts import render
+from django.utils.decorators import method_decorator
+from django.views.decorators.csrf import csrf_protect
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema, extend_schema_view
 from rest_framework import status
 from rest_framework.permissions import AllowAny
@@ -22,6 +27,7 @@ from apps.authapi import metrics as auth_metrics
 from apps.authapi.login_audit import client_ip_rate_limit_key, get_client_ip, record_login_event
 from apps.authapi.magic_link import (
     create_magic_link_token,
+    lookup_magic_link_token,
     magic_link_enabled_for_company,
     redeem_magic_link_token,
 )
@@ -160,10 +166,10 @@ class ShellUIMagicLinkRequestView(APIView):
 @extend_schema_view(
     get=extend_schema(
         tags=['auth-magic-link'],
-        summary='Verify magic link (browser redirect)',
+        summary='Confirm magic link (browser)',
         description=(
-            'Validate a one-time magic link token and redirect to the stored redirect_to with Shellui tokens '
-            '(session code or fragment, matching OAUTH_TOKEN_DELIVERY).'
+            'Shows a confirmation page for email clients and link scanners. Does not consume the token. '
+            'Submit the form (POST) to finish sign-in and redirect with Shellui tokens.'
         ),
         auth=[],
         parameters=[
@@ -171,7 +177,7 @@ class ShellUIMagicLinkRequestView(APIView):
             OpenApiParameter(name='company_id', type=int, location=OpenApiParameter.QUERY, required=True),
         ],
         responses={
-            302: OpenApiResponse(description='Redirect to application with tokens or OAuth error params'),
+            200: OpenApiResponse(description='HTML confirmation page'),
             400: OpenApiResponse(description='Invalid or expired link'),
         },
     ),
@@ -187,21 +193,76 @@ class ShellUIMagicLinkRequestView(APIView):
         },
     ),
 )
+@method_decorator(csrf_protect, name='dispatch')
 @rate_limit('magic_link')
 class ShellUIMagicLinkVerifyView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request):
-        return self._consume(request, browser_redirect=True)
+        company, company_err = _required_company_from_request(request)
+        if company_err:
+            return Response({'error': 'company_id is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not magic_link_enabled_for_company(company):
+            return Response(
+                {
+                    'error': 'Magic link sign-in is disabled for this company.',
+                    'error_code': 'magic_link_disabled',
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        raw_token = request.GET.get('token') or ''
+        row, err = lookup_magic_link_token(raw_token=raw_token, company_id=company.id)
+        if err or row is None:
+            return render(
+                request,
+                'authapi/magic_link_confirm.html',
+                {
+                    'error_message': err or 'Invalid link.',
+                    'company_name': company.name,
+                    'email': '',
+                    'token': '',
+                    'company_id': company.id,
+                    'form_action': request.build_absolute_uri(
+                        '?' + urlencode({'company_id': str(company.id)})
+                    ),
+                },
+                status=400,
+            )
+        form_action = request.build_absolute_uri('?' + urlencode({'company_id': str(company.id)}))
+        return render(
+            request,
+            'authapi/magic_link_confirm.html',
+            {
+                'error_message': None,
+                'company_name': company.name,
+                'email': row.email,
+                'token': raw_token,
+                'company_id': company.id,
+                'form_action': form_action,
+            },
+        )
 
     def post(self, request):
-        serializer = ShellUIMagicLinkConsumeSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
+        content_type = (request.content_type or '').lower()
+        if 'application/json' in content_type:
+            serializer = ShellUIMagicLinkConsumeSerializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            return self._consume(
+                request,
+                browser_redirect=False,
+                token=serializer.validated_data['token'],
+                company_id=serializer.validated_data['company_id'],
+            )
+        token = (request.POST.get('token') or '').strip()
+        try:
+            company_id = int(request.POST.get('company_id') or '')
+        except (TypeError, ValueError):
+            return Response({'error': 'company_id is required.'}, status=status.HTTP_400_BAD_REQUEST)
         return self._consume(
             request,
-            browser_redirect=False,
-            token=serializer.validated_data['token'],
-            company_id=serializer.validated_data['company_id'],
+            browser_redirect=True,
+            token=token,
+            company_id=company_id,
         )
 
     def _consume(

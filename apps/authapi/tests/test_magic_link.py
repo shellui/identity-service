@@ -188,6 +188,64 @@ class MagicLinkAuthTests(TestCase):
         self.assertNotIn(row.token_hash, body)
 
     @override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
+    def test_plaintext_email_link_contains_unescaped_company_id(self):
+        mail.outbox.clear()
+        with self.captureOnCommitCallbacks(execute=True):
+            self._request_link()
+        body = mail.outbox[0].body
+        self.assertIn('&company_id=', body)
+        self.assertNotIn('&amp;company_id=', body)
+        self.assertNotIn('&amp;company_id=', mail.outbox[0].subject)
+
+    def test_get_verify_does_not_consume_token(self):
+        row, raw = create_magic_link_token(
+            company=self.company,
+            email='member@example.com',
+            redirect_to=self.redirect_to,
+            user=self.user,
+        )
+        response = self.client.get(
+            '/api/v1/magic-link/verify',
+            {'token': raw, 'company_id': self.company.id},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'Continue sign-in', response.content)
+        row.refresh_from_db()
+        self.assertIsNone(row.consumed_at)
+
+    def test_webhook_omits_user_id_without_company_membership(self):
+        outsider = User.objects.create_user(
+            username='outsider',
+            email='outsider@example.com',
+            password='unused',
+        )
+        ActionRule.objects.create(
+            company=self.company,
+            event_type='identity.auth.magic_link.requested',
+            action_kind=ActionRule.ACTION_WEBHOOK,
+            enabled=True,
+            config={'url': 'https://hooks.example.com/magic', 'secret': 'whsec_test'},
+        )
+        with self.captureOnCommitCallbacks(execute=True):
+            with patch(
+                'apps.authapi.magic_link_views.send_magic_link_email',
+                return_value=None,
+            ):
+                self.client.post(
+                    '/api/v1/magic-link/request',
+                    {
+                        'company_id': self.company.id,
+                        'email': outsider.email,
+                        'redirect_to': self.redirect_to,
+                    },
+                    format='json',
+                )
+        outbox = ActionOutbox.objects.filter(event_type='identity.auth.magic_link.requested').first()
+        self.assertIsNotNone(outbox)
+        data = outbox.envelope['data']
+        self.assertNotIn('user_id', data)
+
+    @override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
     def test_magic_link_request_sends_email(self):
         mail.outbox.clear()
         with self.captureOnCommitCallbacks(execute=True):

@@ -5,7 +5,7 @@ from django.contrib.auth import get_user_model
 from django.test import Client, TestCase, override_settings
 
 from apps.authapi.models import PersonalAccessToken, RefreshTokenSession
-from apps.authapi.oauth_user_lookup import get_or_create_user_for_oauth
+from apps.authapi.oauth_user import get_or_create_user_for_oauth
 from apps.authapi.tokens import ShellUIAccessToken
 from apps.companies.access import is_company_access_enabled, set_company_access
 from apps.companies.models import Company, CompanyGroup

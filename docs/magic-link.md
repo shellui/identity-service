@@ -43,7 +43,7 @@ Rate limits: `AUTH_RATE_LIMIT_MAGIC_LINK` (default 10/min) per client IP, email+
 
 `GET /api/v1/magic-link/verify?token=…&company_id=…`
 
-Validates the token, applies company join rules (public / domain / invite — same as OAuth), records a login event with provider `magic_link`, and redirects to `redirect_to` with tokens (session code or fragment).
+Renders a confirmation page and **does not consume** the token (safe for email link scanners). Submit the form with **POST** to the same URL (include `company_id` in the query string) to finish sign-in, apply company join rules, and redirect to `redirect_to` with tokens (session code or fragment).
 
 ### Consume (JSON)
 
@@ -68,6 +68,7 @@ Returns the same JWT payload as `POST /api/v1/token` / OAuth finalize on success
 | **One-time use** | Token invalidated on successful consume |
 | **Link URL** | Built from **`JWT_ISSUER`** (HTTPS required when `DEBUG=false`) |
 | **Secrets in webhooks** | Webhook payloads include `request_id`, `email`, `expires_at` — **not** the raw token or sign-in URL. The email contains the one-time link only. |
+| **Webhook user fields** | `user_id`, `language`, and `region` are included only when the email matches a user who already has membership in that company. |
 | **Privacy** | Request endpoint does not enumerate valid emails |
 
 ---

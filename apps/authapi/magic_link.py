@@ -107,6 +107,31 @@ def create_magic_link_token(
     return row, raw_token
 
 
+def lookup_magic_link_token(
+    *,
+    raw_token: str,
+    company_id: int,
+) -> tuple[MagicLinkToken | None, str | None]:
+    """Validate a token without consuming it (for browser confirmation GET)."""
+    token = (raw_token or '').strip()
+    if not token:
+        return None, 'Missing token.'
+    token_hash = hash_magic_link_token(token)
+    now = timezone.now()
+    row = (
+        MagicLinkToken.objects.filter(token_hash=token_hash, company_id=company_id)
+        .select_related('company', 'user')
+        .first()
+    )
+    if row is None:
+        return None, 'Invalid or expired magic link.'
+    if row.consumed_at is not None:
+        return None, 'Magic link already used.'
+    if row.expires_at <= now:
+        return None, 'Magic link expired.'
+    return row, None
+
+
 def redeem_magic_link_token(
     *,
     raw_token: str,

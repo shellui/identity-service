@@ -1,1 +1,1 @@
-[Shellui] Connexion à {{ company_name }}
+{% autoescape off %}[Shellui] Connexion à {{ company_name }}{% endautoescape %}

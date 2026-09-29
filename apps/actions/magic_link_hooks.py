@@ -6,6 +6,7 @@ from django.utils import timezone
 
 from apps.actions.emit import emit_event_if_rules
 from apps.actions.identity_payloads import user_event_payload
+from apps.companies.access import get_membership
 
 
 def emit_magic_link_requested(company, row, *, user=None) -> None:
@@ -20,7 +21,7 @@ def emit_magic_link_requested(company, row, *, user=None) -> None:
         'expires_at': row.expires_at.isoformat(),
         'source': 'magic_link',
     }
-    if user is not None and getattr(user, 'pk', None):
+    if user is not None and getattr(user, 'pk', None) and get_membership(company, user) is not None:
         prefs = user_event_payload(user, source='magic_link')
         payload['user_id'] = prefs['user_id']
         payload['language'] = prefs['language']

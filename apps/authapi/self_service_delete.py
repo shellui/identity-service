@@ -30,7 +30,7 @@ def check_self_service_account_delete_allowed(
     """
     Return an error Response when deletion must be blocked; None when allowed.
 
-    Requires a session access JWT (no ``pat_id``) whose ``iat`` is within
+    Requires a session access JWT (no ``pat_id``) whose ``auth_time`` is within
     ``settings.SELF_SERVICE_ACCOUNT_DELETE_MAX_IAT_AGE``. Blocks global delete
     when the user still belongs to more than one company (company-scoped JWT).
     """
@@ -49,25 +49,25 @@ def check_self_service_account_delete_allowed(
     max_age = getattr(settings, 'SELF_SERVICE_ACCOUNT_DELETE_MAX_IAT_AGE', None)
     max_seconds = int(max_age.total_seconds()) if max_age is not None else 300
     if claims is not None:
-        iat = claims.get('iat')
-        if iat is None:
+        auth_time = claims.get('auth_time')
+        if auth_time is None:
             return Response(
                 {'error': 'Sign in again, then delete your account.'},
                 status=status.HTTP_403_FORBIDDEN,
             )
         try:
-            issued_at = int(iat)
+            authenticated_at = int(auth_time)
         except (TypeError, ValueError):
             return Response(
                 {'error': 'Sign in again, then delete your account.'},
                 status=status.HTTP_403_FORBIDDEN,
             )
-        age = int(time.time()) - issued_at
+        age = int(time.time()) - authenticated_at
         if age > max_seconds:
             return Response(
                 {
                     'error': (
-                        'Account deletion requires a recently issued access token. '
+                        'Account deletion requires a recent sign-in. '
                         'Sign in again, then try again.'
                     ),
                 },

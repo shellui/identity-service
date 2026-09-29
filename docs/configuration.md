@@ -48,6 +48,17 @@ Details: [JWKS and JWT verification](jwks.md), [Security hardening](security-har
 | `OAUTH_ALLOW_LOOPBACK_REDIRECTS` | follows `DEBUG` | Allow `redirect_to` to loopback for CLI/local shells when `true` |
 | `OAUTH_SKIP_CONFIRM_PROVIDERS` | `google` when unset | Provider slugs that skip the identity-hosted account confirmation page after callback (comma-separated; empty env disables skips) |
 
+OAuth **account linking** (Shellui `/api/v1/authorize` callback):
+
+- Match an existing user by **provider user id** (`SocialAccount`) first.
+- Match by **email** only when the provider proves ownership:
+  - **Google:** `email_verified` is true in the userinfo response.
+  - **GitHub:** verified **primary** email from `/user/emails`.
+  - **Microsoft:** `xms_edov` is true in the ID token, or the OAuth client uses a **dedicated tenant** (not `common`). Shellui does not trust `mail` or `userPrincipalName` from the `common` tenant alone.
+- If verification fails, Shellui returns an error and does not attach the sign-in to another user's email.
+
+OAuth **login CSRF:** `/api/v1/authorize` stores a random nonce in the HttpOnly `shellui_oauth_state_nonce` cookie (SameSite=Lax). The callback checks that nonce against signed `state` and rejects reused `state` values.
+
 Flow and allowlist: [OAuth login](oauth-login.md).
 
 ---
@@ -107,7 +118,7 @@ Concurrency ≈ `workers × threads`. Under-provisioned pools can queue even sim
 | Variable | Purpose |
 | -------- | ------- |
 | `TRUSTED_PROXY_IPS` | Comma-separated IPs/CIDRs; when `REMOTE_ADDR` matches, client IP is the rightmost untrusted hop in `X-Forwarded-For` (see [security-hardening.md](security-hardening.md)) |
-| `SELF_SERVICE_ACCOUNT_DELETE_MAX_IAT_AGE` | Max age of access JWT `iat` for `DELETE /api/v1/user` (default `5m`; not PATs) |
+| `SELF_SERVICE_ACCOUNT_DELETE_MAX_IAT_AGE` | Max age of access JWT `auth_time` (interactive sign-in time) for `DELETE /api/v1/user` (default `5m`; not PATs; refresh preserves `auth_time`) |
 | `AUTH_RATE_LIMIT_ENABLED` | `true` — disable only for debugging |
 | `AUTH_RATE_LIMIT_OAUTH`, `_TOKEN_REFRESH`, `_SETTINGS`, `_ADMIN_LOGIN`, `_PAT` | Per-endpoint limits (see [security-hardening.md](security-hardening.md)) |
 | `SECURE_SSL_REDIRECT`, `SECURE_HSTS_SECONDS`, `SESSION_COOKIE_SECURE`, `CSRF_COOKIE_SECURE` | HTTPS defaults when `DEBUG=false` |

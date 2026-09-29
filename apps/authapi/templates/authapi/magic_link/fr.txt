@@ -1,3 +1,4 @@
+{% autoescape off %}
 Shellui · {{ company_name }}
 
 Vous y êtes presque!
@@ -8,3 +9,4 @@ Connectez-vous avec ce lien à usage unique:
 {{ magic_link_url }}
 
 Si vous n'avez pas demandé cet e-mail, ignorez-le.
+{% endautoescape %}
