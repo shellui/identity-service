@@ -1316,14 +1316,32 @@ class SocialAuthorizeView(APIView):
         )
         if rerr or not redirect_uri:
             return Response({'error': rerr or 'Invalid redirect_uri.'}, status=status.HTTP_400_BAD_REQUEST)
-        authorize_url = build_authorize_url(
+        state, state_nonce = build_oauth_state(
             provider=provider,
-            redirect_uri=redirect_uri,
-            request=request,
+            redirect_to=redirect_uri,
             company_id=company.id,
             company_oauth_client_id=company_oauth_client_id,
         )
-        return Response({'provider': provider, 'authorize_url': authorize_url})
+        authorize_url = build_authorize_url(
+            provider=provider,
+            redirect_uri=redirect_uri,
+            state=state,
+            request=request,
+            company_id=company.id,
+            company_oauth_client_id=company_oauth_client_id,
+            oauth_nonce=state_nonce,
+        )
+        response = Response({'provider': provider, 'authorize_url': authorize_url})
+        cookie = oauth_state_nonce_cookie_value(state_nonce)
+        response.set_cookie(
+            cookie['key'],
+            cookie['value'],
+            max_age=cookie['max_age'],
+            httponly=cookie['httponly'],
+            samesite=cookie['samesite'],
+            secure=cookie['secure'],
+        )
+        return response
 
 
 @extend_schema_view(

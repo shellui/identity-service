@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Print provider slugs whose real adapter harness passes (for oauth_e2e_covered_slugs.json)."""
+"""Deprecated: use tools/audit_oauth_strict_coverage.py for oauth_e2e_covered_slugs.json."""
 
 from __future__ import annotations
 

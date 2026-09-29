@@ -38,8 +38,8 @@ class OidcLoginCollisionTests(TestCase):
     def test_same_sub_different_issuers_create_distinct_users_via_login_resolver(self):
         issuer_a = 'https://issuer-a.example.com'
         issuer_b = 'https://issuer-b.example.com'
-        app_a = self._oidc_app(slug='keycloak', provider_id='tenant-a', issuer=issuer_a)
-        app_b = self._oidc_app(slug='keycloak', provider_id='tenant-b', issuer=issuer_b)
+        app_a = self._oidc_app(slug='openid_connect', provider_id='tenant-a', issuer=issuer_a)
+        app_b = self._oidc_app(slug='openid_connect', provider_id='tenant-b', issuer=issuer_b)
 
         def _login_with(app: SocialApp, issuer: str):
             userinfo = {
@@ -49,7 +49,7 @@ class OidcLoginCollisionTests(TestCase):
             bundle = OAuthTokenBundle(access_token='at', id_token=None)
             client = CompanyOAuthClient.objects.get(social_app=app)
             return _resolve_oauth_login_user(
-                provider='keycloak',
+                provider='openid_connect',
                 company=self.company,
                 userinfo=userinfo,
                 token_bundle=bundle,

@@ -3,7 +3,12 @@ from django.contrib.auth import get_user_model
 from django.test import override_settings
 from rest_framework.test import APIClient, APITestCase
 
+import json
+from pathlib import Path
+
 from apps.authapi.provider_registry import get_provider_catalog, validate_extra_settings
+
+E2E_SLUGS_PATH = Path(__file__).resolve().parents[3] / 'tools' / 'data' / 'oauth_e2e_covered_slugs.json'
 from apps.companies.access import set_company_access
 from apps.companies.models import Company, CompanyOAuthClient
 
@@ -14,7 +19,8 @@ class ProviderRegistryTests(APITestCase):
     def test_catalog_loads_all_entries(self):
         catalog = get_provider_catalog()
         self.assertEqual(len(catalog.providers), 114)
-        self.assertEqual(len(catalog.supported_slugs()), 67)
+        e2e = json.loads(E2E_SLUGS_PATH.read_text(encoding='utf-8'))
+        self.assertEqual(len(catalog.supported_slugs()), len(e2e))
 
     def test_microsoft_extra_settings_validation(self):
         entry = get_provider_catalog().by_slug()['microsoft']

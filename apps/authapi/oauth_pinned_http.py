@@ -36,6 +36,7 @@ def pinned_fetch_bytes(
             headers=headers,
             body=body,
             timeout=timeout,
+            max_bytes=max_bytes,
         )
         if status in {301, 302, 303, 307, 308}:
             redirects += 1

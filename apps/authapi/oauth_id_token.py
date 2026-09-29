@@ -27,6 +27,33 @@ MICROSOFT_JWKS_URL = 'https://login.microsoftonline.com/common/discovery/v2.0/ke
 GOOGLE_JWKS_URL = 'https://www.googleapis.com/oauth2/v3/certs'
 APPLE_JWKS_URL = 'https://appleid.apple.com/auth/keys'
 
+_microsoft_domain_tid_cache: dict[str, str] = {}
+
+
+def microsoft_tenant_guid_for_domain(tenant: str) -> str | None:
+    """Resolve a Microsoft domain tenant name to its directory GUID via OIDC discovery."""
+    key = (tenant or '').strip().lower()
+    if not key or _TENANT_GUID_RE.match(key):
+        return key if _TENANT_GUID_RE.match(key or '') else None
+    cached = _microsoft_domain_tid_cache.get(key)
+    if cached:
+        return cached
+    discovery_url = f'https://login.microsoftonline.com/{tenant}/v2.0/.well-known/openid-configuration'
+    try:
+        discovery = fetch_oidc_discovery(discovery_url)
+    except Exception:
+        return None
+    issuer = str(discovery.get('issuer') or '').strip().rstrip('/')
+    if not issuer:
+        return None
+    tail = issuer.rsplit('/', 2)
+    if len(tail) >= 2 and tail[-1] == 'v2.0':
+        guid = tail[-2]
+        if _TENANT_GUID_RE.match(guid):
+            _microsoft_domain_tid_cache[key] = guid
+            return guid
+    return None
+
 
 def _issuer_from_unverified_jwt(raw: str) -> str:
     try:
@@ -174,27 +201,6 @@ def verified_login_id_token_claims(
     except Exception:
         return {}
     return verified if isinstance(verified, dict) else {}
-
-
-def verified_id_token_claims_from_sociallogin(
-    *,
-    entry: ProviderCatalogEntry | None,
-    sociallogin,
-    token_response: dict | None = None,
-) -> dict:
-    """
-    Return verified JWT claims for email-link policy decisions.
-
-    Only allauth-verified id_token material already on the SocialLogin is trusted.
-    """
-    extra = sociallogin.account.extra_data if isinstance(sociallogin.account.extra_data, dict) else {}
-    nested = extra.get('id_token')
-    if isinstance(nested, dict):
-        return dict(nested)
-    state_id = sociallogin.state.get('id_token') if isinstance(getattr(sociallogin, 'state', None), dict) else None
-    if isinstance(state_id, dict):
-        return dict(state_id)
-    return {}
 
 
 def microsoft_configured_tenant_is_guid(social_app: SocialApp) -> bool:

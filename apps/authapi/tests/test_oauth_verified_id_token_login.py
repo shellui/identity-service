@@ -29,12 +29,13 @@ class VerifiedIdTokenLoginPolicyTests(TestCase):
 
     def test_microsoft_accepts_matching_tid_from_verified_claims(self):
         entry = get_provider_catalog().by_slug()['microsoft']
+        guid = '11111111-1111-1111-1111-111111111111'
         profile, err = extract_oauth_profile(
             'microsoft',
             {'email': 'user@contoso.com', 'mail': 'user@contoso.com'},
             'access',
-            tenant='contoso.onmicrosoft.com',
-            id_token_claims={'tid': 'contoso.onmicrosoft.com', 'xms_edov': True},
+            tenant=guid,
+            id_token_claims={'tid': guid, 'xms_edov': False},
             catalog_entry=entry,
         )
         self.assertIsNone(err)

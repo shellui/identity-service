@@ -137,6 +137,20 @@ def post_resolved_webhook(
         conn.close()
 
 
+def _read_response_body(response: HTTPResponse, *, max_bytes: int) -> bytes:
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        piece = response.read(65536)
+        if not piece:
+            break
+        total += len(piece)
+        if total > max_bytes:
+            raise SSRFError('HTTP response body exceeds size limit.')
+        chunks.append(piece)
+    return b''.join(chunks)
+
+
 def fetch_resolved_endpoint(
     endpoint: ResolvedWebhookEndpoint,
     *,
@@ -144,6 +158,7 @@ def fetch_resolved_endpoint(
     headers: dict[str, str] | None = None,
     body: bytes | None = None,
     timeout: float = 20,
+    max_bytes: int = 512 * 1024,
 ) -> tuple[int, dict[str, str], bytes]:
     """HTTP request to a pre-resolved endpoint (pinned TCP, original hostname for TLS)."""
     req_headers = dict(headers or {})
@@ -169,7 +184,7 @@ def fetch_resolved_endpoint(
         response = conn.getresponse()
         status = int(response.status)
         resp_headers = {k.lower(): v for k, v in response.getheaders()}
-        payload = response.read()
+        payload = _read_response_body(response, max_bytes=max_bytes)
         return status, resp_headers, payload
     finally:
         conn.close()

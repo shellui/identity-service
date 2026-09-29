@@ -5,6 +5,9 @@ from django.db import IntegrityError
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient, APITestCase
 
+from dataclasses import replace
+from unittest.mock import patch
+
 from apps.authapi.provider_registry import get_provider_catalog
 from apps.companies.access import set_company_access
 from apps.companies.models import Company, CompanyOAuthClient
@@ -64,54 +67,72 @@ class OAuthCompanyAppUniquenessApiTests(APITestCase):
         self.assertEqual(response.data['social_app_id'], existing.id)
         self.assertNotIn('error', response.data)
 
+    def _catalog_with_keycloak_supported(self):
+        catalog = get_provider_catalog()
+        patched = []
+        for entry in catalog.providers:
+            if entry.docs_slug == 'keycloak':
+                patched.append(replace(entry, supported=True, unsupported_reason=None))
+            else:
+                patched.append(entry)
+        return replace(catalog, providers=tuple(patched))
+
     def test_two_keycloak_instances_allowed(self):
         entry = get_provider_catalog().by_slug()['keycloak']
         for idx, slug_path in enumerate(('keycloak-a', 'keycloak-b'), start=1):
             server_url = f'{PUBLIC_HOST}/{slug_path}/.well-known/openid-configuration'
-            response = self.client.post(
-                f'/api/v1/oauth-social-apps?company_id={self.company.id}',
-                {
-                    'docs_slug': 'keycloak',
-                    'client_id': f'cid-{idx}',
-                    'client_secret': 'secret',
-                    'extra_settings': {
-                        'server_url': server_url,
-                        'provider_id': f'tenant-{idx}',
+            with patch(
+                'apps.authapi.oauth.get_provider_catalog',
+                return_value=self._catalog_with_keycloak_supported(),
+            ):
+                response = self.client.post(
+                    f'/api/v1/oauth-social-apps?company_id={self.company.id}',
+                    {
+                        'docs_slug': 'keycloak',
+                        'client_id': f'cid-{idx}',
+                        'client_secret': 'secret',
+                        'extra_settings': {
+                            'server_url': server_url,
+                            'provider_id': f'tenant-{idx}',
+                        },
                     },
-                },
-                format='json',
-            )
+                    format='json',
+                )
             self.assertEqual(response.status_code, 201, response.data)
 
     def test_duplicate_keycloak_instance_returns_409(self):
         server_url = f'{PUBLIC_HOST}/same-kc/.well-known/openid-configuration'
-        first = self.client.post(
-            f'/api/v1/oauth-social-apps?company_id={self.company.id}',
-            {
-                'docs_slug': 'keycloak',
-                'client_id': 'cid-1',
-                'client_secret': 'secret',
-                'extra_settings': {
-                    'server_url': server_url,
-                    'provider_id': 'tenant-a',
+        with patch(
+            'apps.authapi.oauth.get_provider_catalog',
+            return_value=self._catalog_with_keycloak_supported(),
+        ):
+            first = self.client.post(
+                f'/api/v1/oauth-social-apps?company_id={self.company.id}',
+                {
+                    'docs_slug': 'keycloak',
+                    'client_id': 'cid-1',
+                    'client_secret': 'secret',
+                    'extra_settings': {
+                        'server_url': server_url,
+                        'provider_id': 'tenant-a',
+                    },
                 },
-            },
-            format='json',
-        )
-        self.assertEqual(first.status_code, 201, first.data)
-        response = self.client.post(
-            f'/api/v1/oauth-social-apps?company_id={self.company.id}',
-            {
-                'docs_slug': 'keycloak',
-                'client_id': 'cid-2',
-                'client_secret': 'secret-2',
-                'extra_settings': {
-                    'server_url': server_url,
-                    'provider_id': 'tenant-a',
+                format='json',
+            )
+            self.assertEqual(first.status_code, 201, first.data)
+            response = self.client.post(
+                f'/api/v1/oauth-social-apps?company_id={self.company.id}',
+                {
+                    'docs_slug': 'keycloak',
+                    'client_id': 'cid-2',
+                    'client_secret': 'secret-2',
+                    'extra_settings': {
+                        'server_url': server_url,
+                        'provider_id': 'tenant-a',
+                    },
                 },
-            },
-            format='json',
-        )
+                format='json',
+            )
         self.assertEqual(response.status_code, 409)
         self.assertEqual(response.data['error_code'], 'oauth_app_duplicate_provider')
 

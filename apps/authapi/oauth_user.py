@@ -110,6 +110,12 @@ def microsoft_email_trustworthy(
     tid = str(id_token_claims.get('tid') or '').strip()
     if configured and guid_re.match(configured):
         return bool(tid) and tid.lower() == configured.lower()
+    if configured and configured.lower() not in ('common', 'organizations', 'consumers'):
+        from apps.authapi.oauth_id_token import microsoft_tenant_guid_for_domain
+
+        expected = microsoft_tenant_guid_for_domain(configured)
+        if expected:
+            return bool(tid) and tid.lower() == expected.lower()
     return _truthy_claim(id_token_claims.get('xms_edov'))
 
 

@@ -120,14 +120,18 @@ def forwards(apps, schema_editor):
         extra = account.extra_data if isinstance(account.extra_data, dict) else {}
         issuer = _issuer_from_extra(extra)
         provider_id = str(extra.get('provider_id') or '').strip()
-        if not issuer and not provider_id:
+        if not issuer:
             logger.warning(
-                'OIDC migration skipped social_account_id=%s: no issuer or provider_id in extra_data',
+                'OIDC migration skipped social_account_id=%s: no issuer in extra_data',
                 account.id,
             )
             continue
         if not provider_id:
-            provider_id = 'openid_connect'
+            logger.warning(
+                'OIDC migration skipped social_account_id=%s: missing provider_id and no SocialToken',
+                account.id,
+            )
+            continue
         _migrate_account(account, provider_id=provider_id, issuer=issuer)
 
 

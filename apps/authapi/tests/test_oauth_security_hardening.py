@@ -12,7 +12,7 @@ from django.core.cache import cache
 from django.test import RequestFactory, TestCase, override_settings
 
 from apps.authapi.oauth_allauth import build_allauth_authorize_url
-from apps.authapi.oauth_id_token import verified_login_id_token_claims
+from apps.authapi.oauth_id_token import verify_apple_id_token_for_bridge, verified_login_id_token_claims
 from apps.authapi.oauth_request_context import get_bound_oauth_social_app, oauth_allauth_request
 from apps.authapi.oauth_social_account import bind_oauth_social_app, get_bound_oauth_social_app as bound_from_request
 from apps.authapi.oauth_state import build_oauth_state, consume_apple_form_post_state_once
@@ -21,6 +21,7 @@ from apps.authapi.provider_registry import get_provider_catalog
 from apps.authapi.tests.oauth_ssrf_test_utils import pin_oauth_http_to_localhost
 from apps.authapi.tests.oauth_test_crypto import (
     OAuthMockHttpsServer,
+    generate_apple_test_signing_key,
     generate_oauth_test_signing_key,
     json_response_handler,
 )
@@ -76,13 +77,14 @@ class OAuthSecurityHardeningTests(TestCase):
                 id_token_claims={'tid': '22222222-2222-2222-2222-222222222222', 'xms_edov': True},
             )
         )
-        self.assertTrue(
-            microsoft_email_trustworthy(
-                tenant='contoso.onmicrosoft.com',
-                configured_tenant='contoso.onmicrosoft.com',
-                id_token_claims={'tid': 'different-guid', 'xms_edov': True},
+        with patch('apps.authapi.oauth_id_token.microsoft_tenant_guid_for_domain', return_value=None):
+            self.assertTrue(
+                microsoft_email_trustworthy(
+                    tenant='contoso.onmicrosoft.com',
+                    configured_tenant='contoso.onmicrosoft.com',
+                    id_token_claims={'tid': 'different-guid', 'xms_edov': True},
+                )
             )
-        )
 
     def test_microsoft_jwks_verification_uses_common_keys_and_tenant_guid_issuer(self):
         signing = generate_oauth_test_signing_key(kid='ms-kid')
@@ -205,6 +207,57 @@ class OAuthSecurityHardeningTests(TestCase):
             )
             self.assertIsNone(err)
             self.assertTrue(profile.email_verified_for_link)
+        finally:
+            server.shutdown()
+
+    def test_verify_apple_id_token_for_bridge_es256_local_jwks(self):
+        signing = generate_apple_test_signing_key()
+        hostname = 'appleid.apple.com'
+        server = OAuthMockHttpsServer.start(
+            hostnames=[hostname],
+            routes={(hostname, 'GET', '/auth/keys'): json_response_handler(signing.jwks_document())},
+        )
+        client_id = 'apple-bridge-client'
+        nonce = 'bridge-nonce-es256'
+        now = int(time.time())
+        token = signing.sign_es256(
+            {
+                'iss': 'https://appleid.apple.com',
+                'aud': client_id,
+                'sub': 'apple-user-sub',
+                'nonce': nonce,
+                'exp': now + 3600,
+                'iat': now,
+            }
+        )
+        app = SocialApp.objects.create(
+            provider='apple',
+            name='apple-jwks',
+            client_id=client_id,
+            secret='sec',
+            key='TEAM',
+            settings={'catalog_slug': 'apple'},
+        )
+        app.sites.add(self.site)
+        request = self.factory.get('/')
+        keys_url = f'https://{hostname}:{server.port}/auth/keys'
+        try:
+            with pin_oauth_http_to_localhost((hostname, server.port)):
+                with patch(
+                    'allauth.socialaccount.providers.apple.views.AppleOAuth2Adapter.public_key_url',
+                    keys_url,
+                ):
+                    with patch(
+                        'apps.actions.webhook_transport.ssl.create_default_context',
+                        return_value=server.ssl_client_context(),
+                    ):
+                        claims = verify_apple_id_token_for_bridge(
+                            request,
+                            social_app=app,
+                            id_token=token,
+                            expected_nonce=nonce,
+                        )
+            self.assertEqual(claims.get('sub'), 'apple-user-sub')
         finally:
             server.shutdown()
 

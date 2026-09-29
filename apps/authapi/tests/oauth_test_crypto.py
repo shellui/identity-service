@@ -250,10 +250,17 @@ class OAuthMockHttpsServer:
         self._httpd.server_close()
 
 
+def _drain_request_body(http: BaseHTTPRequestHandler) -> None:
+    length = int(http.headers.get('Content-Length', '0') or '0')
+    if length > 0:
+        http.rfile.read(length)
+
+
 def json_response_handler(payload: dict | list) -> RouteHandler:
     body = json.dumps(payload).encode('utf-8')
 
     def _handler(http: BaseHTTPRequestHandler) -> None:
+        _drain_request_body(http)
         http.send_response(200)
         http.send_header('Content-Type', 'application/json')
         http.send_header('Content-Length', str(len(body)))
