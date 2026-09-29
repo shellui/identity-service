@@ -1,5 +1,5 @@
 {
-  "catalog_version": "1",
+  "catalog_version": "2",
   "allauth_version": "65.19.5",
   "providers": [
     {
@@ -18,15 +18,13 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/apple.html",
       "console_url": [
         {
-          "text": "https://developer.apple.com/account/resources/identifiers/list",
+          "kind": "app_registration",
           "url": "https://developer.apple.com/account/resources/identifiers/list",
-          "label": "App registration (create an App ID and then a related Service ID here)",
           "form": "link"
         },
         {
-          "text": "https://developer.apple.com/account/resources/authkeys/list",
+          "kind": "app_settings",
           "url": "https://developer.apple.com/account/resources/authkeys/list",
-          "label": "Private Key registration (be sure to save it)",
           "form": "link"
         }
       ],
@@ -34,14 +32,12 @@
       "extra_settings_schema": [
         {
           "name": "key",
-          "label": "Apple Team ID",
           "type": "string",
           "required": true,
           "secret": false
         },
         {
           "name": "certificate_key",
-          "label": "Sign in with Apple private key (.p8)",
           "type": "text",
           "required": true,
           "secret": true
@@ -73,9 +69,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/auth0.html",
       "console_url": [
         {
-          "text": "https://manage.auth0.com/#/clients",
+          "kind": "app_registration",
           "url": "https://manage.auth0.com/#/clients",
-          "label": "App registration (get your key and secret here)",
           "form": "link"
         }
       ],
@@ -83,11 +78,9 @@
       "extra_settings_schema": [
         {
           "name": "AUTH0_URL",
-          "label": "Auth0 domain URL",
           "type": "url",
           "required": true,
-          "secret": false,
-          "help_text": "Base URL of your Auth0 tenant, for example https://your-tenant.auth0.com"
+          "secret": false
         }
       ],
       "icon": {
@@ -116,10 +109,13 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/bitbucket.html",
       "console_url": [
         {
-          "text": "https://bitbucket.org/account/user",
+          "kind": "app_registration",
           "url": "https://bitbucket.org/account/user/{{yourusername}}/oauth-consumers/new",
-          "label": "App registration (get your key and secret here)",
-          "form": "link"
+          "form": "template",
+          "placeholders": [
+            "username",
+            "yourusername"
+          ]
         }
       ],
       "allauth_callback_path": "/accounts/bitbucket_oauth2/login/callback/",
@@ -151,9 +147,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/discord.html",
       "console_url": [
         {
-          "text": "https://discordapp.com/developers/applications/me",
+          "kind": "app_registration",
           "url": "https://discordapp.com/developers/applications/me",
-          "label": "App registration and management (get your key and secret here)",
           "form": "link"
         }
       ],
@@ -186,9 +181,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/facebook.html",
       "console_url": [
         {
-          "text": "https://developers.facebook.com/apps",
+          "kind": "app_registration",
           "url": "https://developers.facebook.com/apps",
-          "label": "App registration: a key and secret key can be obtained by creating an app",
           "form": "link"
         }
       ],
@@ -221,9 +215,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/github.html",
       "console_url": [
         {
-          "text": "https://github.com/settings/applications/new",
+          "kind": "app_settings",
           "url": "https://github.com/settings/applications/new",
-          "label": "App registration (get your key and secret here)",
           "form": "link"
         }
       ],
@@ -259,11 +252,9 @@
       "extra_settings_schema": [
         {
           "name": "gitlab_url",
-          "label": "GitLab base URL",
           "type": "url",
           "required": false,
-          "secret": false,
-          "help_text": "Self-hosted GitLab URL. Defaults to https://gitlab.com."
+          "secret": false
         }
       ],
       "icon": {
@@ -293,9 +284,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/google.html",
       "console_url": [
         {
-          "text": "https://console.developers.google.com/",
+          "kind": "developer_console",
           "url": "https://console.developers.google.com/",
-          "label": "Google Developer Console",
           "form": "link"
         }
       ],
@@ -328,9 +318,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/linkedin.html",
       "console_url": [
         {
-          "text": "https://www.linkedin.com/secure/developer?newapp=",
-          "url": "https://www.linkedin.com/secure/developer?newapp=",
-          "label": "App registration (get your key and secret here)",
+          "kind": "app_registration",
+          "url": "https://www.linkedin.com/secure/developer",
           "form": "link"
         }
       ],
@@ -338,19 +327,15 @@
       "extra_settings_schema": [
         {
           "name": "provider_id",
-          "label": "Provider ID",
           "type": "string",
           "required": true,
-          "secret": false,
-          "help_text": "Sub-provider id stored on the SocialApp (openid_connect)."
+          "secret": false
         },
         {
           "name": "server_url",
-          "label": "OpenID Connect issuer URL",
           "type": "url",
           "required": true,
-          "secret": false,
-          "help_text": "Issuer URL or .well-known/openid-configuration URL."
+          "secret": false
         }
       ],
       "icon": {
@@ -377,9 +362,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/microsoft.html",
       "console_url": [
         {
-          "text": "https://portal.azure.com/#blade/Microsoft_AAD_RegisteredApps/ApplicationsListBlade",
+          "kind": "other",
           "url": "https://portal.azure.com/#blade/Microsoft_AAD_RegisteredApps/ApplicationsListBlade",
-          "label": "Apps can be registered (for consumer key and secret) here",
           "form": "link"
         }
       ],
@@ -387,11 +371,9 @@
       "extra_settings_schema": [
         {
           "name": "tenant",
-          "label": "Tenant ID",
           "type": "string",
           "required": false,
-          "secret": false,
-          "help_text": "Entra ID tenant GUID, or common for multi-tenant apps."
+          "secret": false
         }
       ],
       "icon": {
@@ -421,7 +403,6 @@
       "extra_settings_schema": [
         {
           "name": "OKTA_BASE_URL",
-          "label": "Okta org URL",
           "type": "url",
           "required": true,
           "secret": false
@@ -454,9 +435,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/slack.html",
       "console_url": [
         {
-          "text": "https://api.slack.com/apps/new",
+          "kind": "app_registration",
           "url": "https://api.slack.com/apps/new",
-          "label": "App registration (get your key and secret here)",
           "form": "link"
         }
       ],
@@ -486,16 +466,18 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/twitter_oauth2.html",
       "console_url": [
         {
-          "text": "https://developer.x.com/en/portal/dashboard",
+          "kind": "app_registration",
           "url": "https://developer.x.com/en/portal/dashboard",
-          "label": "App registration: create a new app via",
-          "form": "code"
+          "form": "link"
         },
         {
-          "text": "https://developer.x.com/en/portal/projects/{project-id}/apps/{app-id}/keys",
+          "kind": "app_settings",
           "url": "https://developer.x.com/en/portal/projects/{project-id}/apps/{app-id}/keys",
-          "label": "Use the X keys tab of your application to fill in the form",
-          "form": "code"
+          "form": "template",
+          "placeholders": [
+            "app-id",
+            "project-id"
+          ]
         }
       ],
       "allauth_callback_path": "/accounts/twitter_oauth2/login/callback/",
@@ -587,11 +569,9 @@
       "extra_settings_schema": [
         {
           "name": "server_url",
-          "label": "OpenID Connect issuer URL",
           "type": "url",
           "required": true,
-          "secret": false,
-          "help_text": "Issuer URL or .well-known/openid-configuration URL."
+          "secret": false
         }
       ],
       "icon": {
@@ -649,9 +629,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/23andme.html",
       "console_url": [
         {
-          "text": "https://api.23andme.com/dev/",
+          "kind": "app_registration",
           "url": "https://api.23andme.com/dev/",
-          "label": "App registration (get your key and secret here)",
           "form": "link"
         }
       ],
@@ -681,9 +660,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/500px.html",
       "console_url": [
         {
-          "text": "https://500px.com/settings/applications",
+          "kind": "app_settings",
           "url": "https://500px.com/settings/applications",
-          "label": "App registration (get your key and secret here)",
           "form": "link"
         }
       ],
@@ -715,15 +693,13 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/agave.html",
       "console_url": [
         {
-          "text": "https://public.agaveapi.co/create_account",
+          "kind": "app_registration",
           "url": "https://public.agaveapi.co/create_account",
-          "label": "Account Signup",
           "form": "link"
         },
         {
-          "text": "https://bitbucket.org/agaveapi/cli/overview",
+          "kind": "app_registration",
           "url": "https://bitbucket.org/agaveapi/cli/overview",
-          "label": "App registration: run client-create from the cli",
           "form": "link"
         }
       ],
@@ -753,9 +729,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/amazon.html",
       "console_url": [
         {
-          "text": "http://login.amazon.com/manageApps",
+          "kind": "app_registration",
           "url": "http://login.amazon.com/manageApps",
-          "label": "App registration (get your key and secret here)",
           "form": "link"
         }
       ],
@@ -785,9 +760,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/amazon_cognito.html",
       "console_url": [
         {
-          "text": "https://console.aws.amazon.com/cognito/",
+          "kind": "app_registration",
           "url": "https://console.aws.amazon.com/cognito/",
-          "label": "App registration (get your key and secret here)",
           "form": "link"
         }
       ],
@@ -795,7 +769,6 @@
       "extra_settings_schema": [
         {
           "name": "DOMAIN",
-          "label": "Cognito domain URL",
           "type": "url",
           "required": true,
           "secret": false
@@ -825,9 +798,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/atlassian.html",
       "console_url": [
         {
-          "text": "https://developer.atlassian.com/console/myapps/",
+          "kind": "developer_console",
           "url": "https://developer.atlassian.com/console/myapps/",
-          "label": "Atlassian developer console",
           "form": "link"
         }
       ],
@@ -863,19 +835,15 @@
       "extra_settings_schema": [
         {
           "name": "provider_id",
-          "label": "Provider ID",
           "type": "string",
           "required": true,
-          "secret": false,
-          "help_text": "Sub-provider id stored on the SocialApp (openid_connect)."
+          "secret": false
         },
         {
           "name": "server_url",
-          "label": "OpenID Connect issuer URL",
           "type": "url",
           "required": true,
-          "secret": false,
-          "help_text": "Issuer URL or .well-known/openid-configuration URL."
+          "secret": false
         }
       ],
       "icon": {
@@ -905,9 +873,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/authentiq.html",
       "console_url": [
         {
-          "text": "https://dashboard.authentiq.com/",
+          "kind": "app_registration",
           "url": "https://dashboard.authentiq.com/",
-          "label": "App registration",
           "form": "link"
         }
       ],
@@ -964,9 +931,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/basecamp.html",
       "console_url": [
         {
-          "text": "https://integrate.37signals.com/",
+          "kind": "app_registration",
           "url": "https://integrate.37signals.com/",
-          "label": "App registration (get your key and secret here)",
           "form": "link"
         }
       ],
@@ -998,9 +964,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/battlenet.html",
       "console_url": [
         {
-          "text": "https://develop.battle.net/access/clients/create",
+          "kind": "app_registration",
           "url": "https://develop.battle.net/access/clients/create",
-          "label": "Register your app here (Blizzard account required)",
           "form": "link"
         }
       ],
@@ -1032,9 +997,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/box.html",
       "console_url": [
         {
-          "text": "https://app.box.com/developers/services/edit/",
+          "kind": "app_registration",
           "url": "https://app.box.com/developers/services/edit/",
-          "label": "App registration (get your key and secret here)",
           "form": "link"
         }
       ],
@@ -1067,9 +1031,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/cern.html",
       "console_url": [
         {
-          "text": "https://application-portal.web.cern.ch/",
+          "kind": "app_registration",
           "url": "https://application-portal.web.cern.ch/",
-          "label": "App registration (get your key and secret here)",
           "form": "link"
         }
       ],
@@ -1077,19 +1040,15 @@
       "extra_settings_schema": [
         {
           "name": "provider_id",
-          "label": "Provider ID",
           "type": "string",
           "required": true,
-          "secret": false,
-          "help_text": "Sub-provider id stored on the SocialApp (openid_connect)."
+          "secret": false
         },
         {
           "name": "server_url",
-          "label": "OpenID Connect issuer URL",
           "type": "url",
           "required": true,
-          "secret": false,
-          "help_text": "Issuer URL or .well-known/openid-configuration URL."
+          "secret": false
         }
       ],
       "icon": {
@@ -1116,9 +1075,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/cilogon.html",
       "console_url": [
         {
-          "text": "https://cilogon.org/oauth2/register",
+          "kind": "app_registration",
           "url": "https://cilogon.org/oauth2/register",
-          "label": "App registration (get your key and secret here)",
           "form": "link"
         }
       ],
@@ -1173,9 +1131,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/dataporten.html",
       "console_url": [
         {
-          "text": "https://docs.dataporten.no/docs/gettingstarted/",
+          "kind": "docs",
           "url": "https://docs.dataporten.no/docs/gettingstarted/",
-          "label": "App registration (get your key and secret here)",
           "form": "link"
         }
       ],
@@ -1205,9 +1162,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/daum.html",
       "console_url": [
         {
-          "text": "https://developers.daum.net/console",
+          "kind": "app_registration",
           "url": "https://developers.daum.net/console",
-          "label": "App registration (get your key and secret here)",
           "form": "link"
         }
       ],
@@ -1237,9 +1193,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/digitalocean.html",
       "console_url": [
         {
-          "text": "https://cloud.digitalocean.com/settings/applications",
+          "kind": "app_settings",
           "url": "https://cloud.digitalocean.com/settings/applications",
-          "label": "App registration (get your key and secret here)",
           "form": "link"
         }
       ],
@@ -1297,10 +1252,9 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/discogs.html",
       "console_url": [
         {
-          "text": "https://www.discogs.com/settings/developers",
+          "kind": "app_settings",
           "url": "https://www.discogs.com/settings/developers",
-          "label": "App registration: create a new app at",
-          "form": "code"
+          "form": "link"
         }
       ],
       "allauth_callback_path": "/accounts/discogs/login/callback/",
@@ -1331,9 +1285,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/doximity.html",
       "console_url": [
         {
-          "text": "https://www.doximity.com/developers/api_signup",
+          "kind": "app_registration",
           "url": "https://www.doximity.com/developers/api_signup",
-          "label": "Request API keys here",
           "form": "link"
         }
       ],
@@ -1363,9 +1316,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/draugiem.html",
       "console_url": [
         {
-          "text": "https://www.draugiem.lv/applications/dev/create/?type=4",
+          "kind": "app_registration",
           "url": "https://www.draugiem.lv/applications/dev/create/?type=4",
-          "label": "App registration (get your key and secret here)",
           "form": "link"
         }
       ],
@@ -1397,9 +1349,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/drip.html",
       "console_url": [
         {
-          "text": "https://www.getdrip.com/user/applications",
+          "kind": "app_registration",
           "url": "https://www.getdrip.com/user/applications",
-          "label": "App registration (get your key and secret here)",
           "form": "link"
         }
       ],
@@ -1429,9 +1380,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/dropbox.html",
       "console_url": [
         {
-          "text": "https://www.dropbox.com/developers/apps/",
+          "kind": "app_registration",
           "url": "https://www.dropbox.com/developers/apps/",
-          "label": "App registration (get your key and secret here)",
           "form": "link"
         }
       ],
@@ -1463,9 +1413,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/dwolla.html",
       "console_url": [
         {
-          "text": "https://dashboard-uat.dwolla.com/applications",
+          "kind": "app_registration",
           "url": "https://dashboard-uat.dwolla.com/applications",
-          "label": "App registration (get your key and secret here)",
           "form": "link"
         }
       ],
@@ -1523,7 +1472,6 @@
       "extra_settings_schema": [
         {
           "name": "API_URL",
-          "label": "edX API URL",
           "type": "url",
           "required": true,
           "secret": false
@@ -1555,10 +1503,9 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/eveonline.html",
       "console_url": [
         {
-          "text": "https://developers.eveonline.com/applications/create",
+          "kind": "app_registration",
           "url": "https://developers.eveonline.com/applications/create",
-          "label": "Register your application at",
-          "form": "text"
+          "form": "link"
         }
       ],
       "allauth_callback_path": "/accounts/eveonline/login/callback/",
@@ -1587,9 +1534,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/eventbrite.html",
       "console_url": [
         {
-          "text": "https://www.eventbrite.com/myaccount/apps/",
+          "kind": "app_registration",
           "url": "https://www.eventbrite.com/myaccount/apps/",
-          "label": "App registration",
           "form": "link"
         }
       ],
@@ -1619,10 +1565,9 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/evernote.html",
       "console_url": [
         {
-          "text": "https://dev.evernote.com/doc/articles/authentication.php",
+          "kind": "docs",
           "url": "https://dev.evernote.com/doc/articles/authentication.php",
-          "label": "Register your OAuth2 application at",
-          "form": "text"
+          "form": "link"
         }
       ],
       "allauth_callback_path": "/accounts/evernote/login/callback/",
@@ -1654,9 +1599,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/exist.html",
       "console_url": [
         {
-          "text": "https://exist.io/account/apps/",
+          "kind": "app_registration",
           "url": "https://exist.io/account/apps/",
-          "label": "Register your OAuth2 app in apps page",
           "form": "link"
         }
       ],
@@ -1686,9 +1630,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/feishu.html",
       "console_url": [
         {
-          "text": "https://open.feishu.cn/app",
+          "kind": "app_registration",
           "url": "https://open.feishu.cn/app",
-          "label": "App Registration",
           "form": "link"
         }
       ],
@@ -1718,9 +1661,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/figma.html",
       "console_url": [
         {
-          "text": "https://www.figma.com/developers/apps",
+          "kind": "app_registration",
           "url": "https://www.figma.com/developers/apps",
-          "label": "App registration (get your key and secret here)",
           "form": "link"
         }
       ],
@@ -1782,9 +1724,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/flickr.html",
       "console_url": [
         {
-          "text": "https://www.flickr.com/services/apps/create/",
+          "kind": "app_registration",
           "url": "https://www.flickr.com/services/apps/create/",
-          "label": "App registration (get your key and secret here)",
           "form": "link"
         }
       ],
@@ -1816,9 +1757,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/frontier.html",
       "console_url": [
         {
-          "text": "https://user.frontierstore.net/",
+          "kind": "other",
           "url": "https://user.frontierstore.net/",
-          "label": "Client registration: go to ... and apply for access",
           "form": "link"
         }
       ],
@@ -1848,9 +1788,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/gitea.html",
       "console_url": [
         {
-          "text": "https://gitea.com/user/settings/applications",
+          "kind": "app_settings",
           "url": "https://gitea.com/user/settings/applications",
-          "label": "App registration (get your key and secret here)",
           "form": "link"
         }
       ],
@@ -1858,7 +1797,6 @@
       "extra_settings_schema": [
         {
           "name": "GITEA_URL",
-          "label": "Gitea URL",
           "type": "url",
           "required": true,
           "secret": false
@@ -1890,9 +1828,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/globus.html",
       "console_url": [
         {
-          "text": "https://developers.globus.org/",
+          "kind": "app_registration",
           "url": "https://developers.globus.org/",
-          "label": "Registering an application",
           "form": "link"
         }
       ],
@@ -1922,9 +1859,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/gumroad.html",
       "console_url": [
         {
-          "text": "https://help.gumroad.com/article/280-create-application-api",
+          "kind": "app_registration",
           "url": "https://help.gumroad.com/article/280-create-application-api",
-          "label": "App registration (get your key and secret here)",
           "form": "link"
         }
       ],
@@ -1932,7 +1868,6 @@
       "extra_settings_schema": [
         {
           "name": "GUMROAD_URL",
-          "label": "Gumroad base URL",
           "type": "url",
           "required": false,
           "secret": false
@@ -1964,9 +1899,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/hubspot.html",
       "console_url": [
         {
-          "text": "https://developers.hubspot.com/docs/api/creating-an-app",
+          "kind": "docs",
           "url": "https://developers.hubspot.com/docs/api/creating-an-app",
-          "label": "App registration (get your key and secret here)",
           "form": "link"
         }
       ],
@@ -1999,9 +1933,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/instagram.html",
       "console_url": [
         {
-          "text": "https://www.instagram.com/developer/clients/manage/",
+          "kind": "app_registration",
           "url": "https://www.instagram.com/developer/clients/manage/",
-          "label": "App registration (get your key and secret here)",
           "form": "link"
         }
       ],
@@ -2034,9 +1967,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/jupyterhub.html",
       "console_url": [
         {
-          "text": "https://jupyterhub.readthedocs.io/en/stable/api/services.auth.html",
+          "kind": "docs",
           "url": "https://jupyterhub.readthedocs.io/en/stable/api/services.auth.html",
-          "label": "Documentation on configuring a key and secret key",
           "form": "link"
         }
       ],
@@ -2044,7 +1976,6 @@
       "extra_settings_schema": [
         {
           "name": "API_URL",
-          "label": "JupyterHub API URL",
           "type": "url",
           "required": true,
           "secret": false
@@ -2078,9 +2009,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/kakao.html",
       "console_url": [
         {
-          "text": "https://developers.kakao.com/apps",
+          "kind": "app_registration",
           "url": "https://developers.kakao.com/apps",
-          "label": "App registration (get your key here)",
           "form": "link"
         }
       ],
@@ -2115,19 +2045,15 @@
       "extra_settings_schema": [
         {
           "name": "provider_id",
-          "label": "Provider ID",
           "type": "string",
           "required": true,
-          "secret": false,
-          "help_text": "Sub-provider id stored on the SocialApp (openid_connect)."
+          "secret": false
         },
         {
           "name": "server_url",
-          "label": "OpenID Connect issuer URL",
           "type": "url",
           "required": true,
-          "secret": false,
-          "help_text": "Issuer URL or .well-known/openid-configuration URL."
+          "secret": false
         }
       ],
       "icon": {
@@ -2156,10 +2082,9 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/klaviyo.html",
       "console_url": [
         {
-          "text": "https://www.klaviyo.com/manage-apps",
+          "kind": "app_registration",
           "url": "https://www.klaviyo.com/manage-apps",
-          "label": "App registration: create a new OAuth app at",
-          "form": "code"
+          "form": "link"
         }
       ],
       "allauth_callback_path": "/accounts/klaviyo/login/callback/",
@@ -2191,7 +2116,6 @@
       "extra_settings_schema": [
         {
           "name": "LEMONLDAP_URL",
-          "label": "LemonLDAP base URL",
           "type": "url",
           "required": true,
           "secret": false
@@ -2248,9 +2172,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/line.html",
       "console_url": [
         {
-          "text": "https://developers.line.biz/console/",
+          "kind": "app_registration",
           "url": "https://developers.line.biz/console/",
-          "label": "App registration, create a Line login channel (get your channel_id and channel_secret here)",
           "form": "link"
         }
       ],
@@ -2283,15 +2206,13 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/mailchimp.html",
       "console_url": [
         {
-          "text": "https://login.mailchimp.com/",
+          "kind": "other",
           "url": "https://login.mailchimp.com/",
-          "label": "Login via",
           "form": "link"
         },
         {
-          "text": "https://usX.admin.mailchimp.com/account/oauth2/",
+          "kind": "app_registration",
           "url": "https://usX.admin.mailchimp.com/account/oauth2/",
-          "label": "App registration (where X is dependent on your account)",
           "form": "link"
         }
       ],
@@ -2324,17 +2245,15 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/mailcow.html",
       "console_url": [
         {
-          "text": "https://docs.mailcow.email/third_party/nextcloud/third_party-nextcloud/",
+          "kind": "docs",
           "url": "https://docs.mailcow.email/third_party/nextcloud/third_party-nextcloud/",
-          "label": "To register the app with Mailcow, follow the applicable sections of the guide",
-          "form": "code"
+          "form": "link"
         }
       ],
       "allauth_callback_path": "/accounts/mailcow/login/callback/",
       "extra_settings_schema": [
         {
           "name": "API_URL",
-          "label": "Mailcow API URL",
           "type": "url",
           "required": true,
           "secret": false
@@ -2364,9 +2283,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/mediawiki.html",
       "console_url": [
         {
-          "text": "https://meta.wikimedia.org/wiki/Special:OAuthConsumerRegistration/propose",
+          "kind": "app_registration",
           "url": "https://meta.wikimedia.org/wiki/Special:OAuthConsumerRegistration/propose",
-          "label": "App registration for Wikimedia wikis",
           "form": "link"
         }
       ],
@@ -2374,7 +2292,6 @@
       "extra_settings_schema": [
         {
           "name": "MEDIAWIKI_URL",
-          "label": "MediaWiki URL",
           "type": "url",
           "required": true,
           "secret": false
@@ -2404,9 +2321,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/miro.html",
       "console_url": [
         {
-          "text": "https://miro.com/app/settings/user-profile/apps",
+          "kind": "app_settings",
           "url": "https://miro.com/app/settings/user-profile/apps",
-          "label": "Create your app here and acquire Client ID and Client Secret",
           "form": "link"
         }
       ],
@@ -2438,9 +2354,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/naver.html",
       "console_url": [
         {
-          "text": "https://developers.naver.com/appinfo",
+          "kind": "app_registration",
           "url": "https://developers.naver.com/appinfo",
-          "label": "App registration (get your key and secret here)",
           "form": "link"
         }
       ],
@@ -2476,7 +2391,6 @@
       "extra_settings_schema": [
         {
           "name": "NETIQ_URL",
-          "label": "NetIQ Access Manager URL",
           "type": "url",
           "required": true,
           "secret": false
@@ -2506,17 +2420,18 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/nextcloud.html",
       "console_url": [
         {
-          "text": "https://nextcloud.example.org/settings/admin/security",
+          "kind": "app_settings",
           "url": "https://nextcloud.example.org/settings/admin/security",
-          "label": "App registration (get your key and secret here)",
-          "form": "link"
+          "form": "template",
+          "placeholders": [
+            "host"
+          ]
         }
       ],
       "allauth_callback_path": "/accounts/nextcloud/login/callback/",
       "extra_settings_schema": [
         {
           "name": "server",
-          "label": "Nextcloud server URL",
           "type": "url",
           "required": true,
           "secret": false
@@ -2549,9 +2464,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/notion.html",
       "console_url": [
         {
-          "text": "https://www.notion.so/my-integrations",
+          "kind": "app_registration",
           "url": "https://www.notion.so/my-integrations",
-          "label": "App registration (get your key and secret here)",
           "form": "link"
         }
       ],
@@ -2583,9 +2497,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/odnoklassniki.html",
       "console_url": [
         {
-          "text": "http://apiok.ru/wiki/pages/viewpage.action?pageId=42476486",
+          "kind": "app_registration",
           "url": "http://apiok.ru/wiki/pages/viewpage.action?pageId=42476486",
-          "label": "App registration (get your key and secret here)",
           "form": "link"
         }
       ],
@@ -2617,9 +2530,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/openstreetmap.html",
       "console_url": [
         {
-          "text": "https://www.openstreetmap.org/oauth2/applications",
+          "kind": "app_registration",
           "url": "https://www.openstreetmap.org/oauth2/applications",
-          "label": "First, register your client application here",
           "form": "link"
         }
       ],
@@ -2680,9 +2592,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/patreon.html",
       "console_url": [
         {
-          "text": "https://www.patreon.com/portal/registration/register-clients",
+          "kind": "app_registration",
           "url": "https://www.patreon.com/portal/registration/register-clients",
-          "label": "App registration (get your key and secret for the API here)",
           "form": "link"
         }
       ],
@@ -2715,9 +2626,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/paypal.html",
       "console_url": [
         {
-          "text": "https://developer.paypal.com/webapps/developer/applications/myapps",
+          "kind": "app_registration",
           "url": "https://developer.paypal.com/webapps/developer/applications/myapps",
-          "label": "App registration (get your key and secret here)",
           "form": "link"
         }
       ],
@@ -2778,9 +2688,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/pocket.html",
       "console_url": [
         {
-          "text": "https://getpocket.com/developer/apps/",
+          "kind": "app_registration",
           "url": "https://getpocket.com/developer/apps/",
-          "label": "App registration (get your consumer key here)",
           "form": "link"
         }
       ],
@@ -2810,15 +2719,13 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/questrade.html",
       "console_url": [
         {
-          "text": "https://www.questrade.com/api/documentation/getting-started",
+          "kind": "docs",
           "url": "https://www.questrade.com/api/documentation/getting-started",
-          "label": "App registration (get your key here, follow “Creating your first personal app”)",
           "form": "link"
         },
         {
-          "text": "https://apphub.questrade.com/UI/UserApps.aspx",
+          "kind": "app_registration",
           "url": "https://apphub.questrade.com/UI/UserApps.aspx",
-          "label": "App registration (get your key here, follow “Creating your first personal app”)",
           "form": "link"
         }
       ],
@@ -2848,9 +2755,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/quickbooks.html",
       "console_url": [
         {
-          "text": "https://developers.intuit.com/v2/ui#/app/startcreate",
+          "kind": "app_registration",
           "url": "https://developers.intuit.com/v2/ui#/app/startcreate",
-          "label": "App registration (get your key and secret here)",
           "form": "link"
         }
       ],
@@ -2883,9 +2789,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/reddit.html",
       "console_url": [
         {
-          "text": "https://www.reddit.com/prefs/apps/",
+          "kind": "app_registration",
           "url": "https://www.reddit.com/prefs/apps/",
-          "label": "App registration (get your key and secret here)",
           "form": "link"
         }
       ],
@@ -2921,11 +2826,9 @@
       "extra_settings_schema": [
         {
           "name": "key",
-          "label": "Salesforce login host",
           "type": "string",
           "required": true,
-          "secret": false,
-          "help_text": "Salesforce domain used as SocialApp key (for example login.salesforce.com)."
+          "secret": false
         }
       ],
       "icon": {
@@ -2955,7 +2858,6 @@
       "extra_settings_schema": [
         {
           "name": "API_URL",
-          "label": "ShareFile API URL",
           "type": "url",
           "required": true,
           "secret": false
@@ -3013,9 +2915,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/snapchat.html",
       "console_url": [
         {
-          "text": "https://kit.snapchat.com/manage/",
+          "kind": "app_registration",
           "url": "https://kit.snapchat.com/manage/",
-          "label": "App registration (get your key and secret here)",
           "form": "link"
         }
       ],
@@ -3048,9 +2949,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/soundcloud.html",
       "console_url": [
         {
-          "text": "http://soundcloud.com/you/apps/new",
+          "kind": "app_registration",
           "url": "http://soundcloud.com/you/apps/new",
-          "label": "App registration (get your key and secret here)",
           "form": "link"
         }
       ],
@@ -3082,10 +2982,9 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/stackexchange.html",
       "console_url": [
         {
-          "text": "http://stackapps.com/apps/oauth/register",
+          "kind": "app_registration",
           "url": "http://stackapps.com/apps/oauth/register",
-          "label": "Register your OAuth2 app over at",
-          "form": "text"
+          "form": "link"
         }
       ],
       "allauth_callback_path": "/accounts/stackexchange/login/callback/",
@@ -3117,9 +3016,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/steam.html",
       "console_url": [
         {
-          "text": "https://steamcommunity.com/dev/apikey",
+          "kind": "other",
           "url": "https://steamcommunity.com/dev/apikey",
-          "label": "You need to register an API key here",
           "form": "link"
         }
       ],
@@ -3152,9 +3050,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/stocktwits.html",
       "console_url": [
         {
-          "text": "https://api.stocktwits.com/developers/apps/new",
+          "kind": "app_registration",
           "url": "https://api.stocktwits.com/developers/apps/new",
-          "label": "App Registration",
           "form": "link"
         }
       ],
@@ -3184,9 +3081,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/strava.html",
       "console_url": [
         {
-          "text": "https://strava.com/settings/api",
+          "kind": "app_settings",
           "url": "https://strava.com/settings/api",
-          "label": "Register your OAuth2 app in api settings page",
           "form": "link"
         }
       ],
@@ -3218,15 +3114,13 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/stripe.html",
       "console_url": [
         {
-          "text": "https://dashboard.stripe.com/account/applications/settings",
+          "kind": "app_settings",
           "url": "https://dashboard.stripe.com/account/applications/settings",
-          "label": "You register your OAuth2 app via the Connect->Settings page of the Stripe dashboard",
           "form": "link"
         },
         {
-          "text": "https://dashboard.stripe.com/account/apikeys",
+          "kind": "other",
           "url": "https://dashboard.stripe.com/account/apikeys",
-          "label": "The secret key ... can be found on the Stripe dashboard API page",
           "form": "link"
         }
       ],
@@ -3285,15 +3179,13 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/tiktok.html",
       "console_url": [
         {
-          "text": "https://developers.tiktok.com/",
+          "kind": "other",
           "url": "https://developers.tiktok.com/",
-          "label": "Sign up for a TikTok for Developer account here",
           "form": "link"
         },
         {
-          "text": "https://developers.tiktok.com/application/unreleased-app-integration",
+          "kind": "other",
           "url": "https://developers.tiktok.com/application/unreleased-app-integration",
-          "label": "Complete your Integration Assessment for Unreleased App here",
           "form": "link"
         }
       ],
@@ -3325,9 +3217,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/trainingpeaks.html",
       "console_url": [
         {
-          "text": "https://api.trainingpeaks.com/request-access",
+          "kind": "other",
           "url": "https://api.trainingpeaks.com/request-access",
-          "label": "You need to request an API Partnership to get your OAth credentials",
           "form": "link"
         }
       ],
@@ -3357,9 +3248,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/trello.html",
       "console_url": [
         {
-          "text": "https://trello.com/app-key",
+          "kind": "app_registration",
           "url": "https://trello.com/app-key",
-          "label": "Register the application at",
           "form": "link"
         }
       ],
@@ -3392,16 +3282,14 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/tumblr_oauth2.html",
       "console_url": [
         {
-          "text": "https://www.tumblr.com/oauth/register",
+          "kind": "app_registration",
           "url": "https://www.tumblr.com/oauth/register",
-          "label": "App registration: create a new app via",
-          "form": "code"
+          "form": "link"
         },
         {
-          "text": "https://www.tumblr.com/oauth/apps",
+          "kind": "app_settings",
           "url": "https://www.tumblr.com/oauth/apps",
-          "label": "Use the tumblr keys tab of your application to fill in the form",
-          "form": "code"
+          "form": "link"
         }
       ],
       "allauth_callback_path": "/accounts/tumblr_oauth2/login/callback/",
@@ -3433,9 +3321,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/twitch.html",
       "console_url": [
         {
-          "text": "http://dev.twitch.tv/console",
+          "kind": "app_registration",
           "url": "http://dev.twitch.tv/console",
-          "label": "App registration (get your key and secret here)",
           "form": "link"
         }
       ],
@@ -3468,15 +3355,13 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/untappd.html",
       "console_url": [
         {
-          "text": "https://untappd.com/api/register?register=new",
+          "kind": "app_registration",
           "url": "https://untappd.com/api/register?register=new",
-          "label": "App registration",
           "form": "link"
         },
         {
-          "text": "https://untappd.com/api/dashboard",
+          "kind": "other",
           "url": "https://untappd.com/api/dashboard",
-          "label": "The configuration values come from your API dashboard on Untappd",
           "form": "link"
         }
       ],
@@ -3508,9 +3393,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/vimeo.html",
       "console_url": [
         {
-          "text": "https://developer.vimeo.com/apps",
+          "kind": "app_registration",
           "url": "https://developer.vimeo.com/apps",
-          "label": "App registration (get your key and secret here)",
           "form": "link"
         }
       ],
@@ -3543,9 +3427,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/vimeo_oauth2.html",
       "console_url": [
         {
-          "text": "https://developer.vimeo.com/apps",
+          "kind": "app_registration",
           "url": "https://developer.vimeo.com/apps",
-          "label": "App registration (get your key and secret here)",
           "form": "link"
         }
       ],
@@ -3578,9 +3461,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/vk.html",
       "console_url": [
         {
-          "text": "https://vk.com/editapp?act=create",
+          "kind": "app_registration",
           "url": "https://vk.com/editapp?act=create",
-          "label": "App registration",
           "form": "link"
         }
       ],
@@ -3613,9 +3495,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/wahoo.html",
       "console_url": [
         {
-          "text": "https://developers.wahooligan.com/applications/new",
+          "kind": "app_registration",
           "url": "https://developers.wahooligan.com/applications/new",
-          "label": "Register your OAuth2 app here",
           "form": "link"
         }
       ],
@@ -3645,10 +3526,9 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/weibo.html",
       "console_url": [
         {
-          "text": "http://open.weibo.com/apps",
+          "kind": "app_registration",
           "url": "http://open.weibo.com/apps",
-          "label": "Register your OAuth2 app over at",
-          "form": "text"
+          "form": "link"
         }
       ],
       "allauth_callback_path": "/accounts/weibo/login/callback/",
@@ -3709,9 +3589,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/windowslive.html",
       "console_url": [
         {
-          "text": "https://apps.dev.microsoft.com/#/appList",
+          "kind": "app_registration",
           "url": "https://apps.dev.microsoft.com/#/appList",
-          "label": "App registration (get your key and secret here)",
           "form": "link"
         }
       ],
@@ -3741,16 +3620,17 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/twitter.html",
       "console_url": [
         {
-          "text": "https://developer.x.com/en/portal/apps/new",
+          "kind": "app_registration",
           "url": "https://developer.x.com/en/portal/apps/new",
-          "label": "App registration: create a new app via",
-          "form": "code"
+          "form": "link"
         },
         {
-          "text": "https://developer.x.com/en/portal/apps/{{yourappid}}/keys",
+          "kind": "app_settings",
           "url": "https://developer.x.com/en/portal/apps/{{yourappid}}/keys",
-          "label": "Use the X keys tab of your application to fill in the form",
-          "form": "code"
+          "form": "template",
+          "placeholders": [
+            "yourappid"
+          ]
         }
       ],
       "allauth_callback_path": "/accounts/twitter/login/callback/",
@@ -3783,9 +3663,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/xing.html",
       "console_url": [
         {
-          "text": "https://dev.xing.com/applications",
+          "kind": "app_registration",
           "url": "https://dev.xing.com/applications",
-          "label": "App registration (get your key and secret here)",
           "form": "link"
         }
       ],
@@ -3817,9 +3696,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/yahoo.html",
       "console_url": [
         {
-          "text": "https://developer.yahoo.com/apps/create/",
+          "kind": "app_registration",
           "url": "https://developer.yahoo.com/apps/create/",
-          "label": "Register your OAuth2 app below and enter the resultant client id and secret into admin",
           "form": "link"
         }
       ],
@@ -3849,9 +3727,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/yandex.html",
       "console_url": [
         {
-          "text": "https://oauth.yandex.com/client/new",
+          "kind": "app_registration",
           "url": "https://oauth.yandex.com/client/new",
-          "label": "App registration (get key and secret here)",
           "form": "link"
         }
       ],
@@ -3881,9 +3758,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/ynab.html",
       "console_url": [
         {
-          "text": "https://app.youneedabudget.com/settings/developer",
+          "kind": "app_settings",
           "url": "https://app.youneedabudget.com/settings/developer",
-          "label": "App Registration",
           "form": "link"
         }
       ],
@@ -3913,9 +3789,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/zoho.html",
       "console_url": [
         {
-          "text": "https://api-console.zoho.com/add",
+          "kind": "app_registration",
           "url": "https://api-console.zoho.com/add",
-          "label": "App Registration",
           "form": "link"
         }
       ],
@@ -3947,9 +3822,8 @@
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/zoom.html",
       "console_url": [
         {
-          "text": "https://marketplace.zoom.us/develop/create",
+          "kind": "app_registration",
           "url": "https://marketplace.zoom.us/develop/create",
-          "label": "App Registration",
           "form": "link"
         }
       ],

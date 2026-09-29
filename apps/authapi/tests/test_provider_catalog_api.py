@@ -48,8 +48,20 @@ class OAuthProviderCatalogApiTests(APITestCase):
         self.client.force_authenticate(user=self.owner)
         response = self.client.get(self._url('/api/v1/oauth-provider-catalog'))
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['catalog_version'], '2')
         self.assertIn('providers', response.data)
         self.assertIn('callback_url', response.data)
+        self.assertEqual(
+            response.data['console_link_kinds'],
+            [
+                'app_registration',
+                'developer_console',
+                'app_settings',
+                'docs',
+                'other',
+            ],
+        )
+        self.assertEqual(response.data['console_link_forms'], ['link', 'template'])
         slugs = {item['docs_slug'] for item in response.data['providers']}
         self.assertIn('github', slugs)
         self.assertNotIn('twitter', slugs)
@@ -58,6 +70,25 @@ class OAuthProviderCatalogApiTests(APITestCase):
         self.assertTrue(response.data['callback_url'].endswith('/api/v1/oauth/callback'))
         self.assertTrue(github['callback_url'].endswith('/api/v1/oauth/callback'))
         self.assertNotIn('allauth_callback_path', github)
+        self.assertIn('console_url', github)
+        for link in github['console_url']:
+            self.assertIn(link['kind'], response.data['console_link_kinds'])
+            self.assertIn(link['form'], response.data['console_link_forms'])
+            self.assertIn('url', link)
+            self.assertNotIn('label', link)
+            self.assertNotIn('text', link)
+        for field in github.get('extra_settings_schema') or []:
+            self.assertIn('name', field)
+            self.assertNotIn('label', field)
+            self.assertNotIn('help_text', field)
+
+    def test_linkedin_console_url_strips_newapp_artifact(self):
+        catalog = get_provider_catalog()
+        linkedin = catalog.by_slug()['linkedin']
+        self.assertTrue(linkedin.console_url)
+        url = linkedin.console_url[0]['url']
+        self.assertNotIn('newapp=', url)
+        self.assertEqual(linkedin.console_url[0]['kind'], 'app_registration')
 
     def test_catalog_include_legacy(self):
         self.client.force_authenticate(user=self.owner)

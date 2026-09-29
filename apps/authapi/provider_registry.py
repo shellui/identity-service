@@ -16,21 +16,17 @@ CATALOG_PATH = Path(__file__).resolve().parent / 'provider_catalog.json'
 @dataclass(frozen=True)
 class ExtraSettingField:
     name: str
-    label: str
     type: str
     required: bool
     secret: bool
-    help_text: str = ''
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> ExtraSettingField:
         return cls(
             name=str(raw['name']),
-            label=str(raw.get('label') or raw['name']),
             type=str(raw.get('type') or 'string'),
             required=bool(raw.get('required')),
             secret=bool(raw.get('secret')),
-            help_text=str(raw.get('help_text') or ''),
         )
 
 

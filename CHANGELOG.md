@@ -36,9 +36,13 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 - URL-type provider settings are validated against private/loopback addresses at save time (SSRF mitigation for discovery `server_url`).
 - OAuth token exchange failures return a fixed client message instead of exception text.
 
+### 🚨 Changed
+
+- **OAuth provider catalog v2:** `console_url` entries are `{kind, url, form}` with optional `placeholders` (no embedded English). Extra settings schema exposes `name`, `type`, `required`, and `secret` only; Shellui admin translates by field name. `GET /api/v1/oauth-provider-catalog` adds `console_link_kinds` and `console_link_forms` for admin mapping.
+
 ### 📚 Documentation
 
-- Regenerated [docs/oauth-providers.md](docs/oauth-providers.md) from the catalog (CI drift check).
+- Regenerated [docs/oauth-providers.md](docs/oauth-providers.md) from the catalog (CI drift check). English labels for generated docs live in `tools/catalog_doc_strings_en.py`.
 
 ## [0.6.0] - 2026-09-29
 

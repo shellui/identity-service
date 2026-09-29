@@ -451,11 +451,9 @@ def _catalog_provider_payload(request, entry, *, include_unsupported: bool) -> d
         'extra_settings_schema': [
             {
                 'name': field.name,
-                'label': field.label,
                 'type': field.type,
                 'required': field.required,
                 'secret': field.secret,
-                'help_text': field.help_text,
             }
             for field in entry.extra_settings_schema
         ],
@@ -3135,7 +3133,11 @@ class ShellUIAdminOAuthClientListView(APIView):
             'Use top-level `callback_url` and each provider\'s `callback_url` when registering IdP '
             'redirect URIs in Shellui admin. These URLs are the identity-hosted '
             '`/api/v1/oauth/callback` endpoint for this request host. Do not use allauth\'s default '
-            '`/accounts/.../login/callback/` paths from provider docs.'
+            '`/accounts/.../login/callback/` paths from provider docs. '
+            'Each `console_url` entry is `{kind, url, form}` with optional `placeholders` when '
+            '`form` is `template`. Translate `kind` using `console_link_kinds` '
+            '(app_registration, developer_console, app_settings, docs, other). '
+            'Translate extra settings by field `name` (no English labels in the catalog).'
         ),
         parameters=[
             OpenApiParameter(
@@ -3168,10 +3170,14 @@ class ShellUIAdminOAuthProviderCatalogView(APIView):
             if entry.legacy and not include_legacy:
                 continue
             providers.append(_catalog_provider_payload(request, entry, include_unsupported=include_legacy))
+        from apps.authapi.oauth_catalog_meta import CONSOLE_LINK_FORMS, CONSOLE_LINK_KINDS
+
         return Response(
             {
                 'catalog_version': catalog.catalog_version,
                 'allauth_version': catalog.allauth_version,
+                'console_link_kinds': list(CONSOLE_LINK_KINDS),
+                'console_link_forms': list(CONSOLE_LINK_FORMS),
                 'callback_url': _identity_oauth_callback_url(request),
                 'providers': providers,
             }

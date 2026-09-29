@@ -10,6 +10,11 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 CATALOG_PATH = ROOT / 'apps' / 'authapi' / 'provider_catalog.json'
 OUT_PATH = ROOT / 'docs' / 'oauth-providers.md'
 
+import sys
+
+sys.path.insert(0, str(ROOT))
+from tools.catalog_doc_strings_en import CONSOLE_LINK_KIND_EN, EXTRA_SETTING_LABEL_EN  # noqa: E402
+
 TIER_HEADINGS = {
     'popular': 'Popular',
     'generic': 'Generic protocols',
@@ -34,10 +39,14 @@ def _console_links(console_url: list) -> str:
     for item in console_url or []:
         if not isinstance(item, dict):
             continue
-        url = str(item.get('url') or item.get('text') or '').strip()
+        url = str(item.get('url') or '').strip()
         if not url.startswith('http'):
             continue
-        label = str(item.get('label') or 'Developer console').strip()
+        kind = str(item.get('kind') or 'other')
+        label = CONSOLE_LINK_KIND_EN.get(kind, kind.replace('_', ' ').title())
+        if item.get('form') == 'template' and item.get('placeholders'):
+            placeholders = ', '.join(f'`{name}`' for name in item['placeholders'])
+            label = f'{label} (template: {placeholders})'
         links.append(f'{label}: `{url}`')
     return '<br />'.join(links) if links else '-'
 
@@ -50,7 +59,9 @@ def _extra_settings(entry: dict) -> str:
     for field in schema:
         req = 'required' if field.get('required') else 'optional'
         secret = ' (secret)' if field.get('secret') else ''
-        parts.append(f"`{field['name']}` ({req}{secret})")
+        name = field['name']
+        title = EXTRA_SETTING_LABEL_EN.get(name, name)
+        parts.append(f"{title} (`{name}`) ({req}{secret})")
     return ', '.join(parts)
 
 
