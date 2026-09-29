@@ -36,6 +36,13 @@ def _action_rule_payload(rule: ActionRule) -> dict:
     }
 
 
+def _action_rule_payload_with_secret(rule: ActionRule) -> dict:
+    """Same shape as rule GET, plus top-level plaintext signing secret (create/rotate only)."""
+    payload = _action_rule_payload(rule)
+    payload['secret'] = str((rule.config or {}).get('secret') or '')
+    return payload
+
+
 def _delivery_attempt_payload(row: DeliveryAttempt) -> dict:
     return {
         'id': row.pk,
@@ -164,8 +171,8 @@ class ShellUIAdminActionEventsView(APIView):
         responses={
             201: OpenApiResponse(
                 description=(
-                    'Created rule. When the server auto-generated a signing secret, '
-                    'the response includes top-level ``secret`` (shown once). '
+                    'Created webhook rule (same fields as GET ``/rules/<id>``) plus top-level '
+                    '``secret`` with the stored signing secret (generated or client-provided). '
                     '``config`` never includes plaintext secrets.'
                 ),
             ),
@@ -199,14 +206,11 @@ class ShellUIAdminActionRuleListCreateView(APIView):
             action_kind=ActionRule.ACTION_WEBHOOK,
             config={},
         )
-        cfg_err, generated_secret = _apply_rule_config(rule, data, actor=actor, partial=False)
+        cfg_err, _generated_secret = _apply_rule_config(rule, data, actor=actor, partial=False)
         if cfg_err:
             return cfg_err
         rule.save()
-        payload = _action_rule_payload(rule)
-        if generated_secret:
-            payload['secret'] = generated_secret
-        return Response(payload, status=status.HTTP_201_CREATED)
+        return Response(_action_rule_payload_with_secret(rule), status=status.HTTP_201_CREATED)
 
 
 @extend_schema_view(
@@ -309,12 +313,15 @@ class ShellUIAdminActionRuleSendTestView(APIView):
         tags=['actions-admin'],
         summary='Rotate webhook signing secret (staff or company owner)',
         description=(
-            'Generates a new ``whsec_`` signing secret and returns it once in the response. '
+            'Generates a new ``whsec_`` signing secret. Response matches GET '
+            '``/rules/<id>`` with top-level ``secret`` set to the new plaintext value. '
             'Update your n8n credential before the next delivery attempt.'
         ),
         operation_id='api_v1_actions_rules_rotate_secret',
         responses={
-            200: OpenApiResponse(description='New secret (shown once) and updated rule metadata'),
+            200: OpenApiResponse(
+                description='Rule payload (same as GET) plus top-level ``secret`` (shown once)',
+            ),
             404: OpenApiResponse(description='Rule not found'),
         },
     ),
@@ -336,14 +343,7 @@ class ShellUIAdminActionRuleRotateSecretView(APIView):
         config['secret'] = new_secret
         rule.config = config
         rule.save(update_fields=['config', 'updated_at'])
-        return Response(
-            {
-                'id': rule.pk,
-                'secret': new_secret,
-                'rule': _action_rule_payload(rule),
-            },
-            status=status.HTTP_200_OK,
-        )
+        return Response(_action_rule_payload_with_secret(rule), status=status.HTTP_200_OK)
 
 
 @extend_schema_view(

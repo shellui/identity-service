@@ -189,7 +189,7 @@ Same authentication as other Shellui admin endpoints: Bearer JWT (or PAT) plus `
 
 ### Example: create a webhook rule
 
-Omit `secret` (or send a blank value) to auto-generate a Standard Webhooks secret (`whsec_…`). The **create** response includes top-level `secret` **once** when the server generated it. If you supply your own `secret`, the create response does not repeat it.
+Omit `secret` (or send a blank value) to auto-generate a Standard Webhooks secret (`whsec_…`). The **create** response matches rule GET plus top-level `secret` with the stored plaintext (generated or client-provided). List, GET, and PATCH never include top-level `secret`.
 
 ```json
 POST /api/v1/actions/rules?company_id=1
@@ -200,19 +200,25 @@ POST /api/v1/actions/rules?company_id=1
 }
 ```
 
-Example **201** body when the secret was auto-generated:
+Example **201** body (same fields as GET `/rules/<id>`, plus `secret`):
 
 ```json
 {
   "id": 1,
-  "secret": "whsec_…",
+  "company_id": 1,
+  "name": "n8n user hook",
+  "event_type": "identity.user.created",
+  "enabled": true,
   "action_kind": "webhook",
+  "secret": "whsec_…",
   "config": {
     "url": "https://n8n.example.com/webhook/abc",
     "has_secret": true,
     "secret_hint": "abcd",
     "authorization_header_set": false
-  }
+  },
+  "created_at": "…",
+  "updated_at": "…"
 }
 ```
 
@@ -222,17 +228,29 @@ Example **201** body when the secret was auto-generated:
 POST /api/v1/actions/rules/1/rotate-secret?company_id=1
 ```
 
-**200** response (plaintext `secret` shown once; update n8n before the next delivery):
+**200** response uses the same flat shape as create and GET, with a new top-level `secret` (update n8n before the next delivery):
 
 ```json
 {
   "id": 1,
+  "company_id": 1,
+  "name": "n8n user hook",
+  "event_type": "identity.user.created",
+  "enabled": true,
+  "action_kind": "webhook",
   "secret": "whsec_…",
-  "rule": { "id": 1, "config": { "has_secret": true, "secret_hint": "wxyz", … } }
+  "config": {
+    "url": "https://n8n.example.com/webhook/abc",
+    "has_secret": true,
+    "secret_hint": "wxyz",
+    "authorization_header_set": false
+  },
+  "created_at": "…",
+  "updated_at": "…"
 }
 ```
 
-List, detail, and update responses never return the signing secret. Webhook config includes `has_secret`, optional `secret_hint` (last four characters), and `authorization_header_set` instead of plaintext values.
+List, detail, and update responses never include top-level `secret`. Webhook `config` includes `has_secret`, optional `secret_hint` (last four characters), and `authorization_header_set` instead of plaintext values.
 
 **Removed (admin UI):** email rule fields, email template endpoints, and `email_context_fields` on the events catalog. Magic-link email is always sent by identity on request (not configurable via Actions).
 

@@ -47,7 +47,8 @@ class ActionsAdminApiTests(TestCase):
         self.assertEqual(response.data['action_kind'], 'webhook')
         self.assertTrue(response.data['config']['has_secret'])
         self.assertEqual(response.data['config']['secret_hint'], 'test')
-        self.assertNotIn('secret', response.data)
+        self.assertEqual(response.data['secret'], 'whsec_test')
+        self.assertNotIn('secret', response.data['config'])
 
     def test_create_webhook_rule_auto_generates_secret(self):
         for payload in (
@@ -98,14 +99,30 @@ class ActionsAdminApiTests(TestCase):
             action_kind=ActionRule.ACTION_WEBHOOK,
             config={'url': 'https://example.com/h', 'secret': 'whsec_oldsecretvalue'},
         )
+        detail = self.client.get(self._url(f'/api/v1/actions/rules/{rule.pk}'))
+        self.assertEqual(detail.status_code, 200)
+
         response = self.client.post(self._url(f'/api/v1/actions/rules/{rule.pk}/rotate-secret'))
         self.assertEqual(response.status_code, 200)
         new_secret = response.data['secret']
         self.assertTrue(new_secret.startswith('whsec_'))
         self.assertNotEqual(new_secret, 'whsec_oldsecretvalue')
-        self.assertEqual(response.data['id'], rule.pk)
-        self.assertNotIn('secret', response.data['rule']['config'])
-        self.assertTrue(response.data['rule']['config']['has_secret'])
+        self.assertNotIn('rule', response.data)
+        self.assertNotIn('secret', detail.data)
+        for key in (
+            'id',
+            'company_id',
+            'name',
+            'description',
+            'event_type',
+            'enabled',
+            'action_kind',
+            'created_at',
+        ):
+            self.assertEqual(response.data[key], detail.data[key], key)
+        self.assertEqual(response.data['config']['url'], detail.data['config']['url'])
+        self.assertTrue(response.data['config']['has_secret'])
+        self.assertNotIn('secret', response.data['config'])
         rule.refresh_from_db()
         self.assertEqual(rule.config['secret'], new_secret)
 

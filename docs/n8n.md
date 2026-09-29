@@ -130,7 +130,7 @@ New secrets can use Standard Webhooks form: `whsec_` plus base64 key material. I
 
 Existing rules keep working with plain secrets. No database migration is required when you rotate to `whsec_`.
 
-When you create a webhook rule through the Shellui admin API, omit `secret` to receive a generated `whsec_` value once in the **create** response. Store it in n8n (credential or environment variable). To rotate, call `POST /api/v1/actions/rules/<id>/rotate-secret` and update n8n with the new `secret` from that response. List and detail rule calls never return the full secret.
+When you create a webhook rule through the Shellui admin API, the **201** response is the same shape as rule GET plus top-level `secret` (auto-generated when you omit `secret`, or echoing the value you sent). Store it in n8n (credential or environment variable). Rotate with `POST /api/v1/actions/rules/<id>/rotate-secret`: the **200** body matches GET plus a new top-level `secret`. List, GET, and PATCH rule calls never include top-level `secret`.
 
 You can also generate a secret in Python (Django shell):
 
