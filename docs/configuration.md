@@ -140,7 +140,7 @@ Examples:
 REDIS_URL=redis://redis:6379/0
 ```
 
-See [PUBLISH.md](https://github.com/shellui/identity-service/blob/develop/PUBLISH.md) for Coolify Redis setup.
+See [PUBLISH.md](https://github.com/shellui/identity-service/blob/main/PUBLISH.md) for Coolify Redis setup.
 
 ---
 
