@@ -10,6 +10,7 @@ from rest_framework.views import APIView
 from apps.actions.envelope import build_envelope
 from apps.actions.models import ActionOutbox, ActionRule, DeliveryAttempt
 from apps.actions.registry import all_event_types, event_field_doc_dict, get_event_type
+from apps.actions.sample_data import payload_data_from_event
 from apps.actions.rule_config import build_webhook_config, mask_config_for_response
 from apps.actions.serializers import ActionRuleCreateSerializer, ActionRuleUpdateSerializer
 from apps.actions.webhook_signing import generate_webhook_signing_secret
@@ -119,10 +120,7 @@ def _apply_rule_config(
 
 def _sample_payload(event_type: str, company) -> dict:
     event = get_event_type(event_type)
-    data = {}
-    for field in event.payload_fields:
-        if field.example is not None:
-            data[field.name] = field.example
+    data = payload_data_from_event(event, unique_values=False)
     return build_envelope(event_type=event_type, company=company, data=data)
 
 
