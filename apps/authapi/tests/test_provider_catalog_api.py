@@ -56,6 +56,8 @@ class OAuthProviderCatalogApiTests(APITestCase):
         github = next(item for item in response.data['providers'] if item['docs_slug'] == 'github')
         self.assertTrue(github['supported'])
         self.assertTrue(response.data['callback_url'].endswith('/api/v1/oauth/callback'))
+        self.assertTrue(github['callback_url'].endswith('/api/v1/oauth/callback'))
+        self.assertNotIn('allauth_callback_path', github)
 
     def test_catalog_include_legacy(self):
         self.client.force_authenticate(user=self.owner)

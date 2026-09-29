@@ -440,7 +440,6 @@ def _catalog_provider_payload(request, entry, *, include_unsupported: bool) -> d
         'docs_url': entry.docs_url,
         'console_url': entry.console_url,
         'callback_url': _identity_oauth_callback_url(request),
-        'allauth_callback_path': entry.allauth_callback_path,
         'extra_settings_schema': [
             {
                 'name': field.name,
@@ -3096,8 +3095,11 @@ class ShellUIAdminOAuthClientListView(APIView):
         tags=['oauth-social-apps'],
         summary='OAuth provider catalog for admin setup (staff or company owner)',
         description=(
-            'Lists django-allauth providers with setup metadata, extra settings schema, '
-            'and the identity-hosted callback URL for this request host.'
+            'Lists django-allauth providers with setup metadata and extra settings schema. '
+            'Use top-level `callback_url` and each provider\'s `callback_url` when registering IdP '
+            'redirect URIs in Shellui admin. These URLs are the identity-hosted '
+            '`/api/v1/oauth/callback` endpoint for this request host. Do not use allauth\'s default '
+            '`/accounts/.../login/callback/` paths from provider docs.'
         ),
         parameters=[
             OpenApiParameter(

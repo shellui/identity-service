@@ -39,7 +39,7 @@ def _console_links(console_url: list) -> str:
             continue
         label = str(item.get('label') or 'Developer console').strip()
         links.append(f'{label}: `{url}`')
-    return '<br />'.join(links) if links else '—'
+    return '<br />'.join(links) if links else '-'
 
 
 def _extra_settings(entry: dict) -> str:
@@ -57,20 +57,33 @@ def _extra_settings(entry: dict) -> str:
 def render_provider_row(entry: dict) -> str:
     supported = 'Yes' if entry.get('supported') else 'No'
     if not entry.get('supported') and entry.get('unsupported_reason'):
-        supported = f"No — {entry['unsupported_reason']}"
+        supported = f"No. {entry['unsupported_reason']}"
     docs_url = entry.get('docs_url') or ''
     docs_link = f"[allauth docs]({docs_url})" if docs_url else '—'
-    callback = entry.get('allauth_callback_path') or '—'
     return (
         f"| {_icon_cell(entry.get('icon') or {})} {entry.get('name')} "
         f"| `{entry.get('docs_slug')}` "
         f"| {entry.get('protocol') or '—'} "
         f"| {_console_links(entry.get('console_url') or [])} "
         f"| {docs_link} "
-        f"| `{callback}` "
         f"| {_extra_settings(entry)} "
         f"| {supported} |"
     )
+
+
+CALLBACK_SECTION = [
+    '## IdP callback URL (Shellui flow)',
+    '',
+    'Register **one** authorization callback URL on each IdP application. Point it at **identity-service**, not your Shellui shell. Do not add a query string.',
+    '',
+    '| Environment | Callback URL |',
+    '| ----------- | ------------ |',
+    '| Local | `http://localhost:8000/api/v1/oauth/callback` |',
+    '| Production | `https://<identity-host>/api/v1/oauth/callback` |',
+    '',
+    'django-allauth\'s default pattern is `/accounts/<provider>/login/callback/` when you mount stock allauth URLs. identity-service does **not** expose that path for the Shellui authorize flow (`GET /api/v1/authorize` → `GET /api/v1/oauth/callback`). If an allauth provider page lists a different callback path, treat it as documentation for vanilla allauth only. Shellui always uses the table above.',
+    '',
+]
 
 
 def main() -> int:
@@ -87,13 +100,13 @@ def main() -> int:
         '# OAuth providers',
         '',
         'identity-service ships a catalog of django-allauth social providers for Shellui admin setup.',
-        'Register each IdP app with the **identity-hosted callback** (`/api/v1/oauth/callback`), not the default allauth `/accounts/…` path.',
         'See [OAuth login](oauth-login.md) for the full authorize flow.',
         '',
         f"Catalog version **{catalog.get('catalog_version')}** (django-allauth **{catalog.get('allauth_version')}**).",
         '',
         '> This page is generated from `apps/authapi/provider_catalog.json`. Run `uv run python tools/render_oauth_providers_doc.py` after catalog changes.',
         '',
+        *CALLBACK_SECTION,
     ]
     for tier, heading in TIER_HEADINGS.items():
         entries = by_tier.get(tier) or []
@@ -103,8 +116,8 @@ def main() -> int:
             [
                 f'## {heading}',
                 '',
-                '| | Provider | Catalog id | Protocol | Developer console | allauth docs | allauth callback (reference) | Extra settings | Shellui supported |',
-                '| --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+                '| | Provider | Catalog id | Protocol | Developer console | allauth docs | Extra settings | Shellui supported |',
+                '| --- | --- | --- | --- | --- | --- | --- | --- |',
             ]
         )
         for entry in entries:
