@@ -136,7 +136,7 @@ See [PUBLISH.md](https://github.com/shellui/identity-service/blob/develop/PUBLIS
 
 | Variable | Default | Purpose |
 | -------- | ------- | ------- |
-| `SCIM_ENABLED` | `false` | When `false`, SCIM routes return **404** |
+| `SCIM_ENABLED` | `true` | When `false`, SCIM routes return **404** (emergency kill switch) |
 
 Documented in [SCIM](scim.md). Available on **`develop`** after migrations.
 

@@ -14,17 +14,17 @@ It supports OAuth login (stock: GitHub, Google, Microsoft; additional IdPs via d
 - User metadata endpoint (`/api/v1/user`)
 - Permissive API CORS by default (`CORS_ALLOW_ALL_ORIGINS=true`, `CORS_ALLOW_CREDENTIALS=false`) so hosted preview origins and custom shells can call JWT APIs without per-origin env edits; auth is Bearer JWT. OAuth token delivery stays strict via the company redirect allowlist (see [docs/oauth-login.md](docs/oauth-login.md))
 - OpenAPI docs with drf-spectacular
-- **Enterprise SCIM** (opt-in): per-company user and **nested group** provisioning for Okta / Entra ID / similar IdPs — see [docs/scim.md](docs/scim.md)
+- **Enterprise SCIM**: per-company user and **nested group** provisioning for Okta / Entra ID / similar IdPs — see [docs/scim.md](docs/scim.md)
 
-## Enterprise SCIM (optional)
+## Enterprise SCIM
 
-Set **`SCIM_ENABLED=true`** on the deployment to expose SCIM 2.0 user provisioning at:
+SCIM 2.0 user and group provisioning is available by default at:
 
 ```text
 /api/v1/companies/<company_id>/scim/v2/
 ```
 
-Create a **Company SCIM token** via Shellui admin (`GET/POST /api/v1/scim/tokens`, staff or company owner) or Django admin and configure your IdP with `Authorization: Bearer <token>`. Supports SCIM Users, Groups (including nested `type: Group` members), and SCIM-aligned `CompanyGroup` fields (`display_name`, `external_id`). Details: **[docs/scim.md](docs/scim.md)**.
+Each company turns SCIM on by creating a **Company SCIM token** in Shellui admin (`GET/POST /api/v1/scim/tokens`, staff or company owner) or Django admin, then configuring the IdP with `Authorization: Bearer <token>`. Revoke the token to turn SCIM off for that company. Set **`SCIM_ENABLED=false`** on the deployment only as an emergency kill switch (SCIM URLs return **404**). Supports SCIM Users, Groups (including nested `type: Group` members), and SCIM-aligned `CompanyGroup` fields (`display_name`, `external_id`). Details: **[docs/scim.md](docs/scim.md)**.
 
 ## Shellui webhooks (domain events)
 

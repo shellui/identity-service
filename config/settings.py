@@ -188,7 +188,7 @@ def _project_version():
 
 VERSION = _project_version()
 
-SCIM_ENABLED = _env_bool('SCIM_ENABLED', False)
+SCIM_ENABLED = _env_bool('SCIM_ENABLED', True)
 
 # Application definition
 
