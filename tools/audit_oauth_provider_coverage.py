@@ -31,10 +31,12 @@ from apps.authapi.tests.oauth_real_provider_harness import (
     authorize_get_path,
     build_profile_for_provider,
     discovery_document_for_slug,
-    oauth_provider_http_mock,
+    patch_oauth_http,
+    patch_verified_id_token_decode,
     prepare_social_app_for_audit,
 )
 from apps.companies.models import Company, CompanyOAuthClient
+from unittest import mock
 
 
 def _example_extra_settings(entry) -> dict:
@@ -81,34 +83,34 @@ def _try_slug(slug: str, *, company: Company, site: Site, factory: RequestFactor
     except Exception as exc:
         return f'profile fixture: {exc}'
     discovery = discovery_document_for_slug(slug)
+    http_session = patch_oauth_http(slug, profile_payload, discovery)
     try:
-        with oauth_provider_http_mock(
-            slug=slug,
-            request=request,
-            social_app=app,
-            profile=profile_payload,
-            discovery=discovery,
-        ):
-            authorize_url = build_authorize_url(
-                slug,
-                redirect_uri='https://app.example/callback',
-                state='state-token',
-                request=request,
-                company_id=company.id,
-                require_supported=False,
-            )
-            if not authorize_url.startswith('http'):
-                return 'authorize url missing'
-            exchange_query = {'code': 'abc'}
-            if slug == 'shopify':
-                exchange_query['shop'] = 'test-shop.myshopify.com'
-            exchange_request = factory.get('/api/v1/oauth/callback', exchange_query)
-            exchange_request.session = {}
-            exchange_allauth_code(
-                exchange_request,
-                social_app=app,
-                redirect_uri='https://app.example/callback',
-            )
+        with patch_verified_id_token_decode():
+            with mock.patch('apps.authapi.oauth_adapter_settings.safe_get_json', return_value=discovery):
+                with mock.patch(
+                    'apps.authapi.social_account_adapter.ShellUISocialAccountAdapter.get_requests_session',
+                    return_value=http_session,
+                ):
+                    authorize_url = build_authorize_url(
+                        slug,
+                        redirect_uri='https://app.example/callback',
+                        state='state-token',
+                        request=request,
+                        company_id=company.id,
+                        require_supported=False,
+                    )
+                    if not authorize_url.startswith('http'):
+                        return 'authorize url missing'
+                    exchange_query = {'code': 'abc'}
+                    if slug == 'shopify':
+                        exchange_query['shop'] = 'test-shop.myshopify.com'
+                    exchange_request = factory.get('/api/v1/oauth/callback', exchange_query)
+                    exchange_request.session = {}
+                    exchange_allauth_code(
+                        exchange_request,
+                        social_app=app,
+                        redirect_uri='https://app.example/callback',
+                    )
     except Exception as exc:
         return str(exc)
     finally:
