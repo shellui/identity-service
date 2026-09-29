@@ -25,6 +25,7 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 ### 🐛 Bug Fixes
 
+- **Webhook test send:** Admin "Send test event" generates fresh UUIDs and current timestamps in sample payload fields (for example `request_id`, `token_id`, `expires_at`) so repeated tests do not dedupe on fixed catalog examples. The events catalog `sample_envelope` preview keeps stable documented examples.
 - **Webhook HTTPS delivery:** Shellui webhook POSTs use a pinned TCP connect to the resolved IP while TLS SNI and certificate verification target the original hostname, fixing `server_hostname` errors on every HTTPS webhook.
 
 ### 🚨 Changed
