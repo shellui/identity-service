@@ -48,7 +48,7 @@ Magic-link sign-in emails are **not** Action rules. Identity sends them directly
 | `identity.scim.token.created` | Admin REST or Django admin token create | No secret in payload |
 | `identity.scim.token.revoked` | Token revoke | |
 | `identity.scim.provisioning_conflict` | SCIM 409 / displayName collision | Ties to `ScimProvisioningEvent` |
-| `identity.auth.magic_link.requested` | User requested a passwordless email sign-in link | Payload has `request_id`, `email`, `expires_at` — no secret or sign-in URL |
+| `identity.auth.magic_link.requested` | User requested a passwordless email sign-in link | Payload has `request_id`, `email`, `expires_at` (no secret or sign-in URL) |
 
 ### Envelope shape (webhooks)
 
@@ -141,7 +141,7 @@ Before delivery, identity **resolves the webhook hostname once**, rejects privat
 ## Delivery, retries, and cron
 
 - After commit, identity attempts delivery once in a background thread (bounded timeout; errors never fail the user request).
-- Failed deliveries schedule `next_attempt_at` with exponential backoff: **30s × 2^(attempt−1)**, capped at **1 hour**, up to **`ACTIONS_OUTBOX_MAX_ATTEMPTS`** (default **8**), then status **`dead`**.
+- Failed deliveries schedule `next_attempt_at` with exponential backoff: **30s * 2^(attempt-1)**, capped at **1 hour**, up to **`ACTIONS_OUTBOX_MAX_ATTEMPTS`** (default **8**), then status **`dead`**.
 - **Permanent failures** (most HTTP 4xx except **408** and **429**, SSRF block, disabled/deleted rule) go **dead** without further retries.
 - Each attempt is logged in **Delivery attempts** (HTTP status, error excerpt, duration).
 

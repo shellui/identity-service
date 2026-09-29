@@ -35,7 +35,7 @@ OAuth providers remain independent — a company can use magic link only, OAuth 
 - **`redirect_to`** must match the company OAuth redirect allowlist (same rules as OAuth login).
 - When magic link is **disabled**, the API returns **403** with `error_code: magic_link_disabled`.
 - When enabled, the API always returns **200** with a generic message (does not reveal whether the email exists).
-- Sends the sign-in email directly (EN/FR templates in identity-service). Optionally emits **`identity.auth.magic_link.requested`** to webhook Action rules (see [actions.md](actions.md)).
+- Sends the sign-in email directly from static Django templates in the repo (`apps/authapi/templates/authapi/magic_link/`, EN and FR, HTML and plain text, locale from user preference with EN fallback). Not configurable in admin or Actions. Optionally emits **`identity.auth.magic_link.requested`** to webhook Action rules (see [actions.md](actions.md)).
 
 Rate limits: `AUTH_RATE_LIMIT_MAGIC_LINK` (default 10/min) per client IP, email+company, and company.
 

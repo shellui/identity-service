@@ -151,9 +151,14 @@ class MagicLinkAuthTests(TestCase):
         msg = mail.outbox[0]
         self.assertEqual(msg.to, ['member@example.com'])
         self.assertIn('Sign in', msg.subject)
-        html_part = msg.alternatives[0][0]
+        row = MagicLinkToken.objects.get(company=self.company, email='member@example.com')
+        self.assertIn('token=', msg.body)
+        self.assertIn(row.token, msg.body)
+        self.assertEqual(len(msg.alternatives), 1)
+        html_part, mime = msg.alternatives[0]
+        self.assertEqual(mime, 'text/html')
         self.assertIn('token=', html_part)
-        self.assertNotIn('magic_link_url', html_part)
+        self.assertIn(row.token, html_part)
 
     def test_build_verify_url_uses_jwt_issuer(self):
         row = MagicLinkToken.objects.create(
