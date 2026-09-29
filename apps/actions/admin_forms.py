@@ -76,7 +76,9 @@ class ActionRuleAdminForm(forms.ModelForm):
         existing = (self.instance.config or {}) if self.instance.pk else {}
         secret = (cleaned.get('webhook_secret') or '').strip()
         if not secret and not existing.get('secret'):
-            self.add_error('webhook_secret', 'Signing secret is required for new webhook rules.')
+            from apps.actions.webhook_signing import generate_webhook_signing_secret
+
+            cleaned['webhook_secret'] = generate_webhook_signing_secret()
         return cleaned
 
     def _build_config(self) -> dict:

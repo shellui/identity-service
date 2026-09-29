@@ -182,23 +182,57 @@ Same authentication as other Shellui admin endpoints: Bearer JWT (or PAT) plus `
 | `PATCH` | `/api/v1/actions/rules/<id>` | Update fields or config |
 | `DELETE` | `/api/v1/actions/rules/<id>` | Delete a rule |
 | `POST` | `/api/v1/actions/rules/<id>/send-test` | POST a sample envelope to the rule URL (no outbox row) |
+| `POST` | `/api/v1/actions/rules/<id>/rotate-secret` | Generate a new `whsec_` signing secret (returned once) |
 | `GET` | `/api/v1/actions/deliveries` | Paginated delivery log |
 | `GET` | `/api/v1/actions/deliveries/<uuid>` | Delivery detail with `envelope` and `attempts` |
 | `POST` | `/api/v1/actions/deliveries/<uuid>/requeue` | Re-queue a row |
 
 ### Example: create a webhook rule
 
+Omit `secret` (or send a blank value) to auto-generate a Standard Webhooks secret (`whsec_…`). The **create** response includes top-level `secret` **once** when the server generated it. If you supply your own `secret`, the create response does not repeat it.
+
 ```json
 POST /api/v1/actions/rules?company_id=1
 {
   "name": "n8n user hook",
   "event_type": "identity.user.created",
-  "url": "https://n8n.example.com/webhook/abc",
-  "secret": "whsec_…"
+  "url": "https://n8n.example.com/webhook/abc"
 }
 ```
 
-List and detail responses expose webhook `secret_set` and `authorization_header_set` instead of plaintext secrets.
+Example **201** body when the secret was auto-generated:
+
+```json
+{
+  "id": 1,
+  "secret": "whsec_…",
+  "action_kind": "webhook",
+  "config": {
+    "url": "https://n8n.example.com/webhook/abc",
+    "has_secret": true,
+    "secret_hint": "abcd",
+    "authorization_header_set": false
+  }
+}
+```
+
+### Rotate signing secret
+
+```json
+POST /api/v1/actions/rules/1/rotate-secret?company_id=1
+```
+
+**200** response (plaintext `secret` shown once; update n8n before the next delivery):
+
+```json
+{
+  "id": 1,
+  "secret": "whsec_…",
+  "rule": { "id": 1, "config": { "has_secret": true, "secret_hint": "wxyz", … } }
+}
+```
+
+List, detail, and update responses never return the signing secret. Webhook config includes `has_secret`, optional `secret_hint` (last four characters), and `authorization_header_set` instead of plaintext values.
 
 **Removed (admin UI):** email rule fields, email template endpoints, and `email_context_fields` on the events catalog. Magic-link email is always sent by identity on request (not configurable via Actions).
 

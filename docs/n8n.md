@@ -130,7 +130,9 @@ New secrets can use Standard Webhooks form: `whsec_` plus base64 key material. I
 
 Existing rules keep working with plain secrets. No database migration is required when you rotate to `whsec_`.
 
-Generate a secret in Python (Django shell):
+When you create a webhook rule through the Shellui admin API, omit `secret` to receive a generated `whsec_` value once in the **create** response. Store it in n8n (credential or environment variable). To rotate, call `POST /api/v1/actions/rules/<id>/rotate-secret` and update n8n with the new `secret` from that response. List and detail rule calls never return the full secret.
+
+You can also generate a secret in Python (Django shell):
 
 ```python
 from apps.actions.webhook_signing import generate_webhook_signing_secret
