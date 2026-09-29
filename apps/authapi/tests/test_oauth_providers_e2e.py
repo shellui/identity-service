@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest import mock
-
 from allauth.socialaccount.models import SocialApp
 from django.contrib.sites.models import Site
 from django.test import RequestFactory, TestCase
@@ -19,8 +17,7 @@ from apps.authapi.tests.oauth_real_provider_harness import (
     authorize_get_path,
     build_profile_for_provider,
     discovery_document_for_slug,
-    patch_oauth_http,
-    patch_verified_id_token_decode,
+    oauth_provider_http_mock,
     prepare_social_app_for_audit,
 )
 from apps.companies.models import Company, CompanyOAuthClient
@@ -99,53 +96,50 @@ class OAuthProviderE2ETests(TestCase):
                 request.session = {}
                 profile_payload = build_profile_for_provider(request, slug, app)
                 discovery = discovery_document_for_slug(slug)
-                http_session = patch_oauth_http(slug, profile_payload, discovery)
-                with patch_verified_id_token_decode():
-                    with mock.patch(
-                        'apps.authapi.oauth_adapter_settings.safe_get_json',
-                        return_value=discovery,
-                    ):
-                        with mock.patch(
-                            'apps.authapi.social_account_adapter.ShellUISocialAccountAdapter.get_requests_session',
-                            return_value=http_session,
-                        ):
-                            authorize_url = build_authorize_url(
-                                slug,
-                                redirect_uri='https://app.example/callback',
-                                state='state-token',
-                                request=request,
-                                company_id=self.company.id,
-                            )
-                            self.assertIn('state=', authorize_url)
-                            parsed_host = authorize_url.split('/')[2]
-                            self.assertTrue(parsed_host)
+                with oauth_provider_http_mock(
+                    slug=slug,
+                    request=request,
+                    social_app=app,
+                    profile=profile_payload,
+                    discovery=discovery,
+                ):
+                    authorize_url = build_authorize_url(
+                        slug,
+                        redirect_uri='https://app.example/callback',
+                        state='state-token',
+                        request=request,
+                        company_id=self.company.id,
+                    )
+                    self.assertIn('state=', authorize_url)
+                    parsed_host = authorize_url.split('/')[2]
+                    self.assertTrue(parsed_host)
 
-                            exchange_query = {'code': 'abc'}
-                            if slug == 'shopify':
-                                exchange_query['shop'] = 'test-shop.myshopify.com'
-                            exchange_request = self.factory.get(
-                                '/api/v1/oauth/callback',
-                                exchange_query,
-                            )
-                            exchange_request.session = {}
-                            bundle = exchange_code_for_token(
-                                slug,
-                                'abc',
-                                redirect_uri='https://app.example/callback',
-                                request=exchange_request,
-                                company_id=self.company.id,
-                            )
-                            self.assertTrue(bundle.access_token)
-                            sociallogin, _token_data = exchange_allauth_code(
-                                exchange_request,
-                                social_app=get_social_app_for_client(
-                                    resolve_oauth_client(slug, company_id=self.company.id)
-                                ),
-                                redirect_uri='https://app.example/callback',
-                            )
-                            userinfo = sociallogin_userinfo(sociallogin)
-                            self.assertTrue(sociallogin.account.uid)
-                            self.assertTrue(userinfo.get('email') or userinfo.get('id'))
+                    exchange_query = {'code': 'abc'}
+                    if slug == 'shopify':
+                        exchange_query['shop'] = 'test-shop.myshopify.com'
+                    exchange_request = self.factory.get(
+                        '/api/v1/oauth/callback',
+                        exchange_query,
+                    )
+                    exchange_request.session = {}
+                    bundle = exchange_code_for_token(
+                        slug,
+                        'abc',
+                        redirect_uri='https://app.example/callback',
+                        request=exchange_request,
+                        company_id=self.company.id,
+                    )
+                    self.assertTrue(bundle.access_token)
+                    sociallogin, _token_data = exchange_allauth_code(
+                        exchange_request,
+                        social_app=get_social_app_for_client(
+                            resolve_oauth_client(slug, company_id=self.company.id)
+                        ),
+                        redirect_uri='https://app.example/callback',
+                    )
+                    userinfo = sociallogin_userinfo(sociallogin)
+                    self.assertTrue(sociallogin.account.uid)
+                    self.assertTrue(userinfo.get('email') or userinfo.get('id'))
 
 
 class OAuthProviderAuditSlugTests(TestCase):
