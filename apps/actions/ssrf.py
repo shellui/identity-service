@@ -24,11 +24,32 @@ class ResolvedWebhookEndpoint:
     path: str
 
 
+_NAT64 = ipaddress.ip_network('64:ff9b::/96')
+_SIX2FOUR = ipaddress.ip_network('2002::/16')
+_IPV4_COMPAT = ipaddress.ip_network('::/96')
+_IPV4_MAPPED = ipaddress.ip_network('::ffff:0:0/96')
+
+
+def _embedded_ipv4(ip: ipaddress.IPv6Address) -> ipaddress.IPv4Address | None:
+    mapped = ip.ipv4_mapped
+    if mapped is not None:
+        return mapped
+    if ip in _NAT64:
+        return ipaddress.IPv4Address(int(ip) & 0xFFFFFFFF)
+    if ip in _SIX2FOUR:
+        return ipaddress.IPv4Address((int(ip) >> 80) & 0xFFFFFFFF)
+    if ip in _IPV4_COMPAT and ip not in _IPV4_MAPPED:
+        return ipaddress.IPv4Address(int(ip) & 0xFFFFFFFF)
+    return None
+
+
 def _validate_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address, *, allow_private: bool) -> None:
     if allow_private:
         return
-    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
-        ip = ip.ipv4_mapped
+    if isinstance(ip, ipaddress.IPv6Address):
+        embedded = _embedded_ipv4(ip)
+        if embedded is not None:
+            ip = embedded
     if not ip.is_global:
         raise SSRFError('Webhook URL resolves to a private or non-public address.')
 
