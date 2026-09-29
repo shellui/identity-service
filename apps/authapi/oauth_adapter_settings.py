@@ -23,7 +23,7 @@ def _bind_adapter_url_properties(
 ) -> None:
     cls = adapter.__class__
     adapter.__class__ = type(
-        f'ShellUI{cls.__name__}',
+        f'Shellui{cls.__name__}',
         (cls,),
         {
             'authorize_url': property(lambda self, url=authorize_url: url),
