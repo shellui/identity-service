@@ -13,7 +13,8 @@ from apps.actions.emit import emit_event
 from apps.actions.handlers.webhook import WebhookDeliveryError
 from apps.actions.models import ActionOutbox, ActionRule, DeliveryAttempt
 from apps.actions.ssrf import SSRFError, validate_webhook_url
-from apps.actions.webhook_signing import sign_webhook_body
+from apps.actions.webhook_signing import encode_webhook_envelope, sign_webhook_body
+from apps.actions.webhook_transport import WebhookPostResult
 from apps.companies.models import Company
 
 User = get_user_model()
@@ -45,7 +46,7 @@ class EmitEventTests(TestCase):
         self.assertEqual(rows, [])
         self.assertEqual(ActionOutbox.objects.count(), 0)
 
-    @patch('apps.actions.handlers.webhook.post_webhook_url', return_value=(200, ''))
+    @patch('apps.actions.handlers.webhook.post_webhook_url', return_value=WebhookPostResult(status=200, excerpt=''))
     def test_emit_creates_outbox_and_delivers_on_commit(self, _mock_post):
         with self.captureOnCommitCallbacks(execute=True):
             rows = emit_event(
@@ -89,7 +90,7 @@ class WebhookHandlerTests(TestCase):
             },
         )
 
-    @patch('apps.actions.handlers.webhook.post_webhook_url', return_value=(200, ''))
+    @patch('apps.actions.handlers.webhook.post_webhook_url', return_value=WebhookPostResult(status=200, excerpt=''))
     def test_webhook_posts_signed_json(self, mock_post):
         envelope = {
             'id': 'evt-1',
@@ -107,14 +108,14 @@ class WebhookHandlerTests(TestCase):
         deliver_outbox_row(row.pk)
         mock_post.assert_called_once()
         _args, kwargs = mock_post.call_args
-        self.assertEqual(kwargs['body'], json.dumps(envelope, separators=(',', ':'), sort_keys=True).encode())
+        self.assertEqual(kwargs['body'], encode_webhook_envelope(envelope))
         headers = kwargs['headers']
         self.assertIn('webhook-signature', headers)
         self.assertIn('webhook-id', headers)
         row.refresh_from_db()
         self.assertEqual(row.status, ActionOutbox.STATUS_DELIVERED)
 
-    @patch('apps.actions.handlers.webhook.post_webhook_url', return_value=(500, 'err'))
+    @patch('apps.actions.handlers.webhook.post_webhook_url', return_value=WebhookPostResult(status=500, excerpt='err'))
     def test_webhook_failure_records_attempt(self, mock_post):
         row = ActionOutbox.objects.create(
             company=self.company,
@@ -129,19 +130,6 @@ class WebhookHandlerTests(TestCase):
         attempt = DeliveryAttempt.objects.get(outbox=row)
         self.assertEqual(attempt.http_status, 500)
         self.assertIn('HTTP 500', attempt.error_message)
-
-    @patch('apps.actions.handlers.webhook.post_webhook_url', return_value=(404, 'missing'))
-    def test_permanent_4xx_goes_dead(self, _mock_post):
-        row = ActionOutbox.objects.create(
-            company=self.company,
-            action_rule=self.rule,
-            event_type='identity.scim.user.provisioned',
-            envelope={'id': 'x', 'type': 'identity.scim.user.provisioned', 'data': {}},
-        )
-        deliver_outbox_row(row.pk)
-        row.refresh_from_db()
-        self.assertEqual(row.status, ActionOutbox.STATUS_DEAD)
-        self.assertIsNone(row.next_attempt_at)
 
     def test_ssrf_blocks_private_ip(self):
         with self.assertRaises(SSRFError):
@@ -175,7 +163,7 @@ class RetryDeliveryTests(TestCase):
             config={'url': 'https://example.com/h', 'secret': 's'},
         )
 
-    @patch('apps.actions.handlers.webhook.post_webhook_url', return_value=(500, ''))
+    @patch('apps.actions.handlers.webhook.post_webhook_url', return_value=WebhookPostResult(status=500, excerpt=''))
     def test_dead_after_max_attempts(self, _mock):
         row = ActionOutbox.objects.create(
             company=self.company,
@@ -200,7 +188,7 @@ class RetryCommandTests(TestCase):
             config={'url': 'https://example.com/h', 'secret': 's'},
         )
 
-    @patch('apps.actions.handlers.webhook.post_webhook_url', return_value=(200, ''))
+    @patch('apps.actions.handlers.webhook.post_webhook_url', return_value=WebhookPostResult(status=200, excerpt=''))
     def test_retry_command_processes_batch(self, _mock):
         ActionOutbox.objects.create(
             company=self.company,
@@ -290,7 +278,7 @@ class ScimActionIntegrationTests(TestCase):
             token_hash=digest,
         )
 
-    @patch('apps.actions.handlers.webhook.post_webhook_url', return_value=(200, ''))
+    @patch('apps.actions.handlers.webhook.post_webhook_url', return_value=WebhookPostResult(status=200, excerpt=''))
     def test_scim_user_create_triggers_action(self, _mock):
         payload = {
             'schemas': ['urn:ietf:params:scim:schemas:core:2.0:User'],

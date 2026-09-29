@@ -12,6 +12,7 @@ from apps.actions.models import ActionOutbox, ActionRule, DeliveryAttempt
 from apps.actions.registry import all_event_types, event_field_doc_dict, get_event_type
 from apps.actions.rule_config import build_webhook_config, mask_config_for_response
 from apps.actions.serializers import ActionRuleCreateSerializer, ActionRuleUpdateSerializer
+from apps.actions.webhook_signing import generate_webhook_signing_secret
 from apps.actions.webhook_test_send import send_webhook_test_for_rule
 from apps.authapi.permissions import ShellUIPermission
 from apps.authapi.serializers import ShellUIOpenAPISerializer
@@ -33,6 +34,13 @@ def _action_rule_payload(rule: ActionRule) -> dict:
         'created_at': rule.created_at.isoformat(),
         'updated_at': rule.updated_at.isoformat(),
     }
+
+
+def _action_rule_payload_with_secret(rule: ActionRule) -> dict:
+    """Same shape as rule GET, plus top-level plaintext signing secret (create/rotate only)."""
+    payload = _action_rule_payload(rule)
+    payload['secret'] = str((rule.config or {}).get('secret') or '')
+    return payload
 
 
 def _delivery_attempt_payload(row: DeliveryAttempt) -> dict:
@@ -83,14 +91,17 @@ def _apply_rule_config(
     *,
     actor,
     partial: bool,
-) -> Response | None:
+) -> tuple[Response | None, str | None]:
     existing = dict(rule.config or {})
     is_superuser = bool(getattr(actor, 'is_superuser', False))
+    secret_in_body = 'secret' in data
+    provided_secret = (data.get('secret') or '').strip() if secret_in_body else ''
+    auto_generate = not partial and not provided_secret
     try:
-        rule.config = build_webhook_config(
+        rule.config, generated_secret = build_webhook_config(
             existing=existing,
             url=data.get('url') if 'url' in data else (None if partial else existing.get('url')),
-            secret=data.get('secret') if 'secret' in data else None,
+            secret=data.get('secret') if secret_in_body else None,
             authorization_header=data.get('authorization_header')
             if 'authorization_header' in data
             else None,
@@ -99,10 +110,11 @@ def _apply_rule_config(
             else None,
             is_superuser=is_superuser,
             partial=partial,
+            auto_generate_secret=auto_generate,
         )
     except DjangoValidationError as exc:
-        return _validation_error_response(exc)
-    return None
+        return _validation_error_response(exc), None
+    return None, generated_secret
 
 
 def _sample_payload(event_type: str, company) -> dict:
@@ -156,6 +168,15 @@ class ShellUIAdminActionEventsView(APIView):
         summary='Create company action rule (staff or company owner)',
         request=ActionRuleCreateSerializer,
         operation_id='api_v1_actions_rules_create',
+        responses={
+            201: OpenApiResponse(
+                description=(
+                    'Created webhook rule (same fields as GET ``/rules/<id>``) plus top-level '
+                    '``secret`` with the stored signing secret (generated or client-provided). '
+                    '``config`` never includes plaintext secrets.'
+                ),
+            ),
+        },
     ),
 )
 class ShellUIAdminActionRuleListCreateView(APIView):
@@ -185,11 +206,11 @@ class ShellUIAdminActionRuleListCreateView(APIView):
             action_kind=ActionRule.ACTION_WEBHOOK,
             config={},
         )
-        cfg_err = _apply_rule_config(rule, data, actor=actor, partial=False)
+        cfg_err, _generated_secret = _apply_rule_config(rule, data, actor=actor, partial=False)
         if cfg_err:
             return cfg_err
         rule.save()
-        return Response(_action_rule_payload(rule), status=status.HTTP_201_CREATED)
+        return Response(_action_rule_payload_with_secret(rule), status=status.HTTP_201_CREATED)
 
 
 @extend_schema_view(
@@ -240,7 +261,7 @@ class ShellUIAdminActionRuleDetailView(APIView):
         for field in ('name', 'description', 'event_type', 'enabled'):
             if field in data:
                 setattr(rule, field, data[field])
-        cfg_err = _apply_rule_config(rule, data, actor=actor, partial=True)
+        cfg_err, _generated = _apply_rule_config(rule, data, actor=actor, partial=True)
         if cfg_err:
             return cfg_err
         rule.action_kind = ActionRule.ACTION_WEBHOOK
@@ -285,6 +306,44 @@ class ShellUIAdminActionRuleSendTestView(APIView):
         except Exception as exc:  # noqa: BLE001
             return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(result, status=status.HTTP_200_OK)
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=['actions-admin'],
+        summary='Rotate webhook signing secret (staff or company owner)',
+        description=(
+            'Generates a new ``whsec_`` signing secret. Response matches GET '
+            '``/rules/<id>`` with top-level ``secret`` set to the new plaintext value. '
+            'Update your n8n credential before the next delivery attempt.'
+        ),
+        operation_id='api_v1_actions_rules_rotate_secret',
+        responses={
+            200: OpenApiResponse(
+                description='Rule payload (same as GET) plus top-level ``secret`` (shown once)',
+            ),
+            404: OpenApiResponse(description='Rule not found'),
+        },
+    ),
+)
+class ShellUIAdminActionRuleRotateSecretView(APIView):
+    permission_classes = [ShellUIPermission]
+    serializer_class = ShellUIOpenAPISerializer
+
+    def post(self, request, pk):
+        _actor, company, err = _require_staff_or_company_owner(request)
+        if err:
+            return err
+        try:
+            rule = ActionRule.objects.get(pk=pk, company=company)
+        except ActionRule.DoesNotExist:
+            return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        new_secret = generate_webhook_signing_secret()
+        config = dict(rule.config or {})
+        config['secret'] = new_secret
+        rule.config = config
+        rule.save(update_fields=['config', 'updated_at'])
+        return Response(_action_rule_payload_with_secret(rule), status=status.HTTP_200_OK)
 
 
 @extend_schema_view(

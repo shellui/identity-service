@@ -5,6 +5,14 @@ from __future__ import annotations
 from django.core.exceptions import ValidationError
 
 from apps.actions.models import ActionRule
+from apps.actions.webhook_signing import generate_webhook_signing_secret
+
+
+def _secret_hint(secret: str) -> str | None:
+    s = (secret or '').strip()
+    if len(s) < 4:
+        return None
+    return s[-4:]
 
 
 def build_webhook_config(
@@ -16,8 +24,16 @@ def build_webhook_config(
     allow_private_urls: bool | None = None,
     is_superuser: bool,
     partial: bool,
-) -> dict:
+    auto_generate_secret: bool = False,
+) -> tuple[dict, str | None]:
+    """
+    Build webhook rule config.
+
+    Returns ``(config, generated_secret)``. ``generated_secret`` is set when a new
+    ``whsec_`` secret was created because none was provided on create.
+    """
     cfg = dict(existing or {})
+    generated_secret: str | None = None
     if url is not None or not partial:
         cfg['url'] = (url if url is not None else cfg.get('url') or '').strip()
     if not cfg.get('url'):
@@ -29,10 +45,17 @@ def build_webhook_config(
             cfg['secret'] = secret_s
         elif existing.get('secret'):
             cfg['secret'] = existing['secret']
+        elif not partial and auto_generate_secret:
+            generated_secret = generate_webhook_signing_secret()
+            cfg['secret'] = generated_secret
         elif not partial:
             raise ValidationError('Webhook signing secret is required for new webhook rules.')
     elif not partial and not cfg.get('secret'):
-        raise ValidationError('Webhook signing secret is required for new webhook rules.')
+        if auto_generate_secret:
+            generated_secret = generate_webhook_signing_secret()
+            cfg['secret'] = generated_secret
+        else:
+            raise ValidationError('Webhook signing secret is required for new webhook rules.')
     elif existing.get('secret'):
         cfg['secret'] = existing['secret']
 
@@ -53,14 +76,18 @@ def build_webhook_config(
     elif not partial:
         if existing.get('allow_private_urls'):
             cfg['allow_private_urls'] = True
-    return cfg
+    return cfg, generated_secret
 
 
 def mask_config_for_response(config: dict, action_kind: str) -> dict:
     cfg = dict(config or {})
     if action_kind == ActionRule.ACTION_WEBHOOK:
+        raw_secret = (config or {}).get('secret') or ''
         cfg.pop('secret', None)
         cfg.pop('authorization_header', None)
-        cfg['secret_set'] = bool((config or {}).get('secret'))
+        cfg['has_secret'] = bool(raw_secret)
+        hint = _secret_hint(str(raw_secret))
+        if hint:
+            cfg['secret_hint'] = hint
         cfg['authorization_header_set'] = bool((config or {}).get('authorization_header'))
     return cfg
