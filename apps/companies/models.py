@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.db import models
+from django.db.models import Q
 from django.utils.text import slugify
 from allauth.socialaccount.models import SocialApp
 
@@ -76,6 +77,13 @@ class Company(models.Model):
         blank=True,
         help_text='Lowercase domains without @ (e.g. ["acme.com"]). Used when access mode is Domain.',
     )
+    enable_magic_link = models.BooleanField(
+        default=True,
+        help_text=(
+            'When true (default for new companies), users can request passwordless email magic links '
+            'for this company. Requires deployment MAGIC_LINK_ENABLED.'
+        ),
+    )
 
     class Meta:
         ordering = ['name']
@@ -96,26 +104,101 @@ class Company(models.Model):
 
 
 class CompanyGroup(models.Model):
+    SOURCE_MANUAL = 'manual'
+    SOURCE_SCIM = 'scim'
+    SOURCE_CHOICES = [
+        (SOURCE_MANUAL, 'Manual'),
+        (SOURCE_SCIM, 'SCIM'),
+    ]
+
     company = models.ForeignKey(
         Company,
         on_delete=models.CASCADE,
         related_name='groups',
     )
-    name = models.CharField(max_length=150)
+    source = models.CharField(
+        max_length=20,
+        choices=SOURCE_CHOICES,
+        default=SOURCE_MANUAL,
+        db_index=True,
+        help_text='manual = Shellui admin; scim = IdP provisioning (read-only in admin REST).',
+    )
+    display_name = models.CharField(
+        max_length=150,
+        help_text='SCIM displayName (unique per company).',
+    )
+    external_id = models.CharField(
+        max_length=254,
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text='SCIM externalId from the provisioning client (unique per company when set).',
+    )
     members = models.ManyToManyField(
         settings.AUTH_USER_MODEL,
         related_name='company_groups',
         blank=True,
+        help_text='Direct user members (SCIM members with type User).',
+    )
+    member_groups = models.ManyToManyField(
+        'self',
+        symmetrical=False,
+        related_name='parent_groups',
+        blank=True,
+        help_text='Nested SCIM group members (type Group). Same company only; cycles rejected.',
     )
 
     class Meta:
-        ordering = ['name']
+        ordering = ['display_name']
         constraints = [
-            models.UniqueConstraint(fields=['company', 'name'], name='company_group_unique_name_per_company'),
+            models.UniqueConstraint(
+                fields=['company', 'display_name'],
+                name='company_group_unique_display_name_per_company',
+            ),
+            models.UniqueConstraint(
+                fields=['company', 'external_id'],
+                name='company_group_unique_external_id_per_company',
+                condition=Q(external_id__isnull=False) & ~Q(external_id=''),
+            ),
         ]
 
+    @property
+    def scim_external_id(self):
+        return self.external_id
+
+    @scim_external_id.setter
+    def scim_external_id(self, value):
+        self.external_id = (value or '').strip() or None
+
+    @classmethod
+    def create_scim_provisioned(cls, *, company, display_name, **fields):
+        group = cls(
+            company=company,
+            display_name=display_name,
+            source=cls.SOURCE_SCIM,
+            **fields,
+        )
+        group.save(scim_source=True)
+        return group
+
+    def save(self, *args, **kwargs):
+        scim_source = kwargs.pop('scim_source', False)
+        previous = None
+        if self.pk:
+            previous = (
+                CompanyGroup.objects.filter(pk=self.pk).values_list('source', flat=True).first()
+            )
+        if self.source == self.SOURCE_SCIM and not scim_source:
+            if not self.pk or previous != self.SOURCE_SCIM:
+                raise ValueError(
+                    'Company group source scim may only be set via SCIM provisioning.'
+                )
+        if previous == self.SOURCE_SCIM and self.source == self.SOURCE_MANUAL:
+            raise ValueError('SCIM-provisioned groups cannot be changed to manual source.')
+        super().save(*args, **kwargs)
+
     def __str__(self) -> str:
-        return f'{self.company_id}:{self.name}'
+        return f'{self.company_id}:{self.display_name}'
 
 
 class CompanyOAuthClient(models.Model):

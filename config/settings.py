@@ -95,6 +95,28 @@ def _env_int(name, default: int) -> int:
         raise ImproperlyConfigured(f'{name} must be an integer. Got: {raw!r}') from exc
 
 
+def _caches_config(redis_url: str) -> dict:
+    """
+    Shared cache for auth rate limits, access-token denylist, and activity throttles.
+
+    When ``REDIS_URL`` is set, use Django's Redis backend (requires the ``redis`` package).
+    Otherwise use in-process LocMem (fine for single-process dev; not shared across Gunicorn workers).
+    """
+    if redis_url:
+        return {
+            'default': {
+                'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+                'LOCATION': redis_url,
+            }
+        }
+    return {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+            'LOCATION': 'identity-service-auth',
+        }
+    }
+
+
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
@@ -149,6 +171,12 @@ SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 # only when REMOTE_ADDR matches one of these entries. See docs/security-hardening.md.
 TRUSTED_PROXY_IPS = _env_csv('TRUSTED_PROXY_IPS', ())
 
+# Self-service DELETE /api/v1/user: access JWT ``iat`` must be within this age (not PATs).
+SELF_SERVICE_ACCOUNT_DELETE_MAX_IAT_AGE = _env_duration(
+    'SELF_SERVICE_ACCOUNT_DELETE_MAX_IAT_AGE',
+    timedelta(minutes=5),
+)
+
 # Loopback OAuth redirect targets (127.0.0.1 / localhost / ::1) are allowed only when DEBUG or
 # OAUTH_ALLOW_LOOPBACK_REDIRECTS=true (local CLI / dev shells).
 OAUTH_ALLOW_LOOPBACK_REDIRECTS = _env_bool('OAUTH_ALLOW_LOOPBACK_REDIRECTS', DEBUG)
@@ -165,6 +193,8 @@ def _project_version():
 
 
 VERSION = _project_version()
+
+SCIM_ENABLED = _env_bool('SCIM_ENABLED', True)
 
 # Application definition
 
@@ -187,6 +217,10 @@ INSTALLED_APPS = [
     'drf_spectacular',
     'apps.authapi',
     'apps.companies',
+    'apps.scim',
+    'apps.actions',
+    'django_scim',
+    'config.apps.ConfigConfig',
 ]
 
 REST_FRAMEWORK = {
@@ -241,6 +275,9 @@ MIDDLEWARE = [
     'apps.authapi.middleware.AdminLoginRateLimitMiddleware',
 ]
 
+_auth_middleware_index = MIDDLEWARE.index('django.contrib.auth.middleware.AuthenticationMiddleware')
+MIDDLEWARE.insert(_auth_middleware_index + 1, 'apps.scim.middleware.ScimBearerAuthMiddleware')
+
 ROOT_URLCONF = 'config.urls'
 
 TEMPLATES = [
@@ -285,6 +322,17 @@ EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'false').strip().lower() in {'1', 'tr
 EMAIL_USE_SSL = os.getenv('EMAIL_USE_SSL', 'false').strip().lower() in {'1', 'true', 'yes', 'on'}
 DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@localhost')
 
+# Action triggers (domain events → webhooks). DB outbox; no Celery required.
+ACTIONS_WEBHOOK_TIMEOUT_SECONDS = _env_float('ACTIONS_WEBHOOK_TIMEOUT_SECONDS', 5.0)
+ACTIONS_OUTBOX_MAX_ATTEMPTS = _env_int('ACTIONS_OUTBOX_MAX_ATTEMPTS', 8)
+ACTIONS_WEBHOOK_ALLOW_PRIVATE = _env_bool('ACTIONS_WEBHOOK_ALLOW_PRIVATE', False)
+ACTIONS_WEBHOOK_RETRY_LEASE_SECONDS = _env_int('ACTIONS_WEBHOOK_RETRY_LEASE_SECONDS', 120)
+ACTIONS_WEBHOOK_DISPATCH_WORKERS = _env_int('ACTIONS_WEBHOOK_DISPATCH_WORKERS', 4)
+ACTIONS_WEBHOOK_SYNC_DELIVERY = _env_bool('ACTIONS_WEBHOOK_SYNC_DELIVERY', False)
+MAGIC_LINK_EMAIL_DEFAULT_LANGUAGE = (
+    os.getenv('MAGIC_LINK_EMAIL_DEFAULT_LANGUAGE', 'en').strip().lower() or 'en'
+)
+
 JWT_ACCESS_TOKEN_LIFETIME = _env_duration('JWT_ACCESS_TOKEN_LIFETIME', timedelta(minutes=5))
 JWT_REFRESH_TOKEN_LIFETIME = _env_duration('JWT_REFRESH_TOKEN_LIFETIME', timedelta(days=7))
 
@@ -300,6 +348,19 @@ if _oauth_delivery not in {'code', 'fragment'}:
     )
 OAUTH_TOKEN_DELIVERY = _oauth_delivery
 OAUTH_SESSION_CODE_TTL_SECONDS = int(os.getenv('OAUTH_SESSION_CODE_TTL_SECONDS', '120') or '120')
+
+MAGIC_LINK_ENABLED = _env_bool('MAGIC_LINK_ENABLED', True)
+MAGIC_LINK_TTL_SECONDS = int(os.getenv('MAGIC_LINK_TTL_SECONDS', '1800') or '1800')
+
+# OAuth providers that skip the identity-hosted account confirmation page after callback.
+# Unset env → ``google`` only. Set to empty string to require confirmation for all providers.
+_skip_confirm_raw = os.getenv('OAUTH_SKIP_CONFIRM_PROVIDERS')
+if _skip_confirm_raw is None:
+    OAUTH_SKIP_CONFIRM_PROVIDERS = ['google']
+else:
+    OAUTH_SKIP_CONFIRM_PROVIDERS = [
+        item.strip().lower() for item in _skip_confirm_raw.split(',') if item.strip()
+    ]
 
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': JWT_ACCESS_TOKEN_LIFETIME,
@@ -387,12 +448,8 @@ SESSION_COOKIE_SECURE = _env_bool('SESSION_COOKIE_SECURE', not DEBUG)
 CSRF_COOKIE_SECURE = _env_bool('CSRF_COOKIE_SECURE', not DEBUG)
 
 # Cache-backed auth rate limits (see apps/authapi/throttling.py).
-CACHES = {
-    'default': {
-        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
-        'LOCATION': 'identity-service-auth',
-    }
-}
+REDIS_URL = os.getenv('REDIS_URL', '').strip()
+CACHES = _caches_config(REDIS_URL)
 AUTH_RATE_LIMIT_ENABLED = _env_bool('AUTH_RATE_LIMIT_ENABLED', True)
 AUTH_RATE_LIMITS = {
     'default': {'limit': 60, 'window': 60},
@@ -401,6 +458,7 @@ AUTH_RATE_LIMITS = {
     'auth_settings': {'limit': _env_int('AUTH_RATE_LIMIT_SETTINGS', 30), 'window': 60},
     'admin_login': {'limit': _env_int('AUTH_RATE_LIMIT_ADMIN_LOGIN', 10), 'window': 300},
     'pat': {'limit': _env_int('AUTH_RATE_LIMIT_PAT', 30), 'window': 60},
+    'magic_link': {'limit': _env_int('AUTH_RATE_LIMIT_MAGIC_LINK', 10), 'window': 60},
 }
 
 # Database
@@ -471,6 +529,13 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
+STATICFILES_DIRS = [BASE_DIR / 'static']
+
+if DEBUG:
+    # Local dev: serve assets from STATICFILES_DIRS without collectstatic.
+    WHITENOISE_USE_FINDERS = True
+    WHITENOISE_AUTOREFRESH = True
+
 STORAGES = {
     'default': {
         'BACKEND': 'django.core.files.storage.FileSystemStorage',
@@ -501,6 +566,8 @@ if not DEBUG and not _skip_production_config_validation():
         _production_config_errors.append('JWT_AUDIENCE is required when DEBUG=false.')
     if _production_config_errors:
         raise ImproperlyConfigured('\n'.join(_production_config_errors))
+
+from config.scim_settings import SCIM_SERVICE_PROVIDER
 
 if SENTRY_DSN:
     import sentry_sdk

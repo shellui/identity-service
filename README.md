@@ -2,18 +2,35 @@
 
 `identity-service` is a Django backend that provides authentication endpoints compatible with Shellui (`backend.type = "shellui"`).
 
-It supports OAuth login (GitHub/Google/Microsoft), issues JWT tokens, exposes Supabase-like auth routes under `/api/v1/*`, and returns user metadata that Shellui can use (including avatar URL).
+It supports OAuth login (stock: GitHub, Google, Microsoft; additional IdPs via django-allauth — see [docs/oauth-providers.md](docs/oauth-providers.md)), issues JWT tokens, exposes Supabase-like auth routes under `/api/v1/*`, and returns user metadata that Shellui can use (including avatar URL).
 
 ## Features
 
 - Shellui-compatible auth API at `/api/v1/*`
-- OAuth login flow for GitHub, Google, Microsoft (identity-hosted callback — see [docs/oauth-login.md](docs/oauth-login.md))
+- OAuth login via django-allauth (stock wired: GitHub, Google, Microsoft; full provider catalog — [docs/oauth-providers.md](docs/oauth-providers.md); flow — [docs/oauth-login.md](docs/oauth-login.md))
 - Company join modes: **public**, **domain** allow-list, or **invitation-only** (see [docs/company-access.md](docs/company-access.md))
 - JWT access + refresh token issuance (RS256 with JWKS when `JWT_PRIVATE_KEY` is set)
 - Token refresh endpoint (`grant_type=refresh_token`)
 - User metadata endpoint (`/api/v1/user`)
 - Permissive API CORS by default (`CORS_ALLOW_ALL_ORIGINS=true`, `CORS_ALLOW_CREDENTIALS=false`) so hosted preview origins and custom shells can call JWT APIs without per-origin env edits; auth is Bearer JWT. OAuth token delivery stays strict via the company redirect allowlist (see [docs/oauth-login.md](docs/oauth-login.md))
 - OpenAPI docs with drf-spectacular
+- **Enterprise SCIM**: per-company user and **nested group** provisioning for Okta / Entra ID / similar IdPs — see [docs/scim.md](docs/scim.md)
+
+## Enterprise SCIM
+
+SCIM 2.0 user and group provisioning is available by default at:
+
+```text
+/api/v1/companies/<company_id>/scim/v2/
+```
+
+Each company turns SCIM on by creating a **Company SCIM token** in Shellui admin (`GET/POST /api/v1/scim/tokens`, staff or company owner) or Django admin, then configuring the IdP with `Authorization: Bearer <token>`. Revoke the token to turn SCIM off for that company. Set **`SCIM_ENABLED=false`** on the deployment only as an emergency kill switch (SCIM URLs return **404**). Supports SCIM Users, Groups (including nested `type: Group` members), and SCIM-aligned `CompanyGroup` fields (`display_name`, `external_id`). Details: **[docs/scim.md](docs/scim.md)**.
+
+## Shellui webhooks (domain events)
+
+Company **webhook rules** in Django admin map catalog events (`identity.scim.user.provisioned`, `identity.user.created`, group changes, SCIM conflicts, …) to **signed HTTPS endpoints** (n8n-friendly). Delivery uses a DB outbox and `transaction.on_commit` with `manage.py retry_webhooks` for retries. See **[docs/actions.md](docs/actions.md)** and **[docs/n8n.md](docs/n8n.md)**.
+
+**Try locally:** set `EMAIL_BACKEND=django.core.mail.backends.console.EmailBackend`, create an Action rule for `identity.scim.user.provisioned`, then provision a user via SCIM.
 
 ## Project Structure
 
@@ -37,6 +54,7 @@ It supports OAuth login (GitHub/Google/Microsoft), issues JWT tokens, exposes Su
 - `POST /api/v1/logout` logout endpoint (revokes refresh session and denylists access token)
 - `GET /api/v1/user` return authenticated user profile + metadata
 - `PUT /api/v1/user` update user metadata
+- `DELETE /api/v1/user` self-service account deletion (`{"confirm": true}`; emits `identity.user.deleted` per company — see [docs/oauth-login.md](docs/oauth-login.md))
 
 ## Staff admin endpoints
 
@@ -54,9 +72,12 @@ These routes require a valid JWT whose user has `is_staff=true` (`user_metadata.
 uv sync
 cp .env.example .env
 # Set SECRET_KEY; generate JWT keys for production (DEBUG=false)
+npm ci && npm run build:css   # first run only (or skip — runserver rebuilds when DEBUG=true)
 uv run python manage.py migrate
 uv run python manage.py runserver
 ```
+
+The root landing page (`templates/home.html`) uses Tailwind utilities compiled into `static/css/site.css`. With `DEBUG=true`, **`runserver` runs `npm run build:css` once at startup** (and runs `npm ci` if `node_modules` is missing). For live template/CSS edits, use a second terminal: `npm run watch:css`. Production images and CI build minified CSS before `collectstatic`; Node is not required at runtime.
 
 With `DEBUG=true` (local default), visiting `/` on an empty database shows a one-time web form to create the first superuser. In production (`DEBUG=false`), that form is disabled unless you set `SETUP_TOKEN` and open `/?setup_token=<token>`. Prefer creating the first admin via CLI:
 
@@ -113,7 +134,7 @@ backend: {
 
 ## OAuth provider apps
 
-Register a **single** Authorization callback URL on each provider (GitHub / Google / Microsoft) pointing at **identity-service** — not the shell. No query string:
+Register a **single** Authorization callback URL on each IdP app pointing at **identity-service** — not the shell. Stock demos use GitHub, Google, and Microsoft; other providers follow the same callback pattern once enabled ([docs/oauth-providers.md](docs/oauth-providers.md)). No query string:
 
 | Environment | Callback URL |
 |-------------|--------------|
@@ -135,9 +156,15 @@ Production auth abuse controls, HTTPS defaults, Postgres SSL, and trusted-proxy 
 
 ## Documentation (Docusaurus)
 
-Project docs live in `docs/` and are built with Docusaurus config in `tools/docusaurus/`.
+Project docs live in `docs/` and are built with Docusaurus in `tools/docusaurus/` (Shellui-branded chrome aligned with [shellui/shellui](https://github.com/shellui/shellui)). Published at [https://identity.docs.shellui.com](https://identity.docs.shellui.com) on release tags.
 
-Generate docs:
+Preview locally:
+
+```bash
+cd tools/docusaurus && npm install && npm start
+```
+
+Production build:
 
 ```bash
 ./tools/generate-docs.sh
@@ -161,7 +188,7 @@ Pull requests **to `main`** also run the pre-release checklist ([`.github/workfl
 
 ## Releases (Docker Hub)
 
-Current release: `0.5.1` (`shellui/identity-service:0.5.1`).
+Current release: `0.6.0` (`shellui/identity-service:0.6.0`).
 
 See [PUBLISH.md](PUBLISH.md) for the pre-release checklist (automated via `./tools/pre-release-check.sh`), tagging conventions, and steps to build, push, and deploy `shellui/identity-service` on Docker Hub.
 
@@ -223,6 +250,7 @@ Runtime env vars:
 - `CORS_ALLOW_CREDENTIALS` (default `false`; must stay `false` with allow-all)
 - `CORS_ALLOWED_ORIGIN_REGEXES` (optional; used only when `CORS_ALLOW_ALL_ORIGINS=false`)
 - `POSTGRES_DATABASE_URL` (optional; when set, Postgres is used instead of SQLite)
+- `REDIS_URL` (optional; when set, Django uses Redis for shared cache — auth rate limits, logout access-token denylist, last-seen throttling). Unset uses in-process LocMem (single Gunicorn worker or local dev only; with multiple workers each process has its own cache)
 - `GUNICORN_WORKERS` (default `4`)
 - `GUNICORN_THREADS` (default `4`)
 - `GET /health/live` — DB-free liveness probe (configure load balancers to use this instead of `/`)

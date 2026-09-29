@@ -21,6 +21,47 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
 -->
 
+## [0.6.0] - 2026-09-29
+
+### ✨ Feature
+
+- **SCIM 2.0 provisioning:** Sync users and groups (including nested groups) from your identity provider at `/api/v1/companies/<company_id>/scim/v2/`. Create a SCIM token in Shellui admin to turn it on for a company, and revoke it to turn it off. See [docs/scim.md](docs/scim.md).
+- **Magic link sign-in:** Passwordless email login, on by default for new companies created after upgrade (existing companies stay off until enabled). Toggle it per company with `/api/v1/auth-methods`. Emails ship in English and French. See [docs/magic-link.md](docs/magic-link.md).
+- **Webhook actions:** Send `identity.*` events (users, groups, SCIM, magic link) to your own endpoints, such as n8n. Payloads are signed, failed deliveries retry with backoff via `manage.py retry_webhooks`, and admins can send a test event or re-queue deliveries. Closes [#35](https://github.com/shellui/identity-service/issues/35). See [docs/actions.md](docs/actions.md) and [docs/n8n.md](docs/n8n.md).
+- **Account deletion:** Users can delete their own account with `DELETE /api/v1/user`, which also revokes their sessions and tokens.
+- **Redis cache:** Set `REDIS_URL` to share rate limits, logout denylist, and last-seen data across workers.
+
+### 🛠 Improvements
+
+- **Faster Google sign-in:** Skip the account confirmation page for providers listed in `OAUTH_SKIP_CONFIRM_PROVIDERS` (default `google`).
+- **Homepage:** Shellui Identity branding, aligned with the other Shellui services.
+- **Django admin:** Browse webhook deliveries and attempts with filters and search.
+- **Deploy check:** `authapi.W002` warns when several Gunicorn workers run without Redis.
+
+### 🚨 Changed
+
+- **Company groups:** Groups are either `manual` (managed in admin) or `scim` (managed by your identity provider). Name collisions between the two return **409**.
+- **JWT `groups` claim:** Now includes nested parent groups, not only direct memberships.
+
+### 📚 Documentation
+
+- Docs site moved to [identity.docs.shellui.com](https://identity.docs.shellui.com) with Shellui styling.
+- New guides for [SCIM](docs/scim.md), [magic link](docs/magic-link.md), [actions](docs/actions.md), [n8n](docs/n8n.md), and [OAuth providers](docs/oauth-providers.md). Refreshed [configuration](docs/configuration.md) and publish guides.
+
+### 🔒 Security
+
+- **Webhook targets:** Private and loopback addresses are blocked, and delivery connects to the checked IP to prevent DNS rebinding. Non-global addresses (including CGNAT `100.64.0.0/10`) are rejected. Changing a webhook URL clears a superuser-only private-URL allowance.
+- **SCIM:** Company SCIM tokens can no longer change global email, username, or password for users shared across companies or for staff accounts. Duplicate-email user creation returns a generic SCIM uniqueness error.
+- **SCIM (review 2):** PATCH and PUT cannot copy another user's email. Locked users reject any email or userName change (exact match, including case and spacing). Orphan and internal provisioner accounts cannot be linked via SCIM POST. User and group filters are scoped on company membership with safe SQL precedence. SCIM deprovisioning revokes company-scoped refresh sessions and personal access tokens. Disabled company owners lose admin API access. Admin user PATCH cannot modify SCIM-managed groups. OAuth sign-in uses case-insensitive email lookup when duplicate rows exist. Run `manage.py report_duplicate_emails` to find conflicting addresses.
+- **Magic link:** Sign-in links are redeemed with a single atomic update; only a hash of the token is stored. Per-company request rate limits no longer block other clients.
+- **Self-service account deletion:** `DELETE /api/v1/user` rejects personal access tokens, requires a recent interactive sign-in (`auth_time` within `SELF_SERVICE_ACCOUNT_DELETE_MAX_IAT_AGE`, default 5m; refresh keeps the original `auth_time`), and returns **409** when the user still belongs to more than one company.
+- **Client IP behind proxies:** With `TRUSTED_PROXY_IPS` set, audit and rate limits use the rightmost untrusted `X-Forwarded-For` hop instead of the client-controlled leftmost entry.
+- **Client IP edge cases:** IPv4-mapped proxy addresses match `TRUSTED_PROXY_IPS` CIDRs, `X-Forwarded-For` hops are normalized (ports, brackets, invalid entries), and IPv6 rate limits bucket by /64 while audit logs keep the full address.
+- **Webhook SSRF:** NAT64, 6to4, and IPv4-compatible literal addresses are checked against the embedded IPv4 target.
+- **OAuth account linking:** Shellui links social accounts by provider user id first. Email is used to find an existing user only when the provider proves the address (Google `email_verified`, GitHub verified primary email, Microsoft `xms_edov` or a dedicated tenant). Case-insensitive email lookup tolerates duplicate rows (lowest pk wins). OAuth `state` is bound to an HttpOnly cookie nonce and is single-use.
+- **Magic link hardening:** Webhook payloads include `user_id` and locale fields only when the user already belongs to that company. Browser verify uses GET for confirmation and POST to consume the token. Plain-text email templates preserve query string characters in sign-in links.
+- **Dependencies:** Pin `html2text` to the lockfile version for reproducible installs outside Docker.
+
 ## [0.5.1] - 2026-09-24
 
 ### 🛠 Improvements

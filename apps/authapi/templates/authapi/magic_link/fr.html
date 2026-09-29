@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html lang="fr">
+<body style="font-family: system-ui, sans-serif; line-height: 1.5; color: #111;">
+  <p>Shellui · {{ company_name }}</p>
+  <h1>Vous y êtes presque!</h1>
+  <p>Merci de vous connecter à {{ company_name }}.</p>
+  <p>Utilisez ce lien à usage unique pour terminer la connexion:</p>
+  <p><a href="{{ magic_link_url }}">Se connecter</a></p>
+  <p>Si le bouton ne fonctionne pas, copiez cette URL dans votre navigateur:</p>
+  <p><a href="{{ magic_link_url }}">{{ magic_link_url }}</a></p>
+  <p>Si vous n'avez pas demandé cet e-mail, ignorez-le.</p>
+</body>
+</html>

@@ -1,0 +1,12 @@
+{% autoescape off %}
+Shellui · {{ company_name }}
+
+We're almost there!
+
+Thank you for signing in to {{ company_name }}.
+
+Sign in with this one-time link:
+{{ magic_link_url }}
+
+If you did not request this email, you can ignore it.
+{% endautoescape %}

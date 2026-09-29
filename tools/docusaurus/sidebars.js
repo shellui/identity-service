@@ -1,6 +1,6 @@
 // @ts-check
 
-/** @type {import('@docusaurus/plugin-content-docs').Config} */
+/** @type {import('@docusaurus/plugin-content-docs').SidebarsConfig} */
 const sidebars = {
   tutorialSidebar: [
     {
@@ -11,7 +11,32 @@ const sidebars = {
     {
       type: 'doc',
       id: 'oauth-login',
-      label: 'OAuth login',
+      label: 'OAuth',
+    },
+    {
+      type: 'doc',
+      id: 'magic-link',
+      label: 'Magic link',
+    },
+    {
+      type: 'doc',
+      id: 'oauth-providers',
+      label: 'OAuth providers',
+    },
+    {
+      type: 'doc',
+      id: 'scim',
+      label: 'SCIM',
+    },
+    {
+      type: 'doc',
+      id: 'actions',
+      label: 'Action triggers',
+    },
+    {
+      type: 'doc',
+      id: 'configuration',
+      label: 'Configuration',
     },
     {
       type: 'doc',
@@ -25,13 +50,13 @@ const sidebars = {
     },
     {
       type: 'doc',
-      id: 'metrics',
-      label: 'Metrics',
+      id: 'security-hardening',
+      label: 'Security',
     },
     {
       type: 'doc',
-      id: 'security-hardening',
-      label: 'Security hardening',
+      id: 'metrics',
+      label: 'Metrics',
     },
     {
       type: 'doc',

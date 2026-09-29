@@ -6,7 +6,12 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
-from apps.authapi.oauth_state import build_oauth_state, parse_oauth_state
+from apps.authapi.oauth import OAuthTokenBundle
+from apps.authapi.oauth_state import (
+    OAUTH_STATE_NONCE_COOKIE,
+    build_oauth_state,
+    parse_oauth_state,
+)
 from apps.companies.access import set_company_access
 from apps.companies.models import Company, CompanyOAuthClient, CompanyOAuthRedirect
 
@@ -15,7 +20,7 @@ User = get_user_model()
 
 class OAuthStateTests(TestCase):
     def test_roundtrip(self):
-        state = build_oauth_state(
+        state, nonce = build_oauth_state(
             provider='github',
             redirect_to='http://127.0.0.1:9999/callback',
             company_id=42,
@@ -30,6 +35,7 @@ class OAuthStateTests(TestCase):
         self.assertEqual(payload['company_id'], 42)
         self.assertEqual(payload['company_oauth_client_id'], 7)
         self.assertEqual(payload['client_timezone'], 'Europe/Paris')
+        self.assertEqual(payload['nonce'], nonce)
 
     def test_missing_state(self):
         payload, err = parse_oauth_state('')
@@ -69,6 +75,16 @@ class OAuthAuthorizeCallbackTests(TestCase):
             is_active=True,
         )
 
+    def _oauth_callback(self, state: str, *, code: str = 'auth-code'):
+        payload, err = parse_oauth_state(state)
+        self.assertIsNone(err)
+        assert payload is not None
+        self.client.cookies[OAUTH_STATE_NONCE_COOKIE] = payload['nonce']
+        return self.client.get(
+            '/api/v1/oauth/callback',
+            {'code': code, 'state': state},
+        )
+
     def test_authorize_uses_fixed_callback_and_signed_state(self):
         redirect_to = 'https://shell.example.com/login/callback'
         response = self.client.get(
@@ -80,6 +96,7 @@ class OAuthAuthorizeCallbackTests(TestCase):
             },
         )
         self.assertEqual(response.status_code, 302)
+        self.assertIn(OAUTH_STATE_NONCE_COOKIE, response.cookies)
         location = response['Location']
         parts = urlsplit(location)
         qs = parse_qs(parts.query)
@@ -185,23 +202,27 @@ class OAuthAuthorizeCallbackTests(TestCase):
         )
         self.assertEqual(response.status_code, 400)
 
-    @patch('apps.authapi.views.exchange_code_for_token', return_value='provider-access')
+    @patch(
+        'apps.authapi.oauth_user._fetch_github_verified_primary_email',
+        return_value=('octocat@example.com', True),
+    )
+    @patch(
+        'apps.authapi.views.exchange_code_for_token',
+        return_value=OAuthTokenBundle(access_token='provider-access'),
+    )
     @patch(
         'apps.authapi.views.fetch_provider_userinfo',
         return_value={'id': 1, 'login': 'octocat', 'email': 'octocat@example.com', 'name': 'Octo Cat'},
     )
-    def test_callback_shows_confirm_then_issues_tokens_on_post(self, _userinfo, exchange):
+    def test_callback_shows_confirm_then_issues_tokens_on_post(self, _userinfo, exchange, _gh_email):
         redirect_to = 'https://shell.example.com/login/callback'
-        state = build_oauth_state(
+        state, _nonce = build_oauth_state(
             provider='github',
             redirect_to=redirect_to,
             company_id=self.company.id,
             company_oauth_client_id=self.oauth_client.id,
         )
-        callback = self.client.get(
-            '/api/v1/oauth/callback',
-            {'code': 'auth-code', 'state': state},
-        )
+        callback = self._oauth_callback(state)
         self.assertEqual(callback.status_code, 200)
         self.assertIn(b'Confirm your account', callback.content)
         self.assertIn(b'octocat@example.com', callback.content)
@@ -237,24 +258,28 @@ class OAuthAuthorizeCallbackTests(TestCase):
         self.assertIn('refresh_token', session.data)
 
     @override_settings(OAUTH_TOKEN_DELIVERY='fragment')
-    @patch('apps.authapi.views.exchange_code_for_token', return_value='provider-access')
+    @patch(
+        'apps.authapi.oauth_user._fetch_github_verified_primary_email',
+        return_value=('legacy@example.com', True),
+    )
+    @patch(
+        'apps.authapi.views.exchange_code_for_token',
+        return_value=OAuthTokenBundle(access_token='provider-access'),
+    )
     @patch(
         'apps.authapi.views.fetch_provider_userinfo',
         return_value={'id': 1, 'login': 'legacy', 'email': 'legacy@example.com', 'name': 'Legacy User'},
     )
-    def test_callback_fragment_delivery_legacy(self, _userinfo, exchange):
+    def test_callback_fragment_delivery_legacy(self, _userinfo, exchange, _gh_email):
         redirect_to = 'https://shell.example.com/login/callback'
-        state = build_oauth_state(
+        state, _nonce = build_oauth_state(
             provider='github',
             redirect_to=redirect_to,
             company_id=self.company.id,
             company_oauth_client_id=self.oauth_client.id,
             token_delivery='fragment',
         )
-        callback = self.client.get(
-            '/api/v1/oauth/callback',
-            {'code': 'auth-code', 'state': state},
-        )
+        callback = self._oauth_callback(state)
         confirm_token = None
         for line in callback.content.decode('utf-8').splitlines():
             if 'name="confirm_token"' in line:
@@ -297,6 +322,182 @@ class OAuthAuthorizeCallbackTests(TestCase):
             {'code': 'auth-code', 'state': 'bogus'},
         )
         self.assertEqual(response.status_code, 400)
+
+    def _google_oauth_client(self):
+        google_app = SocialApp.objects.create(
+            provider='google',
+            name='Google Test',
+            client_id='gid',
+            secret='gsecret',
+        )
+        return CompanyOAuthClient.objects.create(
+            company=self.company,
+            social_app=google_app,
+            is_active=True,
+        )
+
+    @patch(
+        'apps.authapi.views.exchange_code_for_token',
+        return_value=OAuthTokenBundle(access_token='provider-access'),
+    )
+    @patch(
+        'apps.authapi.views.fetch_provider_userinfo',
+        return_value={
+            'sub': 'google-sub',
+            'email': 'google.user@example.com',
+            'name': 'Google User',
+            'email_verified': True,
+            'picture': 'https://example.com/g.png',
+        },
+    )
+    def test_google_callback_skips_confirm_by_default(self, _userinfo, exchange):
+        google_client = self._google_oauth_client()
+        redirect_to = 'https://shell.example.com/login/callback'
+        state, _nonce = build_oauth_state(
+            provider='google',
+            redirect_to=redirect_to,
+            company_id=self.company.id,
+            company_oauth_client_id=google_client.id,
+        )
+        callback = self._oauth_callback(state)
+        self.assertEqual(callback.status_code, 302)
+        location = callback['Location']
+        self.assertTrue(location.startswith(redirect_to))
+        self.assertIn('shellui_auth_code=', location)
+        self.assertTrue(exchange.called)
+
+    @patch(
+        'apps.authapi.oauth_user._fetch_github_verified_primary_email',
+        return_value=('octocat@example.com', True),
+    )
+    @patch(
+        'apps.authapi.views.exchange_code_for_token',
+        return_value=OAuthTokenBundle(access_token='provider-access'),
+    )
+    @patch(
+        'apps.authapi.views.fetch_provider_userinfo',
+        return_value={'id': 1, 'login': 'octocat', 'email': 'octocat@example.com', 'name': 'Octo Cat'},
+    )
+    def test_github_callback_still_shows_confirm(self, _userinfo, _exchange, _gh_email):
+        redirect_to = 'https://shell.example.com/login/callback'
+        state, _nonce = build_oauth_state(
+            provider='github',
+            redirect_to=redirect_to,
+            company_id=self.company.id,
+            company_oauth_client_id=self.oauth_client.id,
+        )
+        callback = self._oauth_callback(state)
+        self.assertEqual(callback.status_code, 200)
+        self.assertIn(b'Confirm your account', callback.content)
+
+    @override_settings(OAUTH_SKIP_CONFIRM_PROVIDERS=[])
+    @patch(
+        'apps.authapi.views.exchange_code_for_token',
+        return_value=OAuthTokenBundle(access_token='provider-access'),
+    )
+    @patch(
+        'apps.authapi.views.fetch_provider_userinfo',
+        return_value={
+            'sub': 'google-sub',
+            'email': 'google.user@example.com',
+            'name': 'Google User',
+            'email_verified': True,
+        },
+    )
+    def test_empty_skip_list_google_shows_confirm(self, _userinfo, _exchange):
+        google_client = self._google_oauth_client()
+        redirect_to = 'https://shell.example.com/login/callback'
+        state, _nonce = build_oauth_state(
+            provider='google',
+            redirect_to=redirect_to,
+            company_id=self.company.id,
+            company_oauth_client_id=google_client.id,
+        )
+        callback = self._oauth_callback(state)
+        self.assertEqual(callback.status_code, 200)
+        self.assertIn(b'Confirm your account', callback.content)
+
+    @override_settings(OAUTH_SKIP_CONFIRM_PROVIDERS=['googl'])
+    @patch(
+        'apps.authapi.views.exchange_code_for_token',
+        return_value=OAuthTokenBundle(access_token='provider-access'),
+    )
+    @patch(
+        'apps.authapi.views.fetch_provider_userinfo',
+        return_value={
+            'sub': 'google-sub',
+            'email': 'google.user@example.com',
+            'name': 'Google User',
+            'email_verified': True,
+        },
+    )
+    def test_typo_in_skip_list_ignored(self, _userinfo, _exchange):
+        google_client = self._google_oauth_client()
+        redirect_to = 'https://shell.example.com/login/callback'
+        state, _nonce = build_oauth_state(
+            provider='google',
+            redirect_to=redirect_to,
+            company_id=self.company.id,
+            company_oauth_client_id=google_client.id,
+        )
+        callback = self._oauth_callback(state)
+        self.assertEqual(callback.status_code, 200)
+        self.assertIn(b'Confirm your account', callback.content)
+
+    @patch(
+        'apps.authapi.views.exchange_code_for_token',
+        return_value=OAuthTokenBundle(access_token='provider-access'),
+    )
+    @patch(
+        'apps.authapi.views.fetch_provider_userinfo',
+        return_value={
+            'sub': 'google-sub',
+            'email': 'google.user@example.com',
+            'name': 'Google User',
+            'email_verified': True,
+        },
+    )
+    def test_callback_rejects_missing_oauth_state_cookie(self, _userinfo, _exchange):
+        redirect_to = 'https://shell.example.com/login/callback'
+        google_client = self._google_oauth_client()
+        state, _nonce = build_oauth_state(
+            provider='google',
+            redirect_to=redirect_to,
+            company_id=self.company.id,
+            company_oauth_client_id=google_client.id,
+        )
+        callback = self.client.get(
+            '/api/v1/oauth/callback',
+            {'code': 'auth-code', 'state': state},
+        )
+        self.assertEqual(callback.status_code, 400)
+
+    @patch(
+        'apps.authapi.views.exchange_code_for_token',
+        return_value=OAuthTokenBundle(access_token='provider-access'),
+    )
+    @patch(
+        'apps.authapi.views.fetch_provider_userinfo',
+        return_value={
+            'sub': 'google-sub',
+            'email': 'google.user@example.com',
+            'name': 'Google User',
+            'email_verified': True,
+        },
+    )
+    def test_callback_rejects_reused_oauth_state(self, _userinfo, _exchange):
+        redirect_to = 'https://shell.example.com/login/callback'
+        google_client = self._google_oauth_client()
+        state, _nonce = build_oauth_state(
+            provider='google',
+            redirect_to=redirect_to,
+            company_id=self.company.id,
+            company_oauth_client_id=google_client.id,
+        )
+        first = self._oauth_callback(state)
+        self.assertEqual(first.status_code, 302)
+        second = self._oauth_callback(state)
+        self.assertEqual(second.status_code, 400)
 
 
 class OAuthRedirectCrudTests(TestCase):

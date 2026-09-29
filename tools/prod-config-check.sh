@@ -392,7 +392,7 @@ if hits:
         "FAIL\t/ looks like open first-run superuser setup — prod should have users already "
         f"(matched: {', '.join(hits[:2])}). Ensure DEBUG=false and database is initialized."
     )
-elif "shellui auth" in html or "openapi" in html or "swagger" in html:
+elif "shellui identity" in html or "openapi" in html or "swagger" in html:
     print("PASS\t/ does not expose open superuser signup (landing/docs page)")
 else:
     print("WARN\t/ HTML is ambiguous — could not confirm bootstrap gate; inspect manually")

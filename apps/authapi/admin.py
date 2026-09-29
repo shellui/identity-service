@@ -2,6 +2,9 @@ from django.contrib import admin
 from django.contrib.auth import get_user_model
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 
+from apps.actions.user_hooks import emit_user_account_created
+from apps.authapi.account_lifecycle import delete_user_account
+
 from .models import LoginEvent, PersonalAccessToken, UserActivity, UserPreference
 
 User = get_user_model()
@@ -87,6 +90,21 @@ class UserAdmin(DjangoUserAdmin):
             return '—'
         text = ', '.join(names)
         return text if len(text) <= 64 else text[:61] + '…'
+
+    def save_related(self, request, form, formsets, change):
+        super().save_related(request, form, formsets, change)
+        if change:
+            return
+        user = form.instance
+        for company in user.companies.all():
+            emit_user_account_created(company, user, source='admin')
+
+    def delete_model(self, request, obj):
+        delete_user_account(obj, source='admin')
+
+    def delete_queryset(self, request, queryset):
+        for obj in queryset:
+            delete_user_account(obj, source='admin')
 
 
 @admin.register(PersonalAccessToken)

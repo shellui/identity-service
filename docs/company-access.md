@@ -32,6 +32,8 @@ When access is blocked for the requested company, OAuth responses include `error
 
 Shellui shows a pending-review screen for these codes (query params `shellui_oauth_error` / `shellui_oauth_error_code`, or JSON on `/api/v1/oauth/exchange`).
 
+SCIM provisioning sets `CompanyMembership.is_enabled` via the `active` attribute — see [SCIM](scim.md) when enterprise provisioning is enabled.
+
 ## Email
 
 Notifications use Django's email backend. Locally, messages print to the console by default (`EMAIL_BACKEND`). Set `EMAIL_HOST`, `DEFAULT_FROM_EMAIL`, and related env vars for SMTP in production.

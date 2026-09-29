@@ -1,5 +1,7 @@
 # Identity-hosted OAuth login
 
+For **passwordless email (magic link)** sign-in, see [magic-link.md](magic-link.md). OAuth and magic link can both be enabled per company.
+
 identity-service owns the OAuth authorize and callback endpoints. Provider apps register a **fixed** redirect URI on the identity host. The shell or CLI bounce target (`redirect_to`) travels in signed OAuth `state`, not in the provider callback URL.
 
 ## Flow
@@ -8,8 +10,19 @@ identity-service owns the OAuth authorize and callback endpoints. Provider apps 
 2. Without `provider`, identity shows a **sign-in method picker** (even when only one provider is enabled), then continues.
 3. Identity redirects to the IdP using `redirect_uri={identity}/api/v1/oauth/callback` and a signed `state` that carries `redirect_to` and company context.
 4. The provider returns to `/api/v1/oauth/callback`. Identity exchanges the code server-side.
-5. The user sees an **account confirmation** page (confirm, switch provider, or switch account on the same provider).
-6. On confirm, identity redirects to `redirect_to?shellui_auth_code=…` (default). The shell `/login/callback` route POSTs the code to `POST /api/v1/oauth/session` with the same `redirect_to` URL and stores the returned JSON tokens.
+5. For most providers, the user sees an **account confirmation** page (confirm, switch provider, or switch account on the same provider). **Google skips this step by default** — Google’s own consent and account picker already cover the same UX, so identity completes login immediately when profile data is sufficient (verified email, no synthetic placeholder address).
+6. After confirmation (or when skipped), identity redirects to `redirect_to?shellui_auth_code=…` (default). The shell `/login/callback` route POSTs the code to `POST /api/v1/oauth/session` with the same `redirect_to` URL and stores the returned JSON tokens.
+
+### Skip account confirmation (`OAUTH_SKIP_CONFIRM_PROVIDERS`)
+
+| Setting | Default | Behavior |
+| ------- | ------- | -------- |
+| `OAUTH_SKIP_CONFIRM_PROVIDERS` | `google` (when the variable is **unset**) | Comma-separated provider slugs (`github`, `google`, `microsoft`, …) that bypass the confirmation HTML and finalize login like clicking **Continue** |
+| Explicit empty value | — | `OAUTH_SKIP_CONFIRM_PROVIDERS=` requires confirmation for **all** providers |
+
+Providers not in the list keep the confirmation step. Typos in the list are ignored safely (no match → confirm still shown). If the IdP profile is insufficient (missing email, synthetic `{id}@{provider}.local` placeholder, or `email_verified: false` from OIDC userinfo), identity **falls back** to the confirmation page instead of auto-completing.
+
+To require confirmation for Google again, set `OAUTH_SKIP_CONFIRM_PROVIDERS=` or omit `google` from the list. To skip for additional IdPs later, add their slugs: `OAUTH_SKIP_CONFIRM_PROVIDERS=google,microsoft`.
 
 **Legacy fragment delivery:** set `token_delivery=fragment` on `/api/v1/authorize` (or `OAUTH_TOKEN_DELIVERY=fragment`) to receive `redirect_to#access_token=…&refresh_token=…` instead. Fragment mode is deprecated and will be removed in a future release.
 
@@ -27,6 +40,21 @@ Register **one** Authorization callback URL per provider app — the identity ca
 Homepage / application URL may still point at the shell (e.g. `http://localhost:4000` or `https://app.example.com`).
 
 Do **not** register the shell `/login/callback` URL on the IdP. That path only receives tokens after identity redirects with a fragment.
+
+## Social login providers
+
+identity-service uses **[django-allauth](https://docs.allauth.org/en/latest/)** for `SocialApp` storage and provider modules. **Stock releases** wire the identity-hosted OAuth flow (`/api/v1/authorize` → `/api/v1/oauth/callback`) for **GitHub**, **Google**, and **Microsoft** only. Every other provider in the allauth catalog is **available in the library** once you enable its module, satisfy any extra dependencies from the provider page, create per-company `SocialApp` credentials, and extend OAuth wiring in your deploy — see the full checklist and catalog in **[Social login providers (django-allauth)](oauth-providers.md)**.
+
+Quick reference:
+
+| Tier | Examples | Stock Shellui OAuth wired? |
+| ---- | -------- | -------------------------- |
+| **Primary / common starters** | Google, Microsoft, GitHub, Apple, GitLab, Slack, Okta, Auth0, Keycloak (OIDC), OpenID Connect, SAML, Discord, Facebook, LinkedIn, Amazon Cognito | GitHub, Google, Microsoft only |
+| **Also available** | Full django-allauth **65.14.1** module list (X/Twitter OAuth 1+2, Twitch, Steam, …) | Requires custom enablement |
+
+Upstream source of truth: [django-allauth socialaccount providers](https://docs.allauth.org/en/latest/socialaccount/providers/index.html).
+
+Configuring a provider does **not** mean Shellui pre-registers IdP clients — operators still create OAuth/SAML apps with each vendor. Listing a provider is not a security certification.
 
 ## Redirect allowlist
 
@@ -88,8 +116,41 @@ Rate limits, HTTPS defaults, Postgres SSL, trusted-proxy IP handling, and PAT li
 | `GET /api/v1/oauth/confirm?action=switch&confirm_token=…` | Restart OAuth with account picker (Google / Microsoft) |
 | `GET`/`POST`/`PATCH`/`DELETE` `/api/v1/oauth-redirects` | Manage allowlist |
 | `PUT`/`DELETE` `/api/v1/hosting-oauth-redirects` | Hosting-service sync (`source=hosting`, owner/staff JWT) |
+| `DELETE /api/v1/user` | Self-service account deletion (authenticated user only) |
 
 Company join rules (`public` / `domain` / `invite`) still apply after a successful provider login — see [company-access.md](company-access.md).
+
+## Self-service account deletion (GDPR / RGPD erasure)
+
+Authenticated users may permanently delete **their own** Django user account:
+
+```http
+DELETE /api/v1/user?company_id=<id>
+Authorization: Bearer <access_token>
+Content-Type: application/json
+
+{"confirm": true, "refresh_token": "<optional>"}
+```
+
+| Item | Behavior |
+|------|----------|
+| **Auth** | Session access JWT for the subject only (not personal access tokens). The token `iat` must fall within `SELF_SERVICE_ACCOUNT_DELETE_MAX_IAT_AGE` (default 5 minutes); sign in or refresh if it is older |
+| **Multi-company** | If the user belongs to more than one company, the API returns **409** until other memberships are removed (SCIM deprovision, admin, or equivalent). Self-service delete hard-deletes the global user for every company |
+| **Confirmation** | JSON body must include `"confirm": true` |
+| **Response** | `204 No Content` on success; **403** for PAT or stale token; **409** when multiple company memberships remain |
+| **Sessions** | Revokes all refresh sessions and personal access tokens; optional `refresh_token` in the body is revoked like logout; the current access token is denylisted |
+| **Data removal** | Hard-deletes the `User` row (same as Django admin delete). Cascades remove company memberships, OAuth `SocialAccount` links, preferences, PAT metadata, refresh session rows, and SCIM bridge fields tied to the user |
+| **Action events** | Emits [`identity.user.deleted`](actions.md) **once per company membership** with `data.source: "self"` so Action rules (email, webhooks) can run |
+
+This endpoint supports product workflows for **right-to-erasure** requests. It is not legal advice: operators may still retain data under billing, security, or legal-hold policies (for example anonymized **login audit** rows where the user FK is nulled).
+
+Configure Action rules on `identity.user.deleted` to notify the user (`include_payload_email`) or call automation (n8n webhooks). Admin-initiated deletes use the same event type with `data.source: "admin"`.
+
+## JWT `user_metadata.groups`
+
+Access and refresh tokens (and `GET /api/v1/user`) include `user_metadata.groups`: a sorted list of **effective** company group `display_name` values for the token’s `company_id`. That includes groups where the user is a **direct** member and every **ancestor** group linked via nested SCIM group members (`member_groups` / `parent_groups`), transitively and cycle-safe within the same company.
+
+SCIM **User** resources still expose **direct** group membership only — see [scim.md](scim.md).
 
 ## Upgrading
 

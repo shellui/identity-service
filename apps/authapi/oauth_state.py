@@ -2,10 +2,17 @@
 
 from __future__ import annotations
 
+import hashlib
+import secrets
+
+from django.conf import settings
 from django.core import signing
+from django.core.cache import cache
 
 OAUTH_STATE_SALT = 'shellui.oauth.authorize.v1'
 OAUTH_STATE_MAX_AGE_SECONDS = 15 * 60
+OAUTH_STATE_NONCE_COOKIE = 'shellui_oauth_state_nonce'
+OAUTH_STATE_USED_CACHE_PREFIX = 'shellui:oauth_state_used:'
 
 
 def build_oauth_state(
@@ -17,11 +24,18 @@ def build_oauth_state(
     client_timezone: str | None = None,
     client_device_id: str | None = None,
     token_delivery: str | None = None,
-) -> str:
+    nonce: str | None = None,
+) -> tuple[str, str]:
+    """
+    Returns (signed_state, nonce). The nonce must be stored in the browser cookie
+    ``OAUTH_STATE_NONCE_COOKIE`` before redirecting to the provider.
+    """
+    state_nonce = (nonce or '').strip() or secrets.token_urlsafe(32)
     payload: dict = {
         'provider': str(provider).strip().lower(),
         'redirect_to': str(redirect_to).strip(),
         'company_id': int(company_id),
+        'nonce': state_nonce,
     }
     if company_oauth_client_id is not None:
         payload['company_oauth_client_id'] = int(company_oauth_client_id)
@@ -34,7 +48,7 @@ def build_oauth_state(
     delivery = (token_delivery or '').strip().lower()
     if delivery in {'code', 'fragment'}:
         payload['token_delivery'] = delivery
-    return signing.dumps(payload, salt=OAUTH_STATE_SALT)
+    return signing.dumps(payload, salt=OAUTH_STATE_SALT), state_nonce
 
 
 def parse_oauth_state(state: str | None) -> tuple[dict | None, str | None]:
@@ -58,12 +72,14 @@ def parse_oauth_state(state: str | None) -> tuple[dict | None, str | None]:
         company_id = int(payload.get('company_id'))
     except (TypeError, ValueError):
         return None, 'Invalid OAuth state company_id.'
-    if not provider or not redirect_to or company_id <= 0:
+    nonce = str(payload.get('nonce') or '').strip()
+    if not provider or not redirect_to or company_id <= 0 or not nonce:
         return None, 'Invalid OAuth state payload.'
     out: dict = {
         'provider': provider,
         'redirect_to': redirect_to,
         'company_id': company_id,
+        'nonce': nonce,
     }
     raw_client = payload.get('company_oauth_client_id')
     if raw_client is not None and str(raw_client).strip() != '':
@@ -83,3 +99,45 @@ def parse_oauth_state(state: str | None) -> tuple[dict | None, str | None]:
     if delivery in {'code', 'fragment'}:
         out['token_delivery'] = delivery
     return out, None
+
+
+def _state_replay_cache_key(state: str) -> str:
+    digest = hashlib.sha256(state.encode('utf-8')).hexdigest()
+    return f'{OAUTH_STATE_USED_CACHE_PREFIX}{digest}'
+
+
+def consume_oauth_state_once(state: str) -> bool:
+    """Mark signed state as used (single-use). Returns False if already consumed."""
+    key = _state_replay_cache_key(state)
+    if cache.get(key):
+        return False
+    cache.set(key, 1, timeout=OAUTH_STATE_MAX_AGE_SECONDS)
+    return True
+
+
+def verify_oauth_state_request(state: str | None, request) -> tuple[dict | None, str | None]:
+    """
+    Validate signed state, bind to the HttpOnly cookie nonce, and consume state once.
+    """
+    raw = (state or '').strip()
+    payload, err = parse_oauth_state(raw)
+    if err or not payload:
+        return None, err or 'Invalid OAuth state.'
+    cookie_nonce = (request.COOKIES.get(OAUTH_STATE_NONCE_COOKIE) or '').strip()
+    if not cookie_nonce or cookie_nonce != payload.get('nonce'):
+        return None, 'OAuth state does not match this browser session.'
+    if not consume_oauth_state_once(raw):
+        return None, 'OAuth state already used.'
+    return payload, None
+
+
+def oauth_state_nonce_cookie_value(nonce: str) -> dict:
+    secure = bool(getattr(settings, 'SESSION_COOKIE_SECURE', not settings.DEBUG))
+    return {
+        'key': OAUTH_STATE_NONCE_COOKIE,
+        'value': nonce,
+        'max_age': OAUTH_STATE_MAX_AGE_SECONDS,
+        'httponly': True,
+        'samesite': 'Lax',
+        'secure': secure,
+    }

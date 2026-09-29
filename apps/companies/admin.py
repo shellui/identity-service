@@ -5,6 +5,7 @@ from django.template.response import TemplateResponse
 from django.urls import path, reverse
 from django.utils.html import format_html
 
+from apps.actions.scim_hooks import emit_group_created, emit_group_deleted, emit_group_updated
 from apps.authapi.oauth import SUPPORTED_OAUTH_PROVIDERS
 from .access import normalize_allowed_domains
 from .models import Company, CompanyGroup, CompanyMembership, CompanyOAuthClient, CompanyOAuthRedirect
@@ -48,6 +49,7 @@ class CompanyAdminForm(forms.ModelForm):
             'slug',
             'access_mode',
             'allowed_email_domains',
+            'enable_magic_link',
             'owners',
         )
 
@@ -232,12 +234,63 @@ class CompanyMembershipAdmin(admin.ModelAdmin):
     ordering = ('company__name', 'user__email')
 
 
+class CompanyGroupAdminForm(forms.ModelForm):
+    class Meta:
+        model = CompanyGroup
+        fields = '__all__'
+
+    def clean_source(self):
+        if self.instance and self.instance.pk:
+            return self.instance.source
+        return CompanyGroup.SOURCE_MANUAL
+
+
 @admin.register(CompanyGroup)
 class CompanyGroupAdmin(admin.ModelAdmin):
-    list_display = ('id', 'name', 'company_id')
-    search_fields = ('name', 'company__name')
-    list_filter = ('company',)
-    filter_horizontal = ('members',)
+    form = CompanyGroupAdminForm
+    list_display = ('id', 'display_name', 'source', 'external_id', 'company_id')
+    search_fields = ('display_name', 'external_id', 'company__name')
+    list_filter = ('source', 'company')
+    filter_horizontal = ('members', 'member_groups')
+
+    def get_fields(self, request, obj=None):
+        fields = list(super().get_fields(request, obj))
+        if obj is None and 'source' in fields:
+            return [name for name in fields if name != 'source']
+        return fields
+
+    def get_readonly_fields(self, request, obj=None):
+        readonly = list(super().get_readonly_fields(request, obj))
+        if obj is not None:
+            readonly.append('source')
+        return readonly
+
+    def save_model(self, request, obj, form, change):
+        previous = None
+        if change:
+            previous = CompanyGroup.objects.filter(pk=obj.pk).first()
+            obj.source = (
+                CompanyGroup.objects.filter(pk=obj.pk).values_list('source', flat=True).first()
+                or obj.source
+            )
+        else:
+            obj.source = CompanyGroup.SOURCE_MANUAL
+        super().save_model(request, obj, form, change)
+        if not change:
+            emit_group_created(obj.company, obj)
+        elif previous is not None:
+            changed: list[str] = []
+            if previous.display_name != obj.display_name:
+                changed.append('display_name')
+            if previous.external_id != obj.external_id:
+                changed.append('external_id')
+            if changed:
+                emit_group_updated(obj.company, obj, changed_fields=changed)
+
+    def delete_model(self, request, obj):
+        company = obj.company
+        emit_group_deleted(company, obj)
+        super().delete_model(request, obj)
 
 
 @admin.register(CompanyOAuthClient)

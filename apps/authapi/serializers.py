@@ -35,8 +35,32 @@ class ShellUIOAuthSessionExchangeSerializer(serializers.Serializer):
     redirect_to = serializers.URLField(max_length=2048)
 
 
+class ShellUIMagicLinkRequestSerializer(serializers.Serializer):
+    email = serializers.EmailField(max_length=254)
+    redirect_to = serializers.URLField(max_length=2048)
+    company_id = serializers.IntegerField(required=False, min_value=1)
+    client_timezone = serializers.CharField(required=False, allow_blank=True, max_length=64)
+    client_device_id = serializers.CharField(required=False, allow_blank=True, max_length=128)
+
+
+class ShellUIMagicLinkConsumeSerializer(serializers.Serializer):
+    token = serializers.CharField(max_length=128)
+    company_id = serializers.IntegerField(min_value=1)
+
+
+class ShellUIAdminAuthMethodsUpdateSerializer(serializers.Serializer):
+    enable_magic_link = serializers.BooleanField(required=False)
+
+
 class ShellUILogoutSerializer(serializers.Serializer):
     refresh_token = serializers.CharField(required=False, allow_blank=True, max_length=8192)
+
+
+class ShellUIUserDeleteSerializer(serializers.Serializer):
+    confirm = serializers.BooleanField(
+        required=True,
+        help_text='Must be true to permanently delete the authenticated user account.',
+    )
 
 
 class UserPreferenceSerializer(serializers.Serializer):
@@ -49,6 +73,10 @@ class UserPreferenceSerializer(serializers.Serializer):
 class ShellUIPersonalAccessTokenCreateSerializer(serializers.Serializer):
     read_only = serializers.BooleanField(required=False, default=False)
     access_global_metrics = serializers.BooleanField(required=False, default=False)
+    name = serializers.CharField(required=False, allow_blank=True, max_length=200)
+
+
+class ShellUIAdminScimTokenCreateSerializer(serializers.Serializer):
     name = serializers.CharField(required=False, allow_blank=True, max_length=200)
 
 
@@ -71,11 +99,11 @@ class ShellUIAdminUserUpdateSerializer(serializers.Serializer):
 
 
 class ShellUIAdminGroupCreateSerializer(serializers.Serializer):
-    name = serializers.CharField(max_length=150)
+    display_name = serializers.CharField(max_length=150)
 
 
 class ShellUIAdminGroupUpdateSerializer(serializers.Serializer):
-    name = serializers.CharField(max_length=150)
+    display_name = serializers.CharField(max_length=150)
 
 
 class ShellUIAdminLoginEventSerializer(serializers.Serializer):

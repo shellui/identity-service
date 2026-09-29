@@ -31,6 +31,8 @@ from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from .tokens import ShellUIAccessToken, ShellUIRefreshToken
 
 from . import metrics as auth_metrics
+from apps.companies.group_graph import effective_group_display_names_for_user, effective_group_ids_for_user
+from apps.companies.group_display_name import first_display_name_conflict
 from apps.companies.models import Company, CompanyGroup, CompanyOAuthClient, CompanyOAuthRedirect
 from apps.companies.access import (
     JoinDecision,
@@ -47,7 +49,13 @@ from apps.companies.redirect_allowlist import (
 )
 from .renderers import PrometheusTextRenderer
 from .login_audit import oauth_provider_redirect_uri, record_login_event
-from .oauth_state import build_oauth_state, parse_oauth_state
+from .oauth_state import (
+    build_oauth_state,
+    oauth_state_nonce_cookie_value,
+    parse_oauth_state,
+    verify_oauth_state_request,
+)
+from .oauth_user import OAuthProfile, decode_oauth_id_token_claims, extract_oauth_profile, resolve_oauth_user
 from .oauth_confirm import build_oauth_confirm_token, parse_oauth_confirm_token
 from .oauth_session_code import (
     OAUTH_SESSION_CODE_PARAM,
@@ -69,11 +77,14 @@ from .models import LoginEvent, PersonalAccessToken, UserPreference
 from .user_activity import touch_user_last_seen
 from .throttling import rate_limit
 from .oauth import (
+    OAuthTokenBundle,
     SUPPORTED_OAUTH_PROVIDERS,
     build_authorize_url,
     exchange_code_for_token,
     fetch_provider_userinfo,
     get_provider_config,
+    resolve_oauth_client,
+    should_skip_oauth_confirm,
 )
 from .serializers import (
     ProviderAuthorizeSerializer,
@@ -94,9 +105,24 @@ from .serializers import (
     ShellUIHostingOAuthRedirectSyncSerializer,
     ShellUIHostingOAuthRedirectDeleteSerializer,
     ShellUIPersonalAccessTokenCreateSerializer,
+    ShellUIAdminScimTokenCreateSerializer,
+    ShellUIAdminAuthMethodsUpdateSerializer,
     ShellUIAdminUserUpdateSerializer,
+    ShellUIUserDeleteSerializer,
     UserPreferenceSerializer,
 )
+from apps.scim.models import CompanyScimToken, ScimProvisioningEvent
+from apps.scim.provisioning_events import (
+    OPERATION_CREATE,
+    OPERATION_RENAME,
+    last_provisioning_error_payload,
+    recent_provisioning_events_payload,
+    record_group_display_name_conflict,
+)
+from apps.scim.tokens import generate_scim_token
+from apps.actions.user_hooks import emit_oauth_user_created_if_new
+from .account_lifecycle import delete_user_account
+from .self_service_delete import check_self_service_account_delete_allowed
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -151,52 +177,47 @@ def _user_preferences_payload(user: User) -> dict:
 
 
 def _user_group_names(user: User, company: Company) -> list[str]:
-    return list(
-        CompanyGroup.objects.filter(company=company, members=user).values_list('name', flat=True).order_by('name')
-    )
+    return effective_group_display_names_for_user(user, company)
 
 
 def _admin_user_group_rows(user: User, company: Company) -> list[dict]:
+    group_ids = effective_group_ids_for_user(user, company)
+    if not group_ids:
+        return []
     return list(
-        CompanyGroup.objects.filter(company=company, members=user).values('id', 'name').order_by('name')
+        CompanyGroup.objects.filter(company=company, pk__in=group_ids)
+        .values('id', 'display_name')
+        .order_by('display_name')
     )
 
 
-def _extract_user_data(provider: str, userinfo: dict, access_token: str) -> tuple[str, str, str, str | None]:
-    provider_id = str(
-        userinfo.get('id')
-        or userinfo.get('sub')
-        or userinfo.get('userPrincipalName')
-        or userinfo.get('mail')
+def _resolve_oauth_login_user(
+    *,
+    provider: str,
+    company: Company,
+    userinfo: dict,
+    token_bundle: OAuthTokenBundle,
+    company_oauth_client_id: int | None,
+) -> tuple[User | None, bool, OAuthProfile | None, str | None]:
+    resolved = resolve_oauth_client(
+        provider,
+        company_id=company.id,
+        company_oauth_client_id=company_oauth_client_id,
     )
-    email = userinfo.get('email') or userinfo.get('mail') or userinfo.get('userPrincipalName')
-    full_name = userinfo.get('name') or userinfo.get('displayName') or ''
-
-    if provider == 'github' and not email:
-        req = urllib.request.Request(
-            'https://api.github.com/user/emails',
-            headers={
-                'Authorization': f'Bearer {access_token}',
-                'Accept': 'application/json',
-            },
-        )
-        with urllib.request.urlopen(req, timeout=20) as response:
-            emails = json.loads(response.read().decode('utf-8'))
-        primary = next((item for item in emails if item.get('primary')), None)
-        if primary:
-            email = primary.get('email')
-
-    if not email:
-        email = f'{provider_id}@{provider}.local'
-
-    if not full_name:
-        full_name = email.split('@')[0]
-
-    avatar_url = userinfo.get('avatar_url') or userinfo.get('picture') or userinfo.get('photo')
-    if not isinstance(avatar_url, str) or not avatar_url.strip():
-        avatar_url = None
-
-    return provider_id, email.lower(), full_name, avatar_url
+    id_claims = decode_oauth_id_token_claims(token_bundle.id_token)
+    profile, perror = extract_oauth_profile(
+        provider,
+        userinfo,
+        token_bundle.access_token,
+        tenant=resolved.tenant,
+        id_token_claims=id_claims,
+    )
+    if perror or profile is None:
+        return None, False, None, perror or 'Invalid provider profile.'
+    user, created, uerror = resolve_oauth_user(provider=provider, profile=profile)
+    if uerror or user is None:
+        return None, False, profile, uerror
+    return user, created, profile, None
 
 
 def _normalize_avatar_url(value: object) -> str | None:
@@ -391,6 +412,7 @@ def _issue_shellui_tokens(
     *,
     oauth_provider: str | None = None,
     prior_app_metadata: dict | None = None,
+    prior_auth_time: int | None = None,
     family_id: uuid.UUID | None = None,
 ) -> dict:
     refresh = ShellUIRefreshToken.for_user(user)
@@ -429,6 +451,14 @@ def _issue_shellui_tokens(
     )
     bind_access_session(access=access, session_id=session.id)
     now_ts = int(datetime.now(timezone.utc).timestamp())
+    if oauth_provider:
+        auth_time = now_ts
+    elif prior_auth_time is not None:
+        auth_time = int(prior_auth_time)
+    else:
+        auth_time = now_ts
+    access['auth_time'] = auth_time
+    refresh['auth_time'] = auth_time
     expires_at = int(access['exp'])
     return {
         'access_token': str(access),
@@ -797,7 +827,10 @@ def _jwt_bearer_company_id(request) -> int | None:
 
 
 def _required_company_from_request(request, user: User | None = None) -> tuple[Company | None, Response | None]:
-    raw = (request.GET.get('company_id') or request.data.get('company_id') or '').strip()
+    raw_candidate = request.GET.get('company_id')
+    if raw_candidate is None and hasattr(request, 'data'):
+        raw_candidate = request.data.get('company_id')
+    raw = str(raw_candidate).strip() if raw_candidate not in (None, '') else ''
     token_company_id = _jwt_bearer_company_id(request)
 
     company_id: int | None = None
@@ -847,7 +880,10 @@ def _required_company_for_token_refresh(
     user: User,
 ) -> tuple[Company | None, Response | None]:
     """Resolve company for refresh grant from body/query, refresh JWT, or optional access JWT."""
-    raw = (request.GET.get('company_id') or request.data.get('company_id') or '').strip()
+    raw_candidate = request.GET.get('company_id')
+    if raw_candidate is None and hasattr(request, 'data'):
+        raw_candidate = request.data.get('company_id')
+    raw = str(raw_candidate).strip() if raw_candidate not in (None, '') else ''
     refresh_company_id = _token_claim_int(refresh, 'company_id')
     access_company_id = _jwt_bearer_company_id(request)
 
@@ -907,9 +943,16 @@ def _require_staff_or_company_owner(request):
     company, cerr = _required_company_from_request(request, user=user)
     if cerr:
         return None, None, cerr
-    if user.is_staff or _is_user_company_owner(user, company):
+    if user.is_staff:
         return user, company, None
-    return None, None, Response({'error': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
+    if not _is_user_company_owner(user, company):
+        return None, None, Response({'error': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
+    if not is_company_access_enabled(company, user):
+        return None, None, Response(
+            {'error': 'Company access is disabled for this user.'},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    return user, company, None
 
 
 def _require_enabled_company_member(request):
@@ -985,6 +1028,68 @@ def _require_authenticated_company_member(request):
     return user, company, None
 
 
+def _scim_base_url_for_company(request, company: Company) -> str:
+    from apps.scim.routing import scim_path_prefix_for_company
+
+    return request.build_absolute_uri(scim_path_prefix_for_company(company))
+
+
+def _active_scim_token_count(company: Company) -> int:
+    return CompanyScimToken.objects.filter(company=company, revoked_at__isnull=True).count()
+
+
+def _auth_methods_admin_payload(company: Company) -> dict:
+    from apps.authapi.magic_link import magic_link_enabled_for_company, magic_link_globally_enabled
+
+    providers = _enabled_oauth_providers(company)
+    company_magic = bool(getattr(company, 'enable_magic_link', True))
+    effective_magic = magic_link_enabled_for_company(company)
+    oauth_on = bool(providers)
+    methods: list[str] = []
+    if effective_magic:
+        methods.append('magic_link')
+    if oauth_on:
+        methods.append('oauth')
+    return {
+        'enable_magic_link': company_magic,
+        'magic_link_effective': effective_magic,
+        'magic_link_globally_enabled': magic_link_globally_enabled(),
+        'enable_oauth': oauth_on,
+        'oauth_providers': providers,
+        'methods': methods,
+    }
+
+
+def _scim_status_payload(request, company: Company) -> dict:
+    active_count = _active_scim_token_count(company)
+    configured = active_count > 0
+    return {
+        'enabled': bool(getattr(settings, 'SCIM_ENABLED', True)),
+        'base_url': _scim_base_url_for_company(request, company),
+        'configured': configured,
+        'active_token_count': active_count,
+        'directory_read_only': False,
+        'scim_groups_read_only': configured,
+        'last_provisioning_error': last_provisioning_error_payload(company),
+        'recent_provisioning_events': recent_provisioning_events_payload(company),
+    }
+
+
+def _scim_token_row(row: CompanyScimToken, *, include_token: str | None = None) -> dict:
+    payload = {
+        'id': str(row.id),
+        'name': row.name or '',
+        'token_prefix': row.token_prefix,
+        'created_at': row.created_at,
+        'revoked_at': row.revoked_at,
+        'last_used_at': row.last_used_at,
+        'is_active': row.revoked_at is None,
+    }
+    if include_token:
+        payload['token'] = include_token
+    return payload
+
+
 def _personal_access_token_row(t: PersonalAccessToken, *, include_access_token: str | None = None) -> dict:
     row = {
         'id': str(t.id),
@@ -1033,7 +1138,7 @@ def _admin_user_payload(user: User, company: Company) -> dict:
     user_metadata['is_company_owner'] = _is_user_company_owner(user, company)
     user_metadata['shelluiPreferences'] = _user_preferences_payload(user)
     group_rows = _admin_user_group_rows(user, company)
-    user_metadata['groups'] = [row['name'] for row in group_rows]
+    user_metadata['groups'] = [row['display_name'] for row in group_rows]
     user_metadata['last_seen_at'] = _last_seen_at_for_user(user)
     _enrich_user_metadata_avatar(user, user_metadata)
     # `is_active` here means company membership access for this tenant (not User.is_active).
@@ -1127,7 +1232,7 @@ class SocialLoginView(APIView):
         client_tz = serializer.validated_data.get('client_timezone') or ''
         client_dev = serializer.validated_data.get('client_device_id') or None
         try:
-            access_token = exchange_code_for_token(
+            token_bundle = exchange_code_for_token(
                 provider=provider,
                 code=serializer.validated_data['code'],
                 redirect_uri=redirect_uri,
@@ -1136,11 +1241,34 @@ class SocialLoginView(APIView):
             )
             userinfo = fetch_provider_userinfo(
                 provider,
-                access_token,
+                token_bundle.access_token,
                 company_id=company.id,
                 company_oauth_client_id=company_oauth_client_id,
             )
-            provider_id, email, full_name, avatar_url = _extract_user_data(provider, userinfo, access_token)
+            user, created, profile, resolve_err = _resolve_oauth_login_user(
+                provider=provider,
+                company=company,
+                userinfo=userinfo,
+                token_bundle=token_bundle,
+                company_oauth_client_id=company_oauth_client_id,
+            )
+            if resolve_err or profile is None or user is None:
+                record_login_event(
+                    request=request,
+                    outcome=LoginEvent.OUTCOME_FAILURE,
+                    provider=provider,
+                    user=None,
+                    company=company,
+                    failure_reason=resolve_err or 'oauth_user_resolution_failed',
+                    client_timezone=client_tz,
+                    client_device_id=client_dev,
+                )
+                return Response(
+                    {'detail': resolve_err or 'Could not resolve OAuth account.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            avatar_url = profile.avatar_url
+            email = profile.email
         except Exception as exc:
             record_login_event(
                 request=request,
@@ -1157,22 +1285,14 @@ class SocialLoginView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        user, created = User.objects.get_or_create(
-            email=email,
-            defaults={
-                'username': f'{provider}_{provider_id}',
-                'first_name': full_name.split(' ')[0],
-                'last_name': ' '.join(full_name.split(' ')[1:]),
-            },
-        )
-        if not created:
-            if not user.first_name and full_name:
-                user.first_name = full_name.split(' ')[0]
-            if not user.last_name and ' ' in full_name:
-                user.last_name = ' '.join(full_name.split(' ')[1:])
-            user.save(update_fields=['first_name', 'last_name'])
+        emit_oauth_user_created_if_new(company, user, created=created, oauth_provider=provider)
         join = apply_company_join(company, user, email=email)
-        _link_social_account(user=user, provider=provider, provider_id=provider_id, userinfo=userinfo)
+        _link_social_account(
+            user=user,
+            provider=provider,
+            provider_id=profile.provider_id,
+            userinfo=userinfo,
+        )
 
         cache.set(
             f"shellui:user_metadata:{user.id}",
@@ -1245,13 +1365,21 @@ class ShellUIAuthSettingsView(APIView):
         company, company_err = _required_company_from_request(request)
         if company_err:
             return company_err
+        from apps.authapi.magic_link import magic_link_enabled_for_company
+
         clients = _company_oauth_clients(company)
         providers = sorted({str(row.social_app.provider).lower() for row in clients})
+        magic_on = magic_link_enabled_for_company(company)
+        methods: list[str] = []
+        if magic_on:
+            methods.append('magic_link')
+        if providers:
+            methods.append('oauth')
         payload = {
-            'methods': ['oauth'] if providers else [],
+            'methods': methods,
             'oauthProviders': providers,
             'enable_oauth': bool(providers),
-            'enable_magic_link': False,
+            'enable_magic_link': magic_on,
         }
         actor = _authenticate_bearer_user(request)
         if actor is not None and company.members.filter(pk=actor.pk).exists():
@@ -1408,7 +1536,7 @@ class ShellUIAuthorizeView(APIView):
             )
         switch_account = str(request.GET.get('switch_account', '')).strip().lower() in ('1', 'true', 'yes')
         token_delivery = _resolve_token_delivery(request=request)
-        state = build_oauth_state(
+        state, state_nonce = build_oauth_state(
             provider=provider,
             redirect_to=redirect_to,
             company_id=company.id,
@@ -1426,7 +1554,17 @@ class ShellUIAuthorizeView(APIView):
             company_oauth_client_id=company_oauth_client_id,
             switch_account=switch_account,
         )
-        return HttpResponseRedirect(authorize_url)
+        response = HttpResponseRedirect(authorize_url)
+        cookie = oauth_state_nonce_cookie_value(state_nonce)
+        response.set_cookie(
+            cookie['key'],
+            cookie['value'],
+            max_age=cookie['max_age'],
+            httponly=cookie['httponly'],
+            samesite=cookie['samesite'],
+            secure=cookie['secure'],
+        )
+        return response
 
 
 @extend_schema_view(
@@ -1466,7 +1604,8 @@ class ShellUIOAuthCallbackView(APIView):
 
     def get(self, request):
         code = request.GET.get('code', '').strip()
-        state_payload, state_err = parse_oauth_state(request.GET.get('state'))
+        state_raw = request.GET.get('state')
+        state_payload, state_err = verify_oauth_state_request(state_raw, request)
         if state_err or not state_payload:
             return _shellui_oauth_bounce_or_json(
                 request,
@@ -1531,7 +1670,7 @@ class ShellUIOAuthCallbackView(APIView):
             )
         callback_url = oauth_provider_redirect_uri(request)
         try:
-            access_token = exchange_code_for_token(
+            token_bundle = exchange_code_for_token(
                 provider=provider,
                 code=code,
                 redirect_uri=callback_url,
@@ -1540,11 +1679,42 @@ class ShellUIOAuthCallbackView(APIView):
             )
             userinfo = fetch_provider_userinfo(
                 provider,
-                access_token,
+                token_bundle.access_token,
                 company_id=company.id,
                 company_oauth_client_id=company_oauth_client_id,
             )
-            provider_id, email, full_name, avatar_url = _extract_user_data(provider, userinfo, access_token)
+            user, created, profile, resolve_err = _resolve_oauth_login_user(
+                provider=provider,
+                company=company,
+                userinfo=userinfo,
+                token_bundle=token_bundle,
+                company_oauth_client_id=company_oauth_client_id,
+            )
+            if resolve_err or profile is None or user is None:
+                record_login_event(
+                    request=request,
+                    outcome=LoginEvent.OUTCOME_FAILURE,
+                    provider=provider,
+                    user=None,
+                    company=company,
+                    failure_reason=resolve_err or 'oauth_user_resolution_failed',
+                    client_timezone=client_tz,
+                    client_device_id=client_dev,
+                )
+                bounced = _shellui_oauth_bounce_or_json(
+                    request,
+                    message=resolve_err or 'Could not resolve OAuth account.',
+                    error_code='oauth_identity_failed',
+                    redirect_to_raw=redirect_to,
+                )
+                if isinstance(bounced, HttpResponseRedirect):
+                    return bounced
+                return Response(
+                    {'detail': resolve_err or 'Could not resolve OAuth account.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            avatar_url = profile.avatar_url
+            email = profile.email
         except Exception as exc:
             record_login_event(
                 request=request,
@@ -1566,22 +1736,14 @@ class ShellUIOAuthCallbackView(APIView):
                 return bounced
             return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
-        user, created = User.objects.get_or_create(
-            email=email,
-            defaults={
-                'username': f'{provider}_{provider_id}',
-                'first_name': full_name.split(' ')[0],
-                'last_name': ' '.join(full_name.split(' ')[1:]),
-            },
-        )
-        if not created:
-            if not user.first_name and full_name:
-                user.first_name = full_name.split(' ')[0]
-            if not user.last_name and ' ' in full_name:
-                user.last_name = ' '.join(full_name.split(' ')[1:])
-            user.save(update_fields=['first_name', 'last_name'])
+        emit_oauth_user_created_if_new(company, user, created=created, oauth_provider=provider)
         join = apply_company_join(company, user, email=email)
-        _link_social_account(user=user, provider=provider, provider_id=provider_id, userinfo=userinfo)
+        _link_social_account(
+            user=user,
+            provider=provider,
+            provider_id=profile.provider_id,
+            userinfo=userinfo,
+        )
 
         cache.set(
             f"shellui:user_metadata:{user.id}",
@@ -1604,6 +1766,27 @@ class ShellUIOAuthCallbackView(APIView):
                 client_device_id=client_dev,
             )
             return _join_denied_response(decision=join, redirect_to=redirect_to)
+        if should_skip_oauth_confirm(provider, email=email, userinfo=userinfo):
+            if not is_company_access_enabled(company, user):
+                return _join_denied_response(
+                    decision=JoinDecision(
+                        allowed=False,
+                        error_code='access_denied',
+                        message='Access denied for this company.',
+                    ),
+                    redirect_to=redirect_to,
+                )
+            return _finalize_shellui_oauth_login(
+                request,
+                user=user,
+                company=company,
+                provider=provider,
+                redirect_to=redirect_to,
+                avatar_url=avatar_url,
+                client_tz=client_tz,
+                client_dev=client_dev,
+                token_delivery=state_payload.get('token_delivery'),
+            )
         return _render_oauth_confirm_page(
             request,
             user=user,
@@ -1796,7 +1979,7 @@ class ShellUIOAuthExchangeView(APIView):
         client_tz = validated.get('client_timezone') or ''
         client_dev = validated.get('client_device_id') or None
         try:
-            access_token = exchange_code_for_token(
+            token_bundle = exchange_code_for_token(
                 provider=provider,
                 code=code,
                 redirect_uri=redirect_uri,
@@ -1805,11 +1988,34 @@ class ShellUIOAuthExchangeView(APIView):
             )
             userinfo = fetch_provider_userinfo(
                 provider,
-                access_token,
+                token_bundle.access_token,
                 company_id=company.id,
                 company_oauth_client_id=company_oauth_client_id,
             )
-            provider_id, email, full_name, avatar_url = _extract_user_data(provider, userinfo, access_token)
+            user, created, profile, resolve_err = _resolve_oauth_login_user(
+                provider=provider,
+                company=company,
+                userinfo=userinfo,
+                token_bundle=token_bundle,
+                company_oauth_client_id=company_oauth_client_id,
+            )
+            if resolve_err or profile is None or user is None:
+                record_login_event(
+                    request=request,
+                    outcome=LoginEvent.OUTCOME_FAILURE,
+                    provider=provider,
+                    user=None,
+                    company=company,
+                    failure_reason=resolve_err or 'oauth_user_resolution_failed',
+                    client_timezone=client_tz,
+                    client_device_id=client_dev,
+                )
+                return Response(
+                    {'detail': resolve_err or 'Could not resolve OAuth account.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            avatar_url = profile.avatar_url
+            email = profile.email
         except Exception as exc:
             record_login_event(
                 request=request,
@@ -1823,22 +2029,14 @@ class ShellUIOAuthExchangeView(APIView):
             )
             return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
-        user, created = User.objects.get_or_create(
-            email=email,
-            defaults={
-                'username': f'{provider}_{provider_id}',
-                'first_name': full_name.split(' ')[0],
-                'last_name': ' '.join(full_name.split(' ')[1:]),
-            },
-        )
-        if not created:
-            if not user.first_name and full_name:
-                user.first_name = full_name.split(' ')[0]
-            if not user.last_name and ' ' in full_name:
-                user.last_name = ' '.join(full_name.split(' ')[1:])
-            user.save(update_fields=['first_name', 'last_name'])
+        emit_oauth_user_created_if_new(company, user, created=created, oauth_provider=provider)
         join = apply_company_join(company, user, email=email)
-        _link_social_account(user=user, provider=provider, provider_id=provider_id, userinfo=userinfo)
+        _link_social_account(
+            user=user,
+            provider=provider,
+            provider_id=profile.provider_id,
+            userinfo=userinfo,
+        )
 
         cache.set(
             f"shellui:user_metadata:{user.id}",
@@ -1960,15 +2158,23 @@ class ShellUITokenView(APIView):
             prior_avatar = _normalize_avatar_url(prior_meta.get('avatar_url'))
 
         prior_app = refresh.get('app_metadata')
+        prior_auth_time = refresh.get('auth_time')
         touch_user_last_seen(user)
 
         assert session is not None
         revoke_refresh_session(session)
+        prior_auth_int = None
+        if prior_auth_time is not None:
+            try:
+                prior_auth_int = int(prior_auth_time)
+            except (TypeError, ValueError):
+                prior_auth_int = None
         payload = _issue_shellui_tokens(
             user,
             company=company,
             avatar_url=prior_avatar,
             prior_app_metadata=prior_app if isinstance(prior_app, dict) else None,
+            prior_auth_time=prior_auth_int,
             family_id=session.family_id,
         )
         return Response(payload)
@@ -2042,6 +2248,27 @@ class ShellUILogoutView(APIView):
             200: OpenApiResponse(description='Updated user payload with merged metadata'),
             400: OpenApiResponse(description='Request body must include object field `data`'),
             401: OpenApiResponse(description='Missing or invalid bearer token'),
+        },
+    ),
+    delete=extend_schema(
+        tags=['auth-profile'],
+        summary='Delete current user account (self-service)',
+        description=(
+            'Permanently delete the authenticated user account (GDPR/RGPD erasure support). '
+            'Requires JSON body `{"confirm": true}`. Session access JWT only (not personal access '
+            'tokens); the access token must be recently issued (`iat` within '
+            '`SELF_SERVICE_ACCOUNT_DELETE_MAX_IAT_AGE`, default 5m). When the user belongs to '
+            'more than one company, returns 409 until other memberships are removed. Emits '
+            '`identity.user.deleted` once per company membership with `source: self`. Revokes '
+            'refresh sessions and personal access tokens.'
+        ),
+        request=ShellUIUserDeleteSerializer,
+        responses={
+            204: OpenApiResponse(description='Account deleted'),
+            400: OpenApiResponse(description='Missing or false confirm flag'),
+            401: OpenApiResponse(description='Missing or invalid bearer token'),
+            403: OpenApiResponse(description='PAT or stale access token'),
+            409: OpenApiResponse(description='User belongs to more than one company'),
         },
     ),
 )
@@ -2130,6 +2357,45 @@ class ShellUIUserView(APIView):
                 'user_metadata': merged,
             }
         )
+
+    def delete(self, request):
+        user = _authenticate_bearer_user(request)
+        if not user:
+            return Response({'error': 'Unauthorized'}, status=status.HTTP_401_UNAUTHORIZED)
+        _company, company_err = _required_company_from_request(request, user=user)
+        if company_err:
+            return company_err
+
+        serializer = ShellUIUserDeleteSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        if not serializer.validated_data['confirm']:
+            return Response(
+                {'error': 'Set confirm to true to delete your account.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        blocked = check_self_service_account_delete_allowed(request, user)
+        if blocked is not None:
+            return blocked
+
+        request_auth = getattr(request, 'auth', None)
+        if request_auth is not None and hasattr(request_auth, 'get'):
+            access_jti = request_auth.get('jti')
+            access_exp = request_auth.get('exp')
+            if access_jti and access_exp is not None:
+                denylist_access_jti(str(access_jti), exp_unix=int(access_exp))
+
+        refresh_token = request.data.get('refresh_token')
+        if isinstance(refresh_token, str) and refresh_token.strip():
+            try:
+                refresh = ShellUIRefreshToken(refresh_token.strip())
+                revoke_refresh_by_jti(str(refresh.get('jti') or ''))
+            except Exception:
+                pass
+
+        delete_user_account(user, source='self')
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 @extend_schema_view(
@@ -2363,15 +2629,34 @@ class ShellUIAdminUserDetailView(APIView):
 
         if 'group_ids' in validated:
             requested_ids = set(validated['group_ids'])
-            company_groups = CompanyGroup.objects.filter(company=company).order_by('id')
-            existing_ids = set(company_groups.values_list('id', flat=True))
-            missing_ids = sorted(requested_ids - existing_ids)
-            if missing_ids:
+            scim_in_request = CompanyGroup.objects.filter(
+                company=company,
+                source=CompanyGroup.SOURCE_SCIM,
+                pk__in=requested_ids,
+            )
+            if scim_in_request.exists():
+                scim_ids = sorted(scim_in_request.values_list('pk', flat=True))
                 return Response(
-                    {'error': f'Unknown group ids for this company: {missing_ids}.'},
+                    {
+                        'error': (
+                            'SCIM-managed groups cannot be changed through admin user PATCH. '
+                            f'Remove SCIM group ids from group_ids: {scim_ids}.'
+                        ),
+                    },
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-            for g in company_groups:
+            manual_groups = CompanyGroup.objects.filter(
+                company=company,
+                source=CompanyGroup.SOURCE_MANUAL,
+            ).order_by('id')
+            existing_manual_ids = set(manual_groups.values_list('id', flat=True))
+            missing_ids = sorted(requested_ids - existing_manual_ids)
+            if missing_ids:
+                return Response(
+                    {'error': f'Unknown manual group ids for this company: {missing_ids}.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            for g in manual_groups:
                 if g.id in requested_ids:
                     g.members.add(target)
                 else:
@@ -2409,6 +2694,63 @@ class ShellUIAdminUserDetailView(APIView):
         return Response(_admin_user_payload(target, company))
 
 
+def _admin_group_row(g: CompanyGroup) -> dict:
+    return {
+        'id': g.id,
+        'display_name': g.display_name,
+        'source': g.source,
+        'user_count': getattr(g, 'user_count', g.members.count()),
+    }
+
+
+def _admin_group_display_name_conflict_response(
+    company: Company,
+    display_name: str,
+    *,
+    exclude_pk: int | None = None,
+    operation: str = OPERATION_CREATE,
+) -> Response | None:
+    existing = first_display_name_conflict(company, display_name, exclude_pk=exclude_pk)
+    if existing is None:
+        return None
+    record_group_display_name_conflict(
+        company=company,
+        display_name=display_name,
+        conflict=existing,
+        channel=ScimProvisioningEvent.CHANNEL_ADMIN,
+        operation=operation,
+        scim_token=None,
+    )
+    if existing.source == CompanyGroup.SOURCE_SCIM:
+        return Response(
+            {
+                'error': (
+                    'A SCIM-provisioned group already uses this display name. '
+                    'Change or remove it in the IdP, or pick another name for this manual group.'
+                ),
+            },
+            status=status.HTTP_409_CONFLICT,
+        )
+    return Response(
+        {'error': 'A group with this display name already exists.'},
+        status=status.HTTP_409_CONFLICT,
+    )
+
+
+def _forbid_scim_group_admin_mutation(group: CompanyGroup) -> Response | None:
+    if group.source == CompanyGroup.SOURCE_SCIM:
+        return Response(
+            {
+                'error': (
+                    'This group is managed by SCIM provisioning and cannot be '
+                    'modified or deleted via the admin API.'
+                ),
+            },
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    return None
+
+
 @extend_schema_view(
     get=extend_schema(
         tags=['directory-groups'],
@@ -2434,8 +2776,8 @@ class ShellUIAdminGroupListView(APIView):
         rows = list(
             CompanyGroup.objects.filter(company=company)
             .annotate(user_count=Count('members', distinct=True))
-            .values('id', 'name', 'user_count')
-            .order_by('name')
+            .values('id', 'display_name', 'source', 'user_count')
+            .order_by('display_name')
         )
         return Response(rows)
 
@@ -2445,16 +2787,32 @@ class ShellUIAdminGroupListView(APIView):
             return err
         serializer = ShellUIAdminGroupCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        name = str(serializer.validated_data['name']).strip()
-        if not name:
-            return Response({'error': 'Group name is required.'}, status=status.HTTP_400_BAD_REQUEST)
-        if CompanyGroup.objects.filter(company=company, name=name).exists():
-            return Response(
-                {'error': 'A group with this name already exists.'},
-                status=status.HTTP_400_BAD_REQUEST,
+        display_name = str(serializer.validated_data['display_name']).strip()
+        if not display_name:
+            return Response({'error': 'Group display name is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        conflict = _admin_group_display_name_conflict_response(
+            company,
+            display_name,
+            operation=OPERATION_CREATE,
+        )
+        if conflict:
+            return conflict
+        try:
+            g = CompanyGroup.objects.create(
+                company=company,
+                display_name=display_name,
+                source=CompanyGroup.SOURCE_MANUAL,
             )
-        g = CompanyGroup.objects.create(company=company, name=name)
-        return Response({'id': g.id, 'name': g.name, 'user_count': 0}, status=status.HTTP_201_CREATED)
+        except IntegrityError:
+            retry = _admin_group_display_name_conflict_response(
+                company,
+                display_name,
+                operation=OPERATION_CREATE,
+            )
+            if retry:
+                return retry
+            raise
+        return Response(_admin_group_row(g), status=status.HTTP_201_CREATED)
 
 
 @extend_schema_view(
@@ -2464,6 +2822,11 @@ class ShellUIAdminGroupListView(APIView):
         operation_id='api_v1_groups_retrieve',
     ),
     put=extend_schema(
+        tags=['directory-groups'],
+        summary='Rename auth group (staff or company owner)',
+        request=ShellUIAdminGroupUpdateSerializer,
+    ),
+    patch=extend_schema(
         tags=['directory-groups'],
         summary='Rename auth group (staff or company owner)',
         request=ShellUIAdminGroupUpdateSerializer,
@@ -2485,7 +2848,7 @@ class ShellUIAdminGroupDetailView(APIView):
             g = CompanyGroup.objects.filter(company=company).annotate(user_count=Count('members', distinct=True)).get(pk=pk)
         except CompanyGroup.DoesNotExist:
             return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
-        return Response({'id': g.id, 'name': g.name, 'user_count': g.user_count})
+        return Response(_admin_group_row(g))
 
     def put(self, request, pk):
         _actor, company, err = _require_staff_or_company_owner(request)
@@ -2495,20 +2858,40 @@ class ShellUIAdminGroupDetailView(APIView):
             g = CompanyGroup.objects.filter(company=company).annotate(user_count=Count('members', distinct=True)).get(pk=pk)
         except CompanyGroup.DoesNotExist:
             return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        blocked = _forbid_scim_group_admin_mutation(g)
+        if blocked:
+            return blocked
         serializer = ShellUIAdminGroupUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        name = str(serializer.validated_data['name']).strip()
-        if not name:
-            return Response({'error': 'Group name is required.'}, status=status.HTTP_400_BAD_REQUEST)
-        if CompanyGroup.objects.filter(company=company, name=name).exclude(pk=g.pk).exists():
-            return Response(
-                {'error': 'A group with this name already exists.'},
-                status=status.HTTP_400_BAD_REQUEST,
+        display_name = str(serializer.validated_data['display_name']).strip()
+        if not display_name:
+            return Response({'error': 'Group display name is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        conflict = _admin_group_display_name_conflict_response(
+            company,
+            display_name,
+            exclude_pk=g.pk,
+            operation=OPERATION_RENAME,
+        )
+        if conflict:
+            return conflict
+        g.display_name = display_name
+        try:
+            g.save(update_fields=['display_name'])
+        except IntegrityError:
+            retry = _admin_group_display_name_conflict_response(
+                company,
+                display_name,
+                exclude_pk=g.pk,
+                operation=OPERATION_RENAME,
             )
-        g.name = name
-        g.save(update_fields=['name'])
+            if retry:
+                return retry
+            raise
         g = CompanyGroup.objects.filter(company=company).annotate(user_count=Count('members', distinct=True)).get(pk=g.pk)
-        return Response({'id': g.id, 'name': g.name, 'user_count': g.user_count})
+        return Response(_admin_group_row(g))
+
+    def patch(self, request, pk):
+        return self.put(request, pk)
 
     def delete(self, request, pk):
         _actor, company, err = _require_staff_or_company_owner(request)
@@ -2518,6 +2901,9 @@ class ShellUIAdminGroupDetailView(APIView):
             g = CompanyGroup.objects.filter(company=company).get(pk=pk)
         except CompanyGroup.DoesNotExist:
             return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        blocked = _forbid_scim_group_admin_mutation(g)
+        if blocked:
+            return blocked
         g.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -3339,6 +3725,171 @@ class ShellUIPersonalAccessTokenRevokeView(APIView):
         row.revoked_at = datetime.now(timezone.utc)
         row.save(update_fields=['revoked_at'])
         return Response(_personal_access_token_row(row))
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=['scim'],
+        summary='SCIM deployment and company configuration status (staff or company owner)',
+        description=(
+            'Reports whether SCIM is enabled on this identity deployment and whether the current '
+            'company has active (non-revoked) SCIM bearer tokens. Works when SCIM is disabled so '
+            'admin UIs can show deployment state.'
+        ),
+        operation_id='api_v1_scim_status',
+    ),
+)
+class ShellUIAdminScimStatusView(APIView):
+    permission_classes = [ShellUIPermission]
+    serializer_class = ShellUIOpenAPISerializer
+
+    def get(self, request):
+        _actor, company, err = _require_staff_or_company_owner(request)
+        if err:
+            return err
+        return Response(_scim_status_payload(request, company))
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=['scim'],
+        summary='List company SCIM bearer tokens (staff or company owner)',
+        description='Never includes token secrets or hashes. Allowed when SCIM is disabled (cleanup).',
+        operation_id='api_v1_scim_tokens_list',
+    ),
+    post=extend_schema(
+        tags=['scim'],
+        summary='Create company SCIM bearer token (staff or company owner)',
+        request=ShellUIAdminScimTokenCreateSerializer,
+        description=(
+            'Returns the bearer secret once in `token`. Blocked when the deployment emergency kill switch '
+            '`SCIM_ENABLED=false` is set.'
+        ),
+    ),
+)
+class ShellUIAdminScimTokenListCreateView(APIView):
+    permission_classes = [ShellUIPermission]
+    serializer_class = ShellUIOpenAPISerializer
+
+    def get(self, request):
+        _actor, company, err = _require_staff_or_company_owner(request)
+        if err:
+            return err
+        qs = CompanyScimToken.objects.filter(company=company).order_by('-created_at')
+        return Response({'results': [_scim_token_row(t) for t in qs]})
+
+    def post(self, request):
+        _actor, company, err = _require_staff_or_company_owner(request)
+        if err:
+            return err
+        if not getattr(settings, 'SCIM_ENABLED', True):
+            return Response(
+                {'error': 'SCIM is not enabled on this identity deployment.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        serializer = ShellUIAdminScimTokenCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        name = str(serializer.validated_data.get('name') or '').strip()[:200]
+        raw, prefix, digest = generate_scim_token()
+        row = CompanyScimToken.objects.create(
+            company=company,
+            token_prefix=prefix,
+            token_hash=digest,
+            name=name,
+        )
+        from apps.actions.token_hooks import emit_scim_token_created
+
+        emit_scim_token_created(company, row)
+        return Response(
+            _scim_token_row(row, include_token=raw),
+            status=status.HTTP_201_CREATED,
+        )
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=['scim'],
+        summary='Revoke company SCIM bearer token (staff or company owner)',
+        description='Idempotent: already-revoked tokens return success. Allowed when SCIM is disabled.',
+        operation_id='api_v1_scim_tokens_revoke',
+    ),
+)
+class ShellUIAdminScimTokenRevokeView(APIView):
+    permission_classes = [ShellUIPermission]
+    serializer_class = ShellUIOpenAPISerializer
+
+    def post(self, request, token_id):
+        _actor, company, err = _require_staff_or_company_owner(request)
+        if err:
+            return err
+        try:
+            row = CompanyScimToken.objects.get(pk=token_id, company=company)
+        except CompanyScimToken.DoesNotExist:
+            return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        if row.revoked_at is None:
+            row.revoked_at = datetime.now(timezone.utc)
+            row.save(update_fields=['revoked_at'])
+            from apps.actions.token_hooks import emit_scim_token_revoked
+
+            emit_scim_token_revoked(company, row)
+        return Response(_scim_token_row(row))
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=['auth-admin'],
+        summary='Company auth methods (staff or company owner)',
+        description=(
+            'Read magic-link and OAuth capability flags for the company. '
+            '`magic_link_effective` is false when the company or deployment disables magic link.'
+        ),
+        operation_id='api_v1_auth_methods_retrieve',
+    ),
+    patch=extend_schema(
+        tags=['auth-admin'],
+        summary='Update company auth methods (staff or company owner)',
+        request=ShellUIAdminAuthMethodsUpdateSerializer,
+        description='Toggle `enable_magic_link` for the company (fully disables magic-link request/verify when false).',
+        operation_id='api_v1_auth_methods_partial_update',
+    ),
+    put=extend_schema(
+        tags=['auth-admin'],
+        summary='Update company auth methods (staff or company owner)',
+        request=ShellUIAdminAuthMethodsUpdateSerializer,
+        description='Same as PATCH — set `enable_magic_link` for the company.',
+        operation_id='api_v1_auth_methods_update',
+    ),
+)
+class ShellUIAdminAuthMethodsView(APIView):
+    permission_classes = [ShellUIPermission]
+    serializer_class = ShellUIOpenAPISerializer
+
+    def get(self, request):
+        _actor, company, err = _require_staff_or_company_owner(request)
+        if err:
+            return err
+        return Response(_auth_methods_admin_payload(company))
+
+    def _update(self, request):
+        _actor, company, err = _require_staff_or_company_owner(request)
+        if err:
+            return err
+        serializer = ShellUIAdminAuthMethodsUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        if 'enable_magic_link' not in serializer.validated_data:
+            return Response(
+                {'error': 'Provide enable_magic_link (boolean).'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        company.enable_magic_link = bool(serializer.validated_data['enable_magic_link'])
+        company.save(update_fields=['enable_magic_link'])
+        return Response(_auth_methods_admin_payload(company))
+
+    def patch(self, request):
+        return self._update(request)
+
+    def put(self, request):
+        return self._update(request)
 
 
 @extend_schema_view(
