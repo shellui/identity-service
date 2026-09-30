@@ -348,13 +348,21 @@ def _parse_company_oauth_client_id(value: str | None) -> int | None:
 
 
 def _company_oauth_clients(company: Company) -> list[CompanyOAuthClient]:
-    return list(
+    rows = list(
         CompanyOAuthClient.objects.filter(company=company, is_active=True)
         .exclude(social_app__client_id='')
-        .exclude(social_app__secret='')
         .select_related('social_app')
         .order_by('social_app__provider', 'social_app__name', 'id')
     )
+    filtered: list[CompanyOAuthClient] = []
+    for row in rows:
+        provider = str(row.social_app.provider).strip().lower()
+        if provider == 'saml':
+            filtered.append(row)
+            continue
+        if str(row.social_app.secret).strip():
+            filtered.append(row)
+    return filtered
 
 
 def _social_app_matches_catalog_entry(social_app: SocialApp, entry) -> bool:
@@ -385,10 +393,11 @@ def _get_company_oauth_client(
             is_active=True,
         )
         .exclude(social_app__client_id='')
-        .exclude(social_app__secret='')
         .select_related('social_app')
         .first()
     )
+    if row and entry and entry.allauth_id != 'saml' and not str(row.social_app.secret).strip():
+        row = None
     if row and entry and _social_app_matches_catalog_entry(row.social_app, entry):
         return row, None
     return None, 'Requested company_oauth_client_id is not available for this provider.'
@@ -423,14 +432,14 @@ def _oauth_client_payload(row: CompanyOAuthClient) -> dict:
     }
 
 
-def _oauth_social_app_payload(company: Company, app: SocialApp) -> dict:
+def _oauth_social_app_payload(company: Company, app: SocialApp, *, request=None) -> dict:
     mapping = (
         CompanyOAuthClient.objects.filter(company=company, social_app=app)
         .order_by('-id')
         .first()
     )
     app_settings = app.settings if isinstance(app.settings, dict) else {}
-    return {
+    payload = {
         'id': app.id,
         'provider': social_app_catalog_slug(app),
         'allauth_provider': app.provider,
@@ -443,6 +452,15 @@ def _oauth_social_app_payload(company: Company, app: SocialApp) -> dict:
         'mapping_id': mapping.id if mapping is not None else None,
         'mapping_is_active': bool(mapping.is_active) if mapping is not None else False,
     }
+    if str(app.provider).strip().lower() == 'saml' and request is not None:
+        from apps.authapi.saml.utils import sp_public_urls
+
+        payload['saml'] = sp_public_urls(
+            request,
+            str(app.client_id),
+            settings_data=app_settings,
+        )
+    return payload
 
 
 def _identity_oauth_callback_url(request) -> str:
@@ -1673,7 +1691,9 @@ class ShellUIAuthorizeView(APIView):
             company_id=company.id,
             company_oauth_client_id=company_oauth_client_id,
         )
-        if not str(cfg.client_id).strip() or not str(cfg.client_secret).strip():
+        entry_for_cfg = resolve_catalog_slug(provider)
+        needs_secret = entry_for_cfg is None or entry_for_cfg.allauth_id != 'saml'
+        if not str(cfg.client_id).strip() or (needs_secret and not str(cfg.client_secret).strip()):
             return _shellui_oauth_bounce_or_json(
                 request,
                 message=(
@@ -3323,7 +3343,7 @@ class ShellUIAdminOAuthSocialAppListView(APIView):
             flat=True,
         )
         apps = SocialApp.objects.filter(id__in=company_app_ids).order_by('provider', 'name', 'id')
-        rows = [_oauth_social_app_payload(company, app) for app in apps]
+        rows = [_oauth_social_app_payload(company, app, request=request) for app in apps]
         return Response(
             {
                 'providers': sorted(enabled_providers),
@@ -3335,7 +3355,12 @@ class ShellUIAdminOAuthSocialAppListView(APIView):
         _actor, company, err = _require_staff_or_company_owner(request)
         if err:
             return err
-        serializer = ShellUIAdminOAuthSocialAppCreateSerializer(data=request.data)
+        incoming = request.data.copy() if hasattr(request.data, 'copy') else dict(request.data)
+        pre_slug = str(incoming.get('docs_slug') or incoming.get('provider') or '').strip().lower()
+        if pre_slug == 'saml':
+            incoming.setdefault('client_id', 'saml-auto')
+            incoming.setdefault('client_secret', '-')
+        serializer = ShellUIAdminOAuthSocialAppCreateSerializer(data=incoming)
         serializer.is_valid(raise_exception=True)
         validated = serializer.validated_data
         docs_slug = str(validated['docs_slug']).strip().lower()
@@ -3345,20 +3370,42 @@ class ShellUIAdminOAuthSocialAppListView(APIView):
                 {'error': f"Provider '{docs_slug}' is not supported."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        social_settings, settings_err = _merge_social_app_settings(entry, validated)
+        if entry.allauth_id == 'saml':
+            from apps.authapi.saml.organization import generate_organization_slug
+            from apps.authapi.saml.settings_merge import merge_saml_social_settings
+
+            social_settings, settings_err = merge_saml_social_settings(
+                entry,
+                validated,
+                company_id=company.id,
+            )
+        else:
+            social_settings, settings_err = _merge_social_app_settings(entry, validated)
         if settings_err:
-            return Response({'error': settings_err}, status=status.HTTP_400_BAD_REQUEST)
+            err_code = settings_err if str(settings_err).startswith('error_code:') else None
+            body = {'error_code': err_code.split(':', 1)[1]} if err_code else {'error': settings_err}
+            return Response(body, status=status.HTTP_400_BAD_REQUEST)
         dedupe_key = compute_dedupe_key_for_new_app(entry, settings=social_settings)
         duplicate = find_duplicate_company_oauth_client(company.id, dedupe_key=dedupe_key)
         if duplicate is not None:
             return _oauth_duplicate_provider_response(duplicate.social_app_id)
         social_settings['created_by_company_id'] = int(company.id)
+        org_slug = (
+            generate_organization_slug(company_id=company.id)
+            if entry.allauth_id == 'saml'
+            else str(validated['client_id']).strip()
+        )
+        client_secret = (
+            '-'
+            if entry.allauth_id == 'saml'
+            else str(validated['client_secret']).strip()
+        )
         app = SocialApp.objects.create(
             provider=entry.allauth_id,
             provider_id=entry.social_app_provider_id(),
             name=_generated_social_app_name(entry.docs_slug, company),
-            client_id=str(validated['client_id']).strip(),
-            secret=str(validated['client_secret']).strip(),
+            client_id=org_slug,
+            secret=client_secret,
             key=str(
                 validated.get('extra_settings', {}).get('key')
                 or social_settings.get('key')
@@ -3385,7 +3432,7 @@ class ShellUIAdminOAuthSocialAppListView(APIView):
             raise
         return Response(
             {
-                'social_app': _oauth_social_app_payload(company, app),
+                'social_app': _oauth_social_app_payload(company, app, request=request),
                 'mapping': _oauth_client_payload(mapping) if mapping else None,
             },
             status=status.HTTP_201_CREATED,
@@ -3435,7 +3482,21 @@ class ShellUIAdminOAuthSocialAppDetailView(APIView):
         entry = resolve_catalog_slug(social_app_catalog_slug(app))
         settings_data = app.settings if isinstance(app.settings, dict) else {}
         settings_data = dict(settings_data)
-        if entry is not None and ('tenant' in validated or 'extra_settings' in validated):
+        if entry is not None and entry.allauth_id == 'saml' and 'extra_settings' in validated:
+            from apps.authapi.saml.settings_merge import merge_saml_social_settings
+
+            merged, settings_err = merge_saml_social_settings(
+                entry,
+                validated,
+                existing=settings_data,
+                company_id=company.id,
+            )
+            if settings_err:
+                err_code = settings_err if str(settings_err).startswith('error_code:') else None
+                body = {'error_code': err_code.split(':', 1)[1]} if err_code else {'error': settings_err}
+                return Response(body, status=status.HTTP_400_BAD_REQUEST)
+            settings_data = merged
+        elif entry is not None and ('tenant' in validated or 'extra_settings' in validated):
             merged, settings_err = _merge_social_app_settings(
                 entry,
                 validated,
@@ -3461,7 +3522,7 @@ class ShellUIAdminOAuthSocialAppDetailView(APIView):
         app.save()
         mapping.save()
         app.refresh_from_db()
-        return Response(_oauth_social_app_payload(company, app))
+        return Response(_oauth_social_app_payload(company, app, request=request))
 
     def delete(self, request, pk):
         _actor, company, err = _require_staff_or_company_owner(request)

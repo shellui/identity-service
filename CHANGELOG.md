@@ -25,6 +25,14 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 ### ✨ Feature
 
+- **SAML 2.0 SSO:** Company admins can configure multiple SAML IdPs per company via `oauth-social-apps`. Identity-service exposes SP metadata, ACS, login, and optional SLO under `/api/v1/saml/<organization_slug>/`. See [docs/saml.md](docs/saml.md).
+
+### 🔒 Security
+
+- SAML ACS processing requires signed assertions (python3-saml strict mode), single-use `InResponseTo` and assertion IDs, SSRF-pinned metadata import, and company-bound IdP configuration. IdP-initiated SSO and email account linking use explicit opt-in policies.
+
+### ✨ Feature
+
 - **OAuth provider catalog:** identity-service ships a checked-in django-allauth provider catalog (`apps/authapi/provider_catalog.json`) with **97** OAuth2/OIDC providers marked `supported: true` on the identity-hosted adapter (114 total catalog entries). Admin API: `GET /api/v1/oauth-provider-catalog`. OAuth app CRUD accepts `docs_slug` plus validated `extra_settings`. Catalog generation tracks the installed django-allauth version and end-to-end adapter test coverage per provider.
 - **django-allauth 65.19.5:** dependency upgraded to match the provider dataset.
 

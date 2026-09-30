@@ -35,6 +35,10 @@ def main() -> int:
     source_entries = json.loads(SOURCE_PATH.read_text(encoding='utf-8'))
     apps = _oauth2_app_paths(source_entries)
     ordered = sorted(apps)
+    saml_app = 'allauth.socialaccount.providers.saml'
+    if saml_app not in ordered:
+        ordered.append(saml_app)
+        ordered.sort()
     lines = [
         '"""Installed django-allauth socialaccount provider apps (generated)."""',
         '',

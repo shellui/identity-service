@@ -25,6 +25,9 @@ class ShellUISocialAccountAdapter(DefaultSocialAccountAdapter):
         if bound_provider == 'openid_connect':
             if provider_key not in {bound_provider, bound_sub}:
                 raise SocialApp.DoesNotExist()
+        elif bound_provider == 'saml':
+            if provider_key not in {bound_provider, 'saml'}:
+                raise SocialApp.DoesNotExist()
         elif bound_provider != provider_key:
             raise SocialApp.DoesNotExist()
         return bound

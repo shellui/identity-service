@@ -40,6 +40,12 @@ def compose_social_account_uid(
     uid = str(raw_uid or '').strip()
     if not uid:
         return uid
+    if entry is not None and entry.allauth_id == 'saml':
+        settings_data = social_app.settings if isinstance(social_app.settings, dict) else {}
+        idp = settings_data.get('idp') if isinstance(settings_data.get('idp'), dict) else {}
+        entity_id = str(idp.get('entity_id') or '').strip()
+        if entity_id:
+            return f'{entity_id}|{uid}'
     if entry is not None and entry.allauth_id == 'openid_connect':
         claims = id_token_claims if isinstance(id_token_claims, dict) else {}
         issuer = str(claims.get('iss') or '').strip()

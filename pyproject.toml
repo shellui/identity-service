@@ -26,6 +26,9 @@ dependencies = [
     "redis==8.1.0",
     "html2text==2025.4.15",
     "pyjwt>=2.14.0",
+    "python3-saml>=1.16.0",
+    "defusedxml>=0.7.1",
+    "signxml>=5.1.0",
 ]
 
 [dependency-groups]

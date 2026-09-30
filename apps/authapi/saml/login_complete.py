@@ -1,0 +1,229 @@
+"""Complete Shellui login after a validated SAML assertion."""
+
+from __future__ import annotations
+
+from django.core.cache import cache
+from django.http import HttpRequest, HttpResponseRedirect
+
+from apps.actions.user_hooks import emit_oauth_user_created_if_new
+from apps.authapi.login_audit import record_login_event
+from apps.authapi import metrics as auth_metrics
+from apps.authapi.models import LoginEvent
+from apps.authapi.oauth import should_skip_oauth_confirm
+from apps.authapi.oauth_social_account import bind_oauth_social_app, compose_social_account_uid
+from apps.authapi.oauth_user import OAuthProfile, resolve_oauth_user
+from apps.authapi.provider_registry import catalog_entry_for_social_app
+from apps.authapi.saml.organization import idp_entity_id_from_settings, shellui_company_id_from_app
+from apps.companies.access import JoinDecision, apply_company_join, is_company_access_enabled
+from apps.companies.models import Company
+
+
+def saml_email_verified_for_link(*, social_app, company: Company, email: str) -> bool:
+    settings_data = social_app.settings if isinstance(social_app.settings, dict) else {}
+    if not settings_data.get('trusted_for_verified_domains'):
+        return False
+    domain = str(email or '').split('@')[-1].strip().lower()
+    if not domain:
+        return False
+    allowed = company.allowed_email_domains if isinstance(company.allowed_email_domains, list) else []
+    normalized = {str(d).strip().lower() for d in allowed if str(d).strip()}
+    return domain in normalized
+
+
+def profile_from_saml_auth(request: HttpRequest, social_app, auth) -> tuple[OAuthProfile | None, str | None]:
+    from allauth.socialaccount.providers.saml.provider import SAMLProvider
+
+    from apps.authapi.oauth_social_account import social_account_provider_key
+
+    bind_oauth_social_app(request, social_app)
+    entry = catalog_entry_for_social_app(social_app)
+    provider = SAMLProvider(request, app=social_app)
+    sociallogin = provider.sociallogin_from_response(request, auth)
+    uid = str(sociallogin.account.uid or '').strip()
+    if not uid:
+        return None, 'saml_profile_invalid'
+    email = str(sociallogin.user.email or '').strip().lower()
+    if not email:
+        email = f'{uid}@saml.local'
+    full_name = sociallogin.user.get_full_name() or email.split('@')[0]
+    composed_uid = compose_social_account_uid(
+        entry=entry,
+        social_app=social_app,
+        raw_uid=uid,
+    )
+    social_provider = social_account_provider_key(entry=entry, social_app=social_app)
+    company_id = shellui_company_id_from_app(social_app)
+    company = Company.objects.filter(pk=company_id).first() if company_id else None
+    email_for_link = False
+    if company and email.endswith('@saml.local') is False:
+        email_for_link = saml_email_verified_for_link(
+            social_app=social_app,
+            company=company,
+            email=email,
+        )
+    userinfo = dict(sociallogin.account.extra_data or {})
+    userinfo.setdefault('email', email)
+    userinfo.setdefault('uid', uid)
+    return (
+        OAuthProfile(
+            provider_id=uid,
+            social_provider=social_provider,
+            social_uid=composed_uid or uid,
+            email=email,
+            full_name=full_name,
+            avatar_url=None,
+            email_verified_for_link=email_for_link,
+            userinfo=userinfo,
+        ),
+        None,
+    )
+
+
+def complete_shellui_saml_login(
+    request: HttpRequest,
+    *,
+    social_app,
+    auth,
+    shellui_state: dict,
+) -> HttpResponseRedirect:
+    from apps.authapi.views import (
+        _finalize_shellui_oauth_login,
+        _join_denied_response,
+        _link_social_account,
+        _render_oauth_confirm_page,
+        _shellui_oauth_bounce_or_json,
+    )
+
+    company_id = shellui_state.get('company_id')
+    try:
+        company = Company.objects.get(pk=int(company_id))
+    except (Company.DoesNotExist, TypeError, ValueError):
+        return _shellui_oauth_bounce_or_json(
+            request,
+            message='Company not found.',
+            error_code='callback_company',
+            redirect_to_raw=shellui_state.get('redirect_to'),
+        )
+    owner = shellui_company_id_from_app(social_app)
+    if owner is None or int(owner) != int(company.id):
+        return _shellui_oauth_bounce_or_json(
+            request,
+            message='SAML IdP is not configured for this company.',
+            error_code='saml_company_mismatch',
+            redirect_to_raw=shellui_state.get('redirect_to'),
+        )
+    profile, perror = profile_from_saml_auth(request, social_app, auth)
+    provider = 'saml'
+    client_tz = shellui_state.get('client_timezone') or ''
+    client_dev = shellui_state.get('client_device_id') or None
+    redirect_to = shellui_state.get('redirect_to') or ''
+    if perror or profile is None:
+        record_login_event(
+            request=request,
+            outcome=LoginEvent.OUTCOME_FAILURE,
+            provider=provider,
+            user=None,
+            company=company,
+            failure_reason=perror or 'saml_profile_invalid',
+            client_timezone=client_tz,
+            client_device_id=client_dev,
+        )
+        return _shellui_oauth_bounce_or_json(
+            request,
+            message=perror or 'SAML sign-in failed.',
+            error_code='saml_identity_failed',
+            redirect_to_raw=redirect_to,
+        )
+    user, created, uerror = resolve_oauth_user(provider=provider, profile=profile)
+    if uerror or user is None:
+        record_login_event(
+            request=request,
+            outcome=LoginEvent.OUTCOME_FAILURE,
+            provider=provider,
+            user=None,
+            company=company,
+            failure_reason=uerror or 'saml_user_resolution_failed',
+            client_timezone=client_tz,
+            client_device_id=client_dev,
+        )
+        return _shellui_oauth_bounce_or_json(
+            request,
+            message=uerror or 'SAML sign-in failed.',
+            error_code='saml_identity_failed',
+            redirect_to_raw=redirect_to,
+        )
+    emit_oauth_user_created_if_new(company, user, created=created, oauth_provider=provider)
+    join = apply_company_join(company, user, email=profile.email)
+    _link_social_account(user=user, profile=profile, userinfo=profile.userinfo)
+    cache.set(
+        f"shellui:user_metadata:{user.id}",
+        {
+            'name': user.get_full_name() or user.get_username(),
+            'full_name': user.get_full_name() or user.get_username(),
+            'avatar_url': profile.avatar_url,
+        },
+        timeout=60 * 60 * 24 * 30,
+    )
+    if not join.allowed:
+        record_login_event(
+            request=request,
+            outcome=LoginEvent.OUTCOME_FAILURE,
+            provider=provider,
+            user=user,
+            company=company,
+            failure_reason=join.error_code or 'access_denied',
+            client_timezone=client_tz,
+            client_device_id=client_dev,
+        )
+        return _join_denied_response(decision=join, redirect_to=redirect_to)
+    if should_skip_oauth_confirm(provider, email=profile.email, userinfo=profile.userinfo):
+        if not is_company_access_enabled(company, user):
+            return _join_denied_response(
+                decision=JoinDecision(
+                    allowed=False,
+                    error_code='access_denied',
+                    message='Access denied for this company.',
+                ),
+                redirect_to=redirect_to,
+            )
+        auth_metrics.record_successful_login(provider, company_id=company.id)
+        record_login_event(
+            request=request,
+            outcome=LoginEvent.OUTCOME_SUCCESS,
+            provider=provider,
+            user=user,
+            company=company,
+            client_timezone=client_tz,
+            client_device_id=client_dev,
+        )
+        return _finalize_shellui_oauth_login(
+            request,
+            user=user,
+            company=company,
+            provider=provider,
+            redirect_to=redirect_to,
+            avatar_url=profile.avatar_url,
+            client_tz=client_tz,
+            client_dev=client_dev,
+            token_delivery=shellui_state.get('token_delivery'),
+        )
+    record_login_event(
+        request=request,
+        outcome=LoginEvent.OUTCOME_SUCCESS,
+        provider=provider,
+        user=user,
+        company=company,
+        client_timezone=client_tz,
+        client_device_id=client_dev,
+    )
+    return _render_oauth_confirm_page(
+        request,
+        user=user,
+        company=company,
+        provider=provider,
+        redirect_to=redirect_to,
+        avatar_url=profile.avatar_url,
+        client_tz=client_tz,
+        client_dev=client_dev,
+        token_delivery=shellui_state.get('token_delivery'),
+    )

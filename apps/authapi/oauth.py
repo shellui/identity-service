@@ -59,6 +59,9 @@ def _match_social_app_provider(entry: ProviderCatalogEntry, social_app: SocialAp
     provider = str(social_app.provider).strip().lower()
     if provider != entry.allauth_id.lower():
         return False
+    if entry.allauth_id == 'saml':
+        settings_data = social_app.settings if isinstance(getattr(social_app, 'settings', None), dict) else {}
+        return str(settings_data.get('catalog_slug') or '').strip().lower() in {'', 'saml'}
     if entry.allauth_id == 'openid_connect':
         settings_data = social_app.settings if isinstance(getattr(social_app, 'settings', None), dict) else {}
         catalog_slug = str(settings_data.get('catalog_slug') or '').strip().lower()
@@ -83,15 +86,12 @@ def _resolve_company_client(
     if not company_id:
         return None
     try:
-        qs = (
-            CompanyOAuthClient.objects.filter(
-                company_id=company_id,
-                is_active=True,
-            )
-            .exclude(social_app__client_id='')
-            .exclude(social_app__secret='')
-            .select_related('social_app')
-        )
+        qs = CompanyOAuthClient.objects.filter(
+            company_id=company_id,
+            is_active=True,
+        ).exclude(social_app__client_id='').select_related('social_app')
+        if entry is None or entry.allauth_id != 'saml':
+            qs = qs.exclude(social_app__secret='')
         if company_oauth_client_id is not None:
             row = qs.filter(pk=company_oauth_client_id).first()
             if not row or not _match_social_app_provider(entry, row.social_app):
@@ -137,7 +137,9 @@ def resolve_oauth_client(
         raise ValueError(
             f'No OAuth client configured for provider {provider!r} and company {company_id!r}.'
         )
-    if not selected.client_id or not selected.client_secret:
+    if not selected.client_id:
+        raise ValueError(f'OAuth client for provider {provider!r} is missing credentials.')
+    if selected.catalog_entry.allauth_id != 'saml' and not selected.client_secret:
         raise ValueError(f'OAuth client for provider {provider!r} is missing credentials.')
     return selected
 
@@ -194,6 +196,38 @@ def build_authorize_url(
     social_app = get_social_app_for_client(resolved)
     bind_oauth_social_app(request, social_app)
     signed_state = state or str(uuid.uuid4())
+    if resolved.catalog_entry.allauth_id == 'saml':
+        from urllib.parse import urlencode
+
+        from django.urls import reverse
+
+        from apps.authapi.oauth_state import parse_oauth_state
+
+        shellui_redirect = redirect_uri
+        token_delivery = 'code'
+        client_timezone = ''
+        client_device_id = ''
+        state_payload, _state_err = parse_oauth_state(signed_state)
+        if state_payload:
+            shellui_redirect = str(state_payload.get('redirect_to') or shellui_redirect)
+            token_delivery = str(state_payload.get('token_delivery') or token_delivery)
+            client_timezone = str(state_payload.get('client_timezone') or '')
+            client_device_id = str(state_payload.get('client_device_id') or '')
+        login_path = reverse(
+            'shellui-saml-login',
+            kwargs={'organization_slug': social_app.client_id},
+        )
+        params = urlencode(
+            {
+                'company_id': company_id or '',
+                'redirect_to': shellui_redirect,
+                'company_oauth_client_id': company_oauth_client_id or '',
+                'token_delivery': token_delivery,
+                'client_timezone': client_timezone,
+                'client_device_id': client_device_id,
+            }
+        )
+        return request.build_absolute_uri(f'{login_path}?{params}')
     return build_allauth_authorize_url(
         request,
         entry=resolved.catalog_entry,
