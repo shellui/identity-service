@@ -67,6 +67,7 @@ from .oauth_state import (
     verify_oauth_state_request,
 )
 from .oauth_allauth import split_pkce_authorize_params
+from .oauth_errors import ShelluiOAuthError
 from .oauth_user import OAuthProfile, extract_oauth_profile, resolve_oauth_user
 from .oauth_confirm import build_oauth_confirm_token, parse_oauth_confirm_token
 from .oauth_session_code import (
@@ -240,6 +241,35 @@ def _oauth_id_token_invalid_response(
     if isinstance(bounced, HttpResponseRedirect):
         return bounced
     return Response({'detail': detail, 'error_code': 'oauth_id_token_invalid'}, status=status.HTTP_400_BAD_REQUEST)
+
+
+def _oauth_provider_error_response(
+    *,
+    request,
+    exc: ShelluiOAuthError,
+    provider: str,
+    company: Company,
+    client_tz: str = '',
+    client_dev: str | None = None,
+    redirect_to_raw: str | None = None,
+):
+    record_login_event(
+        request=request,
+        outcome=LoginEvent.OUTCOME_FAILURE,
+        provider=provider,
+        user=None,
+        company=company,
+        failure_reason=exc.code,
+        client_timezone=client_tz,
+        client_device_id=client_dev,
+    )
+    return _shellui_oauth_bounce_or_json(
+        request,
+        message=exc.message,
+        status_code=exc.status_code,
+        error_code=exc.code,
+        redirect_to_raw=redirect_to_raw,
+    )
 
 
 def _login_id_token_verified_after_exchange(
@@ -1395,15 +1425,18 @@ class SocialAuthorizeView(APIView):
             company_id=company.id,
             company_oauth_client_id=company_oauth_client_id,
         )
-        authorize_url = build_authorize_url(
-            provider=provider,
-            redirect_uri=redirect_uri,
-            state=state,
-            request=request,
-            company_id=company.id,
-            company_oauth_client_id=company_oauth_client_id,
-            oauth_nonce=state_nonce,
-        )
+        try:
+            authorize_url = build_authorize_url(
+                provider=provider,
+                redirect_uri=redirect_uri,
+                state=state,
+                request=request,
+                company_id=company.id,
+                company_oauth_client_id=company_oauth_client_id,
+                oauth_nonce=state_nonce,
+            )
+        except ShelluiOAuthError as exc:
+            return Response({'error': exc.message, 'error_code': exc.code}, status=exc.status_code)
         response = Response({'provider': provider, 'authorize_url': authorize_url})
         cookie = oauth_state_nonce_cookie_value(state_nonce)
         response.set_cookie(
@@ -1508,6 +1541,15 @@ class SocialLoginView(APIView):
                 return Response(body, status=status.HTTP_400_BAD_REQUEST)
             avatar_url = profile.avatar_url
             email = profile.email
+        except ShelluiOAuthError as exc:
+            return _oauth_provider_error_response(
+                request=request,
+                exc=exc,
+                provider=provider,
+                company=company,
+                client_tz=client_tz,
+                client_dev=client_dev,
+            )
         except Exception:
             record_login_event(
                 request=request,
@@ -1788,17 +1830,26 @@ class ShellUIAuthorizeView(APIView):
         pkce_params, pkce_verifier = split_pkce_authorize_params(request, social_app)
         if pkce_verifier:
             stash_oauth_pkce_verifier(state_nonce, pkce_verifier)
-        authorize_url = build_authorize_url(
-            provider=provider,
-            redirect_uri=oauth_provider_redirect_uri(request),
-            state=state,
-            request=request,
-            company_id=company.id,
-            company_oauth_client_id=company_oauth_client_id,
-            switch_account=switch_account,
-            pkce_params=pkce_params if pkce_verifier else None,
-            oauth_nonce=state_nonce,
-        )
+        try:
+            authorize_url = build_authorize_url(
+                provider=provider,
+                redirect_uri=oauth_provider_redirect_uri(request),
+                state=state,
+                request=request,
+                company_id=company.id,
+                company_oauth_client_id=company_oauth_client_id,
+                switch_account=switch_account,
+                pkce_params=pkce_params if pkce_verifier else None,
+                oauth_nonce=state_nonce,
+            )
+        except ShelluiOAuthError as exc:
+            return _shellui_oauth_bounce_or_json(
+                request,
+                message=exc.message,
+                status_code=exc.status_code,
+                error_code=exc.code,
+                redirect_to_raw=redirect_to,
+            )
         response = HttpResponseRedirect(authorize_url)
         cookie = oauth_state_nonce_cookie_value(state_nonce)
         response.set_cookie(
@@ -2066,6 +2117,16 @@ class ShellUIOAuthCallbackView(APIView):
                 return Response(body, status=status.HTTP_400_BAD_REQUEST)
             avatar_url = profile.avatar_url
             email = profile.email
+        except ShelluiOAuthError as exc:
+            return _oauth_provider_error_response(
+                request=request,
+                exc=exc,
+                provider=provider,
+                company=company,
+                client_tz=client_tz,
+                client_dev=client_dev,
+                redirect_to_raw=redirect_to,
+            )
         except Exception:
             record_login_event(
                 request=request,
@@ -2379,6 +2440,15 @@ class ShellUIOAuthExchangeView(APIView):
                 return Response(body, status=status.HTTP_400_BAD_REQUEST)
             avatar_url = profile.avatar_url
             email = profile.email
+        except ShelluiOAuthError as exc:
+            return _oauth_provider_error_response(
+                request=request,
+                exc=exc,
+                provider=provider,
+                company=company,
+                client_tz=client_tz,
+                client_dev=client_dev,
+            )
         except Exception:
             record_login_event(
                 request=request,

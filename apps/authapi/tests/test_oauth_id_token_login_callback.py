@@ -167,6 +167,131 @@ class OidcIdTokenLoginCallbackTests(TestCase):
         self.assertEqual(User.objects.count(), before)
         self.assertEqual(response.json().get('error_code'), 'oauth_id_token_invalid')
 
+    def _linkedin_app(self) -> tuple[SocialApp, CompanyOAuthClient]:
+        app = SocialApp.objects.create(
+            provider='openid_connect',
+            provider_id='linkedin',
+            name='linkedin-discovery',
+            client_id='linkedin-client',
+            secret='secret',
+            settings={'catalog_slug': 'linkedin', 'server_url': 'https://www.linkedin.com/oauth'},
+        )
+        return app, CompanyOAuthClient.objects.create(company=self.company, social_app=app, is_active=True)
+
+    def _generic_oidc_app(self) -> tuple[SocialApp, CompanyOAuthClient]:
+        app = SocialApp.objects.create(
+            provider='openid_connect',
+            provider_id='corp-fixture',
+            name='oidc-discovery',
+            client_id='oidc-client',
+            secret='secret',
+            settings={
+                'catalog_slug': 'openid_connect',
+                'server_url': company_generic_oidc(self.company.slug).server_url,
+            },
+        )
+        return app, CompanyOAuthClient.objects.create(company=self.company, social_app=app, is_active=True)
+
+    def test_linkedin_discovery_with_off_host_endpoints_rejects_callback(self):
+        from apps.authapi.tests.oauth_strict_harness import _linkedin_discovery_document
+        from apps.authapi.tests.oauth_test_crypto import json_response_handler
+
+        fixture = supported_provider_fixture('linkedin')
+        app, oauth_client = self._linkedin_app()
+        for key, off_host_url in (
+            ('authorization_endpoint', 'https://example.com/oauth/v2/authorization'),
+            ('token_endpoint', 'https://example.com/oauth/v2/accessToken'),
+            ('userinfo_endpoint', 'https://www.linkedin.com/v2/userinfo'),
+            ('jwks_uri', 'https://api.linkedin.com/oauth/openid/jwks'),
+        ):
+            with self.subTest(endpoint=key):
+                spec = _build_linkedin_strict_spec(
+                    social_app=app,
+                    fixture_expected_uid=fixture.expected_uid,
+                    profile=dict(fixture.profile_document),
+                )
+                document = {**_linkedin_discovery_document(), key: off_host_url}
+                spec.routes[('www.linkedin.com', 'GET', '/oauth/.well-known/openid-configuration')] = (
+                    json_response_handler(document)
+                )
+                before = User.objects.count()
+                response = self._callback_for_spec(slug='linkedin', spec=spec, oauth_client=oauth_client)
+                self.assertEqual(response.status_code, 502)
+                self.assertEqual(response.json().get('error_code'), 'oauth_provider_host_not_allowed')
+                self.assertEqual(User.objects.count(), before)
+
+    def test_linkedin_discovery_with_other_issuer_rejects_callback(self):
+        from apps.authapi.tests.oauth_strict_harness import _linkedin_discovery_document
+        from apps.authapi.tests.oauth_test_crypto import json_response_handler
+
+        fixture = supported_provider_fixture('linkedin')
+        app, oauth_client = self._linkedin_app()
+        spec = _build_linkedin_strict_spec(
+            social_app=app,
+            fixture_expected_uid=fixture.expected_uid,
+            profile=dict(fixture.profile_document),
+        )
+        document = {**_linkedin_discovery_document(), 'issuer': 'https://www.linkedin.com'}
+        spec.routes[('www.linkedin.com', 'GET', '/oauth/.well-known/openid-configuration')] = (
+            json_response_handler(document)
+        )
+        response = self._callback_for_spec(slug='linkedin', spec=spec, oauth_client=oauth_client)
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(response.json().get('error_code'), 'oauth_discovery_issuer_mismatch')
+
+    def test_openid_connect_discovery_issuer_mismatch_rejects_callback(self):
+        from apps.authapi.tests.oauth_strict_harness import _oidc_discovery_document
+        from apps.authapi.tests.oauth_test_crypto import json_response_handler
+
+        fixture = supported_provider_fixture('openid_connect')
+        app, oauth_client = self._generic_oidc_app()
+        oidc = company_generic_oidc(self.company.slug)
+        spec = _build_oidc_strict_spec(
+            slug='openid_connect',
+            company_slug=self.company.slug,
+            social_app=app,
+            fixture_expected_uid=fixture.expected_uid,
+            profile=dict(fixture.profile_document),
+        )
+        document = {
+            **_oidc_discovery_document(oidc),
+            'issuer': company_keycloak_oidc('victim-co').issuer,
+        }
+        spec.routes[(oidc.hostname, 'GET', '/.well-known/openid-configuration')] = json_response_handler(document)
+        before = User.objects.count()
+        response = self._callback_for_spec(slug='openid_connect', spec=spec, oauth_client=oauth_client)
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(response.json().get('error_code'), 'oauth_discovery_issuer_mismatch')
+        self.assertEqual(User.objects.count(), before)
+
+    def test_openid_connect_discovery_issuer_mismatch_rejects_authorize(self):
+        from apps.authapi.tests.oauth_strict_harness import _oidc_discovery_document
+        from apps.authapi.tests.oauth_test_crypto import json_response_handler
+
+        fixture = supported_provider_fixture('openid_connect')
+        app, _oauth_client = self._generic_oidc_app()
+        oidc = company_generic_oidc(self.company.slug)
+        spec = _build_oidc_strict_spec(
+            slug='openid_connect',
+            company_slug=self.company.slug,
+            social_app=app,
+            fixture_expected_uid=fixture.expected_uid,
+            profile=dict(fixture.profile_document),
+        )
+        document = {**_oidc_discovery_document(oidc), 'issuer': 'https://example.com'}
+        spec.routes[(oidc.hostname, 'GET', '/.well-known/openid-configuration')] = json_response_handler(document)
+        with strict_provider_http(spec):
+            response = self.client.get(
+                '/api/v1/authorize',
+                {
+                    'provider': 'openid_connect',
+                    'company_id': self.company.id,
+                    'redirect_to': 'https://shell.example.com/login/callback',
+                },
+            )
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(response.json().get('error_code'), 'oauth_discovery_issuer_mismatch')
+
     def test_keycloak_wrong_signing_key_rejects_callback(self):
         fixture = supported_provider_fixture('keycloak')
         signing = generate_oauth_test_signing_key(kid='kc-trusted')

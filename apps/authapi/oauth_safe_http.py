@@ -51,15 +51,3 @@ def oauth_requests_session_for_url(url: str):
     """Pinned ``requests.Session`` for OAuth token, userinfo, and JWKS fetches."""
     cleaned = assert_public_http_url(url)
     return pinned_requests_session_for_url(cleaned)
-
-
-def validate_oidc_discovery_document(document: dict) -> None:
-    for key in (
-        'authorization_endpoint',
-        'token_endpoint',
-        'userinfo_endpoint',
-        'jwks_uri',
-    ):
-        value = document.get(key)
-        if isinstance(value, str) and value.strip():
-            assert_public_http_url(value.strip())

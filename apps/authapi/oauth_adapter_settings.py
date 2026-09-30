@@ -6,8 +6,13 @@ from allauth.socialaccount.models import SocialApp
 from allauth.socialaccount.providers.oauth2.client import OAuth2Error
 from allauth.socialaccount.providers.openid_connect.views import OpenIDConnectOAuth2Adapter
 
-from apps.authapi.oauth_linkedin import LINKEDIN_OIDC_DISCOVERY_URL, LINKEDIN_OIDC_SERVER_URL
-from apps.authapi.oauth_safe_http import assert_public_http_url, safe_get_json
+from apps.authapi.oauth_errors import OAuthProviderConfigError
+from apps.authapi.oauth_linkedin import LINKEDIN_OIDC_SERVER_URL, load_linkedin_oidc_discovery
+from apps.authapi.oauth_oidc_discovery import (
+    discovery_url_for_server_url,
+    load_validated_oidc_discovery,
+    oidc_issuer_for_server_url,
+)
 from apps.authapi.provider_registry import ProviderCatalogEntry
 
 
@@ -43,22 +48,20 @@ def prefetch_openid_connect_config(
     *,
     entry: ProviderCatalogEntry | None = None,
 ) -> None:
-    if hasattr(adapter, '_openid_config'):
+    """Load discovery once, bound to the configured issuer, before allauth reads any endpoint."""
+    if entry is not None and entry.docs_slug == 'linkedin':
+        adapter._openid_config = load_linkedin_oidc_discovery()
         return
-    if entry is not None and entry.docs_slug == 'linkedin':
-        server_url = LINKEDIN_OIDC_DISCOVERY_URL
-    else:
-        server_url = adapter.get_provider().server_url
-    assert_public_http_url(server_url)
-    from apps.authapi.oauth_safe_http import validate_oidc_discovery_document
-
-    document = safe_get_json(server_url)
-    validate_oidc_discovery_document(document)
-    if entry is not None and entry.docs_slug == 'linkedin':
-        from apps.authapi.oauth_linkedin import assert_linkedin_oidc_discovery_hosts
-
-        assert_linkedin_oidc_discovery_hosts(document)
-    adapter._openid_config = document
+    server_url = adapter.get_provider().server_url
+    issuer = oidc_issuer_for_server_url(server_url)
+    if not issuer:
+        raise OAuthProviderConfigError(
+            'OpenID Connect server_url must be the issuer URL or its /.well-known/openid-configuration URL.'
+        )
+    adapter._openid_config = load_validated_oidc_discovery(
+        discovery_url=discovery_url_for_server_url(server_url),
+        expected_issuer=issuer,
+    )
 
 
 def apply_oauth_adapter_settings(
