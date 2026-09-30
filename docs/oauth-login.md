@@ -175,6 +175,19 @@ If you previously registered `{shell}/login/callback` on GitHub, Google, or Micr
 3. Deploy identity-service with migration `0013_companyoauthredirect` (runs automatically on container start).
 4. Prefer a Shellui / admin build that shows the identity callback in OAuth setup.
 
+### Self-hosted GitLab account ids
+
+Migration `0015_scope_self_hosted_gitlab_uids` prefixes self-hosted GitLab account ids with the GitLab base URL. `https://gitlab.com` ids stay raw. The base URL comes from the account's social token when one exists. Otherwise it comes from the user's company when that company has one GitLab app.
+
+If a row matches more than one GitLab host, already contains `|`, would be longer than 191 characters, or collides with an existing id, migration stops and lists the `social_account` ids. Bind each row, then run migrations again:
+
+```
+python manage.py scope_gitlab_social_uids
+python manage.py scope_gitlab_social_uids --account-id 123 --social-app-id 45
+```
+
+The first command lists rows that still need a choice. The second stores a binding for that app. It does not change the account id. The migration does that on the next run.
+
 ### To 0.4.1 (hosting sync + permissive CORS)
 
 1. Deploy identity-service so migration `0014_companyoauthredirect_source` runs (adds `source` on `CompanyOAuthRedirect`; existing rows default to `manual`).

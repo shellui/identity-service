@@ -82,12 +82,23 @@ class OAuthProfile:
     company_controlled_idp: bool = False
 
 
+_SUBJECT_BOUND_ALLAUTH_IDS = frozenset({'openid_connect', 'okta', 'auth0', 'google'})
+
+
 def _provider_uid_from_userinfo(
     *,
     info: dict,
     entry: ProviderCatalogEntry | None,
     social_app,
+    id_token_claims: dict | None = None,
 ) -> str:
+    info_sub = info.get('sub')
+    info_sub = info_sub.strip() if isinstance(info_sub, str) else ''
+    claim_sub = ''
+    if isinstance(id_token_claims, dict) and isinstance(id_token_claims.get('sub'), str):
+        claim_sub = id_token_claims['sub'].strip()
+    if entry is not None and entry.allauth_id in _SUBJECT_BOUND_ALLAUTH_IDS and claim_sub and not info_sub:
+        return ''
     stored = info.get('_allauth_account_uid')
     if isinstance(stored, str) and stored.strip():
         return stored.strip()
@@ -277,6 +288,7 @@ def extract_oauth_profile(
         info=info,
         entry=entry,
         social_app=social_app,
+        id_token_claims=claims,
     )
     if not provider_id:
         return None, 'OAuth provider did not return a user id.'

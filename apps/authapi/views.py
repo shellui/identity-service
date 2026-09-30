@@ -343,12 +343,12 @@ def _login_id_token_claims(
 def _oauth_subject_mismatch(entry, userinfo: dict, id_claims: dict) -> bool:
     if entry is None or entry.allauth_id not in _SUBJECT_BOUND_ALLAUTH_IDS or not id_claims:
         return False
-    info_sub = userinfo.get('sub') if isinstance(userinfo, dict) else None
     claim_sub = id_claims.get('sub')
-    if not isinstance(info_sub, str) or not info_sub.strip():
-        return False
     if not isinstance(claim_sub, str) or not claim_sub.strip():
         return False
+    info_sub = userinfo.get('sub') if isinstance(userinfo, dict) else None
+    if not isinstance(info_sub, str) or not info_sub.strip():
+        return True
     return info_sub.strip() != claim_sub.strip()
 
 

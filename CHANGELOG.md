@@ -32,6 +32,8 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 ### 🔒 Security
 
 - Okta, Auth0, and self-hosted GitLab account ids are scoped by issuer or host. gitlab.com accounts stay unscoped. Self-hosted GitLab does not auto-link by email (`oauth_email_conflict`).
+- GitLab uid migration `0015` rewrites `SocialAccount` rows, including accounts saved without a `SocialToken`. Ambiguous rows and rows that cannot be prefixed fail the migration and list their ids. `manage.py scope_gitlab_social_uids` binds a row to one GitLab app before migrate is re-run.
+- A verified id_token with userinfo that omits `sub` is rejected (`oauth_subject_mismatch`). The account id is not taken from `id` or `mail`.
 - OIDC, Google, Okta, and Auth0 id_tokens are verified once by Shellui. allauth's jti replay cache is not used on that path, and userinfo `sub` must match the verified id_token `sub`.
 - Okta and Auth0 logins fail closed when the token response omits `id_token` (`oauth_id_token_missing`). Keycloak, generic OpenID Connect, and LinkedIn do the same when the requested scope includes `openid`.
 - Company domain join uses only a verified email. A client-sent LinkedIn `server_url` is rejected (`oauth_setting_not_allowed`). URL settings must be https (`oauth_extra_settings_invalid`).

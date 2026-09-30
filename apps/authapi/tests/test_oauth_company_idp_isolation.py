@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 from allauth.socialaccount.models import SocialAccount, SocialApp, SocialToken
 from django.apps import apps
 from django.contrib.auth import get_user_model
+from django.core.management import call_command
 from django.test import RequestFactory, TestCase, override_settings
 from rest_framework.test import APIClient
 
@@ -629,6 +630,73 @@ class CompanyIdpIsolationTests(TestCase):
         self.assertEqual(response.json().get('error_code'), 'oauth_subject_mismatch')
         self.assertEqual(User.objects.count(), before)
 
+    def test_keycloak_userinfo_without_sub_rejects_callback(self):
+        fixture = supported_provider_fixture('keycloak')
+        signing = generate_oauth_test_signing_key(kid='kc-no-sub')
+        oidc = company_keycloak_oidc(self.company.slug)
+        app, oauth_client = self._app(
+            company=self.company,
+            provider='openid_connect',
+            provider_id='keycloak',
+            name='kc-no-sub',
+            client_id='kc-no-sub-client',
+            settings={'catalog_slug': 'keycloak', 'server_url': oidc.server_url},
+        )
+        profile = dict(fixture.profile_document)
+        profile.pop('sub', None)
+        profile['id'] = 'decoy-keycloak-id'
+        profile['mail'] = 'decoy-mail@example.com'
+        spec = _build_oidc_strict_spec(
+            slug='keycloak',
+            company_slug=self.company.slug,
+            social_app=app,
+            fixture_expected_uid=fixture.expected_uid,
+            profile=profile,
+            signing=signing,
+        )
+        before = User.objects.count()
+        response = self._callback(slug='keycloak', spec=spec, oauth_client=oauth_client, company=self.company)
+        self.assertEqual(response.status_code, 400, response.content)
+        self.assertEqual(response.json().get('error_code'), 'oauth_subject_mismatch')
+        self.assertEqual(User.objects.count(), before)
+        self.assertFalse(SocialAccount.objects.filter(uid__contains='decoy-keycloak-id').exists())
+        self.assertFalse(SocialAccount.objects.filter(uid__contains='decoy-mail@example.com').exists())
+
+    def test_keycloak_userinfo_id_field_without_sub_rejects_callback(self):
+        fixture = supported_provider_fixture('keycloak')
+        signing = generate_oauth_test_signing_key(kid='kc-id-uid')
+        oidc = company_keycloak_oidc(self.company.slug)
+        app, oauth_client = self._app(
+            company=self.company,
+            provider='openid_connect',
+            provider_id='keycloak',
+            name='kc-id-uid',
+            client_id='kc-id-uid-client',
+            settings={
+                'catalog_slug': 'keycloak',
+                'server_url': oidc.server_url,
+                'uid_field': 'id',
+            },
+        )
+        profile = dict(fixture.profile_document)
+        profile.pop('sub', None)
+        profile['id'] = 'decoy-keycloak-id'
+        profile['mail'] = 'decoy-mail@example.com'
+        spec = _build_oidc_strict_spec(
+            slug='keycloak',
+            company_slug=self.company.slug,
+            social_app=app,
+            fixture_expected_uid=fixture.expected_uid,
+            profile=profile,
+            signing=signing,
+        )
+        before = User.objects.count()
+        response = self._callback(slug='keycloak', spec=spec, oauth_client=oauth_client, company=self.company)
+        self.assertEqual(response.status_code, 400, response.content)
+        self.assertEqual(response.json().get('error_code'), 'oauth_subject_mismatch')
+        self.assertEqual(User.objects.count(), before)
+        self.assertFalse(SocialAccount.objects.filter(provider='keycloak', uid__contains='decoy-keycloak-id').exists())
+
     def test_returning_uid_signs_in_when_email_belongs_to_someone_else(self):
         fixture = supported_provider_fixture('keycloak')
         signing = generate_oauth_test_signing_key(kid='kc-return')
@@ -748,3 +816,129 @@ class CompanyIdpIsolationTests(TestCase):
         hosted_account.refresh_from_db()
         self.assertEqual(com_account.uid, '42')
         self.assertEqual(hosted_account.uid, 'https://gitlab.mig.example.com|77')
+
+    def test_gitlab_uid_migration_scopes_account_without_token(self):
+        user = User.objects.create_user(username='gl-notoken', email='gl-notoken@example.com', password='x')
+        CompanyMembership.objects.create(company=self.company, user=user, is_enabled=True)
+        base = 'https://gitlab.notoken.example.com'
+        self._app(
+            company=self.company,
+            provider='gitlab',
+            provider_id='',
+            name='gl-notoken',
+            client_id='gl-notoken',
+            settings={'catalog_slug': 'gitlab', 'gitlab_url': base},
+        )
+        account = SocialAccount.objects.create(provider='gitlab', uid='77', user=user, extra_data={})
+        self.assertFalse(SocialToken.objects.filter(account=account).exists())
+        _gitlab_migration.forwards(apps, None)
+        account.refresh_from_db()
+        self.assertEqual(account.uid, f'{base}|77')
+
+    def test_gitlab_uid_migration_is_idempotent(self):
+        user = User.objects.create_user(username='gl-again', email='gl-again@example.com', password='x')
+        CompanyMembership.objects.create(company=self.company, user=user, is_enabled=True)
+        base = 'https://gitlab.again.example.com'
+        self._app(
+            company=self.company,
+            provider='gitlab',
+            provider_id='',
+            name='gl-again',
+            client_id='gl-again',
+            settings={'catalog_slug': 'gitlab', 'gitlab_url': base},
+        )
+        account = SocialAccount.objects.create(provider='gitlab', uid='88', user=user, extra_data={})
+        _gitlab_migration.forwards(apps, None)
+        _gitlab_migration.forwards(apps, None)
+        account.refresh_from_db()
+        self.assertEqual(account.uid, f'{base}|88')
+
+    def test_gitlab_uid_migration_ambiguous_row_fails(self):
+        user = User.objects.create_user(username='gl-ambiguous', email='gl-ambiguous@example.com', password='x')
+        CompanyMembership.objects.create(company=self.company, user=user, is_enabled=True)
+        CompanyMembership.objects.create(company=self.other, user=user, is_enabled=True)
+        self._app(
+            company=self.company,
+            provider='gitlab',
+            provider_id='',
+            name='gl-ambiguous-com',
+            client_id='gl-ambiguous-com',
+            settings={'catalog_slug': 'gitlab', 'gitlab_url': 'https://gitlab.com'},
+        )
+        self._app(
+            company=self.other,
+            provider='gitlab',
+            provider_id='',
+            name='gl-ambiguous-hosted',
+            client_id='gl-ambiguous-hosted',
+            settings={'catalog_slug': 'gitlab', 'gitlab_url': 'https://gitlab.other.example.com'},
+        )
+        account = SocialAccount.objects.create(provider='gitlab', uid='77', user=user, extra_data={})
+        with self.assertRaises(_gitlab_migration.GitlabUidMigrationError) as ctx:
+            _gitlab_migration.forwards(apps, None)
+        self.assertIn(str(account.id), str(ctx.exception))
+        account.refresh_from_db()
+        self.assertEqual(account.uid, '77')
+
+    def test_gitlab_uid_migration_rejects_pipe_too_long_and_collision(self):
+        user = User.objects.create_user(username='gl-bad', email='gl-bad@example.com', password='x')
+        CompanyMembership.objects.create(company=self.company, user=user, is_enabled=True)
+        base = 'https://gitlab.bad.example.com'
+        self._app(
+            company=self.company,
+            provider='gitlab',
+            provider_id='',
+            name='gl-bad',
+            client_id='gl-bad',
+            settings={'catalog_slug': 'gitlab', 'gitlab_url': base},
+        )
+        piped = SocialAccount.objects.create(provider='gitlab', uid='already|scoped', user=user, extra_data={})
+        with self.assertRaises(_gitlab_migration.GitlabUidMigrationError) as ctx:
+            _gitlab_migration.forwards(apps, None)
+        self.assertIn(str(piped.id), str(ctx.exception))
+        piped.refresh_from_db()
+        self.assertEqual(piped.uid, 'already|scoped')
+
+        piped.uid = 'x' * 180
+        piped.save(update_fields=['uid'])
+        with self.assertRaises(_gitlab_migration.GitlabUidMigrationError) as ctx:
+            _gitlab_migration.forwards(apps, None)
+        self.assertIn(str(piped.id), str(ctx.exception))
+        piped.refresh_from_db()
+        self.assertEqual(piped.uid, 'x' * 180)
+
+        piped.uid = '77'
+        piped.save(update_fields=['uid'])
+        other = User.objects.create_user(username='gl-taken', email='gl-taken@example.com', password='x')
+        SocialAccount.objects.create(provider='gitlab', uid=f'{base}|77', user=other, extra_data={})
+        with self.assertRaises(_gitlab_migration.GitlabUidMigrationError) as ctx:
+            _gitlab_migration.forwards(apps, None)
+        self.assertIn(str(piped.id), str(ctx.exception))
+        piped.refresh_from_db()
+        self.assertEqual(piped.uid, '77')
+
+    def test_scope_gitlab_command_binds_ambiguous_account(self):
+        user = User.objects.create_user(username='gl-bind', email='gl-bind@example.com', password='x')
+        CompanyMembership.objects.create(company=self.company, user=user, is_enabled=True)
+        CompanyMembership.objects.create(company=self.other, user=user, is_enabled=True)
+        self._app(
+            company=self.company,
+            provider='gitlab',
+            provider_id='',
+            name='gl-bind-com',
+            client_id='gl-bind-com',
+            settings={'catalog_slug': 'gitlab', 'gitlab_url': 'https://gitlab.com'},
+        )
+        hosted, _oauth_client = self._app(
+            company=self.other,
+            provider='gitlab',
+            provider_id='',
+            name='gl-bind-hosted',
+            client_id='gl-bind-hosted',
+            settings={'catalog_slug': 'gitlab', 'gitlab_url': 'https://gitlab.bind.example.com'},
+        )
+        account = SocialAccount.objects.create(provider='gitlab', uid='77', user=user, extra_data={})
+        call_command('scope_gitlab_social_uids', account_id=account.id, social_app_id=hosted.id)
+        _gitlab_migration.forwards(apps, None)
+        account.refresh_from_db()
+        self.assertEqual(account.uid, 'https://gitlab.bind.example.com|77')
