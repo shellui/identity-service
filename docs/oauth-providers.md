@@ -43,7 +43,7 @@ django-allauth's default pattern is `/accounts/<provider>/login/callback/` when 
 | 🔑 OAuth 2.0 | `oauth2` | OAuth2 | - | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/oauth2.html) | - | No. Generic OAuth 2.0 requires custom endpoints; not wired in this release. |
 | <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/openid.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#F78C40;" /> OpenID | `openid` | other | - | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/openid.html) | - | No. Protocol other is not supported by the identity-hosted OAuth callback yet. |
 | <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/openid.svg" width="20" height="20" alt="" style="vertical-align:middle;background:#F78C40;" /> OpenID Connect | `openid_connect` | OpenID Connect | - | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/openid_connect.html) | OpenID Connect issuer URL (`server_url`) (required) | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| 🔑 SAML | `saml` | SAML | - | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/saml.html) | - | No. Protocol SAML is not supported by the identity-hosted OAuth callback yet. |
+| 🔑 SAML | `saml` | SAML | - | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/saml.html) | idp_entity_id (`idp_entity_id`) (required), sso_url (`sso_url`) (optional), metadata_url (`metadata_url`) (optional), x509cert (`x509cert`) (optional), trusted_for_verified_domains (`trusted_for_verified_domains`) (optional), allow_idp_initiated_sso (`allow_idp_initiated_sso`) (optional) | Yes |
 
 ## All others
 
