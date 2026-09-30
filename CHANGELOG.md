@@ -44,7 +44,9 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 ### 🔒 Security
 
-- **Google id_token on callback:** login callback verifies Google id_tokens against JWKS before email linking; wrong issuer, audience, or signature does not link an existing user.
+- **Google id_token on callback:** login callback verifies Google id_tokens against JWKS before email linking; wrong issuer, audience, or signing key returns `oauth_id_token_invalid` (no userinfo fallback).
+- **LinkedIn OIDC:** fixed LinkedIn discovery and hosts (`www.linkedin.com`, `api.linkedin.com`); companies cannot set a custom `server_url`.
+- **Company IdPs:** Keycloak, generic OpenID Connect, Okta, and Auth0 never auto-link by email; conflicting emails return `oauth_email_conflict`.
 - **Okta and Auth0 base URLs:** missing `OKTA_BASE_URL` or `AUTH0_URL` fails closed instead of calling `https://None/...` endpoints.
 - OpenID Connect migration **0014** rekeys existing `SocialAccount` rows to `(provider_id, issuer|sub)` with audit-backed reverse.
 - OAuth uses `request_context` plus a `ContextVar` for the company `SocialApp` (no `allauth_context.request` assignment).

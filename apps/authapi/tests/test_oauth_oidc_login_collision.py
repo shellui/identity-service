@@ -71,8 +71,8 @@ class OidcLoginCollisionTests(TestCase):
 
         catalog = self._catalog_with_openid_connect_supported()
         with patch('apps.authapi.provider_registry.get_provider_catalog', return_value=catalog):
-            user_a, created_a, profile_a, err_a = _login_with(app_a, issuer_a)
-            user_b, created_b, profile_b, err_b = _login_with(app_b, issuer_b)
+            user_a, created_a, profile_a, err_a, _code_a = _login_with(app_a, issuer_a)
+            user_b, created_b, profile_b, err_b, _code_b = _login_with(app_b, issuer_b)
         self.assertIsNone(err_a)
         self.assertIsNone(err_b)
         self.assertTrue(created_a)

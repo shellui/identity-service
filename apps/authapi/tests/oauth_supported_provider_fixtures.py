@@ -9,11 +9,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from apps.authapi.oauth_linkedin import LINKEDIN_OIDC_SERVER_URL
 from apps.authapi.tests.oauth_oidc_strict_fixtures import (
     company_auth0_base,
     company_generic_oidc,
     company_keycloak_oidc,
-    company_linkedin_oidc,
     company_okta_base,
 )
 
@@ -60,8 +60,7 @@ def extra_settings_for_supported(slug: str, *, company_slug: str) -> dict[str, A
             'tenant': '11111111-1111-1111-1111-111111111111',
         }
     if slug == 'linkedin':
-        oidc = company_linkedin_oidc(company_slug)
-        return {'catalog_slug': 'linkedin', 'server_url': oidc.server_url}
+        return {'catalog_slug': 'linkedin', 'server_url': LINKEDIN_OIDC_SERVER_URL}
     if slug == 'keycloak':
         oidc = company_keycloak_oidc(company_slug)
         return {'catalog_slug': 'keycloak', 'server_url': oidc.server_url}
@@ -181,8 +180,7 @@ _FIXTURES: dict[str, SupportedProviderFixture] = {
             'name': 'LinkedIn Fixture User',
             'id': 'decoy-linkedin-id',
         },
-        fixture_source='LinkedIn OIDC userinfo / id_token (sub); allauth openid_connect provider',
-        company_settings_host='linkedin',
+        fixture_source='LinkedIn OIDC discovery (www.linkedin.com + api.linkedin.com); sub claim',
     ),
     'slack': SupportedProviderFixture(
         slug='slack',

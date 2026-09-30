@@ -152,20 +152,24 @@ class GoogleIdTokenCallbackTests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(User.objects.count(), before)
 
-    def test_bad_signature_id_token_rejects_callback(self):
-        routes, hostnames, token = _google_mock_routes(
+    def test_wrong_signing_key_id_token_rejects_callback(self):
+        wrong_key = generate_oauth_test_signing_key(kid='google-wrong-kid')
+        routes, hostnames, _token = _google_mock_routes(
             client_id=self.client_id,
-            signing=self.signing,
+            signing=wrong_key,
             sub='google-sub-001',
             email='user-google@example.com',
             issuer='https://accounts.google.com',
         )
-        parts = token.split('.')
-        tampered = f'{parts[0]}.{parts[1]}.not-a-valid-signature'
-        routes[('oauth2.googleapis.com', 'POST', '/token')] = _token_json_handler(
-            {'access_token': 'google-at', 'token_type': 'Bearer', 'id_token': tampered}
+        routes[('www.googleapis.com', 'GET', '/oauth2/v3/certs')] = json_response_handler(
+            self.signing.jwks_document()
+        )
+        routes[('www.googleapis.com', 'GET', '/oauth2/v1/certs')] = json_response_handler(
+            wrong_key.google_certs_document()
         )
         before = User.objects.count()
         response = self._callback_with_routes(routes, hostnames)
         self.assertEqual(response.status_code, 400)
         self.assertEqual(User.objects.count(), before)
+        body = response.json()
+        self.assertEqual(body.get('error_code'), 'oauth_id_token_invalid')

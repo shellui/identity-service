@@ -156,9 +156,19 @@ def _verify_microsoft_id_token(*, social_app: SocialApp, raw: str) -> dict:
     )
 
 
-def _verify_openid_connect_id_token(*, social_app: SocialApp, raw: str) -> dict:
+def _verify_openid_connect_id_token(
+    *,
+    social_app: SocialApp,
+    raw: str,
+    entry: ProviderCatalogEntry | None = None,
+) -> dict:
+    from apps.authapi.oauth_linkedin import LINKEDIN_OIDC_DISCOVERY_URL
+
     settings_data = social_app.settings if isinstance(getattr(social_app, 'settings', None), dict) else {}
-    server_url = str(settings_data.get('server_url') or '').strip()
+    if entry is not None and entry.docs_slug == 'linkedin':
+        server_url = LINKEDIN_OIDC_DISCOVERY_URL
+    else:
+        server_url = str(settings_data.get('server_url') or '').strip()
     if not server_url:
         raise OAuth2Error('Missing OpenID Connect server_url.')
     discovery = fetch_oidc_discovery(server_url)
@@ -196,7 +206,7 @@ def _verify_raw_id_token(
             lookup_kid=jwtkit.lookup_kid_jwk,
         )
     if entry.allauth_id == 'openid_connect':
-        return _verify_openid_connect_id_token(social_app=social_app, raw=token)
+        return _verify_openid_connect_id_token(social_app=social_app, raw=token, entry=entry)
     return {}
 
 

@@ -218,7 +218,7 @@ def _resolve_oauth_login_user(
     userinfo: dict,
     token_bundle: OAuthTokenBundle,
     company_oauth_client_id: int | None,
-) -> tuple[User | None, bool, OAuthProfile | None, str | None]:
+) -> tuple[User | None, bool, OAuthProfile | None, str | None, str | None]:
     resolved = resolve_oauth_client(
         provider,
         company_id=company.id,
@@ -226,6 +226,7 @@ def _resolve_oauth_login_user(
     )
     social_app = get_social_app_for_client(resolved)
     from apps.authapi.oauth_id_token import verified_login_id_token_claims
+    from apps.authapi.oauth_idp_policy import requires_verified_id_token_for_login
 
     id_claims = verified_login_id_token_claims(
         entry=resolved.catalog_entry,
@@ -233,6 +234,12 @@ def _resolve_oauth_login_user(
         id_token_raw=token_bundle.id_token,
         userinfo=userinfo,
     )
+    if (
+        token_bundle.id_token
+        and requires_verified_id_token_for_login(resolved.catalog_entry)
+        and not id_claims
+    ):
+        return None, False, None, 'OAuth identity token could not be verified.', 'oauth_id_token_invalid'
     profile, perror = extract_oauth_profile(
         provider,
         userinfo,
@@ -243,11 +250,15 @@ def _resolve_oauth_login_user(
         social_app=social_app,
     )
     if perror or profile is None:
-        return None, False, None, perror or 'Invalid provider profile.'
-    user, created, uerror = resolve_oauth_user(provider=provider, profile=profile)
+        return None, False, None, perror or 'Invalid provider profile.', None
+    user, created, uerror, uerror_code = resolve_oauth_user(
+        provider=provider,
+        profile=profile,
+        catalog_entry=resolved.catalog_entry,
+    )
     if uerror or user is None:
-        return None, False, profile, uerror
-    return user, created, profile, None
+        return None, False, profile, uerror, uerror_code
+    return user, created, profile, None, None
 
 
 def _normalize_avatar_url(value: object) -> str | None:
@@ -1399,7 +1410,7 @@ class SocialLoginView(APIView):
                 redirect_uri=redirect_uri,
                 id_token=token_bundle.id_token,
             )
-            user, created, profile, resolve_err = _resolve_oauth_login_user(
+            user, created, profile, resolve_err, resolve_code = _resolve_oauth_login_user(
                 provider=provider,
                 company=company,
                 userinfo=userinfo,
@@ -1417,10 +1428,10 @@ class SocialLoginView(APIView):
                     client_timezone=client_tz,
                     client_device_id=client_dev,
                 )
-                return Response(
-                    {'detail': resolve_err or 'Could not resolve OAuth account.'},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
+                body = {'detail': resolve_err or 'Could not resolve OAuth account.'}
+                if resolve_code:
+                    body['error_code'] = resolve_code
+                return Response(body, status=status.HTTP_400_BAD_REQUEST)
             avatar_url = profile.avatar_url
             email = profile.email
         except Exception:
@@ -1934,7 +1945,7 @@ class ShellUIOAuthCallbackView(APIView):
                 redirect_uri=callback_url,
                 id_token=token_bundle.id_token,
             )
-            user, created, profile, resolve_err = _resolve_oauth_login_user(
+            user, created, profile, resolve_err, resolve_code = _resolve_oauth_login_user(
                 provider=provider,
                 company=company,
                 userinfo=userinfo,
@@ -1952,18 +1963,19 @@ class ShellUIOAuthCallbackView(APIView):
                     client_timezone=client_tz,
                     client_device_id=client_dev,
                 )
+                identity_code = resolve_code or 'oauth_identity_failed'
                 bounced = _shellui_oauth_bounce_or_json(
                     request,
                     message=resolve_err or 'Could not resolve OAuth account.',
-                    error_code='oauth_identity_failed',
+                    error_code=identity_code,
                     redirect_to_raw=redirect_to,
                 )
                 if isinstance(bounced, HttpResponseRedirect):
                     return bounced
-                return Response(
-                    {'detail': resolve_err or 'Could not resolve OAuth account.'},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
+                body = {'detail': resolve_err or 'Could not resolve OAuth account.'}
+                if resolve_code:
+                    body['error_code'] = resolve_code
+                return Response(body, status=status.HTTP_400_BAD_REQUEST)
             avatar_url = profile.avatar_url
             email = profile.email
         except Exception:
@@ -2242,7 +2254,7 @@ class ShellUIOAuthExchangeView(APIView):
                 redirect_uri=redirect_uri,
                 id_token=token_bundle.id_token,
             )
-            user, created, profile, resolve_err = _resolve_oauth_login_user(
+            user, created, profile, resolve_err, resolve_code = _resolve_oauth_login_user(
                 provider=provider,
                 company=company,
                 userinfo=userinfo,
@@ -2260,10 +2272,10 @@ class ShellUIOAuthExchangeView(APIView):
                     client_timezone=client_tz,
                     client_device_id=client_dev,
                 )
-                return Response(
-                    {'detail': resolve_err or 'Could not resolve OAuth account.'},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
+                body = {'detail': resolve_err or 'Could not resolve OAuth account.'}
+                if resolve_code:
+                    body['error_code'] = resolve_code
+                return Response(body, status=status.HTTP_400_BAD_REQUEST)
             avatar_url = profile.avatar_url
             email = profile.email
         except Exception:

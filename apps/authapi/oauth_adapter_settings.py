@@ -6,6 +6,7 @@ from allauth.socialaccount.models import SocialApp
 from allauth.socialaccount.providers.oauth2.client import OAuth2Error
 from allauth.socialaccount.providers.openid_connect.views import OpenIDConnectOAuth2Adapter
 
+from apps.authapi.oauth_linkedin import LINKEDIN_OIDC_DISCOVERY_URL, LINKEDIN_OIDC_SERVER_URL
 from apps.authapi.oauth_safe_http import assert_public_http_url, safe_get_json
 from apps.authapi.provider_registry import ProviderCatalogEntry
 
@@ -37,10 +38,17 @@ def _bind_adapter_url_properties(
     )
 
 
-def prefetch_openid_connect_config(adapter: OpenIDConnectOAuth2Adapter) -> None:
+def prefetch_openid_connect_config(
+    adapter: OpenIDConnectOAuth2Adapter,
+    *,
+    entry: ProviderCatalogEntry | None = None,
+) -> None:
     if hasattr(adapter, '_openid_config'):
         return
-    server_url = adapter.get_provider().server_url
+    if entry is not None and entry.docs_slug == 'linkedin':
+        server_url = LINKEDIN_OIDC_DISCOVERY_URL
+    else:
+        server_url = adapter.get_provider().server_url
     assert_public_http_url(server_url)
     from apps.authapi.oauth_safe_http import validate_oidc_discovery_document
 
@@ -60,7 +68,13 @@ def apply_oauth_adapter_settings(
     slug = entry.docs_slug if entry is not None else str(social_app.provider).lower()
 
     if isinstance(adapter, OpenIDConnectOAuth2Adapter):
-        prefetch_openid_connect_config(adapter)
+        if entry is not None and entry.docs_slug == 'linkedin':
+            provider = adapter.get_provider()
+            provider.app.settings = {
+                **_settings_dict(social_app),
+                'server_url': LINKEDIN_OIDC_SERVER_URL,
+            }
+        prefetch_openid_connect_config(adapter, entry=entry)
         return
 
     if slug == 'auth0':

@@ -22,12 +22,18 @@ from apps.authapi.oauth_allauth import exchange_allauth_code
 from apps.authapi.oauth_request_context import oauth_allauth_request
 from apps.authapi.oauth_social_account import bind_oauth_social_app
 from apps.authapi.provider_registry import get_provider_catalog
+from apps.authapi.oauth_linkedin import (
+    LINKEDIN_ISSUER,
+    LINKEDIN_JWKS_HOST,
+    LINKEDIN_OIDC_DISCOVERY_URL,
+    LINKEDIN_TOKEN_HOST,
+    LINKEDIN_USERINFO_HOST,
+)
 from apps.authapi.tests.oauth_oidc_strict_fixtures import (
     OidcCompanyFixture,
     company_auth0_base,
     company_generic_oidc,
     company_keycloak_oidc,
-    company_linkedin_oidc,
     company_okta_base,
 )
 from apps.authapi.tests.oauth_supported_provider_fixtures import (
@@ -106,13 +112,38 @@ def _assert_adapter_hosts(
     access_token_url: str,
     profile_url: str | None,
     company_host: str | None,
+    jwks_url: str | None = None,
 ) -> None:
     auth_host = _host_from_url(authorize_url)
     token_host = _host_from_url(access_token_url)
     profile_host = _host_from_url(profile_url)
+    jwks_host = _host_from_url(jwks_url)
     if not auth_host or not token_host:
         raise ValueError(f'{slug}: authorize or token URL host is missing after adapter settings')
-    company_scoped = {'gitlab', 'linkedin', 'keycloak', 'openid_connect', 'okta', 'auth0'}
+    if not profile_host and slug not in {'apple'}:
+        raise ValueError(f'{slug}: profile/userinfo URL host is missing after adapter settings')
+
+    if slug == 'linkedin':
+        per_endpoint = {
+            'authorize': {LINKEDIN_TOKEN_HOST},
+            'token': {LINKEDIN_TOKEN_HOST},
+            'profile': {LINKEDIN_USERINFO_HOST},
+            'jwks': {LINKEDIN_JWKS_HOST},
+        }
+        for label, host in (
+            ('authorize', auth_host),
+            ('token', token_host),
+            ('profile', profile_host),
+            ('jwks', jwks_host),
+        ):
+            if label == 'jwks' and not host:
+                continue
+            allowed = per_endpoint[label]
+            if host not in allowed:
+                raise ValueError(f'{slug} {label} host {host!r} not in allowed {sorted(allowed)}')
+        return
+
+    company_scoped = {'gitlab', 'keycloak', 'openid_connect', 'okta', 'auth0'}
     if slug in company_scoped:
         if not company_host:
             raise ValueError(f'{slug} requires company_host')
@@ -121,7 +152,7 @@ def _assert_adapter_hosts(
             ('token', token_host),
             ('profile', profile_host),
         ):
-            if host and host != company_host:
+            if host != company_host:
                 raise ValueError(f'{slug} {label} host {host!r} != company host {company_host!r}')
         return
     expected: dict[str, set[str]] = {
@@ -142,15 +173,15 @@ def _assert_adapter_hosts(
         ('token', token_host),
         ('profile', profile_host),
     ):
-        if host and host not in allowed:
+        if not host:
+            continue
+        if host not in allowed:
             raise ValueError(f'{slug} {label} host {host!r} not in allowed {sorted(allowed)}')
 
 
 def _company_host_for_slug(slug: str, *, company_slug: str, social_app: SocialApp) -> str | None:
     if slug == 'gitlab':
         return urlparse(company_gitlab_url(company_slug)).hostname
-    if slug == 'linkedin':
-        return company_linkedin_oidc(company_slug).hostname
     if slug == 'keycloak':
         return company_keycloak_oidc(company_slug).hostname
     if slug == 'openid_connect':
@@ -162,9 +193,62 @@ def _company_host_for_slug(slug: str, *, company_slug: str, social_app: SocialAp
     return None
 
 
+def _linkedin_discovery_document() -> dict[str, str]:
+    return {
+        'issuer': LINKEDIN_ISSUER,
+        'authorization_endpoint': f'https://{LINKEDIN_TOKEN_HOST}/oauth/v2/authorization',
+        'token_endpoint': f'https://{LINKEDIN_TOKEN_HOST}/oauth/v2/accessToken',
+        'userinfo_endpoint': f'https://{LINKEDIN_USERINFO_HOST}/v2/userinfo',
+        'jwks_uri': f'https://{LINKEDIN_JWKS_HOST}/oauth/openid/jwks',
+        'token_endpoint_auth_methods_supported': ['client_secret_post'],
+    }
+
+
+def _build_linkedin_strict_spec(
+    *,
+    social_app: SocialApp,
+    fixture_expected_uid: str,
+    profile: dict,
+    signing: OAuthTestSigningKey | None = None,
+) -> StrictProviderSpec:
+    discovery = _linkedin_discovery_document()
+    signing = signing or generate_oauth_test_signing_key(kid='linkedin-kid')
+    client_id = social_app.client_id
+    now = int(time.time())
+    id_token = signing.sign_rs256(
+        {
+            'iss': discovery['issuer'],
+            'aud': client_id,
+            'sub': fixture_expected_uid,
+            'email': profile.get('email'),
+            'email_verified': True,
+            'exp': now + 3600,
+            'iat': now,
+        }
+    )
+    routes: dict[tuple[str, str, str], RouteHandler] = {}
+    hostnames = {LINKEDIN_TOKEN_HOST, LINKEDIN_USERINFO_HOST}
+    discovery_path = urlparse(LINKEDIN_OIDC_DISCOVERY_URL).path
+    routes[(LINKEDIN_TOKEN_HOST, 'GET', discovery_path)] = json_response_handler(discovery)
+    jwks_path = urlparse(discovery['jwks_uri']).path
+    routes[(LINKEDIN_JWKS_HOST, 'GET', jwks_path)] = json_response_handler(signing.jwks_document())
+    token_key = _route_key(discovery['token_endpoint'], method='POST')
+    routes[token_key] = _token_json_handler(
+        {'access_token': 'at-linkedin', 'token_type': 'Bearer', 'id_token': id_token}
+    )
+    profile_key = _route_key(discovery['userinfo_endpoint'])
+    routes[profile_key] = _json_handler(profile)
+    authorize_netloc = LINKEDIN_TOKEN_HOST
+    return StrictProviderSpec(
+        slug='linkedin',
+        authorize_netloc=authorize_netloc,
+        routes=routes,
+        hostnames=sorted(hostnames),
+        expected_uid=fixture_expected_uid,
+    )
+
+
 def _oidc_fixture_for_slug(slug: str, company_slug: str) -> OidcCompanyFixture:
-    if slug == 'linkedin':
-        return company_linkedin_oidc(company_slug)
     if slug == 'keycloak':
         return company_keycloak_oidc(company_slug)
     if slug == 'openid_connect':
@@ -250,12 +334,14 @@ def _assert_oidc_adapter_urls_with_live_discovery(
         adapter = OpenIDConnectOAuth2Adapter(request, social_app.provider_id)
         apply_oauth_adapter_settings(adapter, social_app=social_app, entry=entry)
         profile_url = adapter.profile_url
+        jwks_url = str(getattr(adapter, '_openid_config', {}).get('jwks_uri') or '')
         _assert_adapter_hosts(
             slug=slug,
             authorize_url=adapter.authorize_url,
             access_token_url=adapter.access_token_url,
             profile_url=profile_url,
             company_host=company_host,
+            jwks_url=jwks_url or None,
         )
 
 
@@ -273,6 +359,13 @@ def build_strict_spec(
     fixture = supported_provider_fixture(slug)
     entry = get_provider_catalog().by_slug()[slug]
     profile = dict(fixture.profile_document)
+    if slug == 'linkedin':
+        return _build_linkedin_strict_spec(
+            social_app=social_app,
+            fixture_expected_uid=fixture.expected_uid,
+            profile=profile,
+            signing=signing,
+        )
     if entry.allauth_id == 'openid_connect':
         return _build_oidc_strict_spec(
             slug=slug,
@@ -499,7 +592,7 @@ def run_strict_provider_round_trip(
         return f'spec: {exc}'
     with strict_provider_http(spec):
         entry = get_provider_catalog().by_slug()[slug]
-        if entry.allauth_id == 'openid_connect':
+        if slug == 'linkedin' or entry.allauth_id == 'openid_connect':
             try:
                 _assert_oidc_adapter_urls_with_live_discovery(
                     slug=slug,
@@ -538,3 +631,78 @@ def run_strict_provider_round_trip(
     if uid == spec.expected_uid:
         return None
     return f'uid mismatch expected {spec.expected_uid!r}, got {uid!r}'
+
+
+STRICT_LOGIN_CALLBACK_SLUGS = frozenset({'linkedin', 'keycloak', 'openid_connect'})
+
+
+def run_strict_login_callback_round_trip(
+    *,
+    slug: str,
+    request,
+    social_app: SocialApp,
+    company_id: int,
+    company_slug: str,
+) -> str | None:
+    """Full Shellui OAuth callback with JWKS-verified id_token (no verify_and_decode stubs)."""
+    from allauth.socialaccount.models import SocialAccount
+    from django.test import override_settings
+    from rest_framework.test import APIClient
+
+    from apps.authapi.oauth_state import OAUTH_STATE_NONCE_COOKIE, build_oauth_state, parse_oauth_state
+    from apps.companies.models import CompanyOAuthClient, CompanyOAuthRedirect
+
+    try:
+        spec = build_strict_spec(
+            slug=slug,
+            request=request,
+            social_app=social_app,
+            company_slug=company_slug,
+        )
+    except Exception as exc:
+        return f'spec: {exc}'
+
+    client_row = CompanyOAuthClient.objects.filter(company_id=company_id, social_app=social_app).first()
+    if client_row is None:
+        return 'missing CompanyOAuthClient for callback test'
+
+    CompanyOAuthRedirect.objects.update_or_create(
+        company_id=company_id,
+        defaults={'base_url': 'https://shell.example.com', 'is_active': True},
+    )
+
+    redirect_to = 'https://shell.example.com/login/callback'
+    state, _nonce = build_oauth_state(
+        provider=slug,
+        redirect_to=redirect_to,
+        company_id=company_id,
+        company_oauth_client_id=client_row.id,
+    )
+    payload, err = parse_oauth_state(state)
+    if err:
+        return f'state: {err}'
+
+    api = APIClient()
+    with strict_provider_http(spec):
+        with override_settings(
+            ALLOWED_HOSTS=['testserver', 'localhost', '127.0.0.1'],
+            OAUTH_ALLOW_LOOPBACK_REDIRECTS=True,
+            OAUTH_TOKEN_DELIVERY='code',
+            OAUTH_SKIP_CONFIRM_PROVIDERS=[slug],
+        ):
+            api.cookies[OAUTH_STATE_NONCE_COOKIE] = payload['nonce']
+            response = api.get('/api/v1/oauth/callback', {'code': 'strict-code', 'state': state})
+
+    if response.status_code != 302:
+        return f'callback status {response.status_code}, body {getattr(response, "content", b"")!r}'
+
+    entry = get_provider_catalog().by_slug()[slug]
+    provider_key = entry.allauth_id
+    if entry.allauth_id == 'openid_connect':
+        provider_key = social_app.provider_id or entry.social_app_provider_id()
+    accounts = SocialAccount.objects.filter(provider=provider_key).order_by('-id')
+    for account in accounts[:5]:
+        uid = str(account.uid or '')
+        if uid == spec.expected_uid or uid.endswith(f'|{spec.expected_uid}'):
+            return None
+    return f'no SocialAccount uid matching {spec.expected_uid!r} for provider {provider_key!r}'

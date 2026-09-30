@@ -28,7 +28,11 @@ from apps.authapi.tests.oauth_supported_provider_fixtures import (
     RELEASE_SUPPORTED_OAUTH_SLUGS,
     extra_settings_for_supported,
 )
-from apps.authapi.tests.oauth_strict_harness import run_strict_provider_round_trip
+from apps.authapi.tests.oauth_strict_harness import (
+    STRICT_LOGIN_CALLBACK_SLUGS,
+    run_strict_login_callback_round_trip,
+    run_strict_provider_round_trip,
+)
 from apps.authapi.tests.oauth_test_utilities import authorize_get_path, prepare_social_app_for_audit
 from apps.companies.models import Company, CompanyOAuthClient
 
@@ -58,13 +62,22 @@ def _try_slug(slug: str, *, company: Company, site: Site, factory: RequestFactor
     prepare_social_app_for_audit(slug, app)
     request = factory.get(authorize_get_path(slug))
     request.session = {}
-    err = run_strict_provider_round_trip(
-        slug=slug,
-        request=request,
-        social_app=app,
-        company_id=company.id,
-        company_slug=company.slug,
-    )
+    if slug in STRICT_LOGIN_CALLBACK_SLUGS:
+        err = run_strict_login_callback_round_trip(
+            slug=slug,
+            request=request,
+            social_app=app,
+            company_id=company.id,
+            company_slug=company.slug,
+        )
+    else:
+        err = run_strict_provider_round_trip(
+            slug=slug,
+            request=request,
+            social_app=app,
+            company_id=company.id,
+            company_slug=company.slug,
+        )
     CompanyOAuthClient.objects.filter(social_app=app).delete()
     app.delete()
     return err

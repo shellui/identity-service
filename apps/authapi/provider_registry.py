@@ -185,6 +185,13 @@ def validate_extra_settings(
     for key in incoming:
         if key not in {f.name for f in entry.extra_settings_schema}:
             errors.append(f'Unknown extra setting {key!r}.')
+    if entry.docs_slug == 'linkedin':
+        from apps.authapi.oauth_linkedin import LINKEDIN_OIDC_SERVER_URL
+
+        if 'server_url' in incoming:
+            errors.append('LinkedIn does not accept a custom server_url.')
+        normalized['server_url'] = LINKEDIN_OIDC_SERVER_URL
+
     normalized['catalog_slug'] = entry.docs_slug
     return normalized, errors
 

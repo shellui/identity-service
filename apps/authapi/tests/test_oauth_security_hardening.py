@@ -263,7 +263,8 @@ class OAuthSecurityHardeningTests(TestCase):
                 catalog_entry=entry,
             )
             self.assertIsNone(err)
-            self.assertTrue(profile.email_verified_for_link)
+            assert profile is not None
+            self.assertFalse(profile.email_verified_for_link)
         finally:
             server.shutdown()
 

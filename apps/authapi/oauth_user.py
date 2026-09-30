@@ -12,6 +12,10 @@ from allauth.socialaccount.models import SocialAccount
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
 
+from apps.authapi.oauth_idp_policy import (
+    COMPANY_IDP_EMAIL_LINK_POLICY,
+    is_company_controlled_idp,
+)
 from apps.authapi.provider_registry import ProviderCatalogEntry, resolve_catalog_slug
 from apps.authapi.oauth_social_account import compose_social_account_uid, social_account_provider_key
 
@@ -187,7 +191,10 @@ def _email_verified_for_link_from_policy(
             if isinstance(info.get('email'), str) and claim_email.strip().lower() == str(info.get('email')).strip().lower():
                 return True, None, None
             return False, None, None
-        return _truthy_claim(info.get('email_verified')), None, None
+        return False, None, None
+
+    if policy == COMPANY_IDP_EMAIL_LINK_POLICY:
+        return False, None, None
 
     if policy == 'discord_email_verified':
         return _truthy_claim(info.get('verified')), None, None
@@ -212,6 +219,9 @@ def _email_verified_for_link_from_policy(
         ms_email = info.get('mail') or info.get('userPrincipalName') or info.get('email')
         if isinstance(ms_email, str) and ms_email.strip() and '@' in ms_email:
             return True, None, ms_email.strip().lower()
+        return False, None, None
+
+    if policy == COMPANY_IDP_EMAIL_LINK_POLICY:
         return False, None, None
 
     if policy == 'oidc_email_verified_or_uid_only':
@@ -313,20 +323,62 @@ def extract_oauth_profile(
     ), None
 
 
-def resolve_oauth_user(*, provider: str, profile: OAuthProfile) -> tuple[User | None, bool, str | None]:
+def _company_idp_claimed_email_conflict(
+    *,
+    profile: OAuthProfile,
+    social_key: str,
+    social_uid: str,
+    catalog_entry: ProviderCatalogEntry | None,
+) -> str | None:
+    if not is_company_controlled_idp(catalog_entry):
+        return None
+    claimed = normalize_oauth_email(profile.email)
+    if not claimed or '@' not in claimed:
+        return None
+    if claimed.endswith(f'@{social_key}.local'):
+        return None
+    existing_user = User.objects.filter(email__iexact=claimed).first()
+    if existing_user is None:
+        return None
+    already_linked = SocialAccount.objects.filter(
+        provider=social_key,
+        uid=social_uid,
+        user=existing_user,
+    ).exists()
+    if already_linked:
+        return None
+    return 'oauth_email_conflict'
+
+
+def resolve_oauth_user(
+    *,
+    provider: str,
+    profile: OAuthProfile,
+    catalog_entry: ProviderCatalogEntry | None = None,
+) -> tuple[User | None, bool, str | None, str | None]:
     """
     Link by (provider, uid) first. Link by email only when ``email_verified_for_link`` is true.
+    Returns (user, created, error_message, error_code).
     """
     key = str(provider).strip().lower()
+    entry = catalog_entry or resolve_catalog_slug(key)
     social_key = profile.social_provider
     social_uid = profile.social_uid
+    conflict = _company_idp_claimed_email_conflict(
+        profile=profile,
+        social_key=social_key,
+        social_uid=social_uid,
+        catalog_entry=entry,
+    )
+    if conflict:
+        return None, False, 'OAuth email is already used by another account.', conflict
     existing = (
         SocialAccount.objects.filter(provider=social_key, uid=social_uid)
         .select_related('user')
         .first()
     )
     if existing is not None:
-        return existing.user, False, None
+        return existing.user, False, None, None
 
     uid_local_part = f'{social_key}_{social_uid}'
     if len(uid_local_part) > 150:
@@ -340,7 +392,7 @@ def resolve_oauth_user(*, provider: str, profile: OAuthProfile) -> tuple[User | 
             .first()
         )
         if existing is not None:
-            return existing.user, False, None
+            return existing.user, False, None, None
 
         if not profile.email_verified_for_link:
             uid_email = f'{social_uid}@{social_key}.local'
@@ -370,8 +422,8 @@ def resolve_oauth_user(*, provider: str, profile: OAuthProfile) -> tuple[User | 
                 )
                 if linked is None:
                     raise
-                return linked.user, False, None
-            return user, created, None
+                return linked.user, False, None, None
+            return user, created, None, None
 
         user, created = get_or_create_user_for_oauth(
             email=profile.email,
@@ -398,6 +450,6 @@ def resolve_oauth_user(*, provider: str, profile: OAuthProfile) -> tuple[User | 
             )
             if linked is None:
                 raise
-            return linked.user, False, None
+            return linked.user, False, None, None
 
-    return user, created, None
+    return user, created, None, None

@@ -46,6 +46,10 @@ EMAIL_POLICY_BY_SLUG: dict[str, str] = {
     'microsoft': 'microsoft_tenant',
     'discord': 'discord_email_verified',
     'kakao': 'kakao_email_verified',
+    'openid_connect': 'company_idp_uid_only',
+    'keycloak': 'company_idp_uid_only',
+    'okta': 'company_idp_uid_only',
+    'auth0': 'company_idp_uid_only',
 }
 
 EMAIL_POLICY_BY_PROTOCOL: dict[str, str] = {
@@ -89,7 +93,6 @@ OIDC_SERVER_URL_SLUGS = frozenset(
         'keycloak',
         'authelia',
         'cern',
-        'linkedin',
     }
 )
 
