@@ -1,0 +1,4185 @@
+[
+  {
+    "id": "apple",
+    "provider_id": null,
+    "docs_slug": "apple",
+    "app": "allauth.socialaccount.providers.apple",
+    "name": "Apple",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/apple.html",
+    "console_url": [
+      {
+        "text": "https://developer.apple.com/account/resources/identifiers/list",
+        "url": "https://developer.apple.com/account/resources/identifiers/list",
+        "label": "App registration (create an App ID and then a related Service ID here)",
+        "form": "link"
+      },
+      {
+        "text": "https://developer.apple.com/account/resources/authkeys/list",
+        "url": "https://developer.apple.com/account/resources/authkeys/list",
+        "label": "Private Key registration (be sure to save it)",
+        "form": "link"
+      }
+    ],
+    "callback_path": "/accounts/apple/login/callback/",
+    "expected_callback_path": "/accounts/apple/login/callback/",
+    "extra_settings": [
+      "client_id: your Services ID (web) or Bundle ID (iOS)",
+      "secret: the Key ID of the private key",
+      "key: Member ID / App ID Prefix (Team ID)",
+      "settings.certificate_key: contents of the downloaded private key (.p8)",
+      "Optional settings.hidden=True for a Bundle ID app that should not show on the web"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "popular",
+    "popular": true,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "apple",
+      "hex": "000000",
+      "title": "Apple",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/apple.svg",
+      "verified_http_200": true
+    },
+    "notes": "Create an App ID and a Services ID, register a private key, then configure client_id, the Key ID as secret, the Team ID as key and the private key as certificate_key.",
+    "caveats": []
+  },
+  {
+    "id": "auth0",
+    "provider_id": null,
+    "docs_slug": "auth0",
+    "app": "allauth.socialaccount.providers.auth0",
+    "name": "Auth0",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/auth0.html",
+    "console_url": [
+      {
+        "text": "https://manage.auth0.com/#/clients",
+        "url": "https://manage.auth0.com/#/clients",
+        "label": "App registration (get your key and secret here)",
+        "form": "link"
+      }
+    ],
+    "callback_path": "/accounts/auth0/login/callback/",
+    "expected_callback_path": "/accounts/auth0/login/callback/",
+    "extra_settings": [
+      "AUTH0_URL (required): base URL of your Auth0 domain, e.g. https://your.auth0domain.auth0.com",
+      "OAUTH_PKCE_ENABLED: True in the docs example"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "popular",
+    "popular": true,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "auth0",
+      "hex": "EB5424",
+      "title": "Auth0",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/auth0.svg",
+      "verified_http_200": true
+    },
+    "notes": "Create an application in the Auth0 dashboard to get a key and secret, set the callback URL and set AUTH0_URL to your tenant domain.",
+    "caveats": []
+  },
+  {
+    "id": "bitbucket_oauth2",
+    "provider_id": null,
+    "docs_slug": "bitbucket",
+    "app": "allauth.socialaccount.providers.bitbucket_oauth2",
+    "name": "Bitbucket",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/bitbucket.html",
+    "console_url": [
+      {
+        "text": "https://bitbucket.org/account/user",
+        "url": "https://bitbucket.org/account/user/{{yourusername}}/oauth-consumers/new",
+        "label": "App registration (get your key and secret here)",
+        "form": "link"
+      }
+    ],
+    "callback_path": "/accounts/bitbucket_oauth2/login/callback/",
+    "expected_callback_path": "/accounts/bitbucket_oauth2/login/callback/",
+    "extra_settings": [
+      "Grant the Account:Read permission",
+      "Bitbucket calls the client_id Key"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "popular",
+    "popular": true,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "bitbucket",
+      "hex": "0052CC",
+      "title": "Bitbucket",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/bitbucket.svg",
+      "verified_http_200": true,
+      "brand_guidelines": "https://atlassian.design/foundations/logos"
+    },
+    "notes": "Create an OAuth consumer in your Bitbucket account settings with Account:Read permission, and use its Key as client_id.",
+    "caveats": [
+      "Docs link only covers https://bitbucket.org/account/user; the rest of the console URL is plain text with a {{yourusername}} placeholder.",
+      "Docs page is \"bitbucket\" but the provider id and app are bitbucket_oauth2."
+    ]
+  },
+  {
+    "id": "discord",
+    "provider_id": null,
+    "docs_slug": "discord",
+    "app": "allauth.socialaccount.providers.discord",
+    "name": "Discord",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/discord.html",
+    "console_url": [
+      {
+        "text": "https://discordapp.com/developers/applications/me",
+        "url": "https://discordapp.com/developers/applications/me",
+        "label": "App registration and management (get your key and secret here)",
+        "form": "link"
+      }
+    ],
+    "callback_path": "/accounts/discord/login/callback/",
+    "expected_callback_path": "/accounts/discord/login/callback/",
+    "extra_settings": [
+      "The identify scope is required to fetch the user ID"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "popular",
+    "popular": true,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "discord",
+      "hex": "5865F2",
+      "title": "Discord",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/discord.svg",
+      "verified_http_200": true,
+      "brand_guidelines": "https://discord.com/branding"
+    },
+    "notes": "Create an application in the Discord developer portal, add the redirect URI, and make sure the identify scope is requested.",
+    "caveats": []
+  },
+  {
+    "id": "facebook",
+    "provider_id": null,
+    "docs_slug": "facebook",
+    "app": "allauth.socialaccount.providers.facebook",
+    "name": "Facebook",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/facebook.html",
+    "console_url": [
+      {
+        "text": "https://developers.facebook.com/apps",
+        "url": "https://developers.facebook.com/apps",
+        "label": "App registration: a key and secret key can be obtained by creating an app",
+        "form": "link"
+      }
+    ],
+    "callback_path": null,
+    "expected_callback_path": "/accounts/facebook/login/callback/",
+    "extra_settings": [
+      "METHOD: oauth2 (default) or js_sdk",
+      "Optional SCOPE, AUTH_PARAMS, INIT_PARAMS, FIELDS, EXCHANGE_TOKEN, LOCALE_FUNC, VERIFIED_EMAIL, VERSION, GRAPH_API_URL, SDK_URL",
+      "App review by Facebook is needed before going public",
+      "Limited Login only via the Headless API provider token flow"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "popular",
+    "popular": true,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "facebook",
+      "hex": "0866FF",
+      "title": "Facebook",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/facebook.svg",
+      "verified_http_200": true,
+      "brand_guidelines": "https://about.meta.com/brand/resources/facebook/logo"
+    },
+    "notes": "Create a Facebook app, put http://localhost:8000 under Website with Facebook Login during development, and get it reviewed by Facebook before going public.",
+    "caveats": [
+      "Docs only say to put http://localhost:8000 as the Website URL, no callback path."
+    ]
+  },
+  {
+    "id": "github",
+    "provider_id": null,
+    "docs_slug": "github",
+    "app": "allauth.socialaccount.providers.github",
+    "name": "GitHub",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/github.html",
+    "console_url": [
+      {
+        "text": "https://github.com/settings/applications/new",
+        "url": "https://github.com/settings/applications/new",
+        "label": "App registration (get your key and secret here)",
+        "form": "link"
+      }
+    ],
+    "callback_path": "/accounts/github/login/callback/",
+    "expected_callback_path": "/accounts/github/login/callback/",
+    "extra_settings": [
+      "Optional SCOPE, e.g. user, repo, read:org",
+      "GITHUB_URL for GitHub Enterprise"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "popular",
+    "popular": true,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "github",
+      "hex": "181717",
+      "title": "GitHub",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/github.svg",
+      "verified_http_200": true,
+      "brand_guidelines": "https://github.com/logos"
+    },
+    "notes": "Register a new OAuth app in GitHub settings, set the callback URL, and optionally set SCOPE or GITHUB_URL for Enterprise.",
+    "caveats": []
+  },
+  {
+    "id": "gitlab",
+    "provider_id": null,
+    "docs_slug": "gitlab",
+    "app": "allauth.socialaccount.providers.gitlab",
+    "name": "GitLab",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/gitlab.html",
+    "console_url": [],
+    "callback_path": null,
+    "expected_callback_path": "/accounts/gitlab/login/callback/",
+    "extra_settings": [
+      "GITLAB_URL (or settings.gitlab_url per app) for a self-hosted GitLab server (default https://gitlab.com)",
+      "SCOPE: read_user is required and the default"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "popular",
+    "popular": true,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "gitlab",
+      "hex": "FC6D26",
+      "title": "GitLab",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/gitlab.svg",
+      "verified_http_200": true,
+      "brand_guidelines": "https://about.gitlab.com/handbook/marketing/corporate-marketing/brand-activation/trademark-guidelines/"
+    },
+    "notes": "Register an OAuth application in GitLab as described in the GitLab docs, and set GITLAB_URL for a private server.",
+    "caveats": []
+  },
+  {
+    "id": "google",
+    "provider_id": null,
+    "docs_slug": "google",
+    "app": "allauth.socialaccount.providers.google",
+    "name": "Google",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/google.html",
+    "console_url": [
+      {
+        "text": "https://console.developers.google.com/",
+        "url": "https://console.developers.google.com/",
+        "label": "Google Developer Console",
+        "form": "link"
+      }
+    ],
+    "callback_path": "/accounts/google/login/callback/",
+    "expected_callback_path": "/accounts/google/login/callback/",
+    "extra_settings": [
+      "Optional SCOPE (default profile, plus email when SOCIALACCOUNT_QUERY_EMAIL)",
+      "AUTH_PARAMS access_type=offline to get a refresh token",
+      "OAUTH_PKCE_ENABLED, FETCH_USERINFO",
+      "One Tap Sign-In via the google_login_by_token URL"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "popular",
+    "popular": true,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "google",
+      "hex": "4285F4",
+      "title": "Google",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/google.svg",
+      "verified_http_200": true,
+      "brand_guidelines": "https://about.google/brand-resource-center/brand-elements/"
+    },
+    "notes": "Create a project and an OAuth client ID (web application) in the Google console, add the authorized redirect URI, fill in the OAuth consent screen, then create the SocialApp.",
+    "caveats": []
+  },
+  {
+    "id": "openid_connect",
+    "provider_id": "linkedin",
+    "docs_slug": "linkedin",
+    "app": "allauth.socialaccount.providers.openid_connect",
+    "name": "LinkedIn",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/linkedin.html",
+    "console_url": [
+      {
+        "text": "https://www.linkedin.com/secure/developer?newapp=",
+        "url": "https://www.linkedin.com/secure/developer?newapp=",
+        "label": "App registration (get your key and secret here)",
+        "form": "link"
+      }
+    ],
+    "callback_path": null,
+    "expected_callback_path": "/accounts/oidc/linkedin/login/callback/",
+    "extra_settings": [
+      "Configured via the openid_connect provider (provider_id linkedin); linkedin_oauth2 is deprecated",
+      "settings.server_url: https://www.linkedin.com/oauth"
+    ],
+    "protocol": "OpenID Connect",
+    "protocol_detail": null,
+    "tier": "popular",
+    "popular": true,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "missing",
+      "note": "LinkedIn removed from Simple Icons for legal reasons.",
+      "fallback": {
+        "brand_guidelines": "https://brand.linkedin.com/",
+        "lucide": "LogIn"
+      }
+    },
+    "notes": "Create a LinkedIn developer app, then add an openid_connect app with provider_id linkedin and server_url https://www.linkedin.com/oauth.",
+    "caveats": [
+      "The legacy linkedin_oauth2 package still exists in the source but is deprecated in favor of openid_connect."
+    ]
+  },
+  {
+    "id": "microsoft",
+    "provider_id": null,
+    "docs_slug": "microsoft",
+    "app": "allauth.socialaccount.providers.microsoft",
+    "name": "Microsoft",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/microsoft.html",
+    "console_url": [
+      {
+        "text": "https://portal.azure.com/#blade/Microsoft_AAD_RegisteredApps/ApplicationsListBlade",
+        "url": "https://portal.azure.com/#blade/Microsoft_AAD_RegisteredApps/ApplicationsListBlade",
+        "label": "Apps can be registered (for consumer key and secret) here",
+        "form": "link"
+      }
+    ],
+    "callback_path": null,
+    "expected_callback_path": "/accounts/microsoft/login/callback/",
+    "extra_settings": [
+      "settings.tenant: common (default), organizations, consumers or a tenant id; single-tenant apps must not use common",
+      "Optional settings.login_url and settings.graph_url overrides",
+      "Alternative: Entra ID via openid_connect with server_url https://login.microsoftonline.com/<tenant>/v2.0 and token_auth_method client_secret_basic"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "popular",
+    "popular": true,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "missing",
+      "note": "Microsoft brand removed from Simple Icons for legal reasons.",
+      "fallback": {
+        "brand_guidelines": "https://learn.microsoft.com/en-us/entra/identity-platform/howto-add-branding-in-apps",
+        "lucide": "LogIn"
+      }
+    },
+    "notes": "Register an app in the Azure portal App registrations to get a key and secret, and set the tenant setting (for example organizations for single tenant apps).",
+    "caveats": []
+  },
+  {
+    "id": "okta",
+    "provider_id": null,
+    "docs_slug": "okta",
+    "app": "allauth.socialaccount.providers.okta",
+    "name": "Okta",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/okta.html",
+    "console_url": [],
+    "callback_path": null,
+    "expected_callback_path": "/accounts/okta/login/callback/",
+    "extra_settings": [
+      "OKTA_BASE_URL (required): your Okta domain, e.g. example.okta.com",
+      "OAUTH_PKCE_ENABLED: True in the docs example"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "popular",
+    "popular": true,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "okta",
+      "hex": "007DC1",
+      "title": "Okta",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/okta.svg",
+      "verified_http_200": true,
+      "brand_guidelines": "https://www.okta.com/terms-of-use-for-okta-content/"
+    },
+    "notes": "Create an OIDC app in Okta and set OKTA_BASE_URL to your Okta domain.",
+    "caveats": []
+  },
+  {
+    "id": "slack",
+    "provider_id": null,
+    "docs_slug": "slack",
+    "app": "allauth.socialaccount.providers.slack",
+    "name": "Slack",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/slack.html",
+    "console_url": [
+      {
+        "text": "https://api.slack.com/apps/new",
+        "url": "https://api.slack.com/apps/new",
+        "label": "App registration (get your key and secret here)",
+        "form": "link"
+      }
+    ],
+    "callback_path": "/accounts/slack/login/callback/",
+    "expected_callback_path": "/accounts/slack/login/callback/",
+    "extra_settings": [],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "popular",
+    "popular": true,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "missing",
+      "note": "Slack removed from Simple Icons.",
+      "fallback": {
+        "brand_guidelines": "https://slack.com/media-kit",
+        "lucide": "LogIn"
+      }
+    },
+    "notes": "Create a new Slack app to get a key and secret, and set the callback URL.",
+    "caveats": []
+  },
+  {
+    "id": "twitter_oauth2",
+    "provider_id": null,
+    "docs_slug": "twitter_oauth2",
+    "app": "allauth.socialaccount.providers.twitter_oauth2",
+    "name": "X/Twitter (OAuth 2)",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/twitter_oauth2.html",
+    "console_url": [
+      {
+        "text": "https://developer.x.com/en/portal/dashboard",
+        "url": "https://developer.x.com/en/portal/dashboard",
+        "label": "App registration: create a new app via",
+        "form": "code"
+      },
+      {
+        "text": "https://developer.x.com/en/portal/projects/{project-id}/apps/{app-id}/keys",
+        "url": "https://developer.x.com/en/portal/projects/{project-id}/apps/{app-id}/keys",
+        "label": "Use the X keys tab of your application to fill in the form",
+        "form": "code"
+      }
+    ],
+    "callback_path": "/accounts/twitter_oauth2/login/callback/",
+    "expected_callback_path": "/accounts/twitter_oauth2/login/callback/",
+    "extra_settings": [
+      "App must have OAuth 2.0 enabled",
+      "client_id is the OAuth2.0 Client ID, secret the OAuth2.0 Client Secret"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "popular",
+    "popular": true,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "x",
+      "hex": "000000",
+      "title": "X",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/x.svg",
+      "verified_http_200": true,
+      "brand_guidelines": "https://about.x.com/en/who-we-are/brand-toolkit",
+      "note": "X logo."
+    },
+    "notes": "Create an X app with OAuth 2.0 enabled and the callback URL, then copy the OAuth 2.0 client ID and secret into a SocialApp.",
+    "caveats": []
+  },
+  {
+    "id": "oauth2",
+    "provider_id": null,
+    "docs_slug": "oauth2",
+    "app": "allauth.socialaccount.providers.oauth2",
+    "name": "OAuth 2.0",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/oauth2.html",
+    "console_url": [],
+    "callback_path": null,
+    "expected_callback_path": "/accounts/<provider_slug>/login/callback/",
+    "extra_settings": [
+      "Shared OAuth 2.0 options for every OAuth2 based provider",
+      "settings.auth_params (per app) or AUTH_PARAMS (per provider) for extra authorization request parameters, e.g. prompt=login",
+      "settings.server_url for providers that support a configurable server"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": "protocol base package, not a provider",
+    "tier": "generic",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "missing",
+      "note": "Protocol, no brand icon in Simple Icons.",
+      "fallback": {
+        "lucide": "KeyRound"
+      }
+    },
+    "notes": "Protocol reference page, not a provider: documents auth_params and other options shared by all OAuth2 based providers.",
+    "caveats": [
+      "oauth2 is the shared OAuth 2.0 base package (no provider id of its own); listed as a generic protocol entry per request."
+    ]
+  },
+  {
+    "id": "openid",
+    "provider_id": null,
+    "docs_slug": "openid",
+    "app": "allauth.socialaccount.providers.openid",
+    "name": "OpenID",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/openid.html",
+    "console_url": [],
+    "callback_path": null,
+    "expected_callback_path": "/accounts/openid/callback/",
+    "extra_settings": [
+      "Needs the openid extra: pip install \"django-allauth[socialaccount,openid]\"",
+      "Optional SERVERS list of {id, name, openid_url}, with optional extra_attributes and stateless"
+    ],
+    "protocol": "other",
+    "protocol_detail": "OpenID 2.0",
+    "tier": "generic",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "openid",
+      "hex": "F78C40",
+      "title": "OpenID",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/openid.svg",
+      "verified_http_200": true,
+      "note": "OpenID logo; Lucide KeyRound is a neutral alternative.",
+      "alt_fallback": {
+        "lucide": "KeyRound"
+      }
+    },
+    "notes": "Install the openid extra; no credentials are needed, optionally list predefined OpenID servers in SERVERS.",
+    "caveats": []
+  },
+  {
+    "id": "openid_connect",
+    "provider_id": null,
+    "docs_slug": "openid_connect",
+    "app": "allauth.socialaccount.providers.openid_connect",
+    "name": "OpenID Connect",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/openid_connect.html",
+    "console_url": [],
+    "callback_path": "/accounts/oidc/{id}/login/callback/",
+    "expected_callback_path": "/accounts/oidc/{id}/login/callback/",
+    "extra_settings": [
+      "One app per OIDC server under APPS, each with provider_id, name, client_id, secret",
+      "settings.server_url (required): issuer or discovery URL",
+      "Optional settings: fetch_userinfo, oauth_pkce_enabled, token_auth_method (client_secret_basic or client_secret_post), uid_field (default sub)",
+      "OAUTH_PKCE_ENABLED can be set globally"
+    ],
+    "protocol": "OpenID Connect",
+    "protocol_detail": null,
+    "tier": "generic",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "openid",
+      "hex": "F78C40",
+      "title": "OpenID",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/openid.svg",
+      "verified_http_200": true,
+      "note": "OpenID Foundation logo, also used for OpenID Connect; Lucide KeyRound is a neutral alternative.",
+      "alt_fallback": {
+        "lucide": "KeyRound"
+      }
+    },
+    "notes": "Register a client with each OpenID Connect server, then add one APPS entry per server with a provider_id and server_url; the callback uses that provider_id.",
+    "caveats": []
+  },
+  {
+    "id": "saml",
+    "provider_id": null,
+    "docs_slug": "saml",
+    "app": "allauth.socialaccount.providers.saml",
+    "name": "SAML",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/saml.html",
+    "console_url": [],
+    "callback_path": "/accounts/saml/<organization_slug>/acs/",
+    "expected_callback_path": "/accounts/saml/<organization_slug>/acs/",
+    "extra_settings": [
+      "Needs the saml extra: pip install \"django-allauth[saml]\" (plus xmlsec system packages)",
+      "One app per organization: client_id is the organization slug, provider_id should be the IdP entity ID",
+      "settings.idp: entity_id (required) plus metadata_url, or sso_url, slo_url and x509cert",
+      "settings.attribute_mapping for uid, email, email_verified",
+      "Optional settings.sp.entity_id, settings.advanced (signing, encryption, private_key, x509cert), contact_person",
+      "Endpoints: /accounts/saml/<organization_slug>/login/, acs/, sls/, metadata/",
+      "HTTPS required by most IdPs"
+    ],
+    "protocol": "SAML",
+    "protocol_detail": null,
+    "tier": "generic",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "missing",
+      "note": "Protocol, no brand icon.",
+      "fallback": {
+        "lucide": "KeyRound"
+      }
+    },
+    "notes": "Install the saml extra, add one APPS entry per organization with its IdP entity ID and metadata URL (or SSO URL and certificate), map attributes, and give the IdP the ACS and metadata URLs.",
+    "caveats": []
+  },
+  {
+    "id": "twentythreeandme",
+    "provider_id": null,
+    "docs_slug": "23andme",
+    "app": "allauth.socialaccount.providers.twentythreeandme",
+    "name": "23andMe",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/23andme.html",
+    "console_url": [
+      {
+        "text": "https://api.23andme.com/dev/",
+        "url": "https://api.23andme.com/dev/",
+        "label": "App registration (get your key and secret here)",
+        "form": "link"
+      }
+    ],
+    "callback_path": "/accounts/23andme/login/callback/",
+    "expected_callback_path": "/accounts/23andme/login/callback/",
+    "extra_settings": [],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "missing",
+      "note": "No 23andMe icon in Simple Icons 16.33.0.",
+      "fallback": {
+        "lucide": "LogIn"
+      }
+    },
+    "notes": "Register an app on the 23andMe developer site to get a key and secret, and set the callback URL.",
+    "caveats": [
+      "Provider id is \"twentythreeandme\" (app allauth.socialaccount.providers.twentythreeandme); the URL slug is 23andme."
+    ]
+  },
+  {
+    "id": "500px",
+    "provider_id": null,
+    "docs_slug": "500px",
+    "app": "allauth.socialaccount.providers.fivehundredpx",
+    "name": "500px",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/500px.html",
+    "console_url": [
+      {
+        "text": "https://500px.com/settings/applications",
+        "url": "https://500px.com/settings/applications",
+        "label": "App registration (get your key and secret here)",
+        "form": "link"
+      }
+    ],
+    "callback_path": "/accounts/500px/login/callback/",
+    "expected_callback_path": "/accounts/500px/login/callback/",
+    "extra_settings": [],
+    "protocol": "OAuth1",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "500px",
+      "hex": "222222",
+      "title": "500px",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/500px.svg",
+      "verified_http_200": true
+    },
+    "notes": "Create an application in your 500px settings to get a key and secret, and set the callback URL.",
+    "caveats": [
+      "Provider id is \"500px\" but the app module is allauth.socialaccount.providers.fivehundredpx."
+    ]
+  },
+  {
+    "id": "agave",
+    "provider_id": null,
+    "docs_slug": "agave",
+    "app": "allauth.socialaccount.providers.agave",
+    "name": "AgaveAPI",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/agave.html",
+    "console_url": [
+      {
+        "text": "https://public.agaveapi.co/create_account",
+        "url": "https://public.agaveapi.co/create_account",
+        "label": "Account Signup",
+        "form": "link"
+      },
+      {
+        "text": "https://bitbucket.org/agaveapi/cli/overview",
+        "url": "https://bitbucket.org/agaveapi/cli/overview",
+        "label": "App registration: run client-create from the cli",
+        "form": "link"
+      }
+    ],
+    "callback_path": "/accounts/agave/login/callback/",
+    "expected_callback_path": "/accounts/agave/login/callback/",
+    "extra_settings": [
+      "API_URL: Agave tenant base URL (defaults to https://public.agaveapi.co/)",
+      "May require an https callback URL, even for localhost"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "missing",
+      "note": "No AgaveAPI icon in Simple Icons 16.33.0.",
+      "fallback": {
+        "lucide": "LogIn"
+      }
+    },
+    "notes": "Sign up for an Agave account, create the client with the Agave CLI client-create command, and set API_URL if you are not on the public tenant.",
+    "caveats": []
+  },
+  {
+    "id": "amazon",
+    "provider_id": null,
+    "docs_slug": "amazon",
+    "app": "allauth.socialaccount.providers.amazon",
+    "name": "Amazon",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/amazon.html",
+    "console_url": [
+      {
+        "text": "http://login.amazon.com/manageApps",
+        "url": "http://login.amazon.com/manageApps",
+        "label": "App registration (get your key and secret here)",
+        "form": "link"
+      }
+    ],
+    "callback_path": "/accounts/amazon/login/callback/",
+    "expected_callback_path": "/accounts/amazon/login/callback/",
+    "extra_settings": [
+      "Amazon requires a secure (https) redirect_uri"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "missing",
+      "note": "Amazon icons not in Simple Icons.",
+      "fallback": {
+        "brand_guidelines": "https://developer.amazon.com/docs/login-with-amazon/button.html",
+        "lucide": "LogIn"
+      }
+    },
+    "notes": "Register the app in Login with Amazon to get a key and secret, and use an https callback URL.",
+    "caveats": []
+  },
+  {
+    "id": "amazon_cognito",
+    "provider_id": null,
+    "docs_slug": "amazon_cognito",
+    "app": "allauth.socialaccount.providers.amazon_cognito",
+    "name": "Amazon Cognito",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/amazon_cognito.html",
+    "console_url": [
+      {
+        "text": "https://console.aws.amazon.com/cognito/",
+        "url": "https://console.aws.amazon.com/cognito/",
+        "label": "App registration (get your key and secret here)",
+        "form": "link"
+      }
+    ],
+    "callback_path": "/accounts/amazon-cognito/login/callback/",
+    "expected_callback_path": "/accounts/amazon_cognito/login/callback/",
+    "extra_settings": [
+      "DOMAIN (required): your user pool domain, e.g. https://<domain-prefix>.auth.us-east-1.amazoncognito.com or a custom domain"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "missing",
+      "note": "No Amazon or AWS Cognito icon in Simple Icons.",
+      "fallback": {
+        "lucide": "LogIn"
+      }
+    },
+    "notes": "Create a Cognito User Pool and an App Client with a secret, enable the authorization code grant and scopes, create a domain prefix, then set DOMAIN.",
+    "caveats": [
+      "Docs say /accounts/amazon-cognito/...; source slug is amazon_cognito, so the real path is /accounts/amazon_cognito/login/callback/."
+    ]
+  },
+  {
+    "id": "atlassian",
+    "provider_id": null,
+    "docs_slug": "atlassian",
+    "app": "allauth.socialaccount.providers.atlassian",
+    "name": "Atlassian",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/atlassian.html",
+    "console_url": [
+      {
+        "text": "https://developer.atlassian.com/console/myapps/",
+        "url": "https://developer.atlassian.com/console/myapps/",
+        "label": "Atlassian developer console",
+        "form": "link"
+      }
+    ],
+    "callback_path": "/accounts/atlassian/login/callback/",
+    "expected_callback_path": "/accounts/atlassian/login/callback/",
+    "extra_settings": [
+      "Optional SCOPE (defaults to read:me)"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "atlassian",
+      "hex": "0052CC",
+      "title": "Atlassian",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/atlassian.svg",
+      "verified_http_200": true,
+      "brand_guidelines": "https://atlassian.design/foundations/logos"
+    },
+    "notes": "In the Atlassian developer console, create an app, configure OAuth 2.0 (3LO) authorization with the callback URL, add an API under Permissions, then create the SocialApp.",
+    "caveats": []
+  },
+  {
+    "id": "openid_connect",
+    "provider_id": "authelia",
+    "docs_slug": "authelia",
+    "app": "allauth.socialaccount.providers.openid_connect",
+    "name": "Authelia",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/authelia.html",
+    "console_url": [],
+    "callback_path": null,
+    "expected_callback_path": "/accounts/oidc/authelia/login/callback/",
+    "extra_settings": [
+      "Configured via the openid_connect provider (provider_id authelia)",
+      "settings.server_url: https://auth.example.com/.well-known/openid-configuration of your Authelia instance",
+      "client_id and secret must match the client configured in Authelia"
+    ],
+    "protocol": "OpenID Connect",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "authelia",
+      "hex": "113155",
+      "title": "Authelia",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/authelia.svg",
+      "verified_http_200": true,
+      "brand_guidelines": "https://www.authelia.com/reference/guides/branding"
+    },
+    "notes": "Register a client in your Authelia OIDC configuration, then add an openid_connect app with provider_id authelia and server_url pointing at your instance.",
+    "caveats": []
+  },
+  {
+    "id": "authentiq",
+    "provider_id": null,
+    "docs_slug": "authentiq",
+    "app": "allauth.socialaccount.providers.authentiq",
+    "name": "Authentiq",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/authentiq.html",
+    "console_url": [
+      {
+        "text": "https://dashboard.authentiq.com/",
+        "url": "https://dashboard.authentiq.com/",
+        "label": "App registration",
+        "form": "link"
+      }
+    ],
+    "callback_path": "/accounts/authentiq/login/callback/",
+    "expected_callback_path": "/accounts/authentiq/login/callback/",
+    "extra_settings": [
+      "Optional SCOPE: email, phone, address, aq:name, aq:location"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "missing",
+      "note": "No Authentiq icon in Simple Icons 16.33.0.",
+      "fallback": {
+        "lucide": "LogIn"
+      }
+    },
+    "notes": "Sign in to the Authentiq dashboard with your Authentiq ID, register the app and redirect URL, and optionally choose scopes.",
+    "caveats": []
+  },
+  {
+    "id": "baidu",
+    "provider_id": null,
+    "docs_slug": "baidu",
+    "app": "allauth.socialaccount.providers.baidu",
+    "name": "Baidu",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/baidu.html",
+    "console_url": [],
+    "callback_path": null,
+    "expected_callback_path": "/accounts/baidu/login/callback/",
+    "extra_settings": [],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "baidu",
+      "hex": "2932E1",
+      "title": "Baidu",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/baidu.svg",
+      "verified_http_200": true
+    },
+    "notes": "The page only links to the Baidu OAuth2 documentation; register an app with Baidu and create the SocialApp.",
+    "caveats": []
+  },
+  {
+    "id": "basecamp",
+    "provider_id": null,
+    "docs_slug": "basecamp",
+    "app": "allauth.socialaccount.providers.basecamp",
+    "name": "Basecamp",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/basecamp.html",
+    "console_url": [
+      {
+        "text": "https://integrate.37signals.com/",
+        "url": "https://integrate.37signals.com/",
+        "label": "App registration (get your key and secret here)",
+        "form": "link"
+      }
+    ],
+    "callback_path": "/accounts/basecamp/login/callback/",
+    "expected_callback_path": "/accounts/basecamp/login/callback/",
+    "extra_settings": [],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "basecamp",
+      "hex": "1D2D35",
+      "title": "Basecamp",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/basecamp.svg",
+      "verified_http_200": true
+    },
+    "notes": "Register the app at 37signals integrate to get a key and secret, and set the callback URL.",
+    "caveats": []
+  },
+  {
+    "id": "battlenet",
+    "provider_id": null,
+    "docs_slug": "battlenet",
+    "app": "allauth.socialaccount.providers.battlenet",
+    "name": "Battle.net",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/battlenet.html",
+    "console_url": [
+      {
+        "text": "https://develop.battle.net/access/clients/create",
+        "url": "https://develop.battle.net/access/clients/create",
+        "label": "Register your app here (Blizzard account required)",
+        "form": "link"
+      }
+    ],
+    "callback_path": "/accounts/battlenet/login/callback/",
+    "expected_callback_path": "/accounts/battlenet/login/callback/",
+    "extra_settings": [
+      "Optional SCOPE: wow.profile, sc2.profile (default [])",
+      "REGION: apac, cn, eu, kr, sea, tw or us (default us)",
+      "Battletags as usernames need a custom username validator (BattletagUsernameValidator)"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "battledotnet",
+      "hex": "4381C3",
+      "title": "Battle.net",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/battledotnet.svg",
+      "verified_http_200": true
+    },
+    "notes": "Create a client on the Blizzard developer portal, set the callback URL, and optionally configure SCOPE and REGION.",
+    "caveats": []
+  },
+  {
+    "id": "box",
+    "provider_id": null,
+    "docs_slug": "box",
+    "app": "allauth.socialaccount.providers.box",
+    "name": "Box",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/box.html",
+    "console_url": [
+      {
+        "text": "https://app.box.com/developers/services/edit/",
+        "url": "https://app.box.com/developers/services/edit/",
+        "label": "App registration (get your key and secret here)",
+        "form": "link"
+      }
+    ],
+    "callback_path": "/accounts/box/login/callback/",
+    "expected_callback_path": "/accounts/box/login/callback/",
+    "extra_settings": [],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "box",
+      "hex": "0061D5",
+      "title": "Box",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/box.svg",
+      "verified_http_200": true,
+      "brand_guidelines": "https://www.box.com/en-gb/about-us/press"
+    },
+    "notes": "Create an app in the Box developer console to get a key and secret, and set the callback URL.",
+    "caveats": []
+  },
+  {
+    "id": "openid_connect",
+    "provider_id": "cern",
+    "docs_slug": "cern",
+    "app": "allauth.socialaccount.providers.openid_connect",
+    "name": "CERN",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/cern.html",
+    "console_url": [
+      {
+        "text": "https://application-portal.web.cern.ch/",
+        "url": "https://application-portal.web.cern.ch/",
+        "label": "App registration (get your key and secret here)",
+        "form": "link"
+      }
+    ],
+    "callback_path": null,
+    "expected_callback_path": "/accounts/oidc/cern/login/callback/",
+    "extra_settings": [
+      "Configured via the openid_connect provider (provider_id cern)",
+      "settings.server_url: https://auth.cern.ch/auth/realms/cern/.well-known/openid-configuration"
+    ],
+    "protocol": "OpenID Connect",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "missing",
+      "note": "No CERN icon in Simple Icons 16.33.0.",
+      "fallback": {
+        "lucide": "LogIn"
+      }
+    },
+    "notes": "Register the application in the CERN Application Portal, then add an openid_connect app with provider_id cern and the CERN server_url.",
+    "caveats": []
+  },
+  {
+    "id": "cilogon",
+    "provider_id": null,
+    "docs_slug": "cilogon",
+    "app": "allauth.socialaccount.providers.cilogon",
+    "name": "CILogon",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/cilogon.html",
+    "console_url": [
+      {
+        "text": "https://cilogon.org/oauth2/register",
+        "url": "https://cilogon.org/oauth2/register",
+        "label": "App registration (get your key and secret here)",
+        "form": "link"
+      }
+    ],
+    "callback_path": null,
+    "expected_callback_path": "/accounts/cilogon/login/callback/",
+    "extra_settings": [],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "missing",
+      "note": "No CILogon icon in Simple Icons 16.33.0.",
+      "fallback": {
+        "lucide": "LogIn"
+      }
+    },
+    "notes": "Register an OIDC client with CILogon to get a key and secret, then create the SocialApp.",
+    "caveats": []
+  },
+  {
+    "id": "clever",
+    "provider_id": null,
+    "docs_slug": "clever",
+    "app": "allauth.socialaccount.providers.clever",
+    "name": "Clever",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/clever.html",
+    "console_url": [],
+    "callback_path": null,
+    "expected_callback_path": "/accounts/clever/login/callback/",
+    "extra_settings": [],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "missing",
+      "note": "Simple Icons 'clevercloud' is a different company.",
+      "fallback": {
+        "lucide": "LogIn"
+      }
+    },
+    "notes": "The page only links to the Clever OAuth2 documentation; register an app with Clever and create the SocialApp.",
+    "caveats": []
+  },
+  {
+    "id": "dataporten",
+    "provider_id": null,
+    "docs_slug": "dataporten",
+    "app": "allauth.socialaccount.providers.dataporten",
+    "name": "Dataporten",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/dataporten.html",
+    "console_url": [
+      {
+        "text": "https://docs.dataporten.no/docs/gettingstarted/",
+        "url": "https://docs.dataporten.no/docs/gettingstarted/",
+        "label": "App registration (get your key and secret here)",
+        "form": "link"
+      }
+    ],
+    "callback_path": "/accounts/dataporten/login/callback",
+    "expected_callback_path": "/accounts/dataporten/login/callback/",
+    "extra_settings": [],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "missing",
+      "note": "No Dataporten icon in Simple Icons 16.33.0.",
+      "fallback": {
+        "lucide": "LogIn"
+      }
+    },
+    "notes": "Follow the Dataporten getting started guide to register the app, and set the callback URL.",
+    "caveats": [
+      "Docs path has no trailing slash."
+    ]
+  },
+  {
+    "id": "Daum",
+    "provider_id": null,
+    "docs_slug": "daum",
+    "app": "allauth.socialaccount.providers.daum",
+    "name": "daum",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/daum.html",
+    "console_url": [
+      {
+        "text": "https://developers.daum.net/console",
+        "url": "https://developers.daum.net/console",
+        "label": "App registration (get your key and secret here)",
+        "form": "link"
+      }
+    ],
+    "callback_path": "/accounts/daum/login/callback/",
+    "expected_callback_path": "/accounts/Daum/login/callback/",
+    "extra_settings": [],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "missing",
+      "note": "No Daum icon (Simple Icons has Kakao, the parent company, only).",
+      "fallback": {
+        "lucide": "LogIn"
+      }
+    },
+    "notes": "Register the app in the Daum developer console to get a key and secret, and set the callback URL.",
+    "caveats": [
+      "Provider id in source is \"Daum\" (capital D), so SOCIALACCOUNT_PROVIDERS uses \"Daum\" while the app module is allauth.socialaccount.providers.daum. The URL slug is also \"Daum\", so the real callback is /accounts/Daum/login/callback/, not the lowercase path in the docs."
+    ]
+  },
+  {
+    "id": "digitalocean",
+    "provider_id": null,
+    "docs_slug": "digitalocean",
+    "app": "allauth.socialaccount.providers.digitalocean",
+    "name": "DigitalOcean",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/digitalocean.html",
+    "console_url": [
+      {
+        "text": "https://cloud.digitalocean.com/settings/applications",
+        "url": "https://cloud.digitalocean.com/settings/applications",
+        "label": "App registration (get your key and secret here)",
+        "form": "link"
+      }
+    ],
+    "callback_path": "/accounts/digitalocean/login/callback/",
+    "expected_callback_path": "/accounts/digitalocean/login/callback/",
+    "extra_settings": [
+      "Optional SCOPE, e.g. 'read write' for write access (default read)"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "digitalocean",
+      "hex": "0080FF",
+      "title": "DigitalOcean",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/digitalocean.svg",
+      "verified_http_200": true,
+      "brand_guidelines": "https://www.digitalocean.com/press/"
+    },
+    "notes": "Register an OAuth application in DigitalOcean settings, set the callback URL, and set SCOPE if you need write access.",
+    "caveats": []
+  },
+  {
+    "id": "dingtalk",
+    "provider_id": null,
+    "docs_slug": "dingtalk",
+    "app": "allauth.socialaccount.providers.dingtalk",
+    "name": "DingTalk",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/dingtalk.html",
+    "console_url": [],
+    "callback_path": null,
+    "expected_callback_path": "/accounts/dingtalk/login/callback/",
+    "extra_settings": [
+      "Optional SCOPE: openapi (default) or corpid"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "missing",
+      "note": "No DingTalk icon in Simple Icons 16.33.0.",
+      "fallback": {
+        "lucide": "LogIn"
+      }
+    },
+    "notes": "The page only links to the DingTalk OAuth2 documentation; register an app with DingTalk, then configure client_id and secret.",
+    "caveats": []
+  },
+  {
+    "id": "discogs",
+    "provider_id": null,
+    "docs_slug": "discogs",
+    "app": "allauth.socialaccount.providers.discogs",
+    "name": "Discogs (OAuth 1a)",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/discogs.html",
+    "console_url": [
+      {
+        "text": "https://www.discogs.com/settings/developers",
+        "url": "https://www.discogs.com/settings/developers",
+        "label": "App registration: create a new app at",
+        "form": "code"
+      }
+    ],
+    "callback_path": "/accounts/discogs/login/callback/",
+    "expected_callback_path": "/accounts/discogs/login/callback/",
+    "extra_settings": [
+      "client_id is the Consumer Key, secret is the Consumer Secret"
+    ],
+    "protocol": "OAuth1",
+    "protocol_detail": "OAuth 1.0a",
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "discogs",
+      "hex": "333333",
+      "title": "Discogs",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/discogs.svg",
+      "verified_http_200": true
+    },
+    "notes": "Create an app in your Discogs developer settings, set the callback URL, and use the Consumer Key and Secret.",
+    "caveats": []
+  },
+  {
+    "id": "doximity",
+    "provider_id": null,
+    "docs_slug": "doximity",
+    "app": "allauth.socialaccount.providers.doximity",
+    "name": "Doximity",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/doximity.html",
+    "console_url": [
+      {
+        "text": "https://www.doximity.com/developers/api_signup",
+        "url": "https://www.doximity.com/developers/api_signup",
+        "label": "Request API keys here",
+        "form": "link"
+      }
+    ],
+    "callback_path": "/accounts/doximity/login/callback/",
+    "expected_callback_path": "/accounts/doximity/login/callback/",
+    "extra_settings": [],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "missing",
+      "note": "No Doximity icon in Simple Icons 16.33.0.",
+      "fallback": {
+        "lucide": "LogIn"
+      }
+    },
+    "notes": "Request API keys from Doximity, and set the callback URL.",
+    "caveats": []
+  },
+  {
+    "id": "draugiem",
+    "provider_id": null,
+    "docs_slug": "draugiem",
+    "app": "allauth.socialaccount.providers.draugiem",
+    "name": "Draugiem",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/draugiem.html",
+    "console_url": [
+      {
+        "text": "https://www.draugiem.lv/applications/dev/create/?type=4",
+        "url": "https://www.draugiem.lv/applications/dev/create/?type=4",
+        "label": "App registration (get your key and secret here)",
+        "form": "link"
+      }
+    ],
+    "callback_path": "/accounts/draugiem/login/callback/",
+    "expected_callback_path": "/accounts/draugiem/callback/",
+    "extra_settings": [],
+    "protocol": "other",
+    "protocol_detail": "Draugiem Passport (custom redirect and signature flow)",
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "draugiemdotlv",
+      "hex": "FF6600",
+      "title": "Draugiem.lv",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/draugiemdotlv.svg",
+      "verified_http_200": true
+    },
+    "notes": "Create a Draugiem application to get a key and secret, and set the callback URL.",
+    "caveats": [
+      "Docs say /accounts/draugiem/login/callback/; source urls.py registers /accounts/draugiem/callback/."
+    ]
+  },
+  {
+    "id": "drip",
+    "provider_id": null,
+    "docs_slug": "drip",
+    "app": "allauth.socialaccount.providers.drip",
+    "name": "Drip",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/drip.html",
+    "console_url": [
+      {
+        "text": "https://www.getdrip.com/user/applications",
+        "url": "https://www.getdrip.com/user/applications",
+        "label": "App registration (get your key and secret here)",
+        "form": "link"
+      }
+    ],
+    "callback_path": "/accounts/drip/login/callback/",
+    "expected_callback_path": "/accounts/drip/login/callback/",
+    "extra_settings": [
+      "Make sure the registered application is active"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "missing",
+      "note": "No Drip icon in Simple Icons 16.33.0.",
+      "fallback": {
+        "lucide": "LogIn"
+      }
+    },
+    "notes": "Register the app in your Drip account, set the callback URL, and make sure the application is active.",
+    "caveats": []
+  },
+  {
+    "id": "dropbox",
+    "provider_id": null,
+    "docs_slug": "dropbox",
+    "app": "allauth.socialaccount.providers.dropbox",
+    "name": "Dropbox",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/dropbox.html",
+    "console_url": [
+      {
+        "text": "https://www.dropbox.com/developers/apps/",
+        "url": "https://www.dropbox.com/developers/apps/",
+        "label": "App registration (get your key and secret here)",
+        "form": "link"
+      }
+    ],
+    "callback_path": "/accounts/dropbox/login/callback/",
+    "expected_callback_path": "/accounts/dropbox/login/callback/",
+    "extra_settings": [],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "dropbox",
+      "hex": "0061FF",
+      "title": "Dropbox",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/dropbox.svg",
+      "verified_http_200": true
+    },
+    "notes": "Create an app in the Dropbox developer console to get a key and secret, and set the callback URL.",
+    "caveats": []
+  },
+  {
+    "id": "dwolla",
+    "provider_id": null,
+    "docs_slug": "dwolla",
+    "app": "allauth.socialaccount.providers.dwolla",
+    "name": "Dwolla",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/dwolla.html",
+    "console_url": [
+      {
+        "text": "https://dashboard-uat.dwolla.com/applications",
+        "url": "https://dashboard-uat.dwolla.com/applications",
+        "label": "App registration (get your key and secret here)",
+        "form": "link"
+      }
+    ],
+    "callback_path": "/accounts/dwolla/login/callback/",
+    "expected_callback_path": "/accounts/dwolla/login/callback/",
+    "extra_settings": [
+      "SCOPE, e.g. Send, Transactions, Funding, AccountInfoFull",
+      "ENVIROMENT (spelled that way in the docs): sandbox for testing"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "missing",
+      "note": "No Dwolla icon in Simple Icons 16.33.0.",
+      "fallback": {
+        "lucide": "LogIn"
+      }
+    },
+    "notes": "Create an application in the Dwolla dashboard, set the callback URL, and configure SCOPE and the sandbox environment if needed.",
+    "caveats": []
+  },
+  {
+    "id": "edmodo",
+    "provider_id": null,
+    "docs_slug": "edmodo",
+    "hidden": true,
+    "app": "allauth.socialaccount.providers.edmodo",
+    "name": "Edmodo",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/edmodo.html",
+    "console_url": [],
+    "callback_path": null,
+    "expected_callback_path": "/accounts/edmodo/login/callback/",
+    "extra_settings": [
+      "Optional SCOPE (default basic)"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "missing",
+      "note": "No Edmodo icon in Simple Icons 16.33.0.",
+      "fallback": {
+        "lucide": "LogIn"
+      }
+    },
+    "notes": "The page only links to the Edmodo Connect documentation; register an app and optionally set SCOPE.",
+    "caveats": []
+  },
+  {
+    "id": "edx",
+    "provider_id": null,
+    "docs_slug": "edx",
+    "app": "allauth.socialaccount.providers.edx",
+    "name": "Edx",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/edx.html",
+    "console_url": [],
+    "callback_path": null,
+    "expected_callback_path": "/accounts/edx/login/callback/",
+    "extra_settings": [
+      "EDX_URL (required in practice): your Open edX installation; the default https://edx.org does not work"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "edx",
+      "hex": "02262B",
+      "title": "edX",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/edx.svg",
+      "verified_http_200": true
+    },
+    "notes": "Register an OAuth2 client on your Open edX installation and set EDX_URL to that installation.",
+    "caveats": []
+  },
+  {
+    "id": "eveonline",
+    "provider_id": null,
+    "docs_slug": "eveonline",
+    "app": "allauth.socialaccount.providers.eveonline",
+    "name": "Eve Online",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/eveonline.html",
+    "console_url": [
+      {
+        "text": "https://developers.eveonline.com/applications/create",
+        "url": "https://developers.eveonline.com/applications/create",
+        "label": "Register your application at",
+        "form": "text"
+      }
+    ],
+    "callback_path": null,
+    "expected_callback_path": "/accounts/eveonline/login/callback/",
+    "extra_settings": [
+      "With STORE_TOKENS enabled, the app needs CREST Access and an OAuth scope such as publicData"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "missing",
+      "note": "No Eve Online icon in Simple Icons 16.33.0.",
+      "fallback": {
+        "lucide": "LogIn"
+      }
+    },
+    "notes": "Create an application on the EVE Online developer site; if tokens are stored, give it CREST Access and a scope such as publicData.",
+    "caveats": []
+  },
+  {
+    "id": "eventbrite",
+    "provider_id": null,
+    "docs_slug": "eventbrite",
+    "app": "allauth.socialaccount.providers.eventbrite",
+    "name": "Eventbrite",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/eventbrite.html",
+    "console_url": [
+      {
+        "text": "https://www.eventbrite.com/myaccount/apps/",
+        "url": "https://www.eventbrite.com/myaccount/apps/",
+        "label": "App registration",
+        "form": "link"
+      }
+    ],
+    "callback_path": "/accounts/eventbrite/login/callback/",
+    "expected_callback_path": "/accounts/eventbrite/login/callback/",
+    "extra_settings": [],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "missing",
+      "note": "No Eventbrite icon in Simple Icons 16.33.0.",
+      "fallback": {
+        "lucide": "LogIn"
+      }
+    },
+    "notes": "In Account Settings, App Management, create a new app and use the callback URL for both Application URL and OAuth Redirect URI.",
+    "caveats": []
+  },
+  {
+    "id": "evernote",
+    "provider_id": null,
+    "docs_slug": "evernote",
+    "app": "allauth.socialaccount.providers.evernote",
+    "name": "Evernote",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/evernote.html",
+    "console_url": [
+      {
+        "text": "https://dev.evernote.com/doc/articles/authentication.php",
+        "url": "https://dev.evernote.com/doc/articles/authentication.php",
+        "label": "Register your OAuth2 application at",
+        "form": "text"
+      }
+    ],
+    "callback_path": null,
+    "expected_callback_path": "/accounts/evernote/login/callback/",
+    "extra_settings": [
+      "EVERNOTE_HOSTNAME: evernote.com for production (defaults to sandbox.evernote.com)"
+    ],
+    "protocol": "OAuth1",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "evernote",
+      "hex": "00A82D",
+      "title": "Evernote",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/evernote.svg",
+      "verified_http_200": true,
+      "brand_guidelines": "https://evernote.com/about-us"
+    },
+    "notes": "Register your application with Evernote and set EVERNOTE_HOSTNAME to evernote.com for production use.",
+    "caveats": []
+  },
+  {
+    "id": "exist",
+    "provider_id": null,
+    "docs_slug": "exist",
+    "app": "allauth.socialaccount.providers.exist",
+    "name": "Exist",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/exist.html",
+    "console_url": [
+      {
+        "text": "https://exist.io/account/apps/",
+        "url": "https://exist.io/account/apps/",
+        "label": "Register your OAuth2 app in apps page",
+        "form": "link"
+      }
+    ],
+    "callback_path": "/accounts/exist/login/callback/",
+    "expected_callback_path": "/accounts/exist/login/callback/",
+    "extra_settings": [
+      "SCOPE (default mood_read, health_read, productivity_read); write access must be declared when creating the app"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "missing",
+      "note": "No Exist icon in Simple Icons 16.33.0.",
+      "fallback": {
+        "lucide": "LogIn"
+      }
+    },
+    "notes": "Register an app on the Exist apps page, set the callback URL, and configure SCOPE for the attributes you need.",
+    "caveats": []
+  },
+  {
+    "id": "feishu",
+    "provider_id": null,
+    "docs_slug": "feishu",
+    "app": "allauth.socialaccount.providers.feishu",
+    "name": "Feishu",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/feishu.html",
+    "console_url": [
+      {
+        "text": "https://open.feishu.cn/app",
+        "url": "https://open.feishu.cn/app",
+        "label": "App Registration",
+        "form": "link"
+      }
+    ],
+    "callback_path": "/accounts/feishu/login/callback/",
+    "expected_callback_path": "/accounts/feishu/login/callback/",
+    "extra_settings": [],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "missing",
+      "note": "No Feishu icon in Simple Icons 16.33.0.",
+      "fallback": {
+        "lucide": "LogIn"
+      }
+    },
+    "notes": "In the Feishu developer console create a self-built application to get app_id and app_secret, and add the redirect URL to its security settings.",
+    "caveats": []
+  },
+  {
+    "id": "figma",
+    "provider_id": null,
+    "docs_slug": "figma",
+    "app": "allauth.socialaccount.providers.figma",
+    "name": "Figma",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/figma.html",
+    "console_url": [
+      {
+        "text": "https://www.figma.com/developers/apps",
+        "url": "https://www.figma.com/developers/apps",
+        "label": "App registration (get your key and secret here)",
+        "form": "link"
+      }
+    ],
+    "callback_path": "/accounts/figma/login/callback/",
+    "expected_callback_path": "/accounts/figma/login/callback/",
+    "extra_settings": [],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "figma",
+      "hex": "F24E1E",
+      "title": "Figma",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/figma.svg",
+      "verified_http_200": true,
+      "brand_guidelines": "https://www.figma.com/using-the-figma-brand/"
+    },
+    "notes": "Create an app in the Figma developer settings to get a key and secret, and set the callback URL.",
+    "caveats": []
+  },
+  {
+    "id": "fxa",
+    "provider_id": null,
+    "docs_slug": "fxa",
+    "app": "allauth.socialaccount.providers.fxa",
+    "name": "Firefox Accounts",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/fxa.html",
+    "console_url": [],
+    "callback_path": null,
+    "expected_callback_path": "/accounts/fxa/login/callback/",
+    "extra_settings": [
+      "Optional SCOPE (default profile; non whitelisted apps need profile:email and profile:uid)",
+      "OAUTH_ENDPOINT and PROFILE_ENDPOINT overrides"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "firefox",
+      "hex": "FF7139",
+      "title": "Firefox",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/firefox.svg",
+      "verified_http_200": true,
+      "brand_guidelines": "https://mozilla.design/firefox/logos-usage/",
+      "note": "Firefox brand icon; Firefox Accounts is now Mozilla accounts."
+    },
+    "notes": "Currently limited to Mozilla relying services; configure SCOPE and endpoints if needed.",
+    "caveats": []
+  },
+  {
+    "id": "flickr",
+    "provider_id": null,
+    "docs_slug": "flickr",
+    "app": "allauth.socialaccount.providers.flickr",
+    "name": "Flickr",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/flickr.html",
+    "console_url": [
+      {
+        "text": "https://www.flickr.com/services/apps/create/",
+        "url": "https://www.flickr.com/services/apps/create/",
+        "label": "App registration (get your key and secret here)",
+        "form": "link"
+      }
+    ],
+    "callback_path": null,
+    "expected_callback_path": "/accounts/flickr/login/callback/",
+    "extra_settings": [
+      "Optional AUTH_PARAMS perms: read (default), write or delete"
+    ],
+    "protocol": "OAuth1",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "flickr",
+      "hex": "0063DC",
+      "title": "Flickr",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/flickr.svg",
+      "verified_http_200": true
+    },
+    "notes": "Create a Flickr app to get a key and secret, and optionally set the perms auth parameter.",
+    "caveats": []
+  },
+  {
+    "id": "frontier",
+    "provider_id": null,
+    "docs_slug": "frontier",
+    "app": "allauth.socialaccount.providers.frontier",
+    "name": "Frontier",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/frontier.html",
+    "console_url": [
+      {
+        "text": "https://user.frontierstore.net/",
+        "url": "https://user.frontierstore.net/",
+        "label": "Client registration: go to ... and apply for access",
+        "form": "link"
+      }
+    ],
+    "callback_path": null,
+    "expected_callback_path": "/accounts/frontier/login/callback/",
+    "extra_settings": [
+      "Optional SCOPE, e.g. auth, capi",
+      "secret is the Frontier Shared Key"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "missing",
+      "note": "No Frontier icon in Simple Icons 16.33.0.",
+      "fallback": {
+        "lucide": "LogIn"
+      }
+    },
+    "notes": "Apply for access at Frontier, create a client in the Developer Zone to get the Client ID and Shared Key, then create the SocialApp.",
+    "caveats": []
+  },
+  {
+    "id": "gitea",
+    "provider_id": null,
+    "docs_slug": "gitea",
+    "app": "allauth.socialaccount.providers.gitea",
+    "name": "Gitea",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/gitea.html",
+    "console_url": [
+      {
+        "text": "https://gitea.com/user/settings/applications",
+        "url": "https://gitea.com/user/settings/applications",
+        "label": "App registration (get your key and secret here)",
+        "form": "link"
+      }
+    ],
+    "callback_path": "/accounts/gitea/login/callback/",
+    "expected_callback_path": "/accounts/gitea/login/callback/",
+    "extra_settings": [
+      "GITEA_URL for a self-hosted Gitea instance"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "gitea",
+      "hex": "609926",
+      "title": "Gitea",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/gitea.svg",
+      "verified_http_200": true
+    },
+    "notes": "Create an OAuth2 application in your Gitea user settings, set the callback URL, and set GITEA_URL when self-hosting.",
+    "caveats": []
+  },
+  {
+    "id": "globus",
+    "provider_id": null,
+    "docs_slug": "globus",
+    "app": "allauth.socialaccount.providers.globus",
+    "name": "Globus",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/globus.html",
+    "console_url": [
+      {
+        "text": "https://developers.globus.org/",
+        "url": "https://developers.globus.org/",
+        "label": "Registering an application",
+        "form": "link"
+      }
+    ],
+    "callback_path": null,
+    "expected_callback_path": "/accounts/globus/login/callback/",
+    "extra_settings": [
+      "Optional SCOPE (default openid, profile, offline_access)"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "missing",
+      "note": "Simple Icons 'globus' is the German retailer Globus, not Globus (research data platform).",
+      "fallback": {
+        "lucide": "LogIn"
+      }
+    },
+    "notes": "Register an application on the Globus developer site and optionally add scopes.",
+    "caveats": []
+  },
+  {
+    "id": "gumroad",
+    "provider_id": null,
+    "docs_slug": "gumroad",
+    "app": "allauth.socialaccount.providers.gumroad",
+    "name": "Gumroad",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/gumroad.html",
+    "console_url": [
+      {
+        "text": "https://help.gumroad.com/article/280-create-application-api",
+        "url": "https://help.gumroad.com/article/280-create-application-api",
+        "label": "App registration (get your key and secret here)",
+        "form": "link"
+      }
+    ],
+    "callback_path": "/accounts/instagram/login/callback/",
+    "expected_callback_path": "/accounts/gumroad/login/callback/",
+    "extra_settings": [],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "gumroad",
+      "hex": "FF90E8",
+      "title": "Gumroad",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/gumroad.svg",
+      "verified_http_200": true
+    },
+    "notes": "Follow the Gumroad help article to create an API application, and set the callback URL.",
+    "caveats": [
+      "Docs show the Instagram callback (/accounts/instagram/...), an apparent copy-paste error; the real path is /accounts/gumroad/login/callback/."
+    ]
+  },
+  {
+    "id": "hubspot",
+    "provider_id": null,
+    "docs_slug": "hubspot",
+    "app": "allauth.socialaccount.providers.hubspot",
+    "name": "Hubspot",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/hubspot.html",
+    "console_url": [
+      {
+        "text": "https://developers.hubspot.com/docs/api/creating-an-app",
+        "url": "https://developers.hubspot.com/docs/api/creating-an-app",
+        "label": "App registration (get your key and secret here)",
+        "form": "link"
+      }
+    ],
+    "callback_path": "/accounts/hubspot/login/callback/",
+    "expected_callback_path": "/accounts/hubspot/login/callback/",
+    "extra_settings": [],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "hubspot",
+      "hex": "FF7A59",
+      "title": "HubSpot",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/hubspot.svg",
+      "verified_http_200": true,
+      "brand_guidelines": "https://www.hubspot.com/style-guide"
+    },
+    "notes": "Create an app as described in the HubSpot developer docs to get a key and secret, and set the callback URL.",
+    "caveats": []
+  },
+  {
+    "id": "instagram",
+    "provider_id": null,
+    "docs_slug": "instagram",
+    "app": "allauth.socialaccount.providers.instagram",
+    "name": "Instagram",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/instagram.html",
+    "console_url": [
+      {
+        "text": "https://www.instagram.com/developer/clients/manage/",
+        "url": "https://www.instagram.com/developer/clients/manage/",
+        "label": "App registration (get your key and secret here)",
+        "form": "link"
+      }
+    ],
+    "callback_path": "/accounts/instagram/login/callback/",
+    "expected_callback_path": "/accounts/instagram/login/callback/",
+    "extra_settings": [],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "instagram",
+      "hex": "FF0069",
+      "title": "Instagram",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/instagram.svg",
+      "verified_http_200": true,
+      "brand_guidelines": "https://about.meta.com/brand/resources/instagram"
+    },
+    "notes": "Register a client on the Instagram developer site to get a key and secret, and set the callback URL.",
+    "caveats": []
+  },
+  {
+    "id": "jupyterhub",
+    "provider_id": null,
+    "docs_slug": "jupyterhub",
+    "app": "allauth.socialaccount.providers.jupyterhub",
+    "name": "JupyterHub",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/jupyterhub.html",
+    "console_url": [
+      {
+        "text": "https://jupyterhub.readthedocs.io/en/stable/api/services.auth.html",
+        "url": "https://jupyterhub.readthedocs.io/en/stable/api/services.auth.html",
+        "label": "Documentation on configuring a key and secret key",
+        "form": "link"
+      }
+    ],
+    "callback_path": "/accounts/jupyterhub/login/callback/",
+    "expected_callback_path": "/accounts/jupyterhub/login/callback/",
+    "extra_settings": [
+      "API_URL (required): URL of your JupyterHub server"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "jupyter",
+      "hex": "F37626",
+      "title": "Jupyter",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/jupyter.svg",
+      "verified_http_200": true,
+      "brand_guidelines": "https://github.com/jupyter/design",
+      "note": "Jupyter project icon (no separate JupyterHub icon)."
+    },
+    "notes": "Configure an OAuth client on your JupyterHub following its services auth docs, and set API_URL to your hub.",
+    "caveats": [
+      "Docs example uses port 800 (http://localhost:800/...), likely a typo for 8000."
+    ]
+  },
+  {
+    "id": "kakao",
+    "provider_id": null,
+    "docs_slug": "kakao",
+    "app": "allauth.socialaccount.providers.kakao",
+    "name": "Kakao",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/kakao.html",
+    "console_url": [
+      {
+        "text": "https://developers.kakao.com/apps",
+        "url": "https://developers.kakao.com/apps",
+        "label": "App registration (get your key here)",
+        "form": "link"
+      }
+    ],
+    "callback_path": "/accounts/kakao/login/callback/",
+    "expected_callback_path": "/accounts/kakao/login/callback/",
+    "extra_settings": [],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "kakao",
+      "hex": "FFCD00",
+      "title": "Kakao",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/kakao.svg",
+      "verified_http_200": true
+    },
+    "notes": "Register an app on Kakao Developers to get a key, and set the callback URL.",
+    "caveats": []
+  },
+  {
+    "id": "openid_connect",
+    "provider_id": "keycloak",
+    "docs_slug": "keycloak",
+    "app": "allauth.socialaccount.providers.openid_connect",
+    "name": "Keycloak",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/keycloak.html",
+    "console_url": [],
+    "callback_path": null,
+    "expected_callback_path": "/accounts/oidc/keycloak/login/callback/",
+    "extra_settings": [
+      "Configured via the openid_connect provider (provider_id keycloak); the builtin keycloak provider was removed in 0.56.0",
+      "settings.server_url: e.g. http://keycloak:8080/realms/master/.well-known/openid-configuration"
+    ],
+    "protocol": "OpenID Connect",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "keycloak",
+      "hex": "4D4D4D",
+      "title": "Keycloak",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/keycloak.svg",
+      "verified_http_200": true
+    },
+    "notes": "Create a client in your Keycloak realm, then add an openid_connect app with provider_id keycloak and the realm discovery URL as server_url.",
+    "caveats": [
+      "No keycloak package exists anymore; it is configured through openid_connect."
+    ]
+  },
+  {
+    "id": "klaviyo",
+    "provider_id": null,
+    "docs_slug": "klaviyo",
+    "app": "allauth.socialaccount.providers.klaviyo",
+    "name": "Klaviyo",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/klaviyo.html",
+    "console_url": [
+      {
+        "text": "https://www.klaviyo.com/manage-apps",
+        "url": "https://www.klaviyo.com/manage-apps",
+        "label": "App registration: create a new OAuth app at",
+        "form": "code"
+      }
+    ],
+    "callback_path": "/accounts/klaviyo/login/callback/",
+    "expected_callback_path": "/accounts/klaviyo/login/callback/",
+    "extra_settings": [],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "missing",
+      "note": "No Klaviyo icon in Simple Icons 16.33.0.",
+      "fallback": {
+        "lucide": "LogIn"
+      }
+    },
+    "notes": "Create an OAuth app in your Klaviyo account, set the callback URL, and use its Client ID and Secret.",
+    "caveats": []
+  },
+  {
+    "id": "lemonldap",
+    "provider_id": null,
+    "docs_slug": "lemonldap",
+    "app": "allauth.socialaccount.providers.lemonldap",
+    "name": "LemonLDAP::NG",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/lemonldap.html",
+    "console_url": [],
+    "callback_path": "/accounts/lemonldap/login/callback/",
+    "expected_callback_path": "/accounts/lemonldap/login/callback/",
+    "extra_settings": [
+      "LEMONLDAP_URL (required): base URL of your LemonLDAP::NG portal",
+      "Relying Party must export email, name and preferred_username"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": "OIDC Relying Party on LemonLDAP::NG, implemented as a custom OAuth2 provider",
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "missing",
+      "note": "No LemonLDAP::NG icon in Simple Icons 16.33.0.",
+      "fallback": {
+        "lucide": "LogIn"
+      }
+    },
+    "notes": "Create an OpenID Connect Relying Party in LemonLDAP::NG exporting email, name and preferred_username, and set LEMONLDAP_URL.",
+    "caveats": []
+  },
+  {
+    "id": "lichess",
+    "provider_id": null,
+    "docs_slug": "lichess",
+    "app": "allauth.socialaccount.providers.lichess",
+    "name": "Lichess",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/lichess.html",
+    "console_url": [],
+    "callback_path": "/accounts/lichess/login/callback/",
+    "expected_callback_path": "/accounts/lichess/login/callback/",
+    "extra_settings": [
+      "No app registration: client_id and secret are secure random strings you generate yourself"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "lichess",
+      "hex": "000000",
+      "title": "Lichess",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/lichess.svg",
+      "verified_http_200": true
+    },
+    "notes": "No Lichess app registration is needed; generate your own random client ID and secret and set them in APP.",
+    "caveats": []
+  },
+  {
+    "id": "line",
+    "provider_id": null,
+    "docs_slug": "line",
+    "app": "allauth.socialaccount.providers.line",
+    "name": "Line",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/line.html",
+    "console_url": [
+      {
+        "text": "https://developers.line.biz/console/",
+        "url": "https://developers.line.biz/console/",
+        "label": "App registration, create a Line login channel (get your channel_id and channel_secret here)",
+        "form": "link"
+      }
+    ],
+    "callback_path": "/accounts/line/login/callback/",
+    "expected_callback_path": "/accounts/line/login/callback/",
+    "extra_settings": [
+      "client_id is the LINE Login channel ID, secret is the channel secret",
+      "SCOPE, e.g. profile, openid, email"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "line",
+      "hex": "00C300",
+      "title": "LINE",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/line.svg",
+      "verified_http_200": true,
+      "brand_guidelines": "https://line.me/en/logo"
+    },
+    "notes": "Create a LINE Login channel in the LINE developers console, set the callback URL, and use the channel ID and secret.",
+    "caveats": []
+  },
+  {
+    "id": "mailchimp",
+    "provider_id": null,
+    "docs_slug": "mailchimp",
+    "app": "allauth.socialaccount.providers.mailchimp",
+    "name": "MailChimp (OAuth 2)",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/mailchimp.html",
+    "console_url": [
+      {
+        "text": "https://login.mailchimp.com/",
+        "url": "https://login.mailchimp.com/",
+        "label": "Login via",
+        "form": "link"
+      },
+      {
+        "text": "https://usX.admin.mailchimp.com/account/oauth2/",
+        "url": "https://usX.admin.mailchimp.com/account/oauth2/",
+        "label": "App registration (where X is dependent on your account)",
+        "form": "link"
+      }
+    ],
+    "callback_path": "/accounts/mailchimp/login/callback/",
+    "expected_callback_path": "/accounts/mailchimp/login/callback/",
+    "extra_settings": [
+      "https callback URL required, also locally (e.g. django-extensions runserver_plus --cert)"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "mailchimp",
+      "hex": "FFE01B",
+      "title": "MailChimp",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/mailchimp.svg",
+      "verified_http_200": true,
+      "brand_guidelines": "https://mailchimp.com/about/brand-assets"
+    },
+    "notes": "Log in to Mailchimp, go to Profile, Extras, API keys, register an OAuth2 app on your usX admin subdomain, and use an https callback URL.",
+    "caveats": []
+  },
+  {
+    "id": "mailcow",
+    "provider_id": null,
+    "docs_slug": "mailcow",
+    "app": "allauth.socialaccount.providers.mailcow",
+    "name": "Mailcow",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/mailcow.html",
+    "console_url": [
+      {
+        "text": "https://docs.mailcow.email/third_party/nextcloud/third_party-nextcloud/",
+        "url": "https://docs.mailcow.email/third_party/nextcloud/third_party-nextcloud/",
+        "label": "To register the app with Mailcow, follow the applicable sections of the guide",
+        "form": "code"
+      }
+    ],
+    "callback_path": null,
+    "expected_callback_path": "/accounts/mailcow/login/callback/",
+    "extra_settings": [
+      "SERVER: your Mailcow host (default https://hosted.mailcow.de)",
+      "Scope profile is used automatically"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "missing",
+      "note": "No Mailcow icon in Simple Icons 16.33.0.",
+      "fallback": {
+        "lucide": "LogIn"
+      }
+    },
+    "notes": "Register an OAuth app in Mailcow following its Nextcloud guide, then set SERVER and the APP credentials.",
+    "caveats": []
+  },
+  {
+    "id": "mediawiki",
+    "provider_id": null,
+    "docs_slug": "mediawiki",
+    "app": "allauth.socialaccount.providers.mediawiki",
+    "name": "MediaWiki",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/mediawiki.html",
+    "console_url": [
+      {
+        "text": "https://meta.wikimedia.org/wiki/Special:OAuthConsumerRegistration/propose",
+        "url": "https://meta.wikimedia.org/wiki/Special:OAuthConsumerRegistration/propose",
+        "label": "App registration for Wikimedia wikis",
+        "form": "link"
+      }
+    ],
+    "callback_path": null,
+    "expected_callback_path": "/accounts/mediawiki/login/callback/",
+    "extra_settings": [
+      "REST_API: base URL of the wiki REST API",
+      "USERPAGE_TEMPLATE: user page link template with {username}",
+      "USER_AGENT: descriptive User-Agent (Wikimedia requires it)"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "missing",
+      "note": "No MediaWiki icon (Wikimedia Foundation icon exists as a related brand).",
+      "fallback": {
+        "lucide": "LogIn"
+      }
+    },
+    "notes": "Propose an OAuth consumer on Meta-Wiki (or your wiki), and set REST_API, USERPAGE_TEMPLATE and a descriptive USER_AGENT.",
+    "caveats": []
+  },
+  {
+    "id": "miro",
+    "provider_id": null,
+    "docs_slug": "miro",
+    "app": "allauth.socialaccount.providers.miro",
+    "name": "Miro",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/miro.html",
+    "console_url": [
+      {
+        "text": "https://miro.com/app/settings/user-profile/apps",
+        "url": "https://miro.com/app/settings/user-profile/apps",
+        "label": "Create your app here and acquire Client ID and Client Secret",
+        "form": "link"
+      }
+    ],
+    "callback_path": "/accounts/miro/login/callback/",
+    "expected_callback_path": "/accounts/miro/login/callback/",
+    "extra_settings": [],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "miro",
+      "hex": "050038",
+      "title": "Miro",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/miro.svg",
+      "verified_http_200": true
+    },
+    "notes": "Create an app in your Miro profile settings to get the Client ID and Secret, and set the callback URL.",
+    "caveats": []
+  },
+  {
+    "id": "naver",
+    "provider_id": null,
+    "docs_slug": "naver",
+    "app": "allauth.socialaccount.providers.naver",
+    "name": "Naver",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/naver.html",
+    "console_url": [
+      {
+        "text": "https://developers.naver.com/appinfo",
+        "url": "https://developers.naver.com/appinfo",
+        "label": "App registration (get your key and secret here)",
+        "form": "link"
+      }
+    ],
+    "callback_path": "/accounts/naver/login/callback/",
+    "expected_callback_path": "/accounts/naver/login/callback/",
+    "extra_settings": [],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "naver",
+      "hex": "03C75A",
+      "title": "Naver",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/naver.svg",
+      "verified_http_200": true,
+      "brand_guidelines": "https://developers.naver.com/docs/login/bi/bi.md"
+    },
+    "notes": "Register an app on Naver Developers to get a key and secret, and set the callback URL.",
+    "caveats": []
+  },
+  {
+    "id": "netiq",
+    "provider_id": null,
+    "docs_slug": "netiq",
+    "app": "allauth.socialaccount.providers.netiq",
+    "name": "NetIQ/Microfocus AccessManager (NAM)",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/netiq.html",
+    "console_url": [],
+    "callback_path": null,
+    "expected_callback_path": "/accounts/netiq/login/callback/",
+    "extra_settings": [
+      "NETIQ_URL (required): URL of your identity provider"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "missing",
+      "note": "No NetIQ or Micro Focus icon (OpenText, the current owner, is a different brand).",
+      "fallback": {
+        "lucide": "LogIn"
+      }
+    },
+    "notes": "Ask the administrator of your NetIQ AccessManager to register the app, then set NETIQ_URL.",
+    "caveats": []
+  },
+  {
+    "id": "nextcloud",
+    "provider_id": null,
+    "docs_slug": "nextcloud",
+    "app": "allauth.socialaccount.providers.nextcloud",
+    "name": "NextCloud",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/nextcloud.html",
+    "console_url": [
+      {
+        "text": "https://nextcloud.example.org/settings/admin/security",
+        "url": "https://nextcloud.example.org/settings/admin/security",
+        "label": "App registration (get your key and secret here)",
+        "form": "link"
+      }
+    ],
+    "callback_path": null,
+    "expected_callback_path": "/accounts/nextcloud/login/callback/",
+    "extra_settings": [
+      "settings.server (required): your Nextcloud server URL"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "nextcloud",
+      "hex": "0082C9",
+      "title": "Nextcloud",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/nextcloud.svg",
+      "verified_http_200": true,
+      "brand_guidelines": "https://nextcloud.com/trademarks/"
+    },
+    "notes": "Add an OAuth2 client in your Nextcloud admin security settings, then configure the app with settings.server.",
+    "caveats": []
+  },
+  {
+    "id": "notion",
+    "provider_id": null,
+    "docs_slug": "notion",
+    "app": "allauth.socialaccount.providers.notion",
+    "name": "Notion",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/notion.html",
+    "console_url": [
+      {
+        "text": "https://www.notion.so/my-integrations",
+        "url": "https://www.notion.so/my-integrations",
+        "label": "App registration (get your key and secret here)",
+        "form": "link"
+      }
+    ],
+    "callback_path": "/accounts/notion/login/callback/",
+    "expected_callback_path": "/accounts/notion/login/callback/",
+    "extra_settings": [
+      "Integration needs the Read user information including email addresses capability and must be public",
+      "Use http://localhost, not 127.0.0.1, for local development"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "notion",
+      "hex": "000000",
+      "title": "Notion",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/notion.svg",
+      "verified_http_200": true
+    },
+    "notes": "Create a public Notion integration with the read user information including email capability, and paste the localhost callback URL as its redirect URL.",
+    "caveats": []
+  },
+  {
+    "id": "odnoklassniki",
+    "provider_id": null,
+    "docs_slug": "odnoklassniki",
+    "app": "allauth.socialaccount.providers.odnoklassniki",
+    "name": "Odnoklassniki",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/odnoklassniki.html",
+    "console_url": [
+      {
+        "text": "http://apiok.ru/wiki/pages/viewpage.action?pageId=42476486",
+        "url": "http://apiok.ru/wiki/pages/viewpage.action?pageId=42476486",
+        "label": "App registration (get your key and secret here)",
+        "form": "link"
+      }
+    ],
+    "callback_path": "/accounts/odnoklassniki/login/callback/",
+    "expected_callback_path": "/accounts/odnoklassniki/login/callback/",
+    "extra_settings": [],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "odnoklassniki",
+      "hex": "EE8208",
+      "title": "Odnoklassniki",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/odnoklassniki.svg",
+      "verified_http_200": true
+    },
+    "notes": "Register the app with Odnoklassniki (OK.ru) following their wiki to get a key and secret, and set the callback URL.",
+    "caveats": []
+  },
+  {
+    "id": "openstreetmap",
+    "provider_id": null,
+    "docs_slug": "openstreetmap",
+    "app": "allauth.socialaccount.providers.openstreetmap",
+    "name": "OpenStreetMap",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/openstreetmap.html",
+    "console_url": [
+      {
+        "text": "https://www.openstreetmap.org/oauth2/applications",
+        "url": "https://www.openstreetmap.org/oauth2/applications",
+        "label": "First, register your client application here",
+        "form": "link"
+      }
+    ],
+    "callback_path": null,
+    "expected_callback_path": "/accounts/openstreetmap/login/callback/",
+    "extra_settings": [
+      "Builtin provider is OAuth 1.0 legacy only; new setups use openid_connect with provider_id openstreetmap",
+      "settings.server_url: https://www.openstreetmap.org/.well-known/oauth-authorization-server",
+      "settings.scope: openid, read_prefs"
+    ],
+    "protocol": "OAuth1",
+    "protocol_detail": "builtin provider is OAuth 1.0 (legacy); docs recommend OAuth 2 via openid_connect",
+    "tier": "other",
+    "popular": false,
+    "legacy": true,
+    "replaced_by": "openid_connect",
+    "icon": {
+      "source": "simple-icons",
+      "slug": "openstreetmap",
+      "hex": "7EBC6F",
+      "title": "OpenStreetMap",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/openstreetmap.svg",
+      "verified_http_200": true,
+      "brand_guidelines": "https://wiki.osmfoundation.org/wiki/Trademark_Policy"
+    },
+    "notes": "The builtin OAuth 1.0 provider is legacy; register an OAuth 2 app on OpenStreetMap and configure it as an openid_connect app instead.",
+    "caveats": [],
+    "replaced_by_provider_id": "openstreetmap"
+  },
+  {
+    "id": "orcid",
+    "provider_id": null,
+    "docs_slug": "orcid",
+    "app": "allauth.socialaccount.providers.orcid",
+    "name": "ORCID",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/orcid.html",
+    "console_url": [],
+    "callback_path": null,
+    "expected_callback_path": "/accounts/orcid/login/callback/",
+    "extra_settings": [
+      "BASE_DOMAIN: orcid.org (default) or sandbox.orcid.org",
+      "MEMBER_API: True for the member API (default public API)"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "orcid",
+      "hex": "A6CE39",
+      "title": "ORCID",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/orcid.svg",
+      "verified_http_200": true,
+      "brand_guidelines": "https://info.orcid.org/brand-guidelines/"
+    },
+    "notes": "Works out of the box with the production public API; set BASE_DOMAIN and MEMBER_API for sandbox or member API use.",
+    "caveats": []
+  },
+  {
+    "id": "patreon",
+    "provider_id": null,
+    "docs_slug": "patreon",
+    "app": "allauth.socialaccount.providers.patreon",
+    "name": "Patreon",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/patreon.html",
+    "console_url": [
+      {
+        "text": "https://www.patreon.com/portal/registration/register-clients",
+        "url": "https://www.patreon.com/portal/registration/register-clients",
+        "label": "App registration (get your key and secret for the API here)",
+        "form": "link"
+      }
+    ],
+    "callback_path": "/accounts/patreon/login/callback/",
+    "expected_callback_path": "/accounts/patreon/login/callback/",
+    "extra_settings": [
+      "VERSION: v1 (default) or v2",
+      "SCOPE defaults depend on VERSION"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "patreon",
+      "hex": "000000",
+      "title": "Patreon",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/patreon.svg",
+      "verified_http_200": true,
+      "brand_guidelines": "https://www.patreon.com/brand"
+    },
+    "notes": "Register a client in the Patreon portal, set the callback URL, and choose the API VERSION.",
+    "caveats": []
+  },
+  {
+    "id": "paypal",
+    "provider_id": null,
+    "docs_slug": "paypal",
+    "app": "allauth.socialaccount.providers.paypal",
+    "name": "Paypal",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/paypal.html",
+    "console_url": [
+      {
+        "text": "https://developer.paypal.com/webapps/developer/applications/myapps",
+        "url": "https://developer.paypal.com/webapps/developer/applications/myapps",
+        "label": "App registration (get your key and secret here)",
+        "form": "link"
+      }
+    ],
+    "callback_path": "/accounts/paypal/login/callback",
+    "expected_callback_path": "/accounts/paypal/login/callback/",
+    "extra_settings": [
+      "SCOPE, e.g. openid, email; required attributes must also be checked in the PayPal app",
+      "MODE: live or test (sandbox)"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "paypal",
+      "hex": "002991",
+      "title": "PayPal",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/paypal.svg",
+      "verified_http_200": true,
+      "brand_guidelines": "https://newsroom.paypal-corp.com/media-resources"
+    },
+    "notes": "Create an app on the PayPal developer site, check the required attributes, set the callback URL, and choose MODE live or test.",
+    "caveats": [
+      "Docs path has no trailing slash."
+    ]
+  },
+  {
+    "id": "pinterest",
+    "provider_id": null,
+    "docs_slug": "pinterest",
+    "app": "allauth.socialaccount.providers.pinterest",
+    "name": "Pinterest",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/pinterest.html",
+    "console_url": [],
+    "callback_path": null,
+    "expected_callback_path": "/accounts/pinterest/login/callback/",
+    "extra_settings": [
+      "Optional SCOPE (default read scope), e.g. user_accounts:read",
+      "API_VERSION, e.g. v5"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "pinterest",
+      "hex": "BD081C",
+      "title": "Pinterest",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/pinterest.svg",
+      "verified_http_200": true,
+      "brand_guidelines": "https://business.pinterest.com/en/brand-guidelines"
+    },
+    "notes": "The page only links to the Pinterest OAuth documentation; register an app and set SCOPE and API_VERSION.",
+    "caveats": []
+  },
+  {
+    "id": "pocket",
+    "provider_id": null,
+    "docs_slug": "pocket",
+    "app": "allauth.socialaccount.providers.pocket",
+    "name": "Pocket",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/pocket.html",
+    "console_url": [
+      {
+        "text": "https://getpocket.com/developer/apps/",
+        "url": "https://getpocket.com/developer/apps/",
+        "label": "App registration (get your consumer key here)",
+        "form": "link"
+      }
+    ],
+    "callback_path": null,
+    "expected_callback_path": "/accounts/pocket/login/callback/",
+    "extra_settings": [],
+    "protocol": "OAuth1",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "missing",
+      "note": "No Pocket icon in Simple Icons 16.33.0.",
+      "fallback": {
+        "lucide": "LogIn"
+      }
+    },
+    "notes": "Create an app on the Pocket developer site to get a consumer key.",
+    "caveats": []
+  },
+  {
+    "id": "questrade",
+    "provider_id": null,
+    "docs_slug": "questrade",
+    "app": "allauth.socialaccount.providers.questrade",
+    "name": "Questrade",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/questrade.html",
+    "console_url": [
+      {
+        "text": "https://www.questrade.com/api/documentation/getting-started",
+        "url": "https://www.questrade.com/api/documentation/getting-started",
+        "label": "App registration (get your key here, follow “Creating your first personal app”)",
+        "form": "link"
+      },
+      {
+        "text": "https://apphub.questrade.com/UI/UserApps.aspx",
+        "url": "https://apphub.questrade.com/UI/UserApps.aspx",
+        "label": "App registration (get your key here, follow “Creating your first personal app”)",
+        "form": "link"
+      }
+    ],
+    "callback_path": "/accounts/questrade/login/callback/",
+    "expected_callback_path": "/accounts/questrade/login/callback/",
+    "extra_settings": [
+      "HTTPS callback URL required"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "missing",
+      "note": "No Questrade icon in Simple Icons 16.33.0.",
+      "fallback": {
+        "lucide": "LogIn"
+      }
+    },
+    "notes": "Follow the Questrade getting started guide to create a personal app in the App Hub, and use an https callback URL.",
+    "caveats": []
+  },
+  {
+    "id": "quickbooks",
+    "provider_id": null,
+    "docs_slug": "quickbooks",
+    "app": "allauth.socialaccount.providers.quickbooks",
+    "name": "QuickBooks",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/quickbooks.html",
+    "console_url": [
+      {
+        "text": "https://developers.intuit.com/v2/ui#/app/startcreate",
+        "url": "https://developers.intuit.com/v2/ui#/app/startcreate",
+        "label": "App registration (get your key and secret here)",
+        "form": "link"
+      }
+    ],
+    "callback_path": "/accounts/quickbooks/login/callback/",
+    "expected_callback_path": "/accounts/quickbooks/login/callback/",
+    "extra_settings": [
+      "SANDBOX: True for sandbox mode",
+      "Optional SCOPE, e.g. openid, com.intuit.quickbooks.accounting, profile, phone"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "quickbooks",
+      "hex": "2CA01C",
+      "title": "QuickBooks",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/quickbooks.svg",
+      "verified_http_200": true,
+      "brand_guidelines": "https://design.intuit.com/quickbooks/brand"
+    },
+    "notes": "Create an app on the Intuit developer site, set the callback URL, and optionally enable SANDBOX and extra scopes.",
+    "caveats": []
+  },
+  {
+    "id": "reddit",
+    "provider_id": null,
+    "docs_slug": "reddit",
+    "app": "allauth.socialaccount.providers.reddit",
+    "name": "Reddit",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/reddit.html",
+    "console_url": [
+      {
+        "text": "https://www.reddit.com/prefs/apps/",
+        "url": "https://www.reddit.com/prefs/apps/",
+        "label": "App registration (get your key and secret here)",
+        "form": "link"
+      }
+    ],
+    "callback_path": "/accounts/reddit/login/callback/",
+    "expected_callback_path": "/accounts/reddit/login/callback/",
+    "extra_settings": [
+      "USER_AGENT in the form <platform>:<app ID>:<version string> (by /u/<reddit username>)",
+      "Optional AUTH_PARAMS duration=permanent, SCOPE (default identity)"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "reddit",
+      "hex": "FF4500",
+      "title": "Reddit",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/reddit.svg",
+      "verified_http_200": true,
+      "brand_guidelines": "https://www.redditinc.com/brand"
+    },
+    "notes": "Create an app in your Reddit preferences, set the callback URL, and set a compliant USER_AGENT.",
+    "caveats": []
+  },
+  {
+    "id": "salesforce",
+    "provider_id": null,
+    "docs_slug": "salesforce",
+    "app": "allauth.socialaccount.providers.salesforce",
+    "name": "Salesforce",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/salesforce.html",
+    "console_url": [],
+    "callback_path": "/accounts/salesforce/login/callback/",
+    "expected_callback_path": "/accounts/salesforce/login/callback/",
+    "extra_settings": [
+      "key (required): the login VIP, https://login.salesforce.com/ for production or https://test.salesforce.com/ for sandboxes",
+      "HTTPS callback required"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "missing",
+      "note": "Salesforce not in Simple Icons.",
+      "fallback": {
+        "brand_guidelines": "https://brand.salesforce.com/",
+        "lucide": "LogIn"
+      }
+    },
+    "notes": "Create a Connected App with OAuth (scopes id and openid) in a Salesforce org, then create the SocialApp with the login URL in the key field.",
+    "caveats": []
+  },
+  {
+    "id": "sharefile",
+    "provider_id": null,
+    "docs_slug": "sharefile",
+    "app": "allauth.socialaccount.providers.sharefile",
+    "name": "ShareFile",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/sharefile.html",
+    "console_url": [],
+    "callback_path": null,
+    "expected_callback_path": "/accounts/sharefile/login/callback/",
+    "extra_settings": [
+      "SUBDOMAIN (required): your ShareFile subdomain",
+      "APICP (default secure) and DEFAULT_URL (default https://secure.sharefile.com)"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "missing",
+      "note": "No ShareFile icon (Citrix icon exists, but ShareFile is now a Progress product).",
+      "fallback": {
+        "lucide": "LogIn"
+      }
+    },
+    "notes": "Register an API client with ShareFile and set SUBDOMAIN, plus APICP and DEFAULT_URL if needed.",
+    "caveats": []
+  },
+  {
+    "id": "shopify",
+    "provider_id": null,
+    "docs_slug": "shopify",
+    "app": "allauth.socialaccount.providers.shopify",
+    "name": "Shopify",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/shopify.html",
+    "console_url": [],
+    "callback_path": "/accounts/shopify/login/callback/",
+    "expected_callback_path": "/accounts/shopify/login/callback/",
+    "extra_settings": [
+      "Login requires a shop parameter, e.g. /accounts/shopify/login/?shop=petstore",
+      "IS_EMBEDDED: True for embedded apps",
+      "AUTH_PARAMS grant_options[]=per-user for online access mode"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "shopify",
+      "hex": "7AB55C",
+      "title": "Shopify",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/shopify.svg",
+      "verified_http_200": true,
+      "brand_guidelines": "https://www.shopify.com/brand-assets"
+    },
+    "notes": "Set the App URL to /accounts/shopify/login/ and the redirection URL to the callback, and pass the shop parameter when logging in.",
+    "caveats": []
+  },
+  {
+    "id": "snapchat",
+    "provider_id": null,
+    "docs_slug": "snapchat",
+    "app": "allauth.socialaccount.providers.snapchat",
+    "name": "Snapchat",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/snapchat.html",
+    "console_url": [
+      {
+        "text": "https://kit.snapchat.com/manage/",
+        "url": "https://kit.snapchat.com/manage/",
+        "label": "App registration (get your key and secret here)",
+        "form": "link"
+      }
+    ],
+    "callback_path": "/accounts/snap/login/callback/",
+    "expected_callback_path": "/accounts/snapchat/login/callback/",
+    "extra_settings": [],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "snapchat",
+      "hex": "FFFC00",
+      "title": "Snapchat",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/snapchat.svg",
+      "verified_http_200": true,
+      "brand_guidelines": "https://www.snapchat.com/brand-guidelines"
+    },
+    "notes": "Create an app in the Snap Kit portal to get a key and secret, and set the callback URL.",
+    "caveats": [
+      "Docs say /accounts/snap/...; source id/slug is snapchat, so the real path is /accounts/snapchat/login/callback/."
+    ]
+  },
+  {
+    "id": "soundcloud",
+    "provider_id": null,
+    "docs_slug": "soundcloud",
+    "app": "allauth.socialaccount.providers.soundcloud",
+    "name": "SoundCloud",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/soundcloud.html",
+    "console_url": [
+      {
+        "text": "http://soundcloud.com/you/apps/new",
+        "url": "http://soundcloud.com/you/apps/new",
+        "label": "App registration (get your key and secret here)",
+        "form": "link"
+      }
+    ],
+    "callback_path": "/accounts/soundcloud/login/callback/",
+    "expected_callback_path": "/accounts/soundcloud/login/callback/",
+    "extra_settings": [
+      "Choose OAuth2 when registering",
+      "Since 65.10.0 the account uid is the user URN, not the numeric id"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "soundcloud",
+      "hex": "FF5500",
+      "title": "SoundCloud",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/soundcloud.svg",
+      "verified_http_200": true
+    },
+    "notes": "Register a SoundCloud app using OAuth2, set the callback URL, and migrate existing uids to URNs when upgrading past 65.10.0.",
+    "caveats": []
+  },
+  {
+    "id": "stackexchange",
+    "provider_id": null,
+    "docs_slug": "stackexchange",
+    "app": "allauth.socialaccount.providers.stackexchange",
+    "name": "Stack Exchange",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/stackexchange.html",
+    "console_url": [
+      {
+        "text": "http://stackapps.com/apps/oauth/register",
+        "url": "http://stackapps.com/apps/oauth/register",
+        "label": "Register your OAuth2 app over at",
+        "form": "text"
+      }
+    ],
+    "callback_path": null,
+    "expected_callback_path": "/accounts/stackexchange/login/callback/",
+    "extra_settings": [
+      "SITE: Stack Exchange site for extra_data, e.g. stackoverflow",
+      "Do not enable Client Side Flow"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "stackexchange",
+      "hex": "1E5397",
+      "title": "Stack Exchange",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/stackexchange.svg",
+      "verified_http_200": true,
+      "brand_guidelines": "https://stackoverflow.com/legal/trademark-guidance"
+    },
+    "notes": "Register an OAuth app on Stack Apps without Client Side Flow (localhost as OAuth domain for development), and set SITE.",
+    "caveats": []
+  },
+  {
+    "id": "steam",
+    "provider_id": null,
+    "docs_slug": "steam",
+    "app": "allauth.socialaccount.providers.steam",
+    "name": "Steam",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/steam.html",
+    "console_url": [
+      {
+        "text": "https://steamcommunity.com/dev/apikey",
+        "url": "https://steamcommunity.com/dev/apikey",
+        "label": "You need to register an API key here",
+        "form": "link"
+      }
+    ],
+    "callback_path": null,
+    "expected_callback_path": "/accounts/steam/callback/",
+    "extra_settings": [
+      "Needs the steam extra: pip install \"django-allauth[socialaccount,steam]\"",
+      "Use the API key as both client_id and secret"
+    ],
+    "protocol": "other",
+    "protocol_detail": "OpenID 2.0 (Steam)",
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "steam",
+      "hex": "000000",
+      "title": "Steam",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/steam.svg",
+      "verified_http_200": true,
+      "brand_guidelines": "https://partner.steamgames.com/doc/marketing/branding"
+    },
+    "notes": "Install the steam extra, register a Steam Web API key, and put it in both the client_id and secret fields.",
+    "caveats": []
+  },
+  {
+    "id": "stocktwits",
+    "provider_id": null,
+    "docs_slug": "stocktwits",
+    "app": "allauth.socialaccount.providers.stocktwits",
+    "name": "Stocktwits",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/stocktwits.html",
+    "console_url": [
+      {
+        "text": "https://api.stocktwits.com/developers/apps/new",
+        "url": "https://api.stocktwits.com/developers/apps/new",
+        "label": "App Registration",
+        "form": "link"
+      }
+    ],
+    "callback_path": null,
+    "expected_callback_path": "/accounts/stocktwits/login/callback/",
+    "extra_settings": [
+      "Site Domain must be an external URL (127.0.0.1 and localhost do not work)"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "missing",
+      "note": "No Stocktwits icon in Simple Icons 16.33.0.",
+      "fallback": {
+        "lucide": "LogIn"
+      }
+    },
+    "notes": "Register an app on Stocktwits with an external site domain, and use the consumer key and secret.",
+    "caveats": []
+  },
+  {
+    "id": "strava",
+    "provider_id": null,
+    "docs_slug": "strava",
+    "app": "allauth.socialaccount.providers.strava",
+    "name": "Strava",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/strava.html",
+    "console_url": [
+      {
+        "text": "https://strava.com/settings/api",
+        "url": "https://strava.com/settings/api",
+        "label": "Register your OAuth2 app in api settings page",
+        "form": "link"
+      }
+    ],
+    "callback_path": "/accounts/strava/login/callback/",
+    "expected_callback_path": "/accounts/strava/login/callback/",
+    "extra_settings": [
+      "Only the callback domain is entered on the Strava settings page"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "strava",
+      "hex": "FC4C02",
+      "title": "Strava",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/strava.svg",
+      "verified_http_200": true
+    },
+    "notes": "Register the app on the Strava API settings page (only the callback domain is needed) to get a key and secret.",
+    "caveats": []
+  },
+  {
+    "id": "stripe",
+    "provider_id": null,
+    "docs_slug": "stripe",
+    "app": "allauth.socialaccount.providers.stripe",
+    "name": "Stripe",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/stripe.html",
+    "console_url": [
+      {
+        "text": "https://dashboard.stripe.com/account/applications/settings",
+        "url": "https://dashboard.stripe.com/account/applications/settings",
+        "label": "You register your OAuth2 app via the Connect->Settings page of the Stripe dashboard",
+        "form": "link"
+      },
+      {
+        "text": "https://dashboard.stripe.com/account/apikeys",
+        "url": "https://dashboard.stripe.com/account/apikeys",
+        "label": "The secret key ... can be found on the Stripe dashboard API page",
+        "form": "link"
+      }
+    ],
+    "callback_path": "/accounts/stripe/login/callback/",
+    "expected_callback_path": "/accounts/stripe/login/callback/",
+    "extra_settings": [
+      "client_id comes from Connect settings; secret is your regular Stripe API secret key"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "stripe",
+      "hex": "635BFF",
+      "title": "Stripe",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/stripe.svg",
+      "verified_http_200": true
+    },
+    "notes": "Register the OAuth app in Stripe Connect settings for the client_id, set the callback, and use your Stripe API secret key as secret.",
+    "caveats": []
+  },
+  {
+    "id": "telegram",
+    "provider_id": null,
+    "docs_slug": "telegram",
+    "app": "allauth.socialaccount.providers.telegram",
+    "name": "Telegram",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/telegram.html",
+    "console_url": [],
+    "callback_path": null,
+    "expected_callback_path": "/accounts/telegram/login/callback/",
+    "extra_settings": [
+      "client_id is the bot id, secret is the full bot token",
+      "AUTH_PARAMS auth_date_validity in seconds (default 30)",
+      "Server time must be in sync (NTP)"
+    ],
+    "protocol": "other",
+    "protocol_detail": "Telegram Login Widget (signed hash, no OAuth)",
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "telegram",
+      "hex": "26A5E4",
+      "title": "Telegram",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/telegram.svg",
+      "verified_http_200": true
+    },
+    "notes": "Create a Telegram bot, use its id as client_id and its token as secret, and optionally tune auth_date_validity.",
+    "caveats": []
+  },
+  {
+    "id": "tiktok",
+    "provider_id": null,
+    "docs_slug": "tiktok",
+    "app": "allauth.socialaccount.providers.tiktok",
+    "name": "TikTok",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/tiktok.html",
+    "console_url": [
+      {
+        "text": "https://developers.tiktok.com/",
+        "url": "https://developers.tiktok.com/",
+        "label": "Sign up for a TikTok for Developer account here",
+        "form": "link"
+      },
+      {
+        "text": "https://developers.tiktok.com/application/unreleased-app-integration",
+        "url": "https://developers.tiktok.com/application/unreleased-app-integration",
+        "label": "Complete your Integration Assessment for Unreleased App here",
+        "form": "link"
+      }
+    ],
+    "callback_path": null,
+    "expected_callback_path": "/accounts/tiktok/login/callback/",
+    "extra_settings": [
+      "HTTPS callback required (e.g. a fixed ngrok URL)",
+      "App review by TikTok with the requested products and scopes"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "tiktok",
+      "hex": "000000",
+      "title": "TikTok",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/tiktok.svg",
+      "verified_http_200": true
+    },
+    "notes": "Sign up as a TikTok developer, create an app, complete the unreleased app integration assessment and app review, and use a fixed https callback URL.",
+    "caveats": []
+  },
+  {
+    "id": "trainingpeaks",
+    "provider_id": null,
+    "docs_slug": "trainingpeaks",
+    "app": "allauth.socialaccount.providers.trainingpeaks",
+    "name": "TrainingPeaks",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/trainingpeaks.html",
+    "console_url": [
+      {
+        "text": "https://api.trainingpeaks.com/request-access",
+        "url": "https://api.trainingpeaks.com/request-access",
+        "label": "You need to request an API Partnership to get your OAth credentials",
+        "form": "link"
+      }
+    ],
+    "callback_path": null,
+    "expected_callback_path": "/accounts/trainingpeaks/login/callback/",
+    "extra_settings": [
+      "SCOPE must include athlete:profile (default)",
+      "USE_PRODUCTION: True for production (default sandbox)"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "missing",
+      "note": "No TrainingPeaks icon in Simple Icons 16.33.0.",
+      "fallback": {
+        "lucide": "LogIn"
+      }
+    },
+    "notes": "Request an API partnership from TrainingPeaks including the athlete:profile scope, and set USE_PRODUCTION when going live.",
+    "caveats": []
+  },
+  {
+    "id": "trello",
+    "provider_id": null,
+    "docs_slug": "trello",
+    "app": "allauth.socialaccount.providers.trello",
+    "name": "Trello",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/trello.html",
+    "console_url": [
+      {
+        "text": "https://trello.com/app-key",
+        "url": "https://trello.com/app-key",
+        "label": "Register the application at",
+        "form": "link"
+      }
+    ],
+    "callback_path": null,
+    "expected_callback_path": "/accounts/trello/login/callback/",
+    "extra_settings": [
+      "Key goes to client_id and to key; Secret goes to secret",
+      "Optional AUTH_PARAMS scope, e.g. read,write"
+    ],
+    "protocol": "OAuth1",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "trello",
+      "hex": "0052CC",
+      "title": "Trello",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/trello.svg",
+      "verified_http_200": true,
+      "brand_guidelines": "https://atlassian.design/foundations/logos"
+    },
+    "notes": "Get your application key and secret from the Trello app-key page, and optionally change the scope via AUTH_PARAMS.",
+    "caveats": []
+  },
+  {
+    "id": "tumblr_oauth2",
+    "provider_id": null,
+    "docs_slug": "tumblr_oauth2",
+    "app": "allauth.socialaccount.providers.tumblr_oauth2",
+    "name": "Tumblr (OAuth 2)",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/tumblr_oauth2.html",
+    "console_url": [
+      {
+        "text": "https://www.tumblr.com/oauth/register",
+        "url": "https://www.tumblr.com/oauth/register",
+        "label": "App registration: create a new app via",
+        "form": "code"
+      },
+      {
+        "text": "https://www.tumblr.com/oauth/apps",
+        "url": "https://www.tumblr.com/oauth/apps",
+        "label": "Use the tumblr keys tab of your application to fill in the form",
+        "form": "code"
+      }
+    ],
+    "callback_path": "/accounts/tumblr_oauth2/login/callback/",
+    "expected_callback_path": "/accounts/tumblr_oauth2/login/callback/",
+    "extra_settings": [
+      "Optional SCOPE, e.g. basic, write"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "tumblr",
+      "hex": "36465D",
+      "title": "Tumblr",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/tumblr.svg",
+      "verified_http_200": true,
+      "brand_guidelines": "https://www.tumblr.com/logo"
+    },
+    "notes": "Register a Tumblr app with the callback URL, then copy the OAuth2 Client ID and Secret into a SocialApp.",
+    "caveats": []
+  },
+  {
+    "id": "twitch",
+    "provider_id": null,
+    "docs_slug": "twitch",
+    "app": "allauth.socialaccount.providers.twitch",
+    "name": "Twitch",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/twitch.html",
+    "console_url": [
+      {
+        "text": "http://dev.twitch.tv/console",
+        "url": "http://dev.twitch.tv/console",
+        "label": "App registration (get your key and secret here)",
+        "form": "link"
+      }
+    ],
+    "callback_path": "/accounts/twitch/login/callback/",
+    "expected_callback_path": "/accounts/twitch/login/callback/",
+    "extra_settings": [],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "twitch",
+      "hex": "9146FF",
+      "title": "Twitch",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/twitch.svg",
+      "verified_http_200": true,
+      "brand_guidelines": "https://brand.twitch.tv"
+    },
+    "notes": "Register an application in the Twitch developer console to get a key and secret, and set the callback URL.",
+    "caveats": []
+  },
+  {
+    "id": "untappd",
+    "provider_id": null,
+    "docs_slug": "untappd",
+    "app": "allauth.socialaccount.providers.untappd",
+    "name": "Untappd",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/untappd.html",
+    "console_url": [
+      {
+        "text": "https://untappd.com/api/register?register=new",
+        "url": "https://untappd.com/api/register?register=new",
+        "label": "App registration",
+        "form": "link"
+      },
+      {
+        "text": "https://untappd.com/api/dashboard",
+        "url": "https://untappd.com/api/dashboard",
+        "label": "The configuration values come from your API dashboard on Untappd",
+        "form": "link"
+      }
+    ],
+    "callback_path": "/accounts/untappd/login/callback/",
+    "expected_callback_path": "/accounts/untappd/login/callback/",
+    "extra_settings": [
+      "USER_AGENT in the form <platform>:<app ID>:<version string>"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "untappd",
+      "hex": "FFC000",
+      "title": "Untappd",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/untappd.svg",
+      "verified_http_200": true
+    },
+    "notes": "Register an Untappd API app with the callback URL, copy the Client ID and Secret from the API dashboard, and set a USER_AGENT.",
+    "caveats": []
+  },
+  {
+    "id": "vimeo",
+    "provider_id": null,
+    "docs_slug": "vimeo",
+    "app": "allauth.socialaccount.providers.vimeo",
+    "name": "Vimeo",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/vimeo.html",
+    "console_url": [
+      {
+        "text": "https://developer.vimeo.com/apps",
+        "url": "https://developer.vimeo.com/apps",
+        "label": "App registration (get your key and secret here)",
+        "form": "link"
+      }
+    ],
+    "callback_path": null,
+    "expected_callback_path": "/accounts/vimeo/login/callback/",
+    "extra_settings": [],
+    "protocol": "OAuth1",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": true,
+    "replaced_by": "vimeo_oauth2",
+    "icon": {
+      "source": "simple-icons",
+      "slug": "vimeo",
+      "hex": "1AB7EA",
+      "title": "Vimeo",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/vimeo.svg",
+      "verified_http_200": true,
+      "brand_guidelines": "https://press.vimeo.com/brand-guidelines"
+    },
+    "notes": "Create an app on the Vimeo developer site to get a key and secret.",
+    "caveats": [
+      "Docs callback link is truncated to http://localhost:8000/a."
+    ]
+  },
+  {
+    "id": "vimeo_oauth2",
+    "provider_id": null,
+    "docs_slug": "vimeo_oauth2",
+    "app": "allauth.socialaccount.providers.vimeo_oauth2",
+    "name": "Vimeo (OAuth 2)",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/vimeo_oauth2.html",
+    "console_url": [
+      {
+        "text": "https://developer.vimeo.com/apps",
+        "url": "https://developer.vimeo.com/apps",
+        "label": "App registration (get your key and secret here)",
+        "form": "link"
+      }
+    ],
+    "callback_path": "/accounts/vimeo_oauth2/login/callback/",
+    "expected_callback_path": "/accounts/vimeo_oauth2/login/callback/",
+    "extra_settings": [],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "vimeo",
+      "hex": "1AB7EA",
+      "title": "Vimeo",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/vimeo.svg",
+      "verified_http_200": true,
+      "brand_guidelines": "https://press.vimeo.com/brand-guidelines"
+    },
+    "notes": "Create an app on the Vimeo developer site to get a key and secret, and set the callback URL.",
+    "caveats": []
+  },
+  {
+    "id": "vk",
+    "provider_id": null,
+    "docs_slug": "vk",
+    "app": "allauth.socialaccount.providers.vk",
+    "name": "VK",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/vk.html",
+    "console_url": [
+      {
+        "text": "https://vk.com/editapp?act=create",
+        "url": "https://vk.com/editapp?act=create",
+        "label": "App registration",
+        "form": "link"
+      }
+    ],
+    "callback_path": null,
+    "expected_callback_path": "/accounts/vk/login/callback/",
+    "extra_settings": [
+      "Optional SCOPE, e.g. email",
+      "Site address must use port 80 or 443 locally (http://localhost or https://localhost)"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "vk",
+      "hex": "0077FF",
+      "title": "VK",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/vk.svg",
+      "verified_http_200": true,
+      "brand_guidelines": "https://vk.com/brand"
+    },
+    "notes": "Create a VK app with http://localhost or https://localhost as site address, and configure client_id, secret and SCOPE.",
+    "caveats": [
+      "Docs only give the site address (http://localhost or https://localhost), no callback path."
+    ]
+  },
+  {
+    "id": "wahoo",
+    "provider_id": null,
+    "docs_slug": "wahoo",
+    "app": "allauth.socialaccount.providers.wahoo",
+    "name": "Wahoo",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/wahoo.html",
+    "console_url": [
+      {
+        "text": "https://developers.wahooligan.com/applications/new",
+        "url": "https://developers.wahooligan.com/applications/new",
+        "label": "Register your OAuth2 app here",
+        "form": "link"
+      }
+    ],
+    "callback_path": null,
+    "expected_callback_path": "/accounts/wahoo/login/callback/",
+    "extra_settings": [
+      "SCOPE: user_read (default), user_write, workouts_read, workouts_write, offline_data"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "missing",
+      "note": "No Wahoo icon in Simple Icons 16.33.0.",
+      "fallback": {
+        "lucide": "LogIn"
+      }
+    },
+    "notes": "Register an app on the Wahoo developer portal and request additional scopes for workout data if needed.",
+    "caveats": []
+  },
+  {
+    "id": "weibo",
+    "provider_id": null,
+    "docs_slug": "weibo",
+    "app": "allauth.socialaccount.providers.weibo",
+    "name": "Weibo",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/weibo.html",
+    "console_url": [
+      {
+        "text": "http://open.weibo.com/apps",
+        "url": "http://open.weibo.com/apps",
+        "label": "Register your OAuth2 app over at",
+        "form": "text"
+      }
+    ],
+    "callback_path": "/accounts/weibo/login/callback/",
+    "expected_callback_path": "/accounts/weibo/login/callback/",
+    "extra_settings": [
+      "No port allowed in the callback URL; run runserver on 127.0.0.1:80 for development"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "sinaweibo",
+      "hex": "E6162D",
+      "title": "Sina Weibo",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/sinaweibo.svg",
+      "verified_http_200": true,
+      "note": "Listed as Sina Weibo in Simple Icons."
+    },
+    "notes": "Register an app on Weibo Open, and use a port-less callback URL (run the dev server on port 80).",
+    "caveats": []
+  },
+  {
+    "id": "weixin",
+    "provider_id": null,
+    "docs_slug": "weixin",
+    "app": "allauth.socialaccount.providers.weixin",
+    "name": "Weixin",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/weixin.html",
+    "console_url": [],
+    "callback_path": null,
+    "expected_callback_path": "/accounts/weixin/login/callback/",
+    "extra_settings": [
+      "AUTHORIZE_URL: open platform (default https://open.weixin.qq.com/connect/qrconnect) or media platform https://open.weixin.qq.com/connect/oauth2/authorize",
+      "Optional SCOPE: snsapi_login (default), snsapi_base, snsapi_userinfo"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "wechat",
+      "hex": "07C160",
+      "title": "WeChat",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/wechat.svg",
+      "verified_http_200": true,
+      "brand_guidelines": "https://wechat.design/brand/main-brand",
+      "note": "Weixin is WeChat in Simple Icons."
+    },
+    "notes": "The page only links to the Weixin OAuth2 documentation; register an app and set AUTHORIZE_URL for the media platform if needed.",
+    "caveats": []
+  },
+  {
+    "id": "windowslive",
+    "provider_id": null,
+    "docs_slug": "windowslive",
+    "app": "allauth.socialaccount.providers.windowslive",
+    "name": "Windows Live",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/windowslive.html",
+    "console_url": [
+      {
+        "text": "https://apps.dev.microsoft.com/#/appList",
+        "url": "https://apps.dev.microsoft.com/#/appList",
+        "label": "App registration (get your key and secret here)",
+        "form": "link"
+      }
+    ],
+    "callback_path": "/accounts/windowslive/login/callback/",
+    "expected_callback_path": "/accounts/windowslive/login/callback/",
+    "extra_settings": [
+      "No SOCIALACCOUNT_PROVIDERS settings",
+      "client_id is the Application Id (UUID); generate a password for the secret"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": true,
+    "replaced_by": "microsoft",
+    "icon": {
+      "source": "missing",
+      "note": "Microsoft brand removed from Simple Icons for legal reasons.",
+      "fallback": {
+        "brand_guidelines": "https://learn.microsoft.com/en-us/entra/identity-platform/howto-add-branding-in-apps",
+        "lucide": "LogIn"
+      }
+    },
+    "notes": "Register an app, generate a new password as client secret, and set the callback URL.",
+    "caveats": []
+  },
+  {
+    "id": "twitter",
+    "provider_id": null,
+    "docs_slug": "twitter",
+    "app": "allauth.socialaccount.providers.twitter",
+    "name": "X/Twitter (OAuth 1)",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/twitter.html",
+    "console_url": [
+      {
+        "text": "https://developer.x.com/en/portal/apps/new",
+        "url": "https://developer.x.com/en/portal/apps/new",
+        "label": "App registration: create a new app via",
+        "form": "code"
+      },
+      {
+        "text": "https://developer.x.com/en/portal/apps/{{yourappid}}/keys",
+        "url": "https://developer.x.com/en/portal/apps/{{yourappid}}/keys",
+        "label": "Use the X keys tab of your application to fill in the form",
+        "form": "code"
+      }
+    ],
+    "callback_path": "/accounts/twitter/login/callback/",
+    "expected_callback_path": "/accounts/twitter/login/callback/",
+    "extra_settings": [
+      "client_id is the Consumer Key (API Key), secret is the Consumer Secret",
+      "X does not allow http://localhost:8000; use 127.0.0.1",
+      "Enable Allow this application to be used to Sign in with X"
+    ],
+    "protocol": "OAuth1",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": true,
+    "replaced_by": "twitter_oauth2",
+    "icon": {
+      "source": "simple-icons",
+      "slug": "x",
+      "hex": "000000",
+      "title": "X",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/x.svg",
+      "verified_http_200": true,
+      "brand_guidelines": "https://about.x.com/en/who-we-are/brand-toolkit",
+      "note": "X logo."
+    },
+    "notes": "Create an X app with the 127.0.0.1 callback URL, enable Sign in with X, and copy the consumer key and secret into a SocialApp.",
+    "caveats": []
+  },
+  {
+    "id": "xing",
+    "provider_id": null,
+    "docs_slug": "xing",
+    "app": "allauth.socialaccount.providers.xing",
+    "name": "Xing",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/xing.html",
+    "console_url": [
+      {
+        "text": "https://dev.xing.com/applications",
+        "url": "https://dev.xing.com/applications",
+        "label": "App registration (get your key and secret here)",
+        "form": "link"
+      }
+    ],
+    "callback_path": null,
+    "expected_callback_path": "/accounts/xing/login/callback/",
+    "extra_settings": [],
+    "protocol": "OAuth1",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "xing",
+      "hex": "006567",
+      "title": "Xing",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/xing.svg",
+      "verified_http_200": true
+    },
+    "notes": "Create an application on the Xing developer site to get a key and secret, using http://localhost:8000 during development.",
+    "caveats": [
+      "Docs only give http://localhost:8000 as the callback, no path."
+    ]
+  },
+  {
+    "id": "yahoo",
+    "provider_id": null,
+    "docs_slug": "yahoo",
+    "app": "allauth.socialaccount.providers.yahoo",
+    "name": "Yahoo",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/yahoo.html",
+    "console_url": [
+      {
+        "text": "https://developer.yahoo.com/apps/create/",
+        "url": "https://developer.yahoo.com/apps/create/",
+        "label": "Register your OAuth2 app below and enter the resultant client id and secret into admin",
+        "form": "link"
+      }
+    ],
+    "callback_path": null,
+    "expected_callback_path": "/accounts/yahoo/login/callback/",
+    "extra_settings": [
+      "Secure (https) redirect URL required",
+      "Select OpenID Connect permissions Email and Profile"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "missing",
+      "note": "Yahoo not in Simple Icons.",
+      "fallback": {
+        "lucide": "LogIn"
+      }
+    },
+    "notes": "Create a Yahoo app with the OpenID Connect Email and Profile permissions and an https redirect URL, and copy the ID and secret without leading spaces.",
+    "caveats": []
+  },
+  {
+    "id": "yandex",
+    "provider_id": null,
+    "docs_slug": "yandex",
+    "app": "allauth.socialaccount.providers.yandex",
+    "name": "Yandex",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/yandex.html",
+    "console_url": [
+      {
+        "text": "https://oauth.yandex.com/client/new",
+        "url": "https://oauth.yandex.com/client/new",
+        "label": "App registration (get key and secret here)",
+        "form": "link"
+      }
+    ],
+    "callback_path": null,
+    "expected_callback_path": "/accounts/yandex/login/callback/",
+    "extra_settings": [
+      "Select Yandex.Passport API access to email address and to username, first name and surname, gender"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "missing",
+      "note": "Only Yandex Cloud is in Simple Icons, not the Yandex ID brand.",
+      "fallback": {
+        "brand_guidelines": "https://yandex.com/company/general_info/logotype_rules",
+        "lucide": "LogIn"
+      }
+    },
+    "notes": "Create a Yandex OAuth client with the Yandex.Passport API email and name permissions.",
+    "caveats": [
+      "Docs give https://oauth.yandex.com/verification_code as the development callback, which is Yandex's own page, not an allauth path."
+    ]
+  },
+  {
+    "id": "ynab",
+    "provider_id": null,
+    "docs_slug": "ynab",
+    "app": "allauth.socialaccount.providers.ynab",
+    "name": "YNAB",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/ynab.html",
+    "console_url": [
+      {
+        "text": "https://app.youneedabudget.com/settings/developer",
+        "url": "https://app.youneedabudget.com/settings/developer",
+        "label": "App Registration",
+        "form": "link"
+      }
+    ],
+    "callback_path": "/accounts/ynab/login/callback/",
+    "expected_callback_path": "/accounts/ynab/login/callback/",
+    "extra_settings": [
+      "SCOPE: read-only by default; set SCOPE to '' for read and write"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "missing",
+      "note": "No YNAB icon in Simple Icons 16.33.0.",
+      "fallback": {
+        "lucide": "LogIn"
+      }
+    },
+    "notes": "Register an OAuth app in YNAB developer settings, set the callback URL, and set SCOPE to an empty string for write access.",
+    "caveats": []
+  },
+  {
+    "id": "zoho",
+    "provider_id": null,
+    "docs_slug": "zoho",
+    "app": "allauth.socialaccount.providers.zoho",
+    "name": "Zoho",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/zoho.html",
+    "console_url": [
+      {
+        "text": "https://api-console.zoho.com/add",
+        "url": "https://api-console.zoho.com/add",
+        "label": "App Registration",
+        "form": "link"
+      }
+    ],
+    "callback_path": "/accounts/zoho/login/callback/",
+    "expected_callback_path": "/accounts/zoho/login/callback/",
+    "extra_settings": [],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "zoho",
+      "hex": "E42527",
+      "title": "Zoho",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/zoho.svg",
+      "verified_http_200": true
+    },
+    "notes": "Add a Server-based Application in the Zoho API console and set the authorized redirect URI.",
+    "caveats": []
+  },
+  {
+    "id": "zoom",
+    "provider_id": null,
+    "docs_slug": "zoom",
+    "app": "allauth.socialaccount.providers.zoom",
+    "name": "Zoom",
+    "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/zoom.html",
+    "console_url": [
+      {
+        "text": "https://marketplace.zoom.us/develop/create",
+        "url": "https://marketplace.zoom.us/develop/create",
+        "label": "App Registration",
+        "form": "link"
+      }
+    ],
+    "callback_path": "/accounts/zoom/login/callback/",
+    "expected_callback_path": "/accounts/zoom/login/callback/",
+    "extra_settings": [
+      "Select scope user:read during app registration"
+    ],
+    "protocol": "OAuth2",
+    "protocol_detail": null,
+    "tier": "other",
+    "popular": false,
+    "legacy": false,
+    "replaced_by": null,
+    "icon": {
+      "source": "simple-icons",
+      "slug": "zoom",
+      "hex": "0B5CFF",
+      "title": "Zoom",
+      "svg_url": "https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/zoom.svg",
+      "verified_http_200": true,
+      "brand_guidelines": "https://brand.zoom.us/usage-legal/"
+    },
+    "notes": "Create an app in the Zoom Marketplace with the user:read scope and set the callback URL.",
+    "caveats": []
+  }
+]

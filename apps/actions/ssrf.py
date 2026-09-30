@@ -95,13 +95,10 @@ def resolve_webhook_endpoint(url: str, *, allow_private: bool = False) -> Resolv
         connect_host = None
         for info in infos:
             candidate = ipaddress.ip_address(info[4][0])
-            try:
-                _validate_ip(candidate, allow_private=allow_private)
-            except SSRFError:
-                continue
-            connect_host = info[4][0]
-            port = info[4][1] or port
-            break
+            _validate_ip(candidate, allow_private=allow_private)
+            if connect_host is None:
+                connect_host = info[4][0]
+                port = info[4][1] or port
         if connect_host is None:
             raise SSRFError('Webhook hostname resolves only to private or non-public addresses.')
     else:

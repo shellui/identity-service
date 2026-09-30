@@ -280,3 +280,12 @@ class MagicLinkToken(models.Model):
 
     def __str__(self) -> str:
         return f'MagicLinkToken(id={self.pk}, email={self.email})'
+
+
+class OidcSocialAccountKeyMigration(models.Model):
+    """Audit rows updated by migration 0014 (reverse restores only these accounts)."""
+
+    social_account_id = models.BigIntegerField(db_index=True)
+    old_provider = models.CharField(max_length=200)
+    old_uid = models.CharField(max_length=255)
+    migrated_at = models.DateTimeField(auto_now_add=True)

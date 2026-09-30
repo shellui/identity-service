@@ -21,6 +21,38 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
 -->
 
+## [Unreleased] - 2026-09-29
+
+### ✨ Feature
+
+- **OAuth provider catalog:** identity-service ships a checked-in django-allauth provider catalog (`apps/authapi/provider_catalog.json`) with **97** OAuth2/OIDC providers marked `supported: true` on the identity-hosted adapter (114 total catalog entries). Admin API: `GET /api/v1/oauth-provider-catalog`. OAuth app CRUD accepts `docs_slug` plus validated `extra_settings`. Catalog generation tracks the installed django-allauth version and end-to-end adapter test coverage per provider.
+- **django-allauth 65.19.5:** dependency upgraded to match the provider dataset.
+
+### 🔒 Security
+
+- OpenID Connect `SocialAccount` keys use per-app `provider_id` and issuer-scoped UIDs to prevent cross-issuer `sub` collisions.
+- OAuth SocialApp admin list and attach paths are company-scoped; secret `extra_settings` fields are redacted in API responses.
+- PKCE verifiers are stored server-side (nonce cache), not in signed OAuth `state`.
+- URL-type provider settings are validated against private/loopback addresses at save time (SSRF mitigation for discovery `server_url`).
+- OAuth token exchange failures return a fixed client message instead of exception text.
+
+### 🚨 Changed
+
+- **OAuth provider catalog v2:** `console_url` entries are `{kind, url, form}` with optional `placeholders` (no embedded English). Extra settings schema exposes `name`, `type`, `required`, and `secret` only; Shellui admin translates by field name. `GET /api/v1/oauth-provider-catalog` adds `console_link_kinds` and `console_link_forms` for admin mapping.
+- **Honest `supported` count:** `supported: true` follows `tools/data/oauth_e2e_covered_slugs.json`, which is regenerated only for providers that pass the real adapter harness (`tools/audit_oauth_provider_coverage.py`). **62** providers supported in this release (not 97).
+
+### 🔒 Security
+
+- OpenID Connect migration **0014** rekeys existing `SocialAccount` rows to `(provider_id, issuer|sub)` with audit-backed reverse.
+- OAuth uses `request_context` plus a `ContextVar` for the company `SocialApp` (no `allauth_context.request` assignment).
+- Apple `form_post` bridges via a single-use cookie; POST `id_token` must verify against Apple JWKS and nonce before use.
+- SSRF-safe OAuth HTTP pins resolved IPs; hostname resolution rejects mixed public/private answers.
+- PKCE and OAuth state consumption use atomic `cache.add`.
+
+### 📚 Documentation
+
+- Regenerated [docs/oauth-providers.md](docs/oauth-providers.md) from the catalog (CI drift check). English labels for generated docs live in `tools/catalog_doc_strings_en.py`.
+
 ## [0.6.0] - 2026-09-29
 
 ### ✨ Feature
