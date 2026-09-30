@@ -175,6 +175,127 @@ class CompanyIdpIsolationTests(TestCase):
             company_host=host,
         )
 
+    def _assert_missing_id_token(self, response):
+        self.assertEqual(response.status_code, 400, response.content)
+        self.assertEqual(response.json().get('error_code'), 'oauth_id_token_missing')
+
+    def test_okta_missing_id_token_rejects_callback(self):
+        base = company_okta_base(self.company.slug)
+        signing = generate_oauth_test_signing_key(kid='okta-missing')
+        app, oauth_client = self._app(
+            company=self.company,
+            provider='okta',
+            provider_id='',
+            name='okta-missing',
+            client_id='okta-missing-client',
+            settings={'catalog_slug': 'okta', 'OKTA_BASE_URL': base},
+        )
+        spec = self._okta_spec(
+            base=base,
+            client_id=app.client_id,
+            sub='okta-missing-sub',
+            email='okta-missing@example.com',
+            signing=signing,
+        )
+        host = urlparse(base).hostname
+        spec.routes[(host, 'POST', '/oauth2/v1/token')] = _token_json_handler(
+            {'access_token': 'okta-at', 'token_type': 'Bearer'}
+        )
+        before = User.objects.count()
+        response = self._callback(slug='okta', spec=spec, oauth_client=oauth_client, company=self.company)
+        self._assert_missing_id_token(response)
+        self.assertEqual(User.objects.count(), before)
+
+    def test_auth0_missing_id_token_rejects_callback(self):
+        base = company_auth0_base(self.company.slug)
+        signing = generate_oauth_test_signing_key(kid='auth0-missing')
+        app, oauth_client = self._app(
+            company=self.company,
+            provider='auth0',
+            provider_id='',
+            name='auth0-missing',
+            client_id='auth0-missing-client',
+            settings={'catalog_slug': 'auth0', 'AUTH0_URL': base},
+        )
+        spec = self._auth0_spec(
+            base=base,
+            client_id=app.client_id,
+            sub='auth0|missing',
+            email='auth0-missing@example.com',
+            signing=signing,
+        )
+        host = urlparse(base).hostname
+        spec.routes[(host, 'POST', '/oauth/token')] = _token_json_handler(
+            {'access_token': 'auth0-at', 'token_type': 'Bearer'}
+        )
+        before = User.objects.count()
+        response = self._callback(slug='auth0', spec=spec, oauth_client=oauth_client, company=self.company)
+        self._assert_missing_id_token(response)
+        self.assertEqual(User.objects.count(), before)
+
+    def test_keycloak_missing_id_token_rejects_callback(self):
+        fixture = supported_provider_fixture('keycloak')
+        signing = generate_oauth_test_signing_key(kid='kc-missing')
+        oidc = company_keycloak_oidc(self.company.slug)
+        app, oauth_client = self._app(
+            company=self.company,
+            provider='openid_connect',
+            provider_id='keycloak',
+            name='kc-missing',
+            client_id='kc-missing-client',
+            settings={'catalog_slug': 'keycloak', 'server_url': oidc.server_url},
+        )
+        spec = _build_oidc_strict_spec(
+            slug='keycloak',
+            company_slug=self.company.slug,
+            social_app=app,
+            fixture_expected_uid=fixture.expected_uid,
+            profile=dict(fixture.profile_document),
+            signing=signing,
+        )
+        token_path = urlparse(f'{oidc.issuer}/token').path
+        spec.routes[(oidc.hostname, 'POST', token_path)] = _token_json_handler(
+            {'access_token': 'at-keycloak', 'token_type': 'Bearer'}
+        )
+        before = User.objects.count()
+        response = self._callback(slug='keycloak', spec=spec, oauth_client=oauth_client, company=self.company)
+        self._assert_missing_id_token(response)
+        self.assertEqual(User.objects.count(), before)
+
+    def test_keycloak_without_openid_scope_allows_missing_id_token(self):
+        fixture = supported_provider_fixture('keycloak')
+        signing = generate_oauth_test_signing_key(kid='kc-no-openid')
+        oidc = company_keycloak_oidc(self.company.slug)
+        app, oauth_client = self._app(
+            company=self.company,
+            provider='openid_connect',
+            provider_id='keycloak',
+            name='kc-no-openid',
+            client_id='kc-no-openid-client',
+            settings={
+                'catalog_slug': 'keycloak',
+                'server_url': oidc.server_url,
+                'scope': ['profile', 'email'],
+            },
+        )
+        spec = _build_oidc_strict_spec(
+            slug='keycloak',
+            company_slug=self.company.slug,
+            social_app=app,
+            fixture_expected_uid=fixture.expected_uid,
+            profile=dict(fixture.profile_document),
+            signing=signing,
+        )
+        token_path = urlparse(f'{oidc.issuer}/token').path
+        spec.routes[(oidc.hostname, 'POST', token_path)] = _token_json_handler(
+            {'access_token': 'at-keycloak', 'token_type': 'Bearer'}
+        )
+        response = self._callback(slug='keycloak', spec=spec, oauth_client=oauth_client, company=self.company)
+        self.assertEqual(response.status_code, 302, response.content)
+        self.assertTrue(
+            SocialAccount.objects.filter(provider='keycloak', uid__endswith=f'|{fixture.expected_uid}').exists()
+        )
+
     def test_okta_other_company_same_sub_does_not_sign_in_as_existing_user(self):
         base_a = company_okta_base(self.company.slug)
         base_b = company_okta_base(self.other.slug)

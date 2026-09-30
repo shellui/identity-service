@@ -275,6 +275,28 @@ def _oauth_provider_error_response(
 _SUBJECT_BOUND_ALLAUTH_IDS = frozenset({'openid_connect', 'okta', 'auth0', 'google'})
 
 
+def _openid_connect_scope_includes_openid(social_app) -> bool:
+    """True when the OpenID Connect app's effective scope includes ``openid``."""
+    from allauth.socialaccount.providers import registry
+    from django.http import HttpRequest
+
+    request = HttpRequest()
+    provider = registry.get_class('openid_connect')(request, app=social_app)
+    scope = provider.get_scope()
+    return any(str(part).strip() == 'openid' for part in scope)
+
+
+def _missing_id_token_is_fatal(entry, social_app) -> bool:
+    """Okta and Auth0 always require an id_token. OIDC does when scope includes openid."""
+    if entry is None:
+        return False
+    if entry.allauth_id in {'okta', 'auth0'}:
+        return True
+    if entry.allauth_id != 'openid_connect':
+        return False
+    return _openid_connect_scope_includes_openid(social_app)
+
+
 def _login_id_token_claims(
     *,
     provider: str,
@@ -282,20 +304,33 @@ def _login_id_token_claims(
     company_id: int,
     company_oauth_client_id: int | None,
 ) -> dict | None:
-    """Claims from one Shellui verification. None means the login must be rejected."""
+    """Claims from one Shellui verification. None means the login must be rejected.
+
+    A missing id_token raises ``oauth_id_token_missing`` for Okta, Auth0, and for
+    OpenID Connect apps whose scope includes ``openid``. Other providers keep the
+    previous allow-empty behavior.
+    """
     resolved = resolve_oauth_client(
         provider,
         company_id=company_id,
         company_oauth_client_id=company_oauth_client_id,
     )
+    from apps.authapi.oauth_errors import OAuthIdTokenError
     from apps.authapi.oauth_id_token import verified_login_id_token_claims
     from apps.authapi.oauth_idp_policy import requires_verified_id_token_for_login
 
     entry = resolved.catalog_entry
     raw = (token_bundle.id_token or '').strip()
-    if not raw or not requires_verified_id_token_for_login(entry):
-        return {}
     social_app = get_social_app_for_client(resolved)
+    if not raw:
+        if _missing_id_token_is_fatal(entry, social_app):
+            raise OAuthIdTokenError(
+                'The identity provider did not return an id_token.',
+                code='oauth_id_token_missing',
+            )
+        return {}
+    if not requires_verified_id_token_for_login(entry):
+        return {}
     claims = verified_login_id_token_claims(
         entry=entry,
         social_app=social_app,

@@ -33,6 +33,7 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 - Okta, Auth0, and self-hosted GitLab account ids are scoped by issuer or host. gitlab.com accounts stay unscoped. Self-hosted GitLab does not auto-link by email (`oauth_email_conflict`).
 - OIDC, Google, Okta, and Auth0 id_tokens are verified once by Shellui. allauth's jti replay cache is not used on that path, and userinfo `sub` must match the verified id_token `sub`.
+- Okta and Auth0 logins fail closed when the token response omits `id_token` (`oauth_id_token_missing`). Keycloak, generic OpenID Connect, and LinkedIn do the same when the requested scope includes `openid`.
 - Company domain join uses only a verified email. A client-sent LinkedIn `server_url` is rejected (`oauth_setting_not_allowed`). URL settings must be https (`oauth_extra_settings_invalid`).
 - Auth0 and GitLab profile requests send the access token in the Authorization header.
 - OpenID Connect discovery `issuer` must match the configured server, and LinkedIn discovery hosts are pinned (`oauth_discovery_issuer_mismatch`, `oauth_provider_host_not_allowed`).
