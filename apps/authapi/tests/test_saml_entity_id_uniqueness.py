@@ -52,7 +52,7 @@ class SAMLEntityIdUniquenessTests(TestCase):
                 'docs_slug': 'saml',
                 'extra_settings': {
                     'idp_entity_id': 'https://idp.example.com/shared',
-                    'sso_url': 'https://idp.test.example/sso-alt',
+                    'sso_url': 'https://example.com/saml-sso-alt',
                     'x509cert': 'MIIBotherdummy',
                 },
             },
