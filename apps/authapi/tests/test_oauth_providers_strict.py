@@ -14,7 +14,7 @@ from apps.authapi.tests.oauth_supported_provider_fixtures import (
     RELEASE_SUPPORTED_OAUTH_SLUGS,
     extra_settings_for_supported,
 )
-from apps.authapi.tests.oauth_strict_harness import run_strict_provider_round_trip
+from apps.authapi.tests.oauth_strict_harness import _assert_adapter_hosts, run_strict_provider_round_trip
 from apps.authapi.tests.oauth_test_utilities import authorize_get_path, prepare_social_app_for_audit
 from apps.companies.models import Company, CompanyOAuthClient
 
@@ -37,6 +37,17 @@ class OAuthStrictProviderTests(TestCase):
     def test_catalog_supported_matches_release_list(self):
         supported = {e.docs_slug for e in get_provider_catalog().providers if e.supported}
         self.assertEqual(supported, RELEASE_SUPPORTED_OAUTH_SLUGS)
+
+    def test_assert_adapter_hosts_rejects_missing_profile_url(self):
+        with self.assertRaises(ValueError) as ctx:
+            _assert_adapter_hosts(
+                slug='google',
+                authorize_url='https://accounts.google.com/o/oauth2/v2/auth',
+                access_token_url='https://oauth2.googleapis.com/token',
+                profile_url='',
+                company_host=None,
+            )
+        self.assertIn('profile/userinfo URL host is missing', str(ctx.exception))
 
     def test_strict_provider_round_trips(self):
         catalog = get_provider_catalog()

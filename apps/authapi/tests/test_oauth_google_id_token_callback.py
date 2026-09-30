@@ -173,3 +173,19 @@ class GoogleIdTokenCallbackTests(TestCase):
         self.assertEqual(User.objects.count(), before)
         body = response.json()
         self.assertEqual(body.get('error_code'), 'oauth_id_token_invalid')
+
+    def test_jwks_endpoint_failure_rejects_callback(self):
+        routes, hostnames, _token = _google_mock_routes(
+            client_id=self.client_id,
+            signing=self.signing,
+            sub='google-sub-001',
+            email='user-google@example.com',
+            issuer='https://accounts.google.com',
+        )
+        del routes[('www.googleapis.com', 'GET', '/oauth2/v3/certs')]
+        del routes[('www.googleapis.com', 'GET', '/oauth2/v1/certs')]
+        before = User.objects.count()
+        response = self._callback_with_routes(routes, hostnames)
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(User.objects.count(), before)
+        self.assertIn('detail', response.json())
