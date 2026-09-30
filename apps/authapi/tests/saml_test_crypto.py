@@ -12,8 +12,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 from lxml import etree
-from signxml import XMLSigner
-from signxml.algorithms import CanonicalizationMethod, SignatureConstructionMethod
+from onelogin.saml2.utils import OneLogin_Saml2_Utils
 
 
 NSMAP = {
@@ -61,25 +60,17 @@ def generate_test_idp_credentials(*, entity_id: str = 'https://idp.test.example/
 
 
 def _sign_element(element: etree._Element, creds: TestIdPCredentials) -> etree._Element:
-    signer = XMLSigner(
-        method=SignatureConstructionMethod.enveloped,
-        signature_algorithm='rsa-sha256',
-        c14n_algorithm=CanonicalizationMethod.EXCLUSIVE_XML_CANONICALIZATION_1_0,
+    """Sign with python3-saml's xmlsec helper so verification uses the same library."""
+    signed_xml = OneLogin_Saml2_Utils.add_sign(
+        etree.tostring(element),
+        creds.private_key_pem.decode('utf-8'),
+        creds.certificate_pem.decode('utf-8'),
     )
-    signed = signer.sign(
-        element,
-        key=creds.private_key_pem,
-        cert=creds.certificate_pem,
-        reference_uri=f'#{element.get("ID")}',
-    )
-    target = signed if signed is not element else element
-    sig = target.find('{http://www.w3.org/2000/09/xmldsig#}Signature')
-    if sig is not None:
-        target.remove(sig)
-        target.insert(1, sig)
-    if signed is not element and element.getparent() is not None:
-        element.getparent().replace(element, target)
-    return target
+    signed = etree.fromstring(signed_xml.encode('utf-8') if isinstance(signed_xml, str) else signed_xml)
+    parent = element.getparent()
+    if parent is not None:
+        parent.replace(element, signed)
+    return signed
 
 
 def _sign_assertion(assertion: etree._Element, creds: TestIdPCredentials) -> etree._Element:
