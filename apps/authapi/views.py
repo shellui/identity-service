@@ -272,15 +272,17 @@ def _oauth_provider_error_response(
     )
 
 
-def _login_id_token_verified_after_exchange(
+_SUBJECT_BOUND_ALLAUTH_IDS = frozenset({'openid_connect', 'okta', 'auth0', 'google'})
+
+
+def _login_id_token_claims(
     *,
     provider: str,
     token_bundle: OAuthTokenBundle,
     company_id: int,
     company_oauth_client_id: int | None,
-) -> bool:
-    if not token_bundle.id_token:
-        return True
+) -> dict | None:
+    """Claims from one Shellui verification. None means the login must be rejected."""
     resolved = resolve_oauth_client(
         provider,
         company_id=company_id,
@@ -290,16 +292,29 @@ def _login_id_token_verified_after_exchange(
     from apps.authapi.oauth_idp_policy import requires_verified_id_token_for_login
 
     entry = resolved.catalog_entry
-    if not requires_verified_id_token_for_login(entry):
-        return True
+    raw = (token_bundle.id_token or '').strip()
+    if not raw or not requires_verified_id_token_for_login(entry):
+        return {}
     social_app = get_social_app_for_client(resolved)
     claims = verified_login_id_token_claims(
         entry=entry,
         social_app=social_app,
-        id_token_raw=token_bundle.id_token,
+        id_token_raw=raw,
         userinfo={},
     )
-    return bool(claims)
+    return claims or None
+
+
+def _oauth_subject_mismatch(entry, userinfo: dict, id_claims: dict) -> bool:
+    if entry is None or entry.allauth_id not in _SUBJECT_BOUND_ALLAUTH_IDS or not id_claims:
+        return False
+    info_sub = userinfo.get('sub') if isinstance(userinfo, dict) else None
+    claim_sub = id_claims.get('sub')
+    if not isinstance(info_sub, str) or not info_sub.strip():
+        return False
+    if not isinstance(claim_sub, str) or not claim_sub.strip():
+        return False
+    return info_sub.strip() != claim_sub.strip()
 
 
 def _resolve_oauth_login_user(
@@ -309,6 +324,7 @@ def _resolve_oauth_login_user(
     userinfo: dict,
     token_bundle: OAuthTokenBundle,
     company_oauth_client_id: int | None,
+    id_token_claims: dict | None = None,
 ) -> tuple[User | None, bool, OAuthProfile | None, str | None, str | None]:
     resolved = resolve_oauth_client(
         provider,
@@ -319,18 +335,29 @@ def _resolve_oauth_login_user(
     from apps.authapi.oauth_id_token import verified_login_id_token_claims
     from apps.authapi.oauth_idp_policy import requires_verified_id_token_for_login
 
-    id_claims = verified_login_id_token_claims(
-        entry=resolved.catalog_entry,
-        social_app=social_app,
-        id_token_raw=token_bundle.id_token,
-        userinfo=userinfo,
-    )
-    if (
-        token_bundle.id_token
-        and requires_verified_id_token_for_login(resolved.catalog_entry)
-        and not id_claims
-    ):
-        return None, False, None, 'OAuth identity token could not be verified.', 'oauth_id_token_invalid'
+    if id_token_claims is None:
+        id_claims = verified_login_id_token_claims(
+            entry=resolved.catalog_entry,
+            social_app=social_app,
+            id_token_raw=token_bundle.id_token,
+            userinfo=userinfo,
+        )
+        if (
+            token_bundle.id_token
+            and requires_verified_id_token_for_login(resolved.catalog_entry)
+            and not id_claims
+        ):
+            return None, False, None, 'OAuth identity token could not be verified.', 'oauth_id_token_invalid'
+    else:
+        id_claims = id_token_claims
+    if _oauth_subject_mismatch(resolved.catalog_entry, userinfo, id_claims):
+        return (
+            None,
+            False,
+            None,
+            'OAuth userinfo subject does not match the identity token.',
+            'oauth_subject_mismatch',
+        )
     profile, perror = extract_oauth_profile(
         provider,
         userinfo,
@@ -579,7 +606,9 @@ def _catalog_provider_payload(request, entry, *, include_unsupported: bool) -> d
     }
 
 
-def _merge_social_app_settings(entry, validated: dict, *, existing: dict | None = None) -> tuple[dict, str | None]:
+def _merge_social_app_settings(
+    entry, validated: dict, *, existing: dict | None = None
+) -> tuple[dict, str | None, str | None]:
     base = dict(existing or {})
     tenant = str(validated.get('tenant') or '').strip()
     if tenant:
@@ -591,13 +620,18 @@ def _merge_social_app_settings(entry, validated: dict, *, existing: dict | None 
         extra_input.setdefault('tenant', tenant)
     normalized, errors = validate_extra_settings(entry, extra_input, partial=bool(existing))
     if errors:
-        return base, '; '.join(errors)
+        code = (
+            'oauth_setting_not_allowed'
+            if any('not allowed' in item for item in errors)
+            else 'oauth_extra_settings_invalid'
+        )
+        return base, '; '.join(errors), code
     for key, value in normalized.items():
         if key == 'catalog_slug':
             continue
         base[key] = value
     base['catalog_slug'] = entry.docs_slug
-    return base, None
+    return base, None, None
 
 
 def _oauth_duplicate_provider_response(existing_social_app_id: int) -> Response:
@@ -1495,12 +1529,13 @@ class SocialLoginView(APIView):
                 company_id=company.id,
                 company_oauth_client_id=company_oauth_client_id,
             )
-            if not _login_id_token_verified_after_exchange(
+            id_claims = _login_id_token_claims(
                 provider=provider,
                 token_bundle=token_bundle,
                 company_id=company.id,
                 company_oauth_client_id=company_oauth_client_id,
-            ):
+            )
+            if id_claims is None:
                 return _oauth_id_token_invalid_response(
                     request=request,
                     provider=provider,
@@ -1523,6 +1558,7 @@ class SocialLoginView(APIView):
                 userinfo=userinfo,
                 token_bundle=token_bundle,
                 company_oauth_client_id=company_oauth_client_id,
+                id_token_claims=id_claims,
             )
             if resolve_err or profile is None or user is None:
                 record_login_event(
@@ -1567,7 +1603,8 @@ class SocialLoginView(APIView):
             )
 
         emit_oauth_user_created_if_new(company, user, created=created, oauth_provider=provider)
-        join = apply_company_join(company, user, email=email)
+        join_email = email if profile.email_verified_for_link else None
+        join = apply_company_join(company, user, email=join_email)
         _link_social_account(user=user, profile=profile, userinfo=userinfo)
 
         cache.set(
@@ -2061,12 +2098,13 @@ class ShellUIOAuthCallbackView(APIView):
                 company_oauth_client_id=company_oauth_client_id,
                 pkce_code_verifier=consume_oauth_pkce_verifier(state_payload.get('nonce') or ''),
             )
-            if not _login_id_token_verified_after_exchange(
+            id_claims = _login_id_token_claims(
                 provider=provider,
                 token_bundle=token_bundle,
                 company_id=company.id,
                 company_oauth_client_id=company_oauth_client_id,
-            ):
+            )
+            if id_claims is None:
                 return _oauth_id_token_invalid_response(
                     request=request,
                     provider=provider,
@@ -2090,6 +2128,7 @@ class ShellUIOAuthCallbackView(APIView):
                 userinfo=userinfo,
                 token_bundle=token_bundle,
                 company_oauth_client_id=company_oauth_client_id,
+                id_token_claims=id_claims,
             )
             if resolve_err or profile is None or user is None:
                 record_login_event(
@@ -2149,7 +2188,8 @@ class ShellUIOAuthCallbackView(APIView):
             return Response({'detail': _OAUTH_SIGNIN_FAILED_DETAIL}, status=status.HTTP_400_BAD_REQUEST)
 
         emit_oauth_user_created_if_new(company, user, created=created, oauth_provider=provider)
-        join = apply_company_join(company, user, email=email)
+        join_email = email if profile.email_verified_for_link else None
+        join = apply_company_join(company, user, email=join_email)
         _link_social_account(user=user, profile=profile, userinfo=userinfo)
 
         cache.set(
@@ -2394,12 +2434,13 @@ class ShellUIOAuthExchangeView(APIView):
                 company_id=company.id,
                 company_oauth_client_id=company_oauth_client_id,
             )
-            if not _login_id_token_verified_after_exchange(
+            id_claims = _login_id_token_claims(
                 provider=provider,
                 token_bundle=token_bundle,
                 company_id=company.id,
                 company_oauth_client_id=company_oauth_client_id,
-            ):
+            )
+            if id_claims is None:
                 return _oauth_id_token_invalid_response(
                     request=request,
                     provider=provider,
@@ -2422,6 +2463,7 @@ class ShellUIOAuthExchangeView(APIView):
                 userinfo=userinfo,
                 token_bundle=token_bundle,
                 company_oauth_client_id=company_oauth_client_id,
+                id_token_claims=id_claims,
             )
             if resolve_err or profile is None or user is None:
                 record_login_event(
@@ -2463,7 +2505,8 @@ class ShellUIOAuthExchangeView(APIView):
             return Response({'detail': _OAUTH_SIGNIN_FAILED_DETAIL}, status=status.HTTP_400_BAD_REQUEST)
 
         emit_oauth_user_created_if_new(company, user, created=created, oauth_provider=provider)
-        join = apply_company_join(company, user, email=email)
+        join_email = email if profile.email_verified_for_link else None
+        join = apply_company_join(company, user, email=join_email)
         _link_social_account(user=user, profile=profile, userinfo=userinfo)
 
         cache.set(
@@ -3528,9 +3571,12 @@ class ShellUIAdminOAuthSocialAppListView(APIView):
                 {'error': f"Provider '{docs_slug}' is not supported."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        social_settings, settings_err = _merge_social_app_settings(entry, validated)
+        social_settings, settings_err, settings_code = _merge_social_app_settings(entry, validated)
         if settings_err:
-            return Response({'error': settings_err}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {'error': settings_err, 'error_code': settings_code},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         dedupe_key = compute_dedupe_key_for_new_app(entry, settings=social_settings)
         duplicate = find_duplicate_company_oauth_client(company.id, dedupe_key=dedupe_key)
         if duplicate is not None:
@@ -3619,13 +3665,16 @@ class ShellUIAdminOAuthSocialAppDetailView(APIView):
         settings_data = app.settings if isinstance(app.settings, dict) else {}
         settings_data = dict(settings_data)
         if entry is not None and ('tenant' in validated or 'extra_settings' in validated):
-            merged, settings_err = _merge_social_app_settings(
+            merged, settings_err, settings_code = _merge_social_app_settings(
                 entry,
                 validated,
                 existing=settings_data,
             )
             if settings_err:
-                return Response({'error': settings_err}, status=status.HTTP_400_BAD_REQUEST)
+                return Response(
+                    {'error': settings_err, 'error_code': settings_code},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
             settings_data = merged
         elif 'tenant' in validated:
             tenant = str(validated['tenant']).strip()

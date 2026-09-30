@@ -43,17 +43,17 @@ class LinkedInCompanyOAuthApiTests(TestCase):
             is_active=True,
         )
 
-    def test_validate_extra_settings_ignores_client_server_url(self):
+    def test_validate_extra_settings_rejects_client_server_url(self):
         entry = __import__(
             'apps.authapi.provider_registry',
             fromlist=['get_provider_catalog'],
         ).get_provider_catalog().by_slug()['linkedin']
-        normalized, errors = validate_extra_settings(
+        _normalized, errors = validate_extra_settings(
             entry,
-            {'server_url': 'https://example.com/oauth'},
+            {'server_url': 'https://www.linkedin.com/oauth'},
         )
-        self.assertEqual(errors, [])
-        self.assertEqual(normalized['server_url'], LINKEDIN_OIDC_SERVER_URL)
+        self.assertTrue(errors)
+        self.assertIn('not allowed', errors[0])
 
     def test_create_linkedin_social_app_without_server_url(self):
         response = self.client.post(
@@ -83,11 +83,22 @@ class LinkedInCompanyOAuthApiTests(TestCase):
             },
             format='json',
         )
-        self.assertEqual(patch.status_code, 200, patch.data)
-        self.assertEqual(
-            patch.data['extra_settings'].get('server_url'),
-            LINKEDIN_OIDC_SERVER_URL,
+        self.assertEqual(patch.status_code, 400, patch.data)
+        self.assertEqual(patch.data.get('error_code'), 'oauth_setting_not_allowed')
+
+    def test_http_provider_url_is_rejected(self):
+        response = self.client.post(
+            f'/api/v1/oauth-social-apps?company_id={self.company.id}',
+            {
+                'docs_slug': 'okta',
+                'client_id': 'okta-http-client',
+                'client_secret': 'okta-http-secret',
+                'extra_settings': {'OKTA_BASE_URL': 'http://dev.okta.example.com'},
+            },
+            format='json',
         )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertEqual(response.data.get('error_code'), 'oauth_extra_settings_invalid')
 
     def test_login_after_api_create_linkedin_app(self):
         create = self.client.post(

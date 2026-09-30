@@ -211,6 +211,29 @@ def _verify_raw_id_token(
         )
     if entry.allauth_id == 'openid_connect':
         return _verify_openid_connect_id_token(social_app=social_app, raw=token, entry=entry)
+    settings_data = social_app.settings if isinstance(getattr(social_app, 'settings', None), dict) else {}
+    if entry.allauth_id == 'okta':
+        base = str(settings_data.get('OKTA_BASE_URL') or '').strip().rstrip('/')
+        if not base:
+            raise OAuth2Error('Missing Okta OKTA_BASE_URL.')
+        return jwtkit.verify_and_decode(
+            credential=token,
+            keys_url=f'{base}/oauth2/v1/keys',
+            issuer=base,
+            audience=[social_app.client_id],
+            lookup_kid=jwtkit.lookup_kid_jwk,
+        )
+    if entry.allauth_id == 'auth0':
+        base = str(settings_data.get('AUTH0_URL') or '').strip().rstrip('/')
+        if not base:
+            raise OAuth2Error('Missing Auth0 AUTH0_URL.')
+        return jwtkit.verify_and_decode(
+            credential=token,
+            keys_url=f'{base}/.well-known/jwks.json',
+            issuer=f'{base}/',
+            audience=[social_app.client_id],
+            lookup_kid=jwtkit.lookup_kid_jwk,
+        )
     return {}
 
 

@@ -79,6 +79,7 @@ class OAuthProfile:
     avatar_url: str | None
     email_verified_for_link: bool
     userinfo: dict
+    company_controlled_idp: bool = False
 
 
 def _provider_uid_from_userinfo(
@@ -262,6 +263,9 @@ def extract_oauth_profile(
     key = str(provider).strip().lower()
     entry = catalog_entry or resolve_catalog_slug(key)
     policy = entry.email_link_policy if entry is not None else 'uid_only'
+    company_controlled = is_company_controlled_idp(entry, social_app=social_app)
+    if company_controlled:
+        policy = COMPANY_IDP_EMAIL_LINK_POLICY
     info = userinfo if isinstance(userinfo, dict) else {}
     claims = id_token_claims if isinstance(id_token_claims, dict) else {}
     if social_app is not None and entry is not None:
@@ -320,6 +324,7 @@ def extract_oauth_profile(
         avatar_url=avatar_url,
         email_verified_for_link=email_verified_for_link,
         userinfo=info,
+        company_controlled_idp=company_controlled,
     ), None
 
 
@@ -330,7 +335,7 @@ def _company_idp_claimed_email_conflict(
     social_uid: str,
     catalog_entry: ProviderCatalogEntry | None,
 ) -> str | None:
-    if not is_company_controlled_idp(catalog_entry):
+    if not (profile.company_controlled_idp or is_company_controlled_idp(catalog_entry)):
         return None
     claimed = normalize_oauth_email(profile.email)
     if not claimed or '@' not in claimed:
@@ -364,14 +369,6 @@ def resolve_oauth_user(
     entry = catalog_entry or resolve_catalog_slug(key)
     social_key = profile.social_provider
     social_uid = profile.social_uid
-    conflict = _company_idp_claimed_email_conflict(
-        profile=profile,
-        social_key=social_key,
-        social_uid=social_uid,
-        catalog_entry=entry,
-    )
-    if conflict:
-        return None, False, 'OAuth email is already used by another account.', conflict
     existing = (
         SocialAccount.objects.filter(provider=social_key, uid=social_uid)
         .select_related('user')
@@ -393,6 +390,15 @@ def resolve_oauth_user(
         )
         if existing is not None:
             return existing.user, False, None, None
+
+        conflict = _company_idp_claimed_email_conflict(
+            profile=profile,
+            social_key=social_key,
+            social_uid=social_uid,
+            catalog_entry=entry,
+        )
+        if conflict:
+            return None, False, 'OAuth email is already used by another account.', conflict
 
         if not profile.email_verified_for_link:
             uid_email = f'{social_uid}@{social_key}.local'

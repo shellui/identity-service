@@ -17,10 +17,17 @@ COMPANY_CONTROLLED_IDP_SLUGS = frozenset(
 COMPANY_IDP_EMAIL_LINK_POLICY = 'company_idp_uid_only'
 
 
-def is_company_controlled_idp(entry: ProviderCatalogEntry | None) -> bool:
+def is_company_controlled_idp(entry: ProviderCatalogEntry | None, *, social_app=None) -> bool:
+    """Company-operated IdPs. Self-hosted GitLab counts; gitlab.com does not."""
     if entry is None:
         return False
-    return entry.docs_slug in COMPANY_CONTROLLED_IDP_SLUGS
+    if entry.docs_slug in COMPANY_CONTROLLED_IDP_SLUGS:
+        return True
+    if entry.docs_slug == 'gitlab' and social_app is not None:
+        from apps.authapi.oauth_provider_urls import is_self_hosted_gitlab
+
+        return is_self_hosted_gitlab(social_app)
+    return False
 
 
 def requires_verified_id_token_for_login(entry: ProviderCatalogEntry | None) -> bool:

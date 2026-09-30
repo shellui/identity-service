@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import types
+
+import jwt
 from allauth.socialaccount.models import SocialApp
 from allauth.socialaccount.providers.oauth2.client import OAuth2Error
 from allauth.socialaccount.providers.openid_connect.views import OpenIDConnectOAuth2Adapter
@@ -43,6 +46,49 @@ def _bind_adapter_url_properties(
     )
 
 
+def _unverified_id_token_claims(self, app, id_token: str) -> dict:  # noqa: ANN001
+    """Decode without allauth's JWKS or jti cache. Shellui verifies the token once later."""
+    try:
+        claims = jwt.decode(
+            id_token,
+            options={'verify_signature': False, 'verify_exp': False},
+            algorithms=['RS256', 'RS384', 'RS512', 'PS256', 'ES256', 'HS256'],
+        )
+    except Exception as exc:
+        raise OAuth2Error('Invalid id_token') from exc
+    if not isinstance(claims, dict):
+        raise OAuth2Error('Invalid id_token')
+    return claims
+
+
+def _auth0_complete_login(self, request, app, token, **kwargs):  # noqa: ANN001
+    from allauth.socialaccount.adapter import get_adapter
+
+    headers = {'Authorization': f'Bearer {token.token}'}
+    with get_adapter().get_requests_session() as sess:
+        response = sess.get(self.profile_url, headers=headers)
+        response.raise_for_status()
+        extra_data = response.json()
+    return self.get_provider().sociallogin_from_response(request, extra_data)
+
+
+def _gitlab_complete_login(self, request, app, token, **kwargs):  # noqa: ANN001
+    from allauth.socialaccount.adapter import get_adapter
+
+    headers = {'Authorization': f'Bearer {token.token}'}
+    with get_adapter().get_requests_session() as sess:
+        response = sess.get(self.profile_url, headers=headers)
+    if response.status_code >= 400:
+        raise OAuth2Error('Invalid data from GitLab API.')
+    try:
+        data = response.json()
+    except ValueError as exc:
+        raise OAuth2Error('Invalid JSON from GitLab API.') from exc
+    if not isinstance(data, dict) or 'id' not in data:
+        raise OAuth2Error('Invalid data from GitLab API.')
+    return self.get_provider().sociallogin_from_response(request, data)
+
+
 def prefetch_openid_connect_config(
     adapter: OpenIDConnectOAuth2Adapter,
     *,
@@ -82,7 +128,11 @@ def apply_oauth_adapter_settings(
                 'server_url': LINKEDIN_OIDC_SERVER_URL,
             }
         prefetch_openid_connect_config(adapter, entry=entry)
+        adapter._decode_id_token = types.MethodType(_unverified_id_token_claims, adapter)
         return
+
+    if slug == 'google':
+        adapter._decode_id_token = types.MethodType(_unverified_id_token_claims, adapter)
 
     if slug == 'auth0':
         base = str(settings.get('AUTH0_URL') or '').strip().rstrip('/')
@@ -92,6 +142,7 @@ def apply_oauth_adapter_settings(
         adapter.access_token_url = f'{base}/oauth/token'
         adapter.authorize_url = f'{base}/authorize'
         adapter.profile_url = f'{base}/userinfo'
+        adapter.complete_login = types.MethodType(_auth0_complete_login, adapter)
         return
 
     if slug == 'okta':
@@ -170,6 +221,7 @@ def apply_oauth_adapter_settings(
             access_token_url=f'{base}/oauth/token',
             profile_url=f'{base}/api/v4/user',
         )
+        adapter.complete_login = types.MethodType(_gitlab_complete_login, adapter)
 
     if slug == 'nextcloud':
         server = str(settings.get('server') or '').strip().rstrip('/')

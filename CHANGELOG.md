@@ -31,6 +31,11 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 ### 🔒 Security
 
+- Okta, Auth0, and self-hosted GitLab account ids are scoped by issuer or host. gitlab.com accounts stay unscoped. Self-hosted GitLab does not auto-link by email (`oauth_email_conflict`).
+- OIDC, Google, Okta, and Auth0 id_tokens are verified once by Shellui. allauth's jti replay cache is not used on that path, and userinfo `sub` must match the verified id_token `sub`.
+- Company domain join uses only a verified email. A client-sent LinkedIn `server_url` is rejected (`oauth_setting_not_allowed`). URL settings must be https (`oauth_extra_settings_invalid`).
+- Auth0 and GitLab profile requests send the access token in the Authorization header.
+- OpenID Connect discovery `issuer` must match the configured server, and LinkedIn discovery hosts are pinned (`oauth_discovery_issuer_mismatch`, `oauth_provider_host_not_allowed`).
 - OpenID Connect `SocialAccount` keys use per-app `provider_id` and issuer-scoped UIDs to prevent cross-issuer `sub` collisions.
 - OAuth SocialApp admin list and attach paths are company-scoped; secret `extra_settings` fields are redacted in API responses.
 - PKCE verifiers are stored server-side (nonce cache), not in signed OAuth `state`.
