@@ -156,12 +156,26 @@ def _verify_microsoft_id_token(*, social_app: SocialApp, raw: str) -> dict:
     )
 
 
-def _verify_openid_connect_id_token(*, social_app: SocialApp, raw: str) -> dict:
+def _verify_openid_connect_id_token(
+    *,
+    social_app: SocialApp,
+    raw: str,
+    entry: ProviderCatalogEntry | None = None,
+) -> dict:
+    from apps.authapi.oauth_linkedin import LINKEDIN_OIDC_DISCOVERY_URL
+
     settings_data = social_app.settings if isinstance(getattr(social_app, 'settings', None), dict) else {}
-    server_url = str(settings_data.get('server_url') or '').strip()
+    if entry is not None and entry.docs_slug == 'linkedin':
+        server_url = LINKEDIN_OIDC_DISCOVERY_URL
+    else:
+        server_url = str(settings_data.get('server_url') or '').strip()
     if not server_url:
         raise OAuth2Error('Missing OpenID Connect server_url.')
     discovery = fetch_oidc_discovery(server_url)
+    if entry is not None and entry.docs_slug == 'linkedin':
+        from apps.authapi.oauth_linkedin import assert_linkedin_oidc_discovery_hosts
+
+        assert_linkedin_oidc_discovery_hosts(discovery)
     issuer = str(discovery.get('issuer') or '').strip().rstrip('/')
     jwks_uri = str(discovery.get('jwks_uri') or '').strip()
     if not issuer or not jwks_uri:
@@ -196,7 +210,30 @@ def _verify_raw_id_token(
             lookup_kid=jwtkit.lookup_kid_jwk,
         )
     if entry.allauth_id == 'openid_connect':
-        return _verify_openid_connect_id_token(social_app=social_app, raw=token)
+        return _verify_openid_connect_id_token(social_app=social_app, raw=token, entry=entry)
+    settings_data = social_app.settings if isinstance(getattr(social_app, 'settings', None), dict) else {}
+    if entry.allauth_id == 'okta':
+        base = str(settings_data.get('OKTA_BASE_URL') or '').strip().rstrip('/')
+        if not base:
+            raise OAuth2Error('Missing Okta OKTA_BASE_URL.')
+        return jwtkit.verify_and_decode(
+            credential=token,
+            keys_url=f'{base}/oauth2/v1/keys',
+            issuer=base,
+            audience=[social_app.client_id],
+            lookup_kid=jwtkit.lookup_kid_jwk,
+        )
+    if entry.allauth_id == 'auth0':
+        base = str(settings_data.get('AUTH0_URL') or '').strip().rstrip('/')
+        if not base:
+            raise OAuth2Error('Missing Auth0 AUTH0_URL.')
+        return jwtkit.verify_and_decode(
+            credential=token,
+            keys_url=f'{base}/.well-known/jwks.json',
+            issuer=f'{base}/',
+            audience=[social_app.client_id],
+            lookup_kid=jwtkit.lookup_kid_jwk,
+        )
     return {}
 
 

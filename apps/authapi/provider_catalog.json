@@ -66,9 +66,9 @@
       "replaced_by": null,
       "protocol": "OAuth2",
       "app": "allauth.socialaccount.providers.auth0",
-      "supported": false,
-      "unsupported_reason": "Not supported in this release; additional providers ship in follow-up PRs.",
-      "email_link_policy": "oauth2_email_verified_or_uid_only",
+      "supported": true,
+      "unsupported_reason": null,
+      "email_link_policy": "company_idp_uid_only",
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/auth0.html",
       "console_url": [
         {
@@ -329,8 +329,8 @@
       "replaced_by": null,
       "protocol": "OpenID Connect",
       "app": "allauth.socialaccount.providers.openid_connect",
-      "supported": false,
-      "unsupported_reason": "Not supported in this release; additional providers ship in follow-up PRs.",
+      "supported": true,
+      "unsupported_reason": null,
       "email_link_policy": "oidc_email_verified_or_uid_only",
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/linkedin.html",
       "console_url": [
@@ -341,20 +341,7 @@
         }
       ],
       "allauth_callback_path": "/accounts/oidc/linkedin/login/callback/",
-      "extra_settings_schema": [
-        {
-          "name": "provider_id",
-          "type": "string",
-          "required": true,
-          "secret": false
-        },
-        {
-          "name": "server_url",
-          "type": "url",
-          "required": true,
-          "secret": false
-        }
-      ],
+      "extra_settings_schema": [],
       "icon": {
         "source": "fallback",
         "slug": "log-in",
@@ -415,9 +402,9 @@
       "replaced_by": null,
       "protocol": "OAuth2",
       "app": "allauth.socialaccount.providers.okta",
-      "supported": false,
-      "unsupported_reason": "Not supported in this release; additional providers ship in follow-up PRs.",
-      "email_link_policy": "oauth2_email_verified_or_uid_only",
+      "supported": true,
+      "unsupported_reason": null,
+      "email_link_policy": "company_idp_uid_only",
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/okta.html",
       "console_url": [],
       "allauth_callback_path": "/accounts/okta/login/callback/",
@@ -452,8 +439,8 @@
       "replaced_by": null,
       "protocol": "OAuth2",
       "app": "allauth.socialaccount.providers.slack",
-      "supported": false,
-      "unsupported_reason": "Not supported in this release; additional providers ship in follow-up PRs.",
+      "supported": true,
+      "unsupported_reason": null,
       "email_link_policy": "oauth2_email_verified_or_uid_only",
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/slack.html",
       "console_url": [
@@ -591,9 +578,9 @@
       "replaced_by": null,
       "protocol": "OpenID Connect",
       "app": "allauth.socialaccount.providers.openid_connect",
-      "supported": false,
-      "unsupported_reason": "Not supported in this release; additional providers ship in follow-up PRs.",
-      "email_link_policy": "oidc_email_verified_or_uid_only",
+      "supported": true,
+      "unsupported_reason": null,
+      "email_link_policy": "company_idp_uid_only",
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/openid_connect.html",
       "console_url": [],
       "allauth_callback_path": "/accounts/oidc/{id}/login/callback/",
@@ -2194,9 +2181,9 @@
       "replaced_by": null,
       "protocol": "OpenID Connect",
       "app": "allauth.socialaccount.providers.openid_connect",
-      "supported": false,
-      "unsupported_reason": "Not supported in this release; additional providers ship in follow-up PRs.",
-      "email_link_policy": "oidc_email_verified_or_uid_only",
+      "supported": true,
+      "unsupported_reason": null,
+      "email_link_policy": "company_idp_uid_only",
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/keycloak.html",
       "console_url": [],
       "allauth_callback_path": "/accounts/oidc/keycloak/login/callback/",

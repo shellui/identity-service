@@ -1,10 +1,16 @@
 [
   "apple",
+  "auth0",
   "github",
   "gitlab",
   "google",
+  "keycloak",
   "line",
+  "linkedin",
   "microsoft",
+  "okta",
+  "openid_connect",
   "reddit",
-  "shopify"
+  "shopify",
+  "slack"
 ]

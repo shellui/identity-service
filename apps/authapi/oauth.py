@@ -305,12 +305,29 @@ def fetch_provider_userinfo(
         if id_token:
             token_response['id_token'] = id_token
         token = oauth2_adapter.parse_token(token_response)
-        sociallogin = oauth2_adapter.complete_login(
-            request,
-            social_app,
-            token,
-            response=token_response,
-        )
+        try:
+            sociallogin = oauth2_adapter.complete_login(
+                request,
+                social_app,
+                token,
+                response=token_response,
+            )
+        except KeyError as exc:
+            if exc.args == ('sub',) and id_token:
+                from apps.authapi.oauth_errors import OAuthSubjectMismatchError
+
+                raise OAuthSubjectMismatchError(
+                    'OAuth userinfo subject does not match the identity token.',
+                ) from exc
+            raise
+        if sociallogin is None:
+            if id_token:
+                from apps.authapi.oauth_errors import OAuthSubjectMismatchError
+
+                raise OAuthSubjectMismatchError(
+                    'OAuth userinfo subject does not match the identity token.',
+                )
+            raise ValueError('OAuth provider did not return a user id.')
         return sociallogin_userinfo(sociallogin)
 
 
@@ -335,6 +352,12 @@ def complete_oauth_social_login(
         redirect_uri=redirect_uri,
         pkce_code_verifier=pkce_code_verifier,
     )
+    if sociallogin is None:
+        from apps.authapi.oauth_errors import OAuthSubjectMismatchError
+
+        raise OAuthSubjectMismatchError(
+            'OAuth userinfo subject does not match the identity token.',
+        )
     userinfo = sociallogin_userinfo(sociallogin)
     access_token = str(token_data.get('access_token') or '')
     id_token = token_data.get('id_token')

@@ -57,7 +57,7 @@ class VerifiedIdTokenLoginPolicyTests(TestCase):
         self.assertIsNotNone(profile)
         self.assertFalse(profile.email_verified_for_link)
 
-    def test_oidc_accepts_verified_iss_and_matching_email(self):
+    def test_keycloak_does_not_auto_link_even_with_verified_id_token_email(self):
         entry = get_provider_catalog().by_slug()['keycloak']
         profile, err = extract_oauth_profile(
             'keycloak',
@@ -71,7 +71,8 @@ class VerifiedIdTokenLoginPolicyTests(TestCase):
             catalog_entry=entry,
         )
         self.assertIsNone(err)
-        self.assertTrue(profile.email_verified_for_link)
+        assert profile is not None
+        self.assertFalse(profile.email_verified_for_link)
 
     def test_microsoft_login_resolver_uses_verified_tid(self):
         company = Company.objects.create(name='MS Co', slug='ms-co')
@@ -93,7 +94,7 @@ class VerifiedIdTokenLoginPolicyTests(TestCase):
             'mail': 'user@contoso.com',
             'userPrincipalName': 'user@contoso.com',
         }
-        user, created, profile, err = _resolve_oauth_login_user(
+        user, created, profile, err, _code = _resolve_oauth_login_user(
             provider='microsoft',
             company=company,
             userinfo=userinfo,

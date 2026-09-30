@@ -171,12 +171,19 @@ def exchange_allauth_code(
             pkce_code_verifier=pkce_code_verifier,
         )
         token = oauth2_adapter.parse_token(access_token_data)
-        sociallogin = oauth2_adapter.complete_login(
-            request,
-            social_app,
-            token,
-            response=access_token_data,
-        )
+        try:
+            sociallogin = oauth2_adapter.complete_login(
+                request,
+                social_app,
+                token,
+                response=access_token_data,
+            )
+        except KeyError as exc:
+            # Userinfo omitted `sub`. Keep the token response so the caller can
+            # verify the id_token and reject with oauth_subject_mismatch.
+            if exc.args != ('sub',):
+                raise
+            sociallogin = None
         return sociallogin, access_token_data
 
 

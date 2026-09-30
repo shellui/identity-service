@@ -2,10 +2,20 @@
 
 from __future__ import annotations
 
+import types
+
+import jwt
 from allauth.socialaccount.models import SocialApp
+from allauth.socialaccount.providers.oauth2.client import OAuth2Error
 from allauth.socialaccount.providers.openid_connect.views import OpenIDConnectOAuth2Adapter
 
-from apps.authapi.oauth_safe_http import assert_public_http_url, safe_get_json
+from apps.authapi.oauth_errors import OAuthProviderConfigError
+from apps.authapi.oauth_linkedin import LINKEDIN_OIDC_SERVER_URL, load_linkedin_oidc_discovery
+from apps.authapi.oauth_oidc_discovery import (
+    discovery_url_for_server_url,
+    load_validated_oidc_discovery,
+    oidc_issuer_for_server_url,
+)
 from apps.authapi.provider_registry import ProviderCatalogEntry
 
 
@@ -20,8 +30,10 @@ def _bind_adapter_url_properties(
     authorize_url: str,
     access_token_url: str,
     profile_url: str,
+    userinfo_url: str | None = None,
 ) -> None:
     cls = adapter.__class__
+    userinfo = userinfo_url or profile_url
     adapter.__class__ = type(
         f'Shellui{cls.__name__}',
         (cls,),
@@ -29,20 +41,73 @@ def _bind_adapter_url_properties(
             'authorize_url': property(lambda self, url=authorize_url: url),
             'access_token_url': property(lambda self, url=access_token_url: url),
             'profile_url': property(lambda self, url=profile_url: url),
+            'userinfo_url': property(lambda self, url=userinfo: url),
         },
     )
 
 
-def prefetch_openid_connect_config(adapter: OpenIDConnectOAuth2Adapter) -> None:
-    if hasattr(adapter, '_openid_config'):
+def _unverified_id_token_claims(self, app, id_token: str) -> dict:  # noqa: ANN001
+    """Decode without allauth's JWKS or jti cache. Shellui verifies the token once later."""
+    try:
+        claims = jwt.decode(
+            id_token,
+            options={'verify_signature': False, 'verify_exp': False},
+            algorithms=['RS256', 'RS384', 'RS512', 'PS256', 'ES256', 'HS256'],
+        )
+    except Exception as exc:
+        raise OAuth2Error('Invalid id_token') from exc
+    if not isinstance(claims, dict):
+        raise OAuth2Error('Invalid id_token')
+    return claims
+
+
+def _auth0_complete_login(self, request, app, token, **kwargs):  # noqa: ANN001
+    from allauth.socialaccount.adapter import get_adapter
+
+    headers = {'Authorization': f'Bearer {token.token}'}
+    with get_adapter().get_requests_session() as sess:
+        response = sess.get(self.profile_url, headers=headers)
+        response.raise_for_status()
+        extra_data = response.json()
+    return self.get_provider().sociallogin_from_response(request, extra_data)
+
+
+def _gitlab_complete_login(self, request, app, token, **kwargs):  # noqa: ANN001
+    from allauth.socialaccount.adapter import get_adapter
+
+    headers = {'Authorization': f'Bearer {token.token}'}
+    with get_adapter().get_requests_session() as sess:
+        response = sess.get(self.profile_url, headers=headers)
+    if response.status_code >= 400:
+        raise OAuth2Error('Invalid data from GitLab API.')
+    try:
+        data = response.json()
+    except ValueError as exc:
+        raise OAuth2Error('Invalid JSON from GitLab API.') from exc
+    if not isinstance(data, dict) or 'id' not in data:
+        raise OAuth2Error('Invalid data from GitLab API.')
+    return self.get_provider().sociallogin_from_response(request, data)
+
+
+def prefetch_openid_connect_config(
+    adapter: OpenIDConnectOAuth2Adapter,
+    *,
+    entry: ProviderCatalogEntry | None = None,
+) -> None:
+    """Load discovery once, bound to the configured issuer, before allauth reads any endpoint."""
+    if entry is not None and entry.docs_slug == 'linkedin':
+        adapter._openid_config = load_linkedin_oidc_discovery()
         return
     server_url = adapter.get_provider().server_url
-    assert_public_http_url(server_url)
-    from apps.authapi.oauth_safe_http import validate_oidc_discovery_document
-
-    document = safe_get_json(server_url)
-    validate_oidc_discovery_document(document)
-    adapter._openid_config = document
+    issuer = oidc_issuer_for_server_url(server_url)
+    if not issuer:
+        raise OAuthProviderConfigError(
+            'OpenID Connect server_url must be the issuer URL or its /.well-known/openid-configuration URL.'
+        )
+    adapter._openid_config = load_validated_oidc_discovery(
+        discovery_url=discovery_url_for_server_url(server_url),
+        expected_issuer=issuer,
+    )
 
 
 def apply_oauth_adapter_settings(
@@ -56,27 +121,40 @@ def apply_oauth_adapter_settings(
     slug = entry.docs_slug if entry is not None else str(social_app.provider).lower()
 
     if isinstance(adapter, OpenIDConnectOAuth2Adapter):
-        prefetch_openid_connect_config(adapter)
+        if entry is not None and entry.docs_slug == 'linkedin':
+            provider = adapter.get_provider()
+            provider.app.settings = {
+                **_settings_dict(social_app),
+                'server_url': LINKEDIN_OIDC_SERVER_URL,
+            }
+        prefetch_openid_connect_config(adapter, entry=entry)
+        adapter._decode_id_token = types.MethodType(_unverified_id_token_claims, adapter)
         return
+
+    if slug == 'google':
+        adapter._decode_id_token = types.MethodType(_unverified_id_token_claims, adapter)
 
     if slug == 'auth0':
         base = str(settings.get('AUTH0_URL') or '').strip().rstrip('/')
-        if base:
-            adapter.provider_base_url = base
-            adapter.access_token_url = f'{base}/oauth/token'
-            adapter.authorize_url = f'{base}/authorize'
-            adapter.profile_url = f'{base}/userinfo'
+        if not base:
+            raise OAuth2Error('Missing Auth0 AUTH0_URL in company OAuth settings.')
+        adapter.provider_base_url = base
+        adapter.access_token_url = f'{base}/oauth/token'
+        adapter.authorize_url = f'{base}/authorize'
+        adapter.profile_url = f'{base}/userinfo'
+        adapter.complete_login = types.MethodType(_auth0_complete_login, adapter)
         return
 
     if slug == 'okta':
         base = str(settings.get('OKTA_BASE_URL') or '').strip().rstrip('/')
-        if base:
-            _bind_adapter_url_properties(
-                adapter,
-                authorize_url=f'{base}/oauth2/v1/authorize',
-                access_token_url=f'{base}/oauth2/v1/token',
-                profile_url=f'{base}/oauth2/v1/userinfo',
-            )
+        if not base:
+            raise OAuth2Error('Missing Okta OKTA_BASE_URL in company OAuth settings.')
+        _bind_adapter_url_properties(
+            adapter,
+            authorize_url=f'{base}/oauth2/v1/authorize',
+            access_token_url=f'{base}/oauth2/v1/token',
+            profile_url=f'{base}/oauth2/v1/userinfo',
+        )
         return
 
     if slug == 'amazon_cognito':
@@ -143,6 +221,7 @@ def apply_oauth_adapter_settings(
             access_token_url=f'{base}/oauth/token',
             profile_url=f'{base}/api/v4/user',
         )
+        adapter.complete_login = types.MethodType(_gitlab_complete_login, adapter)
 
     if slug == 'nextcloud':
         server = str(settings.get('server') or '').strip().rstrip('/')

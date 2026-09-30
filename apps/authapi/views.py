@@ -67,6 +67,7 @@ from .oauth_state import (
     verify_oauth_state_request,
 )
 from .oauth_allauth import split_pkce_authorize_params
+from .oauth_errors import ShelluiOAuthError
 from .oauth_user import OAuthProfile, extract_oauth_profile, resolve_oauth_user
 from .oauth_confirm import build_oauth_confirm_token, parse_oauth_confirm_token
 from .oauth_session_code import (
@@ -211,6 +212,146 @@ def _admin_user_group_rows(user: User, company: Company) -> list[dict]:
     )
 
 
+def _oauth_id_token_invalid_response(
+    *,
+    request,
+    provider: str,
+    company: Company,
+    client_tz: str = '',
+    client_dev: str | None = None,
+    redirect_to_raw: str | None = None,
+) -> Response:
+    detail = 'OAuth identity token could not be verified.'
+    record_login_event(
+        request=request,
+        outcome=LoginEvent.OUTCOME_FAILURE,
+        provider=provider,
+        user=None,
+        company=company,
+        failure_reason='oauth_id_token_invalid',
+        client_timezone=client_tz,
+        client_device_id=client_dev,
+    )
+    bounced = _shellui_oauth_bounce_or_json(
+        request,
+        message=detail,
+        error_code='oauth_id_token_invalid',
+        redirect_to_raw=redirect_to_raw,
+    )
+    if isinstance(bounced, HttpResponseRedirect):
+        return bounced
+    return Response({'detail': detail, 'error_code': 'oauth_id_token_invalid'}, status=status.HTTP_400_BAD_REQUEST)
+
+
+def _oauth_provider_error_response(
+    *,
+    request,
+    exc: ShelluiOAuthError,
+    provider: str,
+    company: Company,
+    client_tz: str = '',
+    client_dev: str | None = None,
+    redirect_to_raw: str | None = None,
+):
+    record_login_event(
+        request=request,
+        outcome=LoginEvent.OUTCOME_FAILURE,
+        provider=provider,
+        user=None,
+        company=company,
+        failure_reason=exc.code,
+        client_timezone=client_tz,
+        client_device_id=client_dev,
+    )
+    return _shellui_oauth_bounce_or_json(
+        request,
+        message=exc.message,
+        status_code=exc.status_code,
+        error_code=exc.code,
+        redirect_to_raw=redirect_to_raw,
+    )
+
+
+_SUBJECT_BOUND_ALLAUTH_IDS = frozenset({'openid_connect', 'okta', 'auth0', 'google'})
+
+
+def _openid_connect_scope_includes_openid(social_app) -> bool:
+    """True when the OpenID Connect app's effective scope includes ``openid``."""
+    from allauth.socialaccount.providers import registry
+    from django.http import HttpRequest
+
+    request = HttpRequest()
+    provider = registry.get_class('openid_connect')(request, app=social_app)
+    scope = provider.get_scope()
+    return any(str(part).strip() == 'openid' for part in scope)
+
+
+def _missing_id_token_is_fatal(entry, social_app) -> bool:
+    """Okta and Auth0 always require an id_token. OIDC does when scope includes openid."""
+    if entry is None:
+        return False
+    if entry.allauth_id in {'okta', 'auth0'}:
+        return True
+    if entry.allauth_id != 'openid_connect':
+        return False
+    return _openid_connect_scope_includes_openid(social_app)
+
+
+def _login_id_token_claims(
+    *,
+    provider: str,
+    token_bundle: OAuthTokenBundle,
+    company_id: int,
+    company_oauth_client_id: int | None,
+) -> dict | None:
+    """Claims from one Shellui verification. None means the login must be rejected.
+
+    A missing id_token raises ``oauth_id_token_missing`` for Okta, Auth0, and for
+    OpenID Connect apps whose scope includes ``openid``. Other providers keep the
+    previous allow-empty behavior.
+    """
+    resolved = resolve_oauth_client(
+        provider,
+        company_id=company_id,
+        company_oauth_client_id=company_oauth_client_id,
+    )
+    from apps.authapi.oauth_errors import OAuthIdTokenError
+    from apps.authapi.oauth_id_token import verified_login_id_token_claims
+    from apps.authapi.oauth_idp_policy import requires_verified_id_token_for_login
+
+    entry = resolved.catalog_entry
+    raw = (token_bundle.id_token or '').strip()
+    social_app = get_social_app_for_client(resolved)
+    if not raw:
+        if _missing_id_token_is_fatal(entry, social_app):
+            raise OAuthIdTokenError(
+                'The identity provider did not return an id_token.',
+                code='oauth_id_token_missing',
+            )
+        return {}
+    if not requires_verified_id_token_for_login(entry):
+        return {}
+    claims = verified_login_id_token_claims(
+        entry=entry,
+        social_app=social_app,
+        id_token_raw=raw,
+        userinfo={},
+    )
+    return claims or None
+
+
+def _oauth_subject_mismatch(entry, userinfo: dict, id_claims: dict) -> bool:
+    if entry is None or entry.allauth_id not in _SUBJECT_BOUND_ALLAUTH_IDS or not id_claims:
+        return False
+    claim_sub = id_claims.get('sub')
+    if not isinstance(claim_sub, str) or not claim_sub.strip():
+        return False
+    info_sub = userinfo.get('sub') if isinstance(userinfo, dict) else None
+    if not isinstance(info_sub, str) or not info_sub.strip():
+        return True
+    return info_sub.strip() != claim_sub.strip()
+
+
 def _resolve_oauth_login_user(
     *,
     provider: str,
@@ -218,7 +359,8 @@ def _resolve_oauth_login_user(
     userinfo: dict,
     token_bundle: OAuthTokenBundle,
     company_oauth_client_id: int | None,
-) -> tuple[User | None, bool, OAuthProfile | None, str | None]:
+    id_token_claims: dict | None = None,
+) -> tuple[User | None, bool, OAuthProfile | None, str | None, str | None]:
     resolved = resolve_oauth_client(
         provider,
         company_id=company.id,
@@ -226,13 +368,31 @@ def _resolve_oauth_login_user(
     )
     social_app = get_social_app_for_client(resolved)
     from apps.authapi.oauth_id_token import verified_login_id_token_claims
+    from apps.authapi.oauth_idp_policy import requires_verified_id_token_for_login
 
-    id_claims = verified_login_id_token_claims(
-        entry=resolved.catalog_entry,
-        social_app=social_app,
-        id_token_raw=token_bundle.id_token,
-        userinfo=userinfo,
-    )
+    if id_token_claims is None:
+        id_claims = verified_login_id_token_claims(
+            entry=resolved.catalog_entry,
+            social_app=social_app,
+            id_token_raw=token_bundle.id_token,
+            userinfo=userinfo,
+        )
+        if (
+            token_bundle.id_token
+            and requires_verified_id_token_for_login(resolved.catalog_entry)
+            and not id_claims
+        ):
+            return None, False, None, 'OAuth identity token could not be verified.', 'oauth_id_token_invalid'
+    else:
+        id_claims = id_token_claims
+    if _oauth_subject_mismatch(resolved.catalog_entry, userinfo, id_claims):
+        return (
+            None,
+            False,
+            None,
+            'OAuth userinfo subject does not match the identity token.',
+            'oauth_subject_mismatch',
+        )
     profile, perror = extract_oauth_profile(
         provider,
         userinfo,
@@ -243,11 +403,15 @@ def _resolve_oauth_login_user(
         social_app=social_app,
     )
     if perror or profile is None:
-        return None, False, None, perror or 'Invalid provider profile.'
-    user, created, uerror = resolve_oauth_user(provider=provider, profile=profile)
+        return None, False, None, perror or 'Invalid provider profile.', None
+    user, created, uerror, uerror_code = resolve_oauth_user(
+        provider=provider,
+        profile=profile,
+        catalog_entry=resolved.catalog_entry,
+    )
     if uerror or user is None:
-        return None, False, profile, uerror
-    return user, created, profile, None
+        return None, False, profile, uerror, uerror_code
+    return user, created, profile, None, None
 
 
 def _normalize_avatar_url(value: object) -> str | None:
@@ -495,7 +659,9 @@ def _catalog_provider_payload(request, entry, *, include_unsupported: bool) -> d
     }
 
 
-def _merge_social_app_settings(entry, validated: dict, *, existing: dict | None = None) -> tuple[dict, str | None]:
+def _merge_social_app_settings(
+    entry, validated: dict, *, existing: dict | None = None
+) -> tuple[dict, str | None, str | None]:
     base = dict(existing or {})
     tenant = str(validated.get('tenant') or '').strip()
     if tenant:
@@ -507,13 +673,18 @@ def _merge_social_app_settings(entry, validated: dict, *, existing: dict | None 
         extra_input.setdefault('tenant', tenant)
     normalized, errors = validate_extra_settings(entry, extra_input, partial=bool(existing))
     if errors:
-        return base, '; '.join(errors)
+        code = (
+            'oauth_setting_not_allowed'
+            if any('not allowed' in item for item in errors)
+            else 'oauth_extra_settings_invalid'
+        )
+        return base, '; '.join(errors), code
     for key, value in normalized.items():
         if key == 'catalog_slug':
             continue
         base[key] = value
     base['catalog_slug'] = entry.docs_slug
-    return base, None
+    return base, None, None
 
 
 def _oauth_duplicate_provider_response(existing_social_app_id: int) -> Response:
@@ -1341,15 +1512,18 @@ class SocialAuthorizeView(APIView):
             company_id=company.id,
             company_oauth_client_id=company_oauth_client_id,
         )
-        authorize_url = build_authorize_url(
-            provider=provider,
-            redirect_uri=redirect_uri,
-            state=state,
-            request=request,
-            company_id=company.id,
-            company_oauth_client_id=company_oauth_client_id,
-            oauth_nonce=state_nonce,
-        )
+        try:
+            authorize_url = build_authorize_url(
+                provider=provider,
+                redirect_uri=redirect_uri,
+                state=state,
+                request=request,
+                company_id=company.id,
+                company_oauth_client_id=company_oauth_client_id,
+                oauth_nonce=state_nonce,
+            )
+        except ShelluiOAuthError as exc:
+            return Response({'error': exc.message, 'error_code': exc.code}, status=exc.status_code)
         response = Response({'provider': provider, 'authorize_url': authorize_url})
         cookie = oauth_state_nonce_cookie_value(state_nonce)
         response.set_cookie(
@@ -1408,6 +1582,20 @@ class SocialLoginView(APIView):
                 company_id=company.id,
                 company_oauth_client_id=company_oauth_client_id,
             )
+            id_claims = _login_id_token_claims(
+                provider=provider,
+                token_bundle=token_bundle,
+                company_id=company.id,
+                company_oauth_client_id=company_oauth_client_id,
+            )
+            if id_claims is None:
+                return _oauth_id_token_invalid_response(
+                    request=request,
+                    provider=provider,
+                    company=company,
+                    client_tz=client_tz,
+                    client_dev=client_dev,
+                )
             userinfo = fetch_provider_userinfo(
                 provider,
                 token_bundle.access_token,
@@ -1417,12 +1605,13 @@ class SocialLoginView(APIView):
                 redirect_uri=redirect_uri,
                 id_token=token_bundle.id_token,
             )
-            user, created, profile, resolve_err = _resolve_oauth_login_user(
+            user, created, profile, resolve_err, resolve_code = _resolve_oauth_login_user(
                 provider=provider,
                 company=company,
                 userinfo=userinfo,
                 token_bundle=token_bundle,
                 company_oauth_client_id=company_oauth_client_id,
+                id_token_claims=id_claims,
             )
             if resolve_err or profile is None or user is None:
                 record_login_event(
@@ -1435,12 +1624,21 @@ class SocialLoginView(APIView):
                     client_timezone=client_tz,
                     client_device_id=client_dev,
                 )
-                return Response(
-                    {'detail': resolve_err or 'Could not resolve OAuth account.'},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
+                body = {'detail': resolve_err or 'Could not resolve OAuth account.'}
+                if resolve_code:
+                    body['error_code'] = resolve_code
+                return Response(body, status=status.HTTP_400_BAD_REQUEST)
             avatar_url = profile.avatar_url
             email = profile.email
+        except ShelluiOAuthError as exc:
+            return _oauth_provider_error_response(
+                request=request,
+                exc=exc,
+                provider=provider,
+                company=company,
+                client_tz=client_tz,
+                client_dev=client_dev,
+            )
         except Exception:
             record_login_event(
                 request=request,
@@ -1458,7 +1656,8 @@ class SocialLoginView(APIView):
             )
 
         emit_oauth_user_created_if_new(company, user, created=created, oauth_provider=provider)
-        join = apply_company_join(company, user, email=email)
+        join_email = email if profile.email_verified_for_link else None
+        join = apply_company_join(company, user, email=join_email)
         _link_social_account(user=user, profile=profile, userinfo=userinfo)
 
         cache.set(
@@ -1723,17 +1922,26 @@ class ShellUIAuthorizeView(APIView):
         pkce_params, pkce_verifier = split_pkce_authorize_params(request, social_app)
         if pkce_verifier:
             stash_oauth_pkce_verifier(state_nonce, pkce_verifier)
-        authorize_url = build_authorize_url(
-            provider=provider,
-            redirect_uri=oauth_provider_redirect_uri(request),
-            state=state,
-            request=request,
-            company_id=company.id,
-            company_oauth_client_id=company_oauth_client_id,
-            switch_account=switch_account,
-            pkce_params=pkce_params if pkce_verifier else None,
-            oauth_nonce=state_nonce,
-        )
+        try:
+            authorize_url = build_authorize_url(
+                provider=provider,
+                redirect_uri=oauth_provider_redirect_uri(request),
+                state=state,
+                request=request,
+                company_id=company.id,
+                company_oauth_client_id=company_oauth_client_id,
+                switch_account=switch_account,
+                pkce_params=pkce_params if pkce_verifier else None,
+                oauth_nonce=state_nonce,
+            )
+        except ShelluiOAuthError as exc:
+            return _shellui_oauth_bounce_or_json(
+                request,
+                message=exc.message,
+                status_code=exc.status_code,
+                error_code=exc.code,
+                redirect_to_raw=redirect_to,
+            )
         response = HttpResponseRedirect(authorize_url)
         cookie = oauth_state_nonce_cookie_value(state_nonce)
         response.set_cookie(
@@ -1945,6 +2153,21 @@ class ShellUIOAuthCallbackView(APIView):
                 company_oauth_client_id=company_oauth_client_id,
                 pkce_code_verifier=consume_oauth_pkce_verifier(state_payload.get('nonce') or ''),
             )
+            id_claims = _login_id_token_claims(
+                provider=provider,
+                token_bundle=token_bundle,
+                company_id=company.id,
+                company_oauth_client_id=company_oauth_client_id,
+            )
+            if id_claims is None:
+                return _oauth_id_token_invalid_response(
+                    request=request,
+                    provider=provider,
+                    company=company,
+                    client_tz=client_tz,
+                    client_dev=client_dev,
+                    redirect_to_raw=redirect_to,
+                )
             userinfo = fetch_provider_userinfo(
                 provider,
                 token_bundle.access_token,
@@ -1954,12 +2177,13 @@ class ShellUIOAuthCallbackView(APIView):
                 redirect_uri=callback_url,
                 id_token=token_bundle.id_token,
             )
-            user, created, profile, resolve_err = _resolve_oauth_login_user(
+            user, created, profile, resolve_err, resolve_code = _resolve_oauth_login_user(
                 provider=provider,
                 company=company,
                 userinfo=userinfo,
                 token_bundle=token_bundle,
                 company_oauth_client_id=company_oauth_client_id,
+                id_token_claims=id_claims,
             )
             if resolve_err or profile is None or user is None:
                 record_login_event(
@@ -1972,20 +2196,31 @@ class ShellUIOAuthCallbackView(APIView):
                     client_timezone=client_tz,
                     client_device_id=client_dev,
                 )
+                identity_code = resolve_code or 'oauth_identity_failed'
                 bounced = _shellui_oauth_bounce_or_json(
                     request,
                     message=resolve_err or 'Could not resolve OAuth account.',
-                    error_code='oauth_identity_failed',
+                    error_code=identity_code,
                     redirect_to_raw=redirect_to,
                 )
                 if isinstance(bounced, HttpResponseRedirect):
                     return bounced
-                return Response(
-                    {'detail': resolve_err or 'Could not resolve OAuth account.'},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
+                body = {'detail': resolve_err or 'Could not resolve OAuth account.'}
+                if resolve_code:
+                    body['error_code'] = resolve_code
+                return Response(body, status=status.HTTP_400_BAD_REQUEST)
             avatar_url = profile.avatar_url
             email = profile.email
+        except ShelluiOAuthError as exc:
+            return _oauth_provider_error_response(
+                request=request,
+                exc=exc,
+                provider=provider,
+                company=company,
+                client_tz=client_tz,
+                client_dev=client_dev,
+                redirect_to_raw=redirect_to,
+            )
         except Exception:
             record_login_event(
                 request=request,
@@ -2008,7 +2243,8 @@ class ShellUIOAuthCallbackView(APIView):
             return Response({'detail': _OAUTH_SIGNIN_FAILED_DETAIL}, status=status.HTTP_400_BAD_REQUEST)
 
         emit_oauth_user_created_if_new(company, user, created=created, oauth_provider=provider)
-        join = apply_company_join(company, user, email=email)
+        join_email = email if profile.email_verified_for_link else None
+        join = apply_company_join(company, user, email=join_email)
         _link_social_account(user=user, profile=profile, userinfo=userinfo)
 
         cache.set(
@@ -2253,6 +2489,20 @@ class ShellUIOAuthExchangeView(APIView):
                 company_id=company.id,
                 company_oauth_client_id=company_oauth_client_id,
             )
+            id_claims = _login_id_token_claims(
+                provider=provider,
+                token_bundle=token_bundle,
+                company_id=company.id,
+                company_oauth_client_id=company_oauth_client_id,
+            )
+            if id_claims is None:
+                return _oauth_id_token_invalid_response(
+                    request=request,
+                    provider=provider,
+                    company=company,
+                    client_tz=client_tz,
+                    client_dev=client_dev,
+                )
             userinfo = fetch_provider_userinfo(
                 provider,
                 token_bundle.access_token,
@@ -2262,12 +2512,13 @@ class ShellUIOAuthExchangeView(APIView):
                 redirect_uri=redirect_uri,
                 id_token=token_bundle.id_token,
             )
-            user, created, profile, resolve_err = _resolve_oauth_login_user(
+            user, created, profile, resolve_err, resolve_code = _resolve_oauth_login_user(
                 provider=provider,
                 company=company,
                 userinfo=userinfo,
                 token_bundle=token_bundle,
                 company_oauth_client_id=company_oauth_client_id,
+                id_token_claims=id_claims,
             )
             if resolve_err or profile is None or user is None:
                 record_login_event(
@@ -2280,12 +2531,21 @@ class ShellUIOAuthExchangeView(APIView):
                     client_timezone=client_tz,
                     client_device_id=client_dev,
                 )
-                return Response(
-                    {'detail': resolve_err or 'Could not resolve OAuth account.'},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
+                body = {'detail': resolve_err or 'Could not resolve OAuth account.'}
+                if resolve_code:
+                    body['error_code'] = resolve_code
+                return Response(body, status=status.HTTP_400_BAD_REQUEST)
             avatar_url = profile.avatar_url
             email = profile.email
+        except ShelluiOAuthError as exc:
+            return _oauth_provider_error_response(
+                request=request,
+                exc=exc,
+                provider=provider,
+                company=company,
+                client_tz=client_tz,
+                client_dev=client_dev,
+            )
         except Exception:
             record_login_event(
                 request=request,
@@ -2300,7 +2560,8 @@ class ShellUIOAuthExchangeView(APIView):
             return Response({'detail': _OAUTH_SIGNIN_FAILED_DETAIL}, status=status.HTTP_400_BAD_REQUEST)
 
         emit_oauth_user_created_if_new(company, user, created=created, oauth_provider=provider)
-        join = apply_company_join(company, user, email=email)
+        join_email = email if profile.email_verified_for_link else None
+        join = apply_company_join(company, user, email=join_email)
         _link_social_account(user=user, profile=profile, userinfo=userinfo)
 
         cache.set(
@@ -3394,11 +3655,12 @@ class ShellUIAdminOAuthSocialAppListView(APIView):
             if conflict_app is not None:
                 return Response({'error_code': 'saml_idp_entity_id_in_use'}, status=status.HTTP_400_BAD_REQUEST)
         else:
-            social_settings, settings_err = _merge_social_app_settings(entry, validated)
+            social_settings, settings_err, settings_code = _merge_social_app_settings(entry, validated)
             if settings_err:
-                err_code = settings_err if str(settings_err).startswith('error_code:') else None
-                body = {'error_code': err_code.split(':', 1)[1]} if err_code else {'error': settings_err}
-                return Response(body, status=status.HTTP_400_BAD_REQUEST)
+                return Response(
+                    {'error': settings_err, 'error_code': settings_code},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
         dedupe_key = compute_dedupe_key_for_new_app(entry, settings=social_settings)
         duplicate = find_duplicate_company_oauth_client(company.id, dedupe_key=dedupe_key)
         if duplicate is not None:
@@ -3529,13 +3791,16 @@ class ShellUIAdminOAuthSocialAppDetailView(APIView):
                 return Response({'error_code': 'saml_idp_entity_id_in_use'}, status=status.HTTP_400_BAD_REQUEST)
             settings_data = merged
         elif entry is not None and ('tenant' in validated or 'extra_settings' in validated):
-            merged, settings_err = _merge_social_app_settings(
+            merged, settings_err, settings_code = _merge_social_app_settings(
                 entry,
                 validated,
                 existing=settings_data,
             )
             if settings_err:
-                return Response({'error': settings_err}, status=status.HTTP_400_BAD_REQUEST)
+                return Response(
+                    {'error': settings_err, 'error_code': settings_code},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
             settings_data = merged
         elif 'tenant' in validated:
             tenant = str(validated['tenant']).strip()

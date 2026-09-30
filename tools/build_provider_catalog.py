@@ -24,14 +24,20 @@ OUT_PATH = ROOT / 'apps' / 'authapi' / 'provider_catalog.json'
 SUPPORTED_RELEASE_SLUGS = frozenset(
     {
         'apple',
+        'auth0',
         'github',
         'gitlab',
         'google',
+        'keycloak',
         'line',
+        'linkedin',
         'microsoft',
+        'okta',
+        'openid_connect',
         'reddit',
-        'shopify',
         'saml',
+        'shopify',
+        'slack',
     }
 )
 
@@ -43,6 +49,10 @@ EMAIL_POLICY_BY_SLUG: dict[str, str] = {
     'microsoft': 'microsoft_tenant',
     'discord': 'discord_email_verified',
     'kakao': 'kakao_email_verified',
+    'openid_connect': 'company_idp_uid_only',
+    'keycloak': 'company_idp_uid_only',
+    'okta': 'company_idp_uid_only',
+    'auth0': 'company_idp_uid_only',
 }
 
 EMAIL_POLICY_BY_PROTOCOL: dict[str, str] = {
@@ -51,6 +61,8 @@ EMAIL_POLICY_BY_PROTOCOL: dict[str, str] = {
 }
 
 EXTRA_SCHEMA_OVERRIDES: dict[str, list[dict]] = {
+    # LinkedIn OIDC endpoints are pinned server-side; companies only supply client credentials.
+    'linkedin': [],
     'saml': [
         {'name': 'idp_entity_id', 'type': 'string', 'required': True, 'secret': False},
         {'name': 'sso_url', 'type': 'url', 'required': False, 'secret': False},
@@ -94,7 +106,6 @@ OIDC_SERVER_URL_SLUGS = frozenset(
         'keycloak',
         'authelia',
         'cern',
-        'linkedin',
     }
 )
 

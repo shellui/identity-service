@@ -26,6 +26,9 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 ### ✨ Feature
 
 - **SAML 2.0 SSO:** Company admins can configure multiple SAML IdPs per company via `oauth-social-apps`. Identity-service exposes SP metadata, ACS, login, and optional SLO under `/api/v1/saml/<organization_slug>/`. See [docs/saml.md](docs/saml.md).
+- **OAuth batch 2 providers:** identity-hosted OAuth adds **LinkedIn** (OpenID Connect), **Slack** (OpenID Connect userInfo claims), generic **OpenID Connect** and **Keycloak**, **Okta**, and **Auth0**, each with hand-written strict adapter fixtures and literal uid assertions. Supported release total: **14** providers (`tools/data/oauth_e2e_covered_slugs.json`).
+- **OAuth provider catalog:** identity-service ships a checked-in django-allauth provider catalog (`apps/authapi/provider_catalog.json`) with catalog entries for OAuth2/OIDC providers and SAML. Admin API: `GET /api/v1/oauth-provider-catalog`. OAuth app CRUD accepts `docs_slug` plus validated `extra_settings`. Catalog generation tracks the installed django-allauth version and end-to-end adapter test coverage per provider.
+- **django-allauth 65.19.5:** dependency upgraded to match the provider dataset.
 
 ### 🔒 Security
 
@@ -37,13 +40,16 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 - SAML metadata URLs are imported when the IdP is saved, and only a signing certificate is stored. PUT cannot replace `client_id` with a value another app already uses. A duplicate organization slug returns 404.
 - IdP logout revokes the user's refresh sessions for that company.
 
-### ✨ Feature
-
-- **OAuth provider catalog:** identity-service ships a checked-in django-allauth provider catalog (`apps/authapi/provider_catalog.json`) with **97** OAuth2/OIDC providers marked `supported: true` on the identity-hosted adapter (114 total catalog entries). Admin API: `GET /api/v1/oauth-provider-catalog`. OAuth app CRUD accepts `docs_slug` plus validated `extra_settings`. Catalog generation tracks the installed django-allauth version and end-to-end adapter test coverage per provider.
-- **django-allauth 65.19.5:** dependency upgraded to match the provider dataset.
-
 ### 🔒 Security
 
+- Okta, Auth0, and self-hosted GitLab account ids are scoped by issuer or host. gitlab.com accounts stay unscoped. Self-hosted GitLab does not auto-link by email (`oauth_email_conflict`).
+- GitLab uid migration `0015` rewrites `SocialAccount` rows, including accounts saved without a `SocialToken`. Ambiguous rows and rows that cannot be prefixed fail the migration and list their ids. `manage.py scope_gitlab_social_uids` binds a row to one GitLab app before migrate is re-run.
+- A verified id_token with userinfo that omits `sub` is rejected (`oauth_subject_mismatch`). The account id is not taken from `id` or `mail`.
+- OIDC, Google, Okta, and Auth0 id_tokens are verified once by Shellui. allauth's jti replay cache is not used on that path, and userinfo `sub` must match the verified id_token `sub`.
+- Okta and Auth0 logins fail closed when the token response omits `id_token` (`oauth_id_token_missing`). Keycloak, generic OpenID Connect, and LinkedIn do the same when the requested scope includes `openid`.
+- Company domain join uses only a verified email. A client-sent LinkedIn `server_url` is rejected (`oauth_setting_not_allowed`). URL settings must be https (`oauth_extra_settings_invalid`).
+- Auth0 and GitLab profile requests send the access token in the Authorization header.
+- OpenID Connect discovery `issuer` must match the configured server, and LinkedIn discovery hosts are pinned (`oauth_discovery_issuer_mismatch`, `oauth_provider_host_not_allowed`).
 - OpenID Connect `SocialAccount` keys use per-app `provider_id` and issuer-scoped UIDs to prevent cross-issuer `sub` collisions.
 - OAuth SocialApp admin list and attach paths are company-scoped; secret `extra_settings` fields are redacted in API responses.
 - PKCE verifiers are stored server-side (nonce cache), not in signed OAuth `state`.
@@ -53,10 +59,14 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 ### 🚨 Changed
 
 - **OAuth provider catalog v2:** `console_url` entries are `{kind, url, form}` with optional `placeholders` (no embedded English). Extra settings schema exposes `name`, `type`, `required`, and `secret` only; Shellui admin translates by field name. `GET /api/v1/oauth-provider-catalog` adds `console_link_kinds` and `console_link_forms` for admin mapping.
-- **Honest `supported` count:** `supported: true` follows `tools/data/oauth_e2e_covered_slugs.json`, which is regenerated only for providers that pass the real adapter harness (`tools/audit_oauth_provider_coverage.py`). **62** providers supported in this release (not 97).
+- **Honest `supported` count:** `supported: true` for OAuth follows `tools/data/oauth_e2e_covered_slugs.json`, which is regenerated only for providers that pass the strict adapter harness (`tools/audit_oauth_strict_coverage.py`). **14** OAuth providers are supported in this release, plus SAML.
 
 ### 🔒 Security
 
+- **Google id_token on callback:** login callback verifies Google id_tokens against JWKS before email linking; wrong issuer, audience, or signing key returns `oauth_id_token_invalid` (no userinfo fallback).
+- **LinkedIn OIDC:** fixed LinkedIn discovery and hosts (`www.linkedin.com`, `api.linkedin.com`); companies cannot set a custom `server_url`.
+- **Company IdPs:** Keycloak, generic OpenID Connect, Okta, and Auth0 never auto-link by email; conflicting emails return `oauth_email_conflict`.
+- **Okta and Auth0 base URLs:** missing `OKTA_BASE_URL` or `AUTH0_URL` fails closed instead of calling `https://None/...` endpoints.
 - OpenID Connect migration **0014** rekeys existing `SocialAccount` rows to `(provider_id, issuer|sub)` with audit-backed reverse.
 - OAuth uses `request_context` plus a `ContextVar` for the company `SocialApp` (no `allauth_context.request` assignment).
 - Apple `form_post` bridges via a single-use cookie; POST `id_token` must verify against Apple JWKS and nonce before use.

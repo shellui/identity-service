@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from apps.actions.ssrf import SSRFError, resolve_webhook_endpoint
 
@@ -161,6 +162,9 @@ def validate_extra_settings(
     """Return normalized settings for SocialApp.settings and validation errors."""
     errors: list[str] = []
     incoming = dict(extra or {})
+    if entry.docs_slug == 'linkedin' and 'server_url' in incoming:
+        errors.append("Setting 'server_url' is not allowed for LinkedIn.")
+        incoming.pop('server_url', None)
     normalized: dict[str, Any] = {}
     for field in entry.extra_settings_schema:
         if field.secret and field.name not in incoming and partial:
@@ -176,6 +180,9 @@ def validate_extra_settings(
             continue
         normalized_value = value.strip() if isinstance(value, str) else value
         if field.type == 'url' and isinstance(normalized_value, str):
+            if urlparse(normalized_value).scheme != 'https':
+                errors.append(f'{field.name} must be an https URL.')
+                continue
             try:
                 resolve_webhook_endpoint(normalized_value, allow_private=False)
             except SSRFError as exc:
@@ -185,6 +192,11 @@ def validate_extra_settings(
     for key in incoming:
         if key not in {f.name for f in entry.extra_settings_schema}:
             errors.append(f'Unknown extra setting {key!r}.')
+    if entry.docs_slug == 'linkedin':
+        from apps.authapi.oauth_linkedin import LINKEDIN_OIDC_SERVER_URL
+
+        normalized['server_url'] = LINKEDIN_OIDC_SERVER_URL
+
     normalized['catalog_slug'] = entry.docs_slug
     return normalized, errors
 

@@ -38,6 +38,32 @@ def social_account_provider_key(*, entry: ProviderCatalogEntry | None, social_ap
     return str(social_app.provider).strip().lower()
 
 
+def _scoped_issuer(entry: ProviderCatalogEntry, social_app: SocialApp, claims: dict) -> str:
+    """Issuer or host prefix for SocialAccount.uid. Empty means the raw uid is stored."""
+    settings_data = social_app.settings if isinstance(social_app.settings, dict) else {}
+    if entry.allauth_id == 'openid_connect':
+        issuer = str(claims.get('iss') or '').strip()
+        if not issuer:
+            issuer = str(settings_data.get('server_url') or '').strip().rstrip('/')
+        return issuer
+    if entry.allauth_id == 'okta':
+        issuer = str(claims.get('iss') or '').strip().rstrip('/')
+        if not issuer:
+            issuer = str(settings_data.get('OKTA_BASE_URL') or '').strip().rstrip('/')
+        return issuer
+    if entry.allauth_id == 'auth0':
+        issuer = str(claims.get('iss') or '').strip().rstrip('/')
+        if not issuer:
+            issuer = str(settings_data.get('AUTH0_URL') or '').strip().rstrip('/')
+        return issuer
+    if entry.docs_slug == 'gitlab':
+        from apps.authapi.oauth_provider_urls import gitlab_base_url, is_self_hosted_gitlab
+
+        if is_self_hosted_gitlab(social_app):
+            return gitlab_base_url(social_app)
+    return ''
+
+
 def compose_social_account_uid(
     *,
     entry: ProviderCatalogEntry | None,
@@ -46,22 +72,18 @@ def compose_social_account_uid(
     id_token_claims: dict | None = None,
 ) -> str:
     uid = str(raw_uid or '').strip()
-    if not uid:
+    if not uid or entry is None:
         return uid
-    if entry is not None and entry.allauth_id == 'saml':
+    if entry.allauth_id == 'saml':
         settings_data = social_app.settings if isinstance(social_app.settings, dict) else {}
         idp = settings_data.get('idp') if isinstance(settings_data.get('idp'), dict) else {}
         entity_id = str(idp.get('entity_id') or '').strip()
         if entity_id:
             return f'{entity_id}|{uid}'
-    if entry is not None and entry.allauth_id == 'openid_connect':
-        claims = id_token_claims if isinstance(id_token_claims, dict) else {}
-        issuer = str(claims.get('iss') or '').strip()
-        if not issuer:
-            settings_data = social_app.settings if isinstance(social_app.settings, dict) else {}
-            issuer = str(settings_data.get('server_url') or '').strip().rstrip('/')
-        if issuer:
-            return f'{issuer}|{uid}'
+    claims = id_token_claims if isinstance(id_token_claims, dict) else {}
+    issuer = _scoped_issuer(entry, social_app, claims)
+    if issuer:
+        return f'{issuer}|{uid}'
     return uid
 
 

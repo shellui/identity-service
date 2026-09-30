@@ -50,6 +50,16 @@ def _profile_for_email_link(profile: OAuthProfile, *, assertion_email: str) -> O
     )
 
 
+def _resolve_oauth_user_for_saml(profile: OAuthProfile) -> tuple[User | None, bool, str | None]:
+    """Adapt OAuth's four-value result to SAML's (user, created, error_code)."""
+    user, created, _message, error_code = resolve_oauth_user(provider='saml', profile=profile)
+    if user is None or error_code:
+        if error_code == 'oauth_email_conflict':
+            return None, False, SAML_EMAIL_CONFLICT
+        return None, False, error_code or 'saml_user_resolution_failed'
+    return user, created, None
+
+
 def resolve_saml_user(
     *,
     company: Company,
@@ -87,7 +97,7 @@ def resolve_saml_user(
             ):
                 return None, False, SAML_EMAIL_CONFLICT
             link_profile = _profile_for_email_link(profile, assertion_email=assertion_email)
-            return resolve_oauth_user(provider='saml', profile=link_profile)
+            return _resolve_oauth_user_for_saml(link_profile)
 
         if saml_may_link_existing_user_by_email(
             company=company,
@@ -95,7 +105,7 @@ def resolve_saml_user(
             assertion_email=assertion_email,
         ):
             link_profile = _profile_for_email_link(profile, assertion_email=assertion_email)
-            return resolve_oauth_user(provider='saml', profile=link_profile)
+            return _resolve_oauth_user_for_saml(link_profile)
 
     uid_only = OAuthProfile(
         provider_id=profile.provider_id,
@@ -107,4 +117,4 @@ def resolve_saml_user(
         email_verified_for_link=False,
         userinfo=profile.userinfo,
     )
-    return resolve_oauth_user(provider='saml', profile=uid_only)
+    return _resolve_oauth_user_for_saml(uid_only)
