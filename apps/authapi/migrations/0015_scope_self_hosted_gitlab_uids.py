@@ -166,7 +166,7 @@ class Migration(migrations.Migration):
     dependencies = [
         ('authapi', '0014_migrate_oidc_social_account_keys'),
         ('socialaccount', '0006_alter_socialaccount_extra_data'),
-        ('companies', '0011_company_membership'),
+        ('companies', '0022_company_verified_email_domains'),
     ]
 
     operations = [

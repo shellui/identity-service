@@ -20,7 +20,8 @@ class ProviderRegistryTests(APITestCase):
         catalog = get_provider_catalog()
         self.assertEqual(len(catalog.providers), 114)
         e2e = json.loads(E2E_SLUGS_PATH.read_text(encoding='utf-8'))
-        self.assertEqual(len(catalog.supported_slugs()), len(e2e))
+        expected_supported = frozenset(e2e) | {'saml'}
+        self.assertEqual(catalog.supported_slugs(), expected_supported)
 
     def test_microsoft_extra_settings_validation(self):
         entry = get_provider_catalog().by_slug()['microsoft']

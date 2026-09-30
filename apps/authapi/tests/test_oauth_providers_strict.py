@@ -36,7 +36,7 @@ class OAuthStrictProviderTests(TestCase):
 
     def test_catalog_supported_matches_release_list(self):
         supported = {e.docs_slug for e in get_provider_catalog().providers if e.supported}
-        self.assertEqual(supported, RELEASE_SUPPORTED_OAUTH_SLUGS)
+        self.assertEqual(supported, RELEASE_SUPPORTED_OAUTH_SLUGS | {'saml'})
 
     def test_assert_adapter_hosts_rejects_missing_profile_url(self):
         with self.assertRaises(ValueError) as ctx:

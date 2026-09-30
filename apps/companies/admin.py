@@ -11,6 +11,32 @@ from .access import normalize_allowed_domains
 from .models import Company, CompanyGroup, CompanyMembership, CompanyOAuthClient, CompanyOAuthRedirect
 
 
+class VerifiedEmailDomainsField(forms.CharField):
+    """Platform-only SAML domain list; comma-separated in the widget."""
+
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault('required', False)
+        kwargs.setdefault(
+            'widget',
+            forms.TextInput(attrs={'size': 60, 'placeholder': 'acme.com'}),
+        )
+        kwargs.setdefault(
+            'help_text',
+            'Comma-separated domains Shellui has confirmed this company owns. '
+            'Used for SAML email linking when the IdP is trusted. '
+            'Not exposed to company admins in the Shellui API.',
+        )
+        super().__init__(*args, **kwargs)
+
+    def prepare_value(self, value):
+        return ', '.join(normalize_allowed_domains(value))
+
+    def to_python(self, value):
+        if value in self.empty_values:
+            return []
+        return normalize_allowed_domains(value)
+
+
 class AllowedEmailDomainsField(forms.CharField):
     """Comma-separated domains in the widget; list[str] in cleaned_data / model."""
 
@@ -41,6 +67,7 @@ class CompanyAdminForm(forms.ModelForm):
     """Edit allowed_email_domains as a comma-separated list instead of raw JSON."""
 
     allowed_email_domains = AllowedEmailDomainsField(label='Allowed email domains')
+    verified_email_domains = VerifiedEmailDomainsField(label='Verified email domains (SAML)')
 
     class Meta:
         model = Company
@@ -49,6 +76,7 @@ class CompanyAdminForm(forms.ModelForm):
             'slug',
             'access_mode',
             'allowed_email_domains',
+            'verified_email_domains',
             'enable_magic_link',
             'owners',
         )
@@ -60,6 +88,9 @@ class CompanyAdminForm(forms.ModelForm):
             self.initial['allowed_email_domains'] = normalize_allowed_domains(
                 self.instance.allowed_email_domains
             )
+            self.initial['verified_email_domains'] = normalize_allowed_domains(
+                self.instance.verified_email_domains
+            )
         self.fields['access_mode'].help_text = (
             'Public: anyone who signs in gets access for this company. '
             'Domain: only listed email domains get access; others are blocked and owners emailed. '
@@ -68,6 +99,9 @@ class CompanyAdminForm(forms.ModelForm):
 
     def clean_allowed_email_domains(self):
         return normalize_allowed_domains(self.cleaned_data.get('allowed_email_domains'))
+
+    def clean_verified_email_domains(self):
+        return normalize_allowed_domains(self.cleaned_data.get('verified_email_domains'))
 
     def clean(self):
         cleaned = super().clean()
@@ -124,6 +158,17 @@ class CompanyAdmin(admin.ModelAdmin):
                 'description': (
                     'Controls how new OAuth users join this company. '
                     'Access is granted per company via membership is_enabled (see Members inline).'
+                ),
+            },
+        ),
+        (
+            'SAML domain verification (platform only)',
+            {
+                'fields': ('verified_email_domains',),
+                'description': (
+                    'Domains confirmed owned by this company. Required for SAML email linking when '
+                    'an IdP has trusted_for_verified_domains. Set here after manual ownership proof; '
+                    'company owners cannot change this through the Shellui admin API.'
                 ),
             },
         ),

@@ -35,10 +35,13 @@ SUPPORTED_RELEASE_SLUGS = frozenset(
         'okta',
         'openid_connect',
         'reddit',
+        'saml',
         'shopify',
         'slack',
     }
 )
+
+SAML_SUPPORTED = True
 
 EMAIL_POLICY_BY_SLUG: dict[str, str] = {
     'github': 'github_verified_primary',
@@ -60,6 +63,14 @@ EMAIL_POLICY_BY_PROTOCOL: dict[str, str] = {
 EXTRA_SCHEMA_OVERRIDES: dict[str, list[dict]] = {
     # LinkedIn OIDC endpoints are pinned server-side; companies only supply client credentials.
     'linkedin': [],
+    'saml': [
+        {'name': 'idp_entity_id', 'type': 'string', 'required': True, 'secret': False},
+        {'name': 'sso_url', 'type': 'url', 'required': False, 'secret': False},
+        {'name': 'metadata_url', 'type': 'url', 'required': False, 'secret': False},
+        {'name': 'x509cert', 'type': 'text', 'required': False, 'secret': False},
+        {'name': 'trusted_for_verified_domains', 'type': 'boolean', 'required': False, 'secret': False},
+        {'name': 'allow_idp_initiated_sso', 'type': 'boolean', 'required': False, 'secret': False},
+    ],
     'microsoft': [{'name': 'tenant', 'type': 'string', 'required': False, 'secret': False}],
     'auth0': [{'name': 'AUTH0_URL', 'type': 'url', 'required': True, 'secret': False}],
     'apple': [
@@ -158,6 +169,12 @@ def _supported(entry: dict, installed: frozenset[str]) -> tuple[bool, str | None
     if entry.get('legacy'):
         return False, 'Legacy provider; use the replacement listed in the catalog.'
     protocol = entry.get('protocol') or ''
+    slug = str(entry.get('docs_slug') or '').strip().lower()
+    if slug == 'saml' and SAML_SUPPORTED:
+        saml_app = 'allauth.socialaccount.providers.saml'
+        if saml_app not in installed:
+            return False, 'SAML provider module is not installed.'
+        return True, None
     if protocol in {'OAuth1', 'SAML', 'other'}:
         return False, f'Protocol {protocol} is not supported by the identity-hosted OAuth callback yet.'
     if entry.get('docs_slug') == 'oauth2' or (entry.get('app') or '').endswith('.oauth2'):
@@ -166,7 +183,6 @@ def _supported(entry: dict, installed: frozenset[str]) -> tuple[bool, str | None
         return False, 'Unsupported protocol.'
     if not _app_has_oauth2_provider(entry.get('app'), installed):
         return False, 'No OAuth2 adapter is available for this provider module.'
-    slug = str(entry.get('docs_slug') or '').strip().lower()
     if slug not in SUPPORTED_RELEASE_SLUGS:
         return False, 'Not supported in this release; additional providers ship in follow-up PRs.'
     e2e_slugs = _e2e_covered_slugs()

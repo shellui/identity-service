@@ -1,6 +1,13 @@
 from django.urls import include, path
 
 from .magic_link_views import ShellUIMagicLinkRequestView, ShellUIMagicLinkVerifyView
+from .saml.views import (
+    ShellUISAMLACSView,
+    ShellUISAMLFinishACSView,
+    ShellUISAMLLoginView,
+    ShellUISAMLMetadataView,
+    ShellUISAMLSLSView,
+)
 from .views import (
     ShellUIAdminGroupDetailView,
     ShellUIAdminGroupListView,
@@ -100,4 +107,29 @@ urlpatterns = [
     path('preferences', ShellUIPreferenceView.as_view(), name='shellui-preferences'),
     path('providers/<str:provider>/authorize/', SocialAuthorizeView.as_view(), name='social-authorize'),
     path('providers/<str:provider>/login/', SocialLoginView.as_view(), name='social-login'),
+    path(
+        'saml/<str:organization_slug>/metadata/',
+        ShellUISAMLMetadataView.as_view(),
+        name='shellui-saml-metadata',
+    ),
+    path(
+        'saml/<str:organization_slug>/acs/',
+        ShellUISAMLACSView.as_view(),
+        name='shellui-saml-acs',
+    ),
+    path(
+        'saml/<str:organization_slug>/acs/finish/',
+        ShellUISAMLFinishACSView.as_view(),
+        name='shellui-saml-finish-acs',
+    ),
+    path(
+        'saml/<str:organization_slug>/login/',
+        ShellUISAMLLoginView.as_view(),
+        name='shellui-saml-login',
+    ),
+    path(
+        'saml/<str:organization_slug>/sls/',
+        ShellUISAMLSLSView.as_view(),
+        name='shellui-saml-sls',
+    ),
 ]

@@ -77,6 +77,15 @@ class Company(models.Model):
         blank=True,
         help_text='Lowercase domains without @ (e.g. ["acme.com"]). Used when access mode is Domain.',
     )
+    verified_email_domains = models.JSONField(
+        default=list,
+        blank=True,
+        help_text=(
+            'Domains Shellui operators have confirmed this company owns (Django admin only). '
+            'SAML may link by assertion email only on these domains when the IdP is trusted. '
+            'Company admins cannot set this via the Shellui admin API.'
+        ),
+    )
     enable_magic_link = models.BooleanField(
         default=True,
         help_text=(
@@ -233,9 +242,19 @@ class CompanyOAuthClient(models.Model):
 
     def save(self, *args, **kwargs):
         if self.social_app_id:
+            from django.core.exceptions import ValidationError
+
             from apps.companies.oauth_client_uniqueness import sync_company_oauth_client_uniqueness_fields
 
             sync_company_oauth_client_uniqueness_fields(self)
+            if CompanyOAuthClient.objects.filter(social_app_id=self.social_app_id).exclude(pk=self.pk).exists():
+                raise ValidationError('A SocialApp can belong to only one company.')
+            if self.pk:
+                previous_company_id = (
+                    CompanyOAuthClient.objects.filter(pk=self.pk).values_list('company_id', flat=True).first()
+                )
+                if previous_company_id is not None and int(previous_company_id) != int(self.company_id):
+                    raise ValidationError('A SocialApp cannot move to another company.')
         super().save(*args, **kwargs)
 
     def __str__(self) -> str:
