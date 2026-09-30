@@ -44,7 +44,10 @@ def compute_oauth_client_dedupe_key(
     if resolved_entry is None:
         return slug
     if resolved_entry.allauth_id == 'saml':
-        return None
+        settings = social_app.settings if isinstance(getattr(social_app, 'settings', None), dict) else {}
+        idp = settings.get('idp') if isinstance(settings.get('idp'), dict) else {}
+        entity = str(idp.get('entity_id') or '').strip().lower()
+        return f'saml\x1f{entity}' if entity else None
     if catalog_entry_multiple_allowed(resolved_entry):
         settings = social_app.settings if isinstance(getattr(social_app, 'settings', None), dict) else {}
         provider_id = _normalized_provider_id(resolved_entry, social_app=social_app, settings=settings)

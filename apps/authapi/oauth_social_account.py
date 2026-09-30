@@ -21,12 +21,20 @@ def get_bound_oauth_social_app(request) -> SocialApp | None:
     return _ctx_bound_app()
 
 
+def saml_social_account_provider_key(social_app: SocialApp) -> str:
+    return f'saml-{int(social_app.pk)}'
+
+
 def social_account_provider_key(*, entry: ProviderCatalogEntry | None, social_app: SocialApp) -> str:
     if entry is not None and entry.allauth_id == 'openid_connect':
         sub = str(getattr(social_app, 'provider_id', '') or entry.social_app_provider_id()).strip()
         return sub or entry.docs_slug
+    if entry is not None and entry.allauth_id == 'saml':
+        return saml_social_account_provider_key(social_app)
     if entry is not None:
         return entry.allauth_id
+    if str(social_app.provider).strip().lower() == 'saml':
+        return saml_social_account_provider_key(social_app)
     return str(social_app.provider).strip().lower()
 
 
@@ -40,6 +48,12 @@ def compose_social_account_uid(
     uid = str(raw_uid or '').strip()
     if not uid:
         return uid
+    if entry is not None and entry.allauth_id == 'saml':
+        settings_data = social_app.settings if isinstance(social_app.settings, dict) else {}
+        idp = settings_data.get('idp') if isinstance(settings_data.get('idp'), dict) else {}
+        entity_id = str(idp.get('entity_id') or '').strip()
+        if entity_id:
+            return f'{entity_id}|{uid}'
     if entry is not None and entry.allauth_id == 'openid_connect':
         claims = id_token_claims if isinstance(id_token_claims, dict) else {}
         issuer = str(claims.get('iss') or '').strip()

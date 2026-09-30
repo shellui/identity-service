@@ -36,7 +36,7 @@ class OAuthStrictProviderTests(TestCase):
 
     def test_catalog_supported_matches_release_list(self):
         supported = {e.docs_slug for e in get_provider_catalog().providers if e.supported}
-        self.assertEqual(supported, RELEASE_SUPPORTED_OAUTH_SLUGS)
+        self.assertEqual(supported, RELEASE_SUPPORTED_OAUTH_SLUGS | {'saml'})
 
     def test_strict_provider_round_trips(self):
         catalog = get_provider_catalog()

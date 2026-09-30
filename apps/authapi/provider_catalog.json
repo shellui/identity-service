@@ -631,13 +631,50 @@
       "replaced_by": null,
       "protocol": "SAML",
       "app": "allauth.socialaccount.providers.saml",
-      "supported": false,
-      "unsupported_reason": "Protocol SAML is not supported by the identity-hosted OAuth callback yet.",
+      "supported": true,
+      "unsupported_reason": null,
       "email_link_policy": "uid_only",
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/saml.html",
       "console_url": [],
       "allauth_callback_path": "/accounts/saml/<organization_slug>/acs/",
-      "extra_settings_schema": [],
+      "extra_settings_schema": [
+        {
+          "name": "idp_entity_id",
+          "type": "string",
+          "required": true,
+          "secret": false
+        },
+        {
+          "name": "sso_url",
+          "type": "url",
+          "required": false,
+          "secret": false
+        },
+        {
+          "name": "metadata_url",
+          "type": "url",
+          "required": false,
+          "secret": false
+        },
+        {
+          "name": "x509cert",
+          "type": "text",
+          "required": false,
+          "secret": false
+        },
+        {
+          "name": "trusted_for_verified_domains",
+          "type": "boolean",
+          "required": false,
+          "secret": false
+        },
+        {
+          "name": "allow_idp_initiated_sso",
+          "type": "boolean",
+          "required": false,
+          "secret": false
+        }
+      ],
       "icon": {
         "source": "fallback",
         "slug": "log-in",

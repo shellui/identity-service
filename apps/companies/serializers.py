@@ -20,6 +20,11 @@ class CompanySerializer(serializers.ModelSerializer):
 
 
 class CompanyUpdateSerializer(serializers.Serializer):
+    """
+    Company owner settings API. ``verified_email_domains`` is intentionally omitted;
+    only platform operators set it in Django admin after domain ownership proof.
+    """
+
     name = serializers.CharField(required=False, allow_blank=False, max_length=255)
     owner_ids = serializers.ListField(
         child=serializers.IntegerField(min_value=1),

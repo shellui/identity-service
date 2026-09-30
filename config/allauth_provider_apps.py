@@ -69,6 +69,7 @@ ALLAUTH_SOCIALACCOUNT_PROVIDER_APPS: tuple[str, ...] = (
     'allauth.socialaccount.providers.quickbooks',
     'allauth.socialaccount.providers.reddit',
     'allauth.socialaccount.providers.salesforce',
+    'allauth.socialaccount.providers.saml',
     'allauth.socialaccount.providers.sharefile',
     'allauth.socialaccount.providers.shopify',
     'allauth.socialaccount.providers.slack',
