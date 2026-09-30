@@ -49,6 +49,18 @@ class OAuthStrictProviderTests(TestCase):
             )
         self.assertIn('profile/userinfo URL host is missing', str(ctx.exception))
 
+    def test_assert_adapter_hosts_rejects_missing_linkedin_jwks_host(self):
+        with self.assertRaises(ValueError) as ctx:
+            _assert_adapter_hosts(
+                slug='linkedin',
+                authorize_url=f'https://www.linkedin.com/oauth/v2/authorization',
+                access_token_url='https://www.linkedin.com/oauth/v2/accessToken',
+                profile_url='https://api.linkedin.com/v2/userinfo',
+                company_host=None,
+                jwks_url=None,
+            )
+        self.assertIn('jwks URL host is missing', str(ctx.exception))
+
     def test_strict_provider_round_trips(self):
         catalog = get_provider_catalog()
         for slug in _load_e2e_slugs():

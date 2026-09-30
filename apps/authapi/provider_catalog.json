@@ -341,20 +341,7 @@
         }
       ],
       "allauth_callback_path": "/accounts/oidc/linkedin/login/callback/",
-      "extra_settings_schema": [
-        {
-          "name": "provider_id",
-          "type": "string",
-          "required": true,
-          "secret": false
-        },
-        {
-          "name": "server_url",
-          "type": "url",
-          "required": true,
-          "secret": false
-        }
-      ],
+      "extra_settings_schema": [],
       "icon": {
         "source": "fallback",
         "slug": "log-in",

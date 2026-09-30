@@ -161,6 +161,8 @@ def validate_extra_settings(
     """Return normalized settings for SocialApp.settings and validation errors."""
     errors: list[str] = []
     incoming = dict(extra or {})
+    if entry.docs_slug == 'linkedin':
+        incoming.pop('server_url', None)
     normalized: dict[str, Any] = {}
     for field in entry.extra_settings_schema:
         if field.secret and field.name not in incoming and partial:
@@ -188,8 +190,6 @@ def validate_extra_settings(
     if entry.docs_slug == 'linkedin':
         from apps.authapi.oauth_linkedin import LINKEDIN_OIDC_SERVER_URL
 
-        if 'server_url' in incoming:
-            errors.append('LinkedIn does not accept a custom server_url.')
         normalized['server_url'] = LINKEDIN_OIDC_SERVER_URL
 
     normalized['catalog_slug'] = entry.docs_slug

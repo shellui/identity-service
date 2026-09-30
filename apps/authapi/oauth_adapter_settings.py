@@ -54,6 +54,10 @@ def prefetch_openid_connect_config(
 
     document = safe_get_json(server_url)
     validate_oidc_discovery_document(document)
+    if entry is not None and entry.docs_slug == 'linkedin':
+        from apps.authapi.oauth_linkedin import assert_linkedin_oidc_discovery_hosts
+
+        assert_linkedin_oidc_discovery_hosts(document)
     adapter._openid_config = document
 
 

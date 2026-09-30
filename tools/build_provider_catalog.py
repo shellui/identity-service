@@ -58,6 +58,8 @@ EMAIL_POLICY_BY_PROTOCOL: dict[str, str] = {
 }
 
 EXTRA_SCHEMA_OVERRIDES: dict[str, list[dict]] = {
+    # LinkedIn OIDC endpoints are pinned server-side; companies only supply client credentials.
+    'linkedin': [],
     'microsoft': [{'name': 'tenant', 'type': 'string', 'required': False, 'secret': False}],
     'auth0': [{'name': 'AUTH0_URL', 'type': 'url', 'required': True, 'secret': False}],
     'apple': [

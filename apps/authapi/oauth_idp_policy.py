@@ -26,6 +26,8 @@ def is_company_controlled_idp(entry: ProviderCatalogEntry | None) -> bool:
 def requires_verified_id_token_for_login(entry: ProviderCatalogEntry | None) -> bool:
     if entry is None:
         return False
+    if is_company_controlled_idp(entry):
+        return True
     policy = entry.email_link_policy
     if policy in {'google_email_verified', 'oidc_email_verified_or_uid_only'}:
         return True

@@ -101,6 +101,7 @@ class OidcIdTokenLoginCallbackTests(TestCase):
         response = self._callback_for_spec(slug='linkedin', spec=spec, oauth_client=oauth_client)
         self.assertEqual(response.status_code, 400)
         self.assertEqual(User.objects.count(), before)
+        self.assertEqual(response.json().get('error_code'), 'oauth_id_token_invalid')
 
     def test_keycloak_malicious_email_returns_oauth_email_conflict(self):
         fixture = supported_provider_fixture('keycloak')
@@ -164,3 +165,43 @@ class OidcIdTokenLoginCallbackTests(TestCase):
         response = self._callback_for_spec(slug='openid_connect', spec=spec, oauth_client=oauth_client)
         self.assertEqual(response.status_code, 400)
         self.assertEqual(User.objects.count(), before)
+        self.assertEqual(response.json().get('error_code'), 'oauth_id_token_invalid')
+
+    def test_keycloak_wrong_signing_key_rejects_callback(self):
+        fixture = supported_provider_fixture('keycloak')
+        signing = generate_oauth_test_signing_key(kid='kc-trusted')
+        wrong = generate_oauth_test_signing_key(kid='kc-wrong')
+        app = SocialApp.objects.create(
+            provider='openid_connect',
+            provider_id='keycloak',
+            name='kc-wrong-key',
+            client_id='kc-client',
+            secret='secret',
+            settings={
+                'catalog_slug': 'keycloak',
+                'server_url': company_keycloak_oidc(self.company.slug).server_url,
+            },
+        )
+        oauth_client = CompanyOAuthClient.objects.create(company=self.company, social_app=app, is_active=True)
+        profile = dict(fixture.profile_document)
+        spec = _build_oidc_strict_spec(
+            slug='keycloak',
+            company_slug=self.company.slug,
+            social_app=app,
+            fixture_expected_uid=fixture.expected_uid,
+            profile=profile,
+            signing=wrong,
+        )
+        oidc = company_keycloak_oidc(self.company.slug)
+        host = oidc.hostname
+        from urllib.parse import urlparse
+
+        from apps.authapi.tests.oauth_test_crypto import json_response_handler
+
+        jwks_path = urlparse(f'{oidc.issuer}/jwks').path or '/jwks'
+        spec.routes[(host, 'GET', jwks_path)] = json_response_handler(signing.jwks_document())
+        before = User.objects.count()
+        response = self._callback_for_spec(slug='keycloak', spec=spec, oauth_client=oauth_client)
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(User.objects.count(), before)
+        self.assertEqual(response.json().get('error_code'), 'oauth_id_token_invalid')

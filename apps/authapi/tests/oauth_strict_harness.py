@@ -137,7 +137,7 @@ def _assert_adapter_hosts(
             ('jwks', jwks_host),
         ):
             if label == 'jwks' and not host:
-                continue
+                raise ValueError(f'{slug}: jwks URL host is missing after adapter settings')
             allowed = per_endpoint[label]
             if host not in allowed:
                 raise ValueError(f'{slug} {label} host {host!r} not in allowed {sorted(allowed)}')
@@ -317,6 +317,61 @@ def _build_oidc_strict_spec(
         hostnames=sorted(hostnames),
         expected_uid=fixture_expected_uid,
         company_host=company_host,
+    )
+
+
+def _assert_non_oidc_adapter_hosts(
+    *,
+    slug: str,
+    request,
+    social_app: SocialApp,
+    company_slug: str,
+) -> None:
+    entry = get_provider_catalog().by_slug()[slug]
+    company_host = _company_host_for_slug(slug, company_slug=company_slug, social_app=social_app)
+    bind_oauth_social_app(request, social_app)
+    with oauth_allauth_request(request, social_app=social_app), allauth_context.request_context(request):
+        provider = registry.get_class(entry.allauth_id)(request, app=social_app)
+        adapter_class = getattr(provider, 'oauth2_adapter_class', None)
+        if adapter_class is None:
+            raise ValueError(f'provider {slug} has no oauth2_adapter_class')
+        adapter = adapter_class(request)
+        apply_oauth_adapter_settings(adapter, social_app=social_app, entry=entry)
+        profile_url = (
+            getattr(adapter, 'profile_url', None)
+            or getattr(adapter, 'userinfo_url', None)
+            or getattr(adapter, 'identity_url', None)
+        )
+        _assert_adapter_hosts(
+            slug=slug,
+            authorize_url=adapter.authorize_url,
+            access_token_url=adapter.access_token_url,
+            profile_url=profile_url,
+            company_host=company_host,
+        )
+
+
+def _assert_strict_round_trip_adapter_hosts(
+    *,
+    slug: str,
+    request,
+    social_app: SocialApp,
+    company_slug: str,
+) -> None:
+    entry = get_provider_catalog().by_slug()[slug]
+    if slug == 'linkedin' or entry.allauth_id == 'openid_connect':
+        _assert_oidc_adapter_urls_with_live_discovery(
+            slug=slug,
+            request=request,
+            social_app=social_app,
+            company_slug=company_slug,
+        )
+        return
+    _assert_non_oidc_adapter_hosts(
+        slug=slug,
+        request=request,
+        social_app=social_app,
+        company_slug=company_slug,
     )
 
 
@@ -591,17 +646,15 @@ def run_strict_provider_round_trip(
     except Exception as exc:
         return f'spec: {exc}'
     with strict_provider_http(spec):
-        entry = get_provider_catalog().by_slug()[slug]
-        if slug == 'linkedin' or entry.allauth_id == 'openid_connect':
-            try:
-                _assert_oidc_adapter_urls_with_live_discovery(
-                    slug=slug,
-                    request=request,
-                    social_app=social_app,
-                    company_slug=company_slug,
-                )
-            except Exception as exc:
-                return f'oidc adapter hosts: {exc}'
+        try:
+            _assert_strict_round_trip_adapter_hosts(
+                slug=slug,
+                request=request,
+                social_app=social_app,
+                company_slug=company_slug,
+            )
+        except Exception as exc:
+            return f'adapter hosts: {exc}'
         parsed_authorize = urlparse(
             build_authorize_url(
                 slug,

@@ -172,6 +172,10 @@ def _verify_openid_connect_id_token(
     if not server_url:
         raise OAuth2Error('Missing OpenID Connect server_url.')
     discovery = fetch_oidc_discovery(server_url)
+    if entry is not None and entry.docs_slug == 'linkedin':
+        from apps.authapi.oauth_linkedin import assert_linkedin_oidc_discovery_hosts
+
+        assert_linkedin_oidc_discovery_hosts(discovery)
     issuer = str(discovery.get('issuer') or '').strip().rstrip('/')
     jwks_uri = str(discovery.get('jwks_uri') or '').strip()
     if not issuer or not jwks_uri:

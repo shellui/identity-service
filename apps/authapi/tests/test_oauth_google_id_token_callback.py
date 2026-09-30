@@ -188,4 +188,4 @@ class GoogleIdTokenCallbackTests(TestCase):
         response = self._callback_with_routes(routes, hostnames)
         self.assertEqual(response.status_code, 400)
         self.assertEqual(User.objects.count(), before)
-        self.assertIn('detail', response.json())
+        self.assertEqual(response.json().get('error_code'), 'oauth_id_token_invalid')

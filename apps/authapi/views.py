@@ -211,6 +211,67 @@ def _admin_user_group_rows(user: User, company: Company) -> list[dict]:
     )
 
 
+def _oauth_id_token_invalid_response(
+    *,
+    request,
+    provider: str,
+    company: Company,
+    client_tz: str = '',
+    client_dev: str | None = None,
+    redirect_to_raw: str | None = None,
+) -> Response:
+    detail = 'OAuth identity token could not be verified.'
+    record_login_event(
+        request=request,
+        outcome=LoginEvent.OUTCOME_FAILURE,
+        provider=provider,
+        user=None,
+        company=company,
+        failure_reason='oauth_id_token_invalid',
+        client_timezone=client_tz,
+        client_device_id=client_dev,
+    )
+    bounced = _shellui_oauth_bounce_or_json(
+        request,
+        message=detail,
+        error_code='oauth_id_token_invalid',
+        redirect_to_raw=redirect_to_raw,
+    )
+    if isinstance(bounced, HttpResponseRedirect):
+        return bounced
+    return Response({'detail': detail, 'error_code': 'oauth_id_token_invalid'}, status=status.HTTP_400_BAD_REQUEST)
+
+
+def _login_id_token_verified_after_exchange(
+    *,
+    provider: str,
+    token_bundle: OAuthTokenBundle,
+    company_id: int,
+    company_oauth_client_id: int | None,
+) -> bool:
+    if not token_bundle.id_token:
+        return True
+    resolved = resolve_oauth_client(
+        provider,
+        company_id=company_id,
+        company_oauth_client_id=company_oauth_client_id,
+    )
+    from apps.authapi.oauth_id_token import verified_login_id_token_claims
+    from apps.authapi.oauth_idp_policy import requires_verified_id_token_for_login
+
+    entry = resolved.catalog_entry
+    if not requires_verified_id_token_for_login(entry):
+        return True
+    social_app = get_social_app_for_client(resolved)
+    claims = verified_login_id_token_claims(
+        entry=entry,
+        social_app=social_app,
+        id_token_raw=token_bundle.id_token,
+        userinfo={},
+    )
+    return bool(claims)
+
+
 def _resolve_oauth_login_user(
     *,
     provider: str,
@@ -1401,6 +1462,19 @@ class SocialLoginView(APIView):
                 company_id=company.id,
                 company_oauth_client_id=company_oauth_client_id,
             )
+            if not _login_id_token_verified_after_exchange(
+                provider=provider,
+                token_bundle=token_bundle,
+                company_id=company.id,
+                company_oauth_client_id=company_oauth_client_id,
+            ):
+                return _oauth_id_token_invalid_response(
+                    request=request,
+                    provider=provider,
+                    company=company,
+                    client_tz=client_tz,
+                    client_dev=client_dev,
+                )
             userinfo = fetch_provider_userinfo(
                 provider,
                 token_bundle.access_token,
@@ -1936,6 +2010,20 @@ class ShellUIOAuthCallbackView(APIView):
                 company_oauth_client_id=company_oauth_client_id,
                 pkce_code_verifier=consume_oauth_pkce_verifier(state_payload.get('nonce') or ''),
             )
+            if not _login_id_token_verified_after_exchange(
+                provider=provider,
+                token_bundle=token_bundle,
+                company_id=company.id,
+                company_oauth_client_id=company_oauth_client_id,
+            ):
+                return _oauth_id_token_invalid_response(
+                    request=request,
+                    provider=provider,
+                    company=company,
+                    client_tz=client_tz,
+                    client_dev=client_dev,
+                    redirect_to_raw=redirect_to,
+                )
             userinfo = fetch_provider_userinfo(
                 provider,
                 token_bundle.access_token,
@@ -2245,6 +2333,19 @@ class ShellUIOAuthExchangeView(APIView):
                 company_id=company.id,
                 company_oauth_client_id=company_oauth_client_id,
             )
+            if not _login_id_token_verified_after_exchange(
+                provider=provider,
+                token_bundle=token_bundle,
+                company_id=company.id,
+                company_oauth_client_id=company_oauth_client_id,
+            ):
+                return _oauth_id_token_invalid_response(
+                    request=request,
+                    provider=provider,
+                    company=company,
+                    client_tz=client_tz,
+                    client_dev=client_dev,
+                )
             userinfo = fetch_provider_userinfo(
                 provider,
                 token_bundle.access_token,
