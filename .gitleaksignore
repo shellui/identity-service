@@ -5,3 +5,7 @@ d57432f1c98e778e15e16b4ad398a4195b6463fa:jwks/index.html:private-key:36
 102a7039a6b50e6a56c3345fb4f0f5d2d073746f:apps/authapi/tests/test_oauth_providers_e2e.py:jwt:138
 817f34d5172a8bd424f7f5ae2f782affb84d23cd:apps/authapi/tests/test_oauth_company_idp_isolation.py:generic-api-key:574
 ad25aa8943f3f4799ca024d7d6b330861bb49e08:apps/authapi/tests/test_oauth_company_idp_isolation.py:generic-api-key:296
+
+# Keycloak test fixture uid strings (not secrets) in the squash-merge commit of PR #69
+d5533c96658b240c5885345adaab4dd6212a2e56:apps/authapi/tests/test_oauth_company_idp_isolation.py:generic-api-key:297
+d5533c96658b240c5885345adaab4dd6212a2e56:apps/authapi/tests/test_oauth_company_idp_isolation.py:generic-api-key:763
