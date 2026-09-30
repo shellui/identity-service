@@ -2222,6 +2222,13 @@ class ShellUIOAuthCallbackView(APIView):
                 redirect_to_raw=redirect_to,
             )
         except Exception:
+            # Stay below ERROR: Sentry events capture frame locals (client secret, code, tokens).
+            logger.warning(
+                'OAuth callback failed for provider %r (company %s)',
+                provider,
+                company.id,
+                exc_info=True,
+            )
             record_login_event(
                 request=request,
                 outcome=LoginEvent.OUTCOME_FAILURE,

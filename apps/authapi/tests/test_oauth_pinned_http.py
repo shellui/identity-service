@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import gzip
 import json
 from unittest import TestCase
 from unittest.mock import patch
-from apps.authapi.oauth_pinned_http import pinned_get_json
+from apps.authapi.oauth_pinned_http import pinned_get_json, pinned_requests_session_for_url
 from apps.authapi.tests.oauth_ssrf_test_utils import pin_oauth_http_to_localhost
-from apps.authapi.tests.oauth_test_crypto import OAuthMockHttpsServer, json_response_handler
+from apps.authapi.tests.oauth_test_crypto import (
+    OAuthMockHttpsServer,
+    _drain_request_body,
+    json_response_handler,
+)
 
 
 class OAuthPinnedHttpTests(TestCase):
@@ -38,6 +43,47 @@ class OAuthPinnedHttpTests(TestCase):
                     data = pinned_get_json(url)
             self.assertEqual(data, {'ok': True})
             self.assertEqual(seen['host'], f'{hostname}:{server.port}')
+        finally:
+            server.shutdown()
+
+    def test_requests_session_gets_uncompressed_body_from_gzip_capable_provider(self) -> None:
+        hostname = 'oauth-gzip.test'
+        seen: dict[str, str] = {}
+
+        def _handler(http) -> None:
+            _drain_request_body(http)
+            accept_encoding = http.headers.get('Accept-Encoding', '')
+            seen['accept_encoding'] = accept_encoding
+            body = json.dumps({'access_token': 'gh-token', 'token_type': 'bearer'}).encode()
+            http.send_response(200)
+            http.send_header('Content-Type', 'application/json')
+            if 'gzip' in accept_encoding:
+                body = gzip.compress(body)
+                http.send_header('Content-Encoding', 'gzip')
+            http.send_header('Content-Length', str(len(body)))
+            http.end_headers()
+            http.wfile.write(body)
+
+        server = OAuthMockHttpsServer.start(
+            hostnames=[hostname],
+            routes={(hostname, 'POST', '/login/oauth/access_token'): _handler},
+        )
+        url = f'https://{hostname}:{server.port}/login/oauth/access_token'
+        try:
+            with pin_oauth_http_to_localhost((hostname, server.port)):
+                with patch(
+                    'apps.actions.webhook_transport.ssl.create_default_context',
+                    return_value=server.ssl_client_context(),
+                ):
+                    session = pinned_requests_session_for_url(url)
+                    response = session.post(
+                        url,
+                        data={'code': 'abc'},
+                        headers={'Accept': 'application/json'},
+                        timeout=5,
+                    )
+            self.assertEqual(seen['accept_encoding'], 'identity')
+            self.assertEqual(response.json(), {'access_token': 'gh-token', 'token_type': 'bearer'})
         finally:
             server.shutdown()
 

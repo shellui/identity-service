@@ -93,10 +93,13 @@ class _PinnedEndpointAdapter(HTTPAdapter):
         method = request.method or 'GET'
         body = request.body
         req_body = body.encode('utf-8') if isinstance(body, str) else body
+        headers = dict(request.headers)
+        # The payload is handed back undecoded, so compressed bodies would break JSON parsing.
+        headers['Accept-Encoding'] = 'identity'
         status, resp_headers, payload = pinned_fetch_bytes(
             request.url,
             method=method,
-            headers=dict(request.headers),
+            headers=headers,
             body=req_body if req_body else None,
             timeout=timeout if isinstance(timeout, (int, float)) else 20,
         )
