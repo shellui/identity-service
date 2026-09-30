@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import binascii
 import logging
 from http import HTTPStatus
 
@@ -20,20 +19,21 @@ from onelogin.saml2.settings import OneLogin_Saml2_Settings
 
 from apps.authapi.oauth_request_context import oauth_allauth_request
 from apps.authapi.oauth_social_account import bind_oauth_social_app
-from apps.authapi.saml.errors import saml_http_error, saml_json_error
+from apps.authapi.saml.errors import SAMLFlowError, saml_http_error, saml_json_error
 from apps.authapi.saml.login_complete import complete_shellui_saml_login
 from apps.authapi.saml.organization import (
     get_saml_app_for_slug,
     idp_entity_id_from_settings,
     shellui_company_id_from_app,
 )
+from apps.authapi.saml.replay import consume_assertion_id_once, ensure_saml_replay_cache_backend
 from apps.authapi.saml.request_id import stash_saml_request_id
 from apps.authapi.saml.security import (
-    enforce_replay_protection,
     extract_in_response_to_from_saml_response_b64,
     validate_in_response_to,
 )
-from apps.authapi.saml.utils import build_auth, build_saml_config
+from apps.authapi.saml.utils import SAMLConfigError, build_auth, build_saml_config
+from apps.authapi.saml.validation import check_validated_assertion
 from apps.companies.models import Company
 from apps.companies.redirect_allowlist import validate_redirect_to_for_company
 
@@ -92,26 +92,23 @@ class ShellUISAMLFinishACSView(SAMLViewMixin, View):
                 logger.error('SAML InResponseTo session binding failed')
                 return saml_http_error(error_code='saml_in_response_to_session_mismatch', status=HTTPStatus.BAD_REQUEST)
 
-        with oauth_allauth_request(acs_request, social_app=social_app):
-            auth = build_auth(acs_request, social_app)
-        errors: list[str] = []
-        error_reason = None
         try:
-            auth.process_response(request_id=in_response_to)
-        except binascii.Error:
-            errors = ['invalid_response']
-            error_reason = 'invalid_response'
-        except OneLogin_Saml2_Error as exc:
-            errors = ['error']
-            error_reason = str(exc)
-        if not errors:
-            errors = auth.get_errors()
-        if errors:
-            error_reason = auth.get_last_error_reason() or error_reason
-            logger.error('SAML ACS errors: %s (%s)', ','.join(errors), error_reason)
-            return saml_http_error(error_code='saml_response_invalid', status=HTTPStatus.BAD_REQUEST)
-        if not auth.is_authenticated():
-            return saml_http_error(error_code='saml_auth_cancelled', status=HTTPStatus.BAD_REQUEST)
+            with oauth_allauth_request(acs_request, social_app=social_app):
+                auth = build_auth(acs_request, social_app)
+        except SAMLConfigError:
+            logger.error('SAML IdP configuration invalid for app %s', social_app.pk)
+            return saml_http_error(error_code='saml_idp_config_invalid', status=HTTPStatus.INTERNAL_SERVER_ERROR)
+        auth.process_response(request_id=in_response_to)
+        if auth.shellui_error_code or not auth.is_authenticated():
+            error_code = auth.shellui_error_code or 'saml_response_invalid'
+            logger.warning('SAML ACS rejected: %s (%s)', error_code, auth.get_last_error_reason())
+            return saml_http_error(error_code=error_code, status=HTTPStatus.BAD_REQUEST)
+        acs_url = auth.get_settings().get_sp_data()['assertionConsumerService']['url']
+        try:
+            validated = check_validated_assertion(auth.validated_response, acs_url=acs_url)
+        except SAMLFlowError as exc:
+            logger.warning('SAML ACS rejected: %s', exc.error_code)
+            return saml_http_error(error_code=exc.error_code, status=exc.status)
 
         company_id = shellui_company_id_from_app(social_app)
         if company_id is None:
@@ -119,7 +116,13 @@ class ShellUISAMLFinishACSView(SAMLViewMixin, View):
         idp_entity = idp_entity_id_from_settings(
             social_app.settings if isinstance(social_app.settings, dict) else {}
         )
-        if not enforce_replay_protection(auth, company_id=company_id, idp_entity_id=idp_entity):
+        ensure_saml_replay_cache_backend()
+        if not consume_assertion_id_once(
+            company_id=company_id,
+            idp_entity_id=idp_entity,
+            assertion_id=validated.assertion_id,
+            ttl_seconds=validated.replay_ttl_seconds,
+        ):
             return saml_http_error(error_code='saml_assertion_replay', status=HTTPStatus.BAD_REQUEST)
 
         shellui_state = None
@@ -155,10 +158,10 @@ class ShellUISAMLMetadataView(SAMLViewMixin, View):
         settings_data = social_app.settings if isinstance(social_app.settings, dict) else {}
         try:
             config = build_saml_config(request, settings_data, organization_slug)
-        except ValueError:
+            saml_settings = OneLogin_Saml2_Settings(settings=config, sp_validation_only=True)
+            metadata = saml_settings.get_sp_metadata()
+        except (SAMLConfigError, OneLogin_Saml2_Error, ValueError):
             return saml_json_error(error_code='saml_metadata_invalid', status=500)
-        saml_settings = OneLogin_Saml2_Settings(settings=config, sp_validation_only=True)
-        metadata = saml_settings.get_sp_metadata()
         errors = saml_settings.validate_metadata(metadata)
         if errors:
             return saml_json_error(error_code='saml_metadata_invalid', status=500)
@@ -198,10 +201,13 @@ class ShellUISAMLLoginView(SAMLViewMixin, View):
             'company_oauth_client_id': request.GET.get('company_oauth_client_id'),
         }
         bind_oauth_social_app(request, social_app)
-        with oauth_allauth_request(request, social_app=social_app):
-            auth = build_auth(request, social_app)
-            redirect_url = auth.login(return_to='')
-            request_id = auth.get_last_request_id()
+        try:
+            with oauth_allauth_request(request, social_app=social_app):
+                auth = build_auth(request, social_app)
+                redirect_url = auth.login(return_to='')
+                request_id = auth.get_last_request_id()
+        except SAMLConfigError:
+            return saml_json_error(error_code='saml_idp_config_invalid', status=HTTPStatus.INTERNAL_SERVER_ERROR)
         if not request_id:
             return saml_json_error(error_code='saml_authn_request_failed', status=HTTPStatus.BAD_REQUEST)
         request.session[SHELLUI_SAML_AUTHN_REQUEST_SESSION_KEY] = str(request_id)
@@ -246,7 +252,10 @@ class ShellUISAMLSLSView(SAMLViewMixin, View):
             return saml_http_error(error_code='callback_company', status=HTTPStatus.BAD_REQUEST)
 
         bind_oauth_social_app(request, social_app)
-        auth = build_auth(request, social_app, require_signed_messages=True)
+        try:
+            auth = build_auth(request, social_app, require_signed_messages=True)
+        except SAMLConfigError:
+            return saml_http_error(error_code='saml_idp_config_invalid', status=HTTPStatus.INTERNAL_SERVER_ERROR)
 
         def _end_session() -> None:
             django_auth_logout(request)

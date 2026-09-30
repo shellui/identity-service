@@ -110,6 +110,11 @@ class SAMLACSSecurityTests(TestCase):
             return response
         return response.status_code
 
+    def _assert_rejected(self, saml_b64: str, request_id: str | None, error_code: str) -> None:
+        finish = self._post_saml(saml_b64, request_id=request_id, return_response=True)
+        self.assertEqual(finish.status_code, 400)
+        self.assertEqual(finish.content.decode(), error_code)
+
     def test_valid_login_accepts_signed_assertion(self):
         request_id = '_validrequest001'
         saml = build_signed_saml_response(
@@ -139,8 +144,7 @@ class SAMLACSSecurityTests(TestCase):
         for el in root.xpath('//*[local-name()="Signature"]'):
             el.getparent().remove(el)
         tampered = base64.b64encode(etree.tostring(root)).decode('ascii')
-        status = self._post_saml(tampered, request_id=request_id)
-        self.assertEqual(status, 400)
+        self._assert_rejected(tampered, request_id, 'saml_signature_missing')
 
     def test_rejects_wrong_audience(self):
         request_id = '_audiencereq001'
@@ -152,8 +156,7 @@ class SAMLACSSecurityTests(TestCase):
             in_response_to=request_id,
             audience='https://wrong-sp.example/metadata/',
         )
-        status = self._post_saml(saml, request_id=request_id)
-        self.assertEqual(status, 400)
+        self._assert_rejected(saml, request_id, 'saml_audience_mismatch')
 
     def test_rejects_wrong_issuer(self):
         request_id = '_issuerreq001'
@@ -165,8 +168,7 @@ class SAMLACSSecurityTests(TestCase):
             in_response_to=request_id,
             issuer='https://evil-idp.example/entity',
         )
-        status = self._post_saml(saml, request_id=request_id)
-        self.assertEqual(status, 400)
+        self._assert_rejected(saml, request_id, 'saml_issuer_mismatch')
 
     def test_rejects_expired_assertion(self):
         request_id = '_expiredreq001'
@@ -178,8 +180,7 @@ class SAMLACSSecurityTests(TestCase):
             in_response_to=request_id,
             not_on_or_after_offset_seconds=-120,
         )
-        status = self._post_saml(saml, request_id=request_id)
-        self.assertEqual(status, 400)
+        self._assert_rejected(saml, request_id, 'saml_subject_confirmation_invalid')
 
     def test_rejects_replayed_assertion_id(self):
         assertion_id = '_replay-assertion-id'
@@ -211,8 +212,7 @@ class SAMLACSSecurityTests(TestCase):
             in_response_to=request_id_b,
             assertion_id=assertion_id,
         )
-        second = self._post_saml(saml_b, request_id=request_id_b)
-        self.assertEqual(second, 400)
+        self._assert_rejected(saml_b, request_id_b, 'saml_assertion_replay')
 
     def test_rejects_reused_in_response_to(self):
         request_id = '_reuseirtreq01'
@@ -234,8 +234,7 @@ class SAMLACSSecurityTests(TestCase):
             in_response_to=request_id,
             assertion_id='_assert-second-002',
         )
-        second = self._post_saml(saml_second, request_id=request_id)
-        self.assertEqual(second, 400)
+        self._assert_rejected(saml_second, request_id, 'saml_in_response_to_invalid')
 
     def test_rejects_in_response_to_without_login_session_binding(self):
         request_id = '_crossbrowser01'
@@ -277,8 +276,49 @@ class SAMLACSSecurityTests(TestCase):
             in_response_to=request_id,
             destination='https://evil.example/acs',
         )
-        status = self._post_saml(saml, request_id=request_id)
-        self.assertEqual(status, 400)
+        self._assert_rejected(saml, request_id, 'saml_destination_mismatch')
+
+    def test_rejects_destination_that_only_starts_with_acs_url(self):
+        request_id = '_destprefix001'
+        saml = build_signed_saml_response(
+            creds=self.creds,
+            sp_entity_id=self.sp['entity_id'],
+            acs_url=self.sp['acs_url'],
+            name_id='user-dest-prefix',
+            in_response_to=request_id,
+            destination=self.sp['acs_url'] + 'evil/',
+        )
+        self._assert_rejected(saml, request_id, 'saml_destination_mismatch')
+
+    def test_rejects_recipient_that_only_contains_acs_url(self):
+        request_id = '_recipsubstr001'
+        saml = build_signed_saml_response(
+            creds=self.creds,
+            sp_entity_id=self.sp['entity_id'],
+            acs_url=self.sp['acs_url'],
+            name_id='user-recip-substr',
+            in_response_to=request_id,
+            recipient='https://evil.example/?next=' + self.sp['acs_url'],
+        )
+        self._assert_rejected(saml, request_id, 'saml_recipient_mismatch')
+
+    def test_rejects_envelope_in_response_to_missing_from_signed_assertion(self):
+        import base64
+
+        from lxml import etree
+
+        request_id = '_envelopeirt001'
+        saml = build_signed_saml_response(
+            creds=self.creds,
+            sp_entity_id=self.sp['entity_id'],
+            acs_url=self.sp['acs_url'],
+            name_id='user-envelope-irt',
+            in_response_to=None,
+        )
+        root = etree.fromstring(base64.b64decode(saml.encode('ascii')))
+        root.set('InResponseTo', request_id)
+        forged = base64.b64encode(etree.tostring(root)).decode('ascii')
+        self._assert_rejected(forged, request_id, 'saml_in_response_to_mismatch')
 
     def test_rejects_wrong_recipient(self):
         request_id = '_recipreq001'
@@ -290,8 +330,7 @@ class SAMLACSSecurityTests(TestCase):
             in_response_to=request_id,
             recipient='https://evil.example/acs',
         )
-        status = self._post_saml(saml, request_id=request_id)
-        self.assertEqual(status, 400)
+        self._assert_rejected(saml, request_id, 'saml_subject_confirmation_invalid')
 
     def test_rejects_assertion_valid_beyond_replay_ttl(self):
         request_id = '_longlived001'
@@ -303,8 +342,7 @@ class SAMLACSSecurityTests(TestCase):
             in_response_to=request_id,
             not_on_or_after_offset_seconds=3600,
         )
-        status = self._post_saml(saml, request_id=request_id)
-        self.assertEqual(status, 400)
+        self._assert_rejected(saml, request_id, 'saml_assertion_lifetime_invalid')
 
     def test_rejects_signature_wrapping_attempt(self):
         request_id = '_wrapreq001'
@@ -316,8 +354,7 @@ class SAMLACSSecurityTests(TestCase):
             in_response_to=request_id,
             wrap_signature=True,
         )
-        status = self._post_saml(saml, request_id=request_id)
-        self.assertEqual(status, 400)
+        self._assert_rejected(saml, request_id, 'saml_assertion_count_invalid')
 
     def test_rejects_idp_initiated_by_default(self):
         saml = build_signed_saml_response(
@@ -327,8 +364,7 @@ class SAMLACSSecurityTests(TestCase):
             name_id='user-idp-init',
             in_response_to=None,
         )
-        status = self._post_saml(saml)
-        self.assertEqual(status, 400)
+        self._assert_rejected(saml, None, 'saml_idp_initiated_rejected')
 
     def test_company_mismatch_blocked(self):
         other_app = SocialApp.objects.create(

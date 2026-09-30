@@ -4,166 +4,175 @@ from __future__ import annotations
 
 from django.http import HttpRequest
 from django.urls import reverse
-from onelogin.saml2.auth import OneLogin_Saml2_Auth
 from onelogin.saml2.constants import OneLogin_Saml2_Constants
+from onelogin.saml2.errors import OneLogin_Saml2_Error
 
-from apps.authapi.saml.metadata_import import fetch_idp_metadata_xml, parse_idp_metadata
 from apps.authapi.saml.organization import idp_entity_id_from_settings
 
 
-def shellui_saml_clock_skew_seconds() -> int:
-    return 90
+class SAMLConfigError(Exception):
+    """Stored IdP settings cannot be turned into a python3-saml configuration."""
 
 
 def _reverse_sp_url(request: HttpRequest, name: str, organization_slug: str) -> str:
     return request.build_absolute_uri(reverse(name, kwargs={'organization_slug': organization_slug}))
 
 
+def sp_acs_url(request: HttpRequest, organization_slug: str) -> str:
+    return _reverse_sp_url(request, 'shellui-saml-acs', organization_slug)
+
+
+def sp_sls_url(request: HttpRequest, organization_slug: str) -> str:
+    return _reverse_sp_url(request, 'shellui-saml-sls', organization_slug)
+
+
+def sp_entity_id(request: HttpRequest, organization_slug: str) -> str:
+    return _reverse_sp_url(request, 'shellui-saml-metadata', organization_slug)
+
+
 def default_shellui_saml_advanced() -> dict:
     return {
-        'strict': True,
         'reject_idp_initiated_sso': True,
-        'authn_request_signed': False,
-        'want_assertion_signed': True,
         'want_message_signed': False,
-        'reject_deprecated_algorithm': True,
-        'allow_single_label_domains': False,
-        'want_attribute_statement': True,
     }
-
-
-_SHELLUI_ADVANCED_ADMIN_KEYS = frozenset({'reject_idp_initiated_sso'})
 
 
 def merge_shellui_advanced(existing: dict | None) -> dict:
-    base = default_shellui_saml_advanced()
-    if isinstance(existing, dict):
-        for key, value in existing.items():
-            if key in _SHELLUI_ADVANCED_ADMIN_KEYS:
-                base[key] = bool(value)
-    base['strict'] = True
-    base['want_assertion_signed'] = True
-    if isinstance(existing, dict) and bool(existing.get('want_message_signed')):
-        base['want_message_signed'] = True
-    return base
+    """
+    Keep only the advanced options a company admin may choose.
+
+    Everything that weakens response validation (strict mode, signed assertions, deprecated
+    algorithms) is fixed in ``security_settings`` and never read from stored settings.
+    """
+    merged = default_shellui_saml_advanced()
+    if not isinstance(existing, dict):
+        return merged
+    if 'reject_idp_initiated_sso' in existing:
+        merged['reject_idp_initiated_sso'] = bool(existing['reject_idp_initiated_sso'])
+    if existing.get('want_message_signed') is True:
+        merged['want_message_signed'] = True
+    return merged
 
 
-def build_sp_config(request: HttpRequest, provider_config: dict, organization_slug: str) -> dict:
-    acs_url = _reverse_sp_url(request, 'shellui-saml-acs', organization_slug)
-    sls_url = _reverse_sp_url(request, 'shellui-saml-sls', organization_slug)
-    metadata_url = _reverse_sp_url(request, 'shellui-saml-metadata', organization_slug)
-    sp_block = provider_config.get('sp') if isinstance(provider_config.get('sp'), dict) else {}
-    sp_entity_id = str(sp_block.get('entity_id') or '').strip() or metadata_url
-    sp_config = {
-        'entityId': sp_entity_id,
+def idp_initiated_sso_allowed(settings_data: dict) -> bool:
+    advanced = settings_data.get('advanced') if isinstance(settings_data.get('advanced'), dict) else {}
+    return not merge_shellui_advanced(advanced)['reject_idp_initiated_sso']
+
+
+def security_settings(settings_data: dict, *, require_signed_messages: bool = False) -> dict:
+    advanced = merge_shellui_advanced(
+        settings_data.get('advanced') if isinstance(settings_data.get('advanced'), dict) else {}
+    )
+    return {
+        'authnRequestsSigned': False,
+        'logoutRequestSigned': False,
+        'logoutResponseSigned': False,
+        'signMetadata': False,
+        'wantAssertionsSigned': True,
+        'wantMessagesSigned': bool(require_signed_messages or advanced['want_message_signed']),
+        'wantAssertionsEncrypted': False,
+        'wantNameId': True,
+        'wantNameIdEncrypted': False,
+        'nameIdEncrypted': False,
+        'wantAttributeStatement': False,
+        'allowRepeatAttributeName': True,
+        'requestedAuthnContext': False,
+        'failOnAuthnContextMismatch': False,
+        'allowSingleLabelDomains': False,
+        'rejectDeprecatedAlgorithm': True,
+        'signatureAlgorithm': OneLogin_Saml2_Constants.RSA_SHA256,
+        'digestAlgorithm': OneLogin_Saml2_Constants.SHA256,
+    }
+
+
+def idp_signing_certificates(idp: dict) -> list[str]:
+    certs = idp.get('x509certs')
+    if isinstance(certs, list):
+        cleaned = [''.join(str(cert).split()) for cert in certs if isinstance(cert, str) and cert.strip()]
+    else:
+        cleaned = []
+    single = idp.get('x509cert')
+    if isinstance(single, str) and single.strip():
+        value = ''.join(single.split())
+        if value not in cleaned:
+            cleaned.insert(0, value)
+    return cleaned
+
+
+def resolve_idp_block(settings_data: dict) -> dict:
+    """python3-saml ``idp`` block from the stored snapshot. Never fetches metadata at request time."""
+    idp = settings_data.get('idp')
+    if not isinstance(idp, dict):
+        raise SAMLConfigError('idp_config_missing')
+    entity_id = str(idp.get('entity_id') or '').strip()
+    sso_url = str(idp.get('sso_url') or '').strip()
+    certs = idp_signing_certificates(idp)
+    if not entity_id or not sso_url or not certs:
+        raise SAMLConfigError('idp_config_incomplete')
+    block: dict = {
+        'entityId': entity_id,
+        'singleSignOnService': {
+            'url': sso_url,
+            'binding': OneLogin_Saml2_Constants.BINDING_HTTP_REDIRECT,
+        },
+        'x509cert': certs[0],
+    }
+    if len(certs) > 1:
+        block['x509certMulti'] = {'signing': certs}
+    slo_url = str(idp.get('slo_url') or '').strip()
+    if slo_url:
+        slo: dict = {'url': slo_url, 'binding': OneLogin_Saml2_Constants.BINDING_HTTP_REDIRECT}
+        slo_response_url = str(idp.get('slo_response_url') or '').strip()
+        if slo_response_url:
+            slo['responseUrl'] = slo_response_url
+        block['singleLogoutService'] = slo
+    return block
+
+
+def build_sp_config(request: HttpRequest, organization_slug: str) -> dict:
+    return {
+        'entityId': sp_entity_id(request, organization_slug),
         'assertionConsumerService': {
-            'url': acs_url,
+            'url': sp_acs_url(request, organization_slug),
             'binding': OneLogin_Saml2_Constants.BINDING_HTTP_POST,
         },
         'singleLogoutService': {
-            'url': sls_url,
+            'url': sp_sls_url(request, organization_slug),
             'binding': OneLogin_Saml2_Constants.BINDING_HTTP_REDIRECT,
         },
+        'NameIDFormat': OneLogin_Saml2_Constants.NAMEID_UNSPECIFIED,
     }
-    avd = merge_shellui_advanced(provider_config.get('advanced') if isinstance(provider_config.get('advanced'), dict) else {})
-    if avd.get('x509cert') is not None:
-        sp_config['x509cert'] = avd['x509cert']
-    if avd.get('x509cert_new'):
-        sp_config['x509certNew'] = avd['x509cert_new']
-    if avd.get('private_key') is not None:
-        sp_config['privateKey'] = avd['private_key']
-    if avd.get('name_id_format') is not None:
-        sp_config['NameIDFormat'] = avd['name_id_format']
-    return sp_config
-
-
-def resolve_idp_block(provider_config: dict) -> dict:
-    idp = provider_config.get('idp')
-    if not isinstance(idp, dict):
-        raise ValueError('idp_config_missing')
-    metadata_url = str(idp.get('metadata_url') or '').strip()
-    entity_id = str(idp.get('entity_id') or '').strip()
-    if metadata_url:
-        xml_bytes = fetch_idp_metadata_xml(metadata_url)
-        parsed = parse_idp_metadata(xml_bytes, expected_entity_id=entity_id)
-        merged = dict(idp)
-        merged.update(parsed['idp'])
-        merged.pop('metadata_url', None)
-        return merged
-    cert = str(idp.get('x509cert') or '').strip()
-    sso_url = str(idp.get('sso_url') or '').strip()
-    if not entity_id or not cert or not sso_url:
-        raise ValueError('idp_manual_config_incomplete')
-    block = {
-        'entityId': entity_id,
-        'x509cert': cert,
-        'singleSignOnService': {'url': sso_url},
-    }
-    slo_url = str(idp.get('slo_url') or '').strip()
-    if slo_url:
-        block['singleLogoutService'] = {'url': slo_url}
-    return block
 
 
 def build_saml_config(
     request: HttpRequest,
-    provider_config: dict,
+    settings_data: dict,
     organization_slug: str,
     *,
     require_signed_messages: bool = False,
+    include_idp: bool = True,
 ) -> dict:
-    avd = merge_shellui_advanced(provider_config.get('advanced') if isinstance(provider_config.get('advanced'), dict) else {})
-    if require_signed_messages:
-        avd['want_message_signed'] = True
-    security_config = {
-        'authnRequestsSigned': avd.get('authn_request_signed', False),
-        'digestAlgorithm': avd.get('digest_algorithm', OneLogin_Saml2_Constants.SHA256),
-        'logoutRequestSigned': avd.get('logout_request_signed', False),
-        'logoutResponseSigned': avd.get('logout_response_signed', False),
-        'requestedAuthnContext': False,
-        'signatureAlgorithm': avd.get(
-            'signature_algorithm', OneLogin_Saml2_Constants.RSA_SHA256
-        ),
-        'signMetadata': avd.get('metadata_signed', False),
-        'wantAssertionsEncrypted': avd.get('want_assertion_encrypted', False),
-        'wantAssertionsSigned': avd.get('want_assertion_signed', True),
-        'wantMessagesSigned': avd.get('want_message_signed', False),
-        'nameIdEncrypted': avd.get('name_id_encrypted', False),
-        'wantNameIdEncrypted': avd.get('want_name_id_encrypted', False),
-        'allowSingleLabelDomains': avd.get('allow_single_label_domains', False),
-        'rejectDeprecatedAlgorithm': avd.get('reject_deprecated_algorithm', True),
-        'wantNameId': avd.get('want_name_id', True),
-        'wantAttributeStatement': avd.get('want_attribute_statement', True),
-        'allowRepeatAttributeName': avd.get('allow_repeat_attribute_name', True),
+    config: dict = {
+        'strict': True,
+        'debug': False,
+        'security': security_settings(settings_data, require_signed_messages=require_signed_messages),
+        'sp': build_sp_config(request, organization_slug),
     }
-    saml_config = {
-        'strict': avd.get('strict', True),
-        'security': security_config,
-        'clockSkew': shellui_saml_clock_skew_seconds(),
-    }
-    contact_person = provider_config.get('contact_person')
-    if contact_person:
-        saml_config['contactPerson'] = contact_person
-    organization = provider_config.get('organization')
-    if organization:
-        saml_config['organization'] = organization
-    idp_block = resolve_idp_block(provider_config)
-    saml_config['idp'] = idp_block
-    saml_config['sp'] = build_sp_config(request, provider_config, organization_slug)
-    attribute_mapping = provider_config.get('attribute_mapping')
-    if isinstance(attribute_mapping, dict) and attribute_mapping:
-        saml_config['attributeConsumingService'] = {'serviceName': 'Shellui', 'attributes': []}
-    return saml_config
+    if include_idp:
+        config['idp'] = resolve_idp_block(settings_data)
+    return config
 
 
-def prepare_django_request(request: HttpRequest) -> dict:
+def prepare_django_request(request: HttpRequest, *, path_info: str | None = None, post_data: dict | None = None) -> dict:
     return {
         'https': 'on' if request.is_secure() else 'off',
-        'http_host': request.META.get('HTTP_HOST') or request.get_host(),
-        'script_name': request.META.get('SCRIPT_NAME'),
-        'path_info': request.META['PATH_INFO'],
-        'get_data': request.GET.copy(),
-        'post_data': request.POST.copy(),
+        'http_host': request.get_host(),
+        'script_name': request.META.get('SCRIPT_NAME', ''),
+        'path_info': path_info if path_info is not None else request.path_info,
+        'get_data': request.GET.dict() if post_data is None else {},
+        'post_data': dict(post_data) if post_data is not None else request.POST.dict(),
+        'query_string': request.META.get('QUERY_STRING', '') if post_data is None else '',
+        'validate_signature_from_qs': True,
     }
 
 
@@ -171,8 +180,11 @@ def build_auth(
     request: HttpRequest,
     social_app,
     *,
+    request_data: dict | None = None,
     require_signed_messages: bool = False,
-) -> OneLogin_Saml2_Auth:
+):
+    from apps.authapi.saml.validation import ShellUISAMLAuth
+
     settings_data = social_app.settings if isinstance(social_app.settings, dict) else {}
     config = build_saml_config(
         request,
@@ -180,15 +192,17 @@ def build_auth(
         str(social_app.client_id),
         require_signed_messages=require_signed_messages,
     )
-    return OneLogin_Saml2_Auth(prepare_django_request(request), config)
+    try:
+        return ShellUISAMLAuth(request_data or prepare_django_request(request), config)
+    except OneLogin_Saml2_Error as exc:
+        raise SAMLConfigError('settings_invalid') from exc
 
 
 def sp_public_urls(request: HttpRequest, organization_slug: str, *, settings_data: dict) -> dict:
-    sp = build_sp_config(request, settings_data, organization_slug)
     return {
-        'acs_url': sp['assertionConsumerService']['url'],
-        'entity_id': sp['entityId'],
-        'metadata_url': _reverse_sp_url(request, 'shellui-saml-metadata', organization_slug),
-        'sls_url': sp['singleLogoutService']['url'],
+        'acs_url': sp_acs_url(request, organization_slug),
+        'entity_id': sp_entity_id(request, organization_slug),
+        'metadata_url': sp_entity_id(request, organization_slug),
+        'sls_url': sp_sls_url(request, organization_slug),
         'idp_entity_id': idp_entity_id_from_settings(settings_data),
     }
