@@ -30,6 +30,10 @@ The only exception is when all of the following hold:
 2. The assertion email domain is listed in the company `verified_email_domains` field (Shellui domain verification, not `allowed_email_domains`).
 3. The email is not already tied to another user under a different SAML uid (`saml_email_conflict`).
 
+### Domain verification (platform only)
+
+`verified_email_domains` is **not** writable through the company admin API. Shellui operators set it in Django admin after confirming domain ownership (DNS TXT self-service verification is planned separately). Company owners cannot self-assert a domain to unlock SAML email linking.
+
 ## End-user login
 
 Use the same browser entrypoint as OAuth:

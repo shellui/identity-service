@@ -81,8 +81,9 @@ class Company(models.Model):
         default=list,
         blank=True,
         help_text=(
-            'Domains Shellui has verified this company owns. SAML may link by email only for '
-            'addresses on these domains when the IdP is explicitly trusted.'
+            'Domains Shellui operators have confirmed this company owns (Django admin only). '
+            'SAML may link by assertion email only on these domains when the IdP is trusted. '
+            'Company admins cannot set this via the Shellui admin API.'
         ),
     )
     enable_magic_link = models.BooleanField(

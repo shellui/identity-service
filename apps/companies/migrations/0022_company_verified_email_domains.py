@@ -1,3 +1,4 @@
+# SAML PR #70: renumber this migration if companies 0022+ collides with parallel work (e.g. OAuth PR #69).
 from django.db import migrations, models
 
 
@@ -15,7 +16,7 @@ class Migration(migrations.Migration):
                 blank=True,
                 default=list,
                 help_text=(
-                    'Lowercase domains Shellui has verified the company owns (DNS or equivalent). '
+                    'Domains set by Shellui operators in Django admin after ownership proof. '
                     'Used for SAML email linking; not the same as allowed_email_domains.'
                 ),
             ),

@@ -1,4 +1,12 @@
-"""Shellui-verified company email domains (proof of ownership, not join allow-list)."""
+"""
+Shellui-verified company email domains for SAML email linking.
+
+These domains are not the same as ``allowed_email_domains`` (join allow-list).
+
+Only Shellui platform operators may set ``Company.verified_email_domains`` (Django admin
+or direct database maintenance). The company owner API never reads or writes this field.
+Future DNS TXT verification would populate it via dedicated endpoints, not company settings.
+"""
 
 from __future__ import annotations
 

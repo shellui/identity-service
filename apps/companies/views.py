@@ -55,6 +55,12 @@ class CompanyViewSet(
         if not company.owners.filter(pk=request.user.pk).exists():
             return Response({'error': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
 
+        if 'verified_email_domains' in request.data:
+            return Response(
+                {'error': 'verified_email_domains is managed by Shellui operators, not company admins.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         serializer = CompanyUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         validated = serializer.validated_data

@@ -31,6 +31,7 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 - SAML ACS processing requires signed assertions (python3-saml strict mode), single-use `InResponseTo` and assertion IDs, SSRF-pinned metadata import, and company-bound IdP configuration. IdP-initiated SSO and email account linking use explicit opt-in policies.
 - SAML never auto-links an existing global user by assertion email unless the domain is in the company `verified_email_domains` field and the IdP has `trusted_for_verified_domains`. IdP `email_verified` attributes are ignored. Conflicts return `saml_email_conflict` (no duplicate user).
+- `verified_email_domains` is platform-only (Django admin); company owner API rejects attempts to set it.
 
 ### ✨ Feature
 
