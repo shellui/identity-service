@@ -294,7 +294,9 @@ class CompanyIdpIsolationTests(TestCase):
         response = self._callback(slug='keycloak', spec=spec, oauth_client=oauth_client, company=self.company)
         self.assertEqual(response.status_code, 302, response.content)
         self.assertTrue(
-            SocialAccount.objects.filter(provider='keycloak', uid__endswith=f'|{fixture.expected_uid}').exists()
+            SocialAccount.objects.filter(
+                provider='keycloak', uid__endswith=f'|{fixture.expected_uid}'  # gitleaks:allow
+            ).exists()
         )
 
     def test_okta_other_company_same_sub_does_not_sign_in_as_existing_user(self):
@@ -760,7 +762,9 @@ class CompanyIdpIsolationTests(TestCase):
         response = self._callback(slug='keycloak', spec=spec, oauth_client=oauth_client, company=self.company)
         self.assertEqual(response.status_code, 302, response.content)
         self.assertIn('shellui_oauth_error_code=access_denied', response['Location'])
-        account = SocialAccount.objects.get(provider='keycloak', uid__endswith=f'|{fixture.expected_uid}')
+        account = SocialAccount.objects.get(
+            provider='keycloak', uid__endswith=f'|{fixture.expected_uid}'  # gitleaks:allow
+        )
         membership = CompanyMembership.objects.get(company=self.company, user=account.user)
         self.assertFalse(membership.is_enabled)
 

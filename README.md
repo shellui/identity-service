@@ -180,6 +180,8 @@ uv run python manage.py test
 
 Pull requests and pushes to `main` / `develop` run [`.github/workflows/ci.yml`](.github/workflows/ci.yml): Django tests, lockfile check, dependency audit (`pip-audit`), secret scan (gitleaks), markdown link check (lychee), and a Docker image build.
 
+For a gitleaks false positive, add an inline `# gitleaks:allow` comment on the flagged line; `.gitleaksignore` is only for fingerprints of commits already in history.
+
 Pull requests **to `main`** also run the pre-release checklist ([`.github/workflows/pre-release.yml`](.github/workflows/pre-release.yml)) — same checks as:
 
 ```bash

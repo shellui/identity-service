@@ -1,3 +1,7 @@
+# Policy: mark new false positives at the source with an inline `# gitleaks:allow`
+# comment on the flagged line, so squash merges carry the allow with them.
+# Only add commit-pinned fingerprints here for commits already in history.
+
 # Historical docs-build false positive: truncated PEM example (MIIE...) in jwks/index.html
 # from an old deploy commit — not a real private key on current main.
 d57432f1c98e778e15e16b4ad398a4195b6463fa:jwks/index.html:private-key:36
