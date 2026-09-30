@@ -94,6 +94,7 @@ def build_signed_saml_response(
     not_on_or_after_offset_seconds: int = 300,
     assertion_id: str | None = None,
     wrap_signature: bool = False,
+    assertion_email: str | None = None,
 ) -> str:
     """Return base64-encoded SAMLResponse for HTTP-POST binding."""
     now = datetime.datetime.now(datetime.timezone.utc)
@@ -188,8 +189,9 @@ def build_signed_saml_response(
     ).text = 'urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport'
 
     attr_statement = etree.SubElement(assertion, '{urn:oasis:names:tc:SAML:2.0:assertion}AttributeStatement')
+    email_value = assertion_email or (name_id if '@' in name_id else f'{name_id}@example.com')
     for attr_name, attr_value in (
-        ('urn:oid:0.9.2342.19200300.100.1.3', name_id if '@' in name_id else f'{name_id}@example.com'),
+        ('urn:oid:0.9.2342.19200300.100.1.3', email_value),
         ('urn:oasis:names:tc:SAML:attribute:subject-id', name_id),
     ):
         attr = etree.SubElement(

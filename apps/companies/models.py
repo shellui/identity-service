@@ -77,6 +77,14 @@ class Company(models.Model):
         blank=True,
         help_text='Lowercase domains without @ (e.g. ["acme.com"]). Used when access mode is Domain.',
     )
+    verified_email_domains = models.JSONField(
+        default=list,
+        blank=True,
+        help_text=(
+            'Domains Shellui has verified this company owns. SAML may link by email only for '
+            'addresses on these domains when the IdP is explicitly trusted.'
+        ),
+    )
     enable_magic_link = models.BooleanField(
         default=True,
         help_text=(

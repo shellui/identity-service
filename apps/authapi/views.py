@@ -8,7 +8,7 @@ from urllib.parse import urlencode
 from django.conf import settings
 from django.core.cache import cache
 from django.core.exceptions import ObjectDoesNotExist
-from django.http import HttpResponse, HttpResponseRedirect
+from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
 from django.utils.dateparse import parse_datetime
 from django.contrib.auth import get_user_model
 from django.contrib.auth.signals import user_logged_in
@@ -919,7 +919,7 @@ def _shellui_oauth_bounce_or_json(
     )
     if bounce:
         return HttpResponseRedirect(bounce)
-    return Response({'error': message, 'error_code': error_code}, status=status_code)
+    return JsonResponse({'error': message, 'error_code': error_code}, status=status_code)
 
 
 def _join_denied_response(
@@ -932,7 +932,7 @@ def _join_denied_response(
     message = decision.message or 'Access denied.'
     if redirect_to:
         return HttpResponseRedirect(append_oauth_error_params(redirect_to, message, code))
-    return Response({'error': message, 'error_code': code}, status=status.HTTP_403_FORBIDDEN)
+    return JsonResponse({'error': message, 'error_code': code}, status=status.HTTP_403_FORBIDDEN)
 
 
 def _authenticate_bearer_user(request):

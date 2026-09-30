@@ -22,7 +22,13 @@ Off by default (`allow_idp_initiated_sso: false`). Enable only with an explicit 
 
 ### Email linking
 
-Default is uid-only account creation. Set `trusted_for_verified_domains: true` on an IdP only when that IdP is trusted for the company `allowed_email_domains` list. Email is never used to link accounts otherwise.
+Default is uid-only account creation. IdP `email_verified` (or similar) attributes never enable linking.
+
+The only exception is when all of the following hold:
+
+1. The IdP has `trusted_for_verified_domains: true`.
+2. The assertion email domain is listed in the company `verified_email_domains` field (Shellui domain verification, not `allowed_email_domains`).
+3. The email is not already tied to another user under a different SAML uid (`saml_email_conflict`).
 
 ## End-user login
 

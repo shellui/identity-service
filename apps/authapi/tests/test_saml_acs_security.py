@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import datetime
+import json
 
-from allauth.socialaccount.models import SocialApp
+from allauth.socialaccount.models import SocialAccount, SocialApp
 from django.contrib.auth import get_user_model
 from django.contrib.sites.models import Site
 from django.test import Client, TestCase, override_settings
@@ -68,7 +69,8 @@ class SAMLACSSecurityTests(TestCase):
         *,
         request_id: str | None = None,
         request_payload: dict | None = None,
-    ) -> int:
+        return_response: bool = False,
+    ):
         if request_id and request_payload is not None:
             stash_saml_request_id(request_id=request_id, payload=request_payload)
         elif request_id:
@@ -92,9 +94,16 @@ class SAMLACSSecurityTests(TestCase):
         )
         if response.status_code in {301, 302, 303} and response['Location'].endswith('/acs/finish/'):
             finish = self.client.get(response['Location'], follow=False)
+            if return_response:
+                return finish
             return finish.status_code
         if response.status_code in {301, 302, 303}:
-            return self.client.get(response['Location'], follow=False).status_code
+            follow = self.client.get(response['Location'], follow=False)
+            if return_response:
+                return follow
+            return follow.status_code
+        if return_response:
+            return response
         return response.status_code
 
     def test_valid_login_accepts_signed_assertion(self):
@@ -248,6 +257,8 @@ class SAMLACSSecurityTests(TestCase):
             password='unused',
         )
         self.company.members.add(existing)
+        self.company.verified_email_domains = ['example.com']
+        self.company.save(update_fields=['verified_email_domains'])
         self.app.settings['trusted_for_verified_domains'] = True
         self.app.save(update_fields=['settings'])
         request_id = '_emaillinkreq01'
@@ -260,7 +271,33 @@ class SAMLACSSecurityTests(TestCase):
         )
         status = self._post_saml(saml, request_id=request_id)
         self.assertIn(status, {302, 200})
-        from allauth.socialaccount.models import SocialAccount
-
         account = SocialAccount.objects.filter(user=existing, provider='saml').first()
         self.assertIsNotNone(account)
+
+    def test_malicious_idp_asserting_foreign_user_email_returns_conflict(self):
+        victim = User.objects.create_user(
+            username='victim-user',
+            email='victim@victimco.example',
+            password='unused',
+        )
+        self.app.settings['trusted_for_verified_domains'] = True
+        self.app.save(update_fields=['settings'])
+        self.company.allowed_email_domains = ['victimco.example']
+        self.company.verified_email_domains = []
+        self.company.save(update_fields=['allowed_email_domains', 'verified_email_domains'])
+        request_id = '_maliciousemail01'
+        saml = build_signed_saml_response(
+            creds=self.creds,
+            sp_entity_id=self.sp['entity_id'],
+            acs_url=self.sp['acs_url'],
+            name_id='attacker-controlled-uid',
+            assertion_email='victim@victimco.example',
+            in_response_to=request_id,
+        )
+        finish = self._post_saml(saml, request_id=request_id, return_response=True)
+        self.assertEqual(finish.status_code, 400)
+        body = json.loads(finish.content.decode())
+        self.assertEqual(body['error_code'], 'saml_email_conflict')
+        self.assertFalse(SocialAccount.objects.filter(user=victim).exists())
+        victim.refresh_from_db()
+        self.assertEqual(victim.email, 'victim@victimco.example')

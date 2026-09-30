@@ -11,23 +11,12 @@ from apps.authapi import metrics as auth_metrics
 from apps.authapi.models import LoginEvent
 from apps.authapi.oauth import should_skip_oauth_confirm
 from apps.authapi.oauth_social_account import bind_oauth_social_app, compose_social_account_uid
-from apps.authapi.oauth_user import OAuthProfile, resolve_oauth_user
+from apps.authapi.oauth_user import OAuthProfile
 from apps.authapi.provider_registry import catalog_entry_for_social_app
 from apps.authapi.saml.organization import idp_entity_id_from_settings, shellui_company_id_from_app
+from apps.authapi.saml.user_resolution import SAML_EMAIL_CONFLICT, resolve_saml_user
 from apps.companies.access import JoinDecision, apply_company_join, is_company_access_enabled
 from apps.companies.models import Company
-
-
-def saml_email_verified_for_link(*, social_app, company: Company, email: str) -> bool:
-    settings_data = social_app.settings if isinstance(social_app.settings, dict) else {}
-    if not settings_data.get('trusted_for_verified_domains'):
-        return False
-    domain = str(email or '').split('@')[-1].strip().lower()
-    if not domain:
-        return False
-    allowed = company.allowed_email_domains if isinstance(company.allowed_email_domains, list) else []
-    normalized = {str(d).strip().lower() for d in allowed if str(d).strip()}
-    return domain in normalized
 
 
 def profile_from_saml_auth(request: HttpRequest, social_app, auth) -> tuple[OAuthProfile | None, str | None]:
@@ -52,15 +41,6 @@ def profile_from_saml_auth(request: HttpRequest, social_app, auth) -> tuple[OAut
         raw_uid=uid,
     )
     social_provider = social_account_provider_key(entry=entry, social_app=social_app)
-    company_id = shellui_company_id_from_app(social_app)
-    company = Company.objects.filter(pk=company_id).first() if company_id else None
-    email_for_link = False
-    if company and email.endswith('@saml.local') is False:
-        email_for_link = saml_email_verified_for_link(
-            social_app=social_app,
-            company=company,
-            email=email,
-        )
     userinfo = dict(sociallogin.account.extra_data or {})
     userinfo.setdefault('email', email)
     userinfo.setdefault('uid', uid)
@@ -72,7 +52,7 @@ def profile_from_saml_auth(request: HttpRequest, social_app, auth) -> tuple[OAut
             email=email,
             full_name=full_name,
             avatar_url=None,
-            email_verified_for_link=email_for_link,
+            email_verified_for_link=False,
             userinfo=userinfo,
         ),
         None,
@@ -134,22 +114,28 @@ def complete_shellui_saml_login(
             error_code='saml_identity_failed',
             redirect_to_raw=redirect_to,
         )
-    user, created, uerror = resolve_oauth_user(provider=provider, profile=profile)
+    user, created, uerror = resolve_saml_user(
+        company=company,
+        social_app=social_app,
+        profile=profile,
+    )
     if uerror or user is None:
+        failure_code = uerror or 'saml_user_resolution_failed'
         record_login_event(
             request=request,
             outcome=LoginEvent.OUTCOME_FAILURE,
             provider=provider,
             user=None,
             company=company,
-            failure_reason=uerror or 'saml_user_resolution_failed',
+            failure_reason=failure_code,
             client_timezone=client_tz,
             client_device_id=client_dev,
         )
+        error_code = SAML_EMAIL_CONFLICT if uerror == SAML_EMAIL_CONFLICT else 'saml_identity_failed'
         return _shellui_oauth_bounce_or_json(
             request,
-            message=uerror or 'SAML sign-in failed.',
-            error_code='saml_identity_failed',
+            message=failure_code,
+            error_code=error_code,
             redirect_to_raw=redirect_to,
         )
     emit_oauth_user_created_if_new(company, user, created=created, oauth_provider=provider)
