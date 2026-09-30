@@ -60,26 +60,34 @@ def generate_test_idp_credentials(*, entity_id: str = 'https://idp.test.example/
     )
 
 
-def _sign_assertion(assertion: etree._Element, creds: TestIdPCredentials) -> etree._Element:
+def _sign_element(element: etree._Element, creds: TestIdPCredentials) -> etree._Element:
     signer = XMLSigner(
         method=SignatureConstructionMethod.enveloped,
         signature_algorithm='rsa-sha256',
         c14n_algorithm=CanonicalizationMethod.EXCLUSIVE_XML_CANONICALIZATION_1_0,
     )
     signed = signer.sign(
-        assertion,
+        element,
         key=creds.private_key_pem,
         cert=creds.certificate_pem,
-        reference_uri=f'#{assertion.get("ID")}',
+        reference_uri=f'#{element.get("ID")}',
     )
-    target = signed if signed is not assertion else assertion
+    target = signed if signed is not element else element
     sig = target.find('{http://www.w3.org/2000/09/xmldsig#}Signature')
     if sig is not None:
         target.remove(sig)
         target.insert(1, sig)
-    if signed is not assertion and assertion.getparent() is not None:
-        assertion.getparent().replace(assertion, target)
+    if signed is not element and element.getparent() is not None:
+        element.getparent().replace(element, target)
     return target
+
+
+def _sign_assertion(assertion: etree._Element, creds: TestIdPCredentials) -> etree._Element:
+    return _sign_element(assertion, creds)
+
+
+def _sign_response(response: etree._Element, creds: TestIdPCredentials) -> etree._Element:
+    return _sign_element(response, creds)
 
 
 def build_signed_saml_response(
@@ -95,6 +103,8 @@ def build_signed_saml_response(
     assertion_id: str | None = None,
     wrap_signature: bool = False,
     assertion_email: str | None = None,
+    destination: str | None = None,
+    recipient: str | None = None,
 ) -> str:
     """Return base64-encoded SAMLResponse for HTTP-POST binding."""
     now = datetime.datetime.now(datetime.timezone.utc)
@@ -119,7 +129,7 @@ def build_signed_saml_response(
         ID=response_id,
         Version='2.0',
         IssueInstant=issue_instant,
-        Destination=acs_url,
+        Destination=destination if destination is not None else acs_url,
     )
     if in_response_to:
         response.set('InResponseTo', in_response_to)
@@ -152,7 +162,10 @@ def build_signed_saml_response(
         '{urn:oasis:names:tc:SAML:2.0:assertion}SubjectConfirmation',
         Method='urn:oasis:names:tc:SAML:2.0:cm:bearer',
     )
-    scd_attrs = {'NotOnOrAfter': not_on_or_after, 'Recipient': acs_url}
+    scd_attrs = {
+        'NotOnOrAfter': not_on_or_after,
+        'Recipient': recipient if recipient is not None else acs_url,
+    }
     if in_response_to:
         scd_attrs['InResponseTo'] = in_response_to
     etree.SubElement(
@@ -208,10 +221,27 @@ def build_signed_saml_response(
         )
         av.text = attr_value
 
-    if wrap_signature:
-        decoy = etree.SubElement(response, '{urn:oasis:names:tc:SAML:2.0:assertion}Assertion', ID=f'_{uuid.uuid4().hex}')
-        etree.SubElement(decoy, '{urn:oasis:names:tc:SAML:2.0:assertion}Issuer').text = 'evil'
-
     _sign_assertion(assertion, creds)
+
+    if wrap_signature:
+        signed_assertion = response.find('{urn:oasis:names:tc:SAML:2.0:assertion}Assertion')
+        decoy_id = f'_{uuid.uuid4().hex}'
+        decoy = etree.Element(
+            '{urn:oasis:names:tc:SAML:2.0:assertion}Assertion',
+            ID=decoy_id,
+            IssueInstant=issue_instant,
+            Version='2.0',
+        )
+        etree.SubElement(decoy, '{urn:oasis:names:tc:SAML:2.0:assertion}Issuer').text = 'evil-wrap'
+        if signed_assertion is not None:
+            sig = signed_assertion.find('{http://www.w3.org/2000/09/xmldsig#}Signature')
+            if sig is not None:
+                for ref in sig.findall('{http://www.w3.org/2000/09/xmldsig#}Reference'):
+                    ref.set('URI', f'#{decoy_id}')
+            response.remove(signed_assertion)
+            status_el = response.find('{urn:oasis:names:tc:SAML:2.0:protocol}Status')
+            insert_at = list(response).index(status_el) + 1 if status_el is not None else len(response)
+            response.insert(insert_at, decoy)
+            response.insert(insert_at + 1, signed_assertion)
     xml_bytes = etree.tostring(response, xml_declaration=True, encoding='UTF-8')
     return base64.b64encode(xml_bytes).decode('ascii')

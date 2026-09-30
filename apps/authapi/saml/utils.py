@@ -32,14 +32,19 @@ def default_shellui_saml_advanced() -> dict:
     }
 
 
+_SHELLUI_ADVANCED_ADMIN_KEYS = frozenset({'reject_idp_initiated_sso'})
+
+
 def merge_shellui_advanced(existing: dict | None) -> dict:
     base = default_shellui_saml_advanced()
     if isinstance(existing, dict):
         for key, value in existing.items():
-            if key == 'reject_idp_initiated_sso':
+            if key in _SHELLUI_ADVANCED_ADMIN_KEYS:
                 base[key] = bool(value)
-            elif key in base:
-                base[key] = value
+    base['strict'] = True
+    base['want_assertion_signed'] = True
+    if isinstance(existing, dict) and bool(existing.get('want_message_signed')):
+        base['want_message_signed'] = True
     return base
 
 
@@ -100,8 +105,16 @@ def resolve_idp_block(provider_config: dict) -> dict:
     return block
 
 
-def build_saml_config(request: HttpRequest, provider_config: dict, organization_slug: str) -> dict:
+def build_saml_config(
+    request: HttpRequest,
+    provider_config: dict,
+    organization_slug: str,
+    *,
+    require_signed_messages: bool = False,
+) -> dict:
     avd = merge_shellui_advanced(provider_config.get('advanced') if isinstance(provider_config.get('advanced'), dict) else {})
+    if require_signed_messages:
+        avd['want_message_signed'] = True
     security_config = {
         'authnRequestsSigned': avd.get('authn_request_signed', False),
         'digestAlgorithm': avd.get('digest_algorithm', OneLogin_Saml2_Constants.SHA256),
@@ -154,9 +167,19 @@ def prepare_django_request(request: HttpRequest) -> dict:
     }
 
 
-def build_auth(request: HttpRequest, social_app) -> OneLogin_Saml2_Auth:
+def build_auth(
+    request: HttpRequest,
+    social_app,
+    *,
+    require_signed_messages: bool = False,
+) -> OneLogin_Saml2_Auth:
     settings_data = social_app.settings if isinstance(social_app.settings, dict) else {}
-    config = build_saml_config(request, settings_data, str(social_app.client_id))
+    config = build_saml_config(
+        request,
+        settings_data,
+        str(social_app.client_id),
+        require_signed_messages=require_signed_messages,
+    )
     return OneLogin_Saml2_Auth(prepare_django_request(request), config)
 
 

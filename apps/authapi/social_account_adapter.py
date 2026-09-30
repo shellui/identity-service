@@ -7,7 +7,7 @@ from allauth.socialaccount.adapter import DefaultSocialAccountAdapter
 from allauth.socialaccount.models import SocialApp
 from django.core.exceptions import MultipleObjectsReturned
 
-from apps.authapi.oauth_social_account import get_bound_oauth_social_app
+from apps.authapi.oauth_social_account import get_bound_oauth_social_app, saml_social_account_provider_key
 
 
 class ShellUISocialAccountAdapter(DefaultSocialAccountAdapter):
@@ -26,7 +26,8 @@ class ShellUISocialAccountAdapter(DefaultSocialAccountAdapter):
             if provider_key not in {bound_provider, bound_sub}:
                 raise SocialApp.DoesNotExist()
         elif bound_provider == 'saml':
-            if provider_key not in {bound_provider, 'saml'}:
+            expected = saml_social_account_provider_key(bound)
+            if provider_key not in {expected, bound_provider, 'saml'}:
                 raise SocialApp.DoesNotExist()
         elif bound_provider != provider_key:
             raise SocialApp.DoesNotExist()

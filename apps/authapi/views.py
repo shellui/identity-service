@@ -3379,12 +3379,26 @@ class ShellUIAdminOAuthSocialAppListView(APIView):
                 validated,
                 company_id=company.id,
             )
+            if settings_err:
+                err_code = settings_err if str(settings_err).startswith('error_code:') else None
+                body = {'error_code': err_code.split(':', 1)[1]} if err_code else {'error': settings_err}
+                return Response(body, status=status.HTTP_400_BAD_REQUEST)
+            from apps.companies.saml_entity_uniqueness import find_cross_company_saml_entity_id_conflict
+
+            idp_block = social_settings.get('idp') if isinstance(social_settings.get('idp'), dict) else {}
+            entity_for_uniq = str(idp_block.get('entity_id') or '').strip()
+            conflict_app = find_cross_company_saml_entity_id_conflict(
+                entity_for_uniq,
+                company_id=company.id,
+            )
+            if conflict_app is not None:
+                return Response({'error_code': 'saml_idp_entity_id_in_use'}, status=status.HTTP_400_BAD_REQUEST)
         else:
             social_settings, settings_err = _merge_social_app_settings(entry, validated)
-        if settings_err:
-            err_code = settings_err if str(settings_err).startswith('error_code:') else None
-            body = {'error_code': err_code.split(':', 1)[1]} if err_code else {'error': settings_err}
-            return Response(body, status=status.HTTP_400_BAD_REQUEST)
+            if settings_err:
+                err_code = settings_err if str(settings_err).startswith('error_code:') else None
+                body = {'error_code': err_code.split(':', 1)[1]} if err_code else {'error': settings_err}
+                return Response(body, status=status.HTTP_400_BAD_REQUEST)
         dedupe_key = compute_dedupe_key_for_new_app(entry, settings=social_settings)
         duplicate = find_duplicate_company_oauth_client(company.id, dedupe_key=dedupe_key)
         if duplicate is not None:
@@ -3476,7 +3490,14 @@ class ShellUIAdminOAuthSocialAppDetailView(APIView):
         serializer.is_valid(raise_exception=True)
         validated = serializer.validated_data
         if 'client_id' in validated:
-            app.client_id = str(validated['client_id']).strip()
+            new_client_id = str(validated['client_id']).strip()
+            if new_client_id and new_client_id != str(app.client_id).strip():
+                if SocialApp.objects.filter(client_id=new_client_id).exclude(pk=app.pk).exists():
+                    return Response(
+                        {'error_code': 'oauth_app_client_id_taken'},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                app.client_id = new_client_id
         if 'client_secret' in validated:
             app.secret = str(validated['client_secret']).strip()
         entry = resolve_catalog_slug(social_app_catalog_slug(app))
@@ -3495,6 +3516,17 @@ class ShellUIAdminOAuthSocialAppDetailView(APIView):
                 err_code = settings_err if str(settings_err).startswith('error_code:') else None
                 body = {'error_code': err_code.split(':', 1)[1]} if err_code else {'error': settings_err}
                 return Response(body, status=status.HTTP_400_BAD_REQUEST)
+            from apps.companies.saml_entity_uniqueness import find_cross_company_saml_entity_id_conflict
+
+            idp_block = merged.get('idp') if isinstance(merged.get('idp'), dict) else {}
+            entity_for_uniq = str(idp_block.get('entity_id') or '').strip()
+            conflict_app = find_cross_company_saml_entity_id_conflict(
+                entity_for_uniq,
+                company_id=company.id,
+                exclude_social_app_id=app.pk,
+            )
+            if conflict_app is not None:
+                return Response({'error_code': 'saml_idp_entity_id_in_use'}, status=status.HTTP_400_BAD_REQUEST)
             settings_data = merged
         elif entry is not None and ('tenant' in validated or 'extra_settings' in validated):
             merged, settings_err = _merge_social_app_settings(

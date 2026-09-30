@@ -6,6 +6,7 @@ from typing import Any
 
 from apps.authapi.oauth_safe_http import assert_public_http_url
 from apps.authapi.provider_registry import ProviderCatalogEntry
+from apps.authapi.saml.utils import merge_shellui_advanced
 
 
 def merge_saml_social_settings(
@@ -46,6 +47,10 @@ def merge_saml_social_settings(
     if not metadata_url:
         if not sso_url or not cert:
             return base, 'error_code:saml_idp_manual_fields_required'
+        try:
+            assert_public_http_url(sso_url)
+        except Exception:
+            return base, 'error_code:saml_sso_url_blocked'
         idp['sso_url'] = sso_url
         idp['x509cert'] = cert
     slo_url = str(extra.get('slo_url') or idp_input.get('slo_url') or '').strip()
@@ -75,15 +80,15 @@ def merge_saml_social_settings(
             ],
         }
 
-    advanced = dict(base.get('advanced') or {})
+    advanced = merge_shellui_advanced(base.get('advanced') if isinstance(base.get('advanced'), dict) else {})
     adv_in = extra.get('advanced') if isinstance(extra.get('advanced'), dict) else {}
     if 'allow_idp_initiated_sso' in extra:
-        allow_idp = bool(extra.get('allow_idp_initiated_sso'))
-        advanced['reject_idp_initiated_sso'] = not allow_idp
-    advanced.update(adv_in)
-    advanced.setdefault('strict', True)
-    advanced.setdefault('want_assertion_signed', True)
-    advanced.setdefault('reject_idp_initiated_sso', True)
+        advanced['reject_idp_initiated_sso'] = not bool(extra.get('allow_idp_initiated_sso'))
+    if isinstance(adv_in, dict) and 'reject_idp_initiated_sso' in adv_in:
+        advanced['reject_idp_initiated_sso'] = bool(adv_in['reject_idp_initiated_sso'])
+    if isinstance(adv_in, dict) and 'want_message_signed' in adv_in:
+        advanced['want_message_signed'] = bool(adv_in['want_message_signed'])
+    advanced = merge_shellui_advanced(advanced)
 
     trusted = bool(extra.get('trusted_for_verified_domains', base.get('trusted_for_verified_domains', False)))
 

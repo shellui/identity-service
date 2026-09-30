@@ -11,7 +11,9 @@ from django.contrib.sites.models import Site
 from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 
+from apps.authapi.oauth_social_account import saml_social_account_provider_key
 from apps.authapi.saml.request_id import stash_saml_request_id
+from apps.authapi.saml.views import SHELLUI_SAML_AUTHN_REQUEST_SESSION_KEY
 from apps.authapi.saml.utils import sp_public_urls
 from apps.authapi.tests.saml_test_crypto import build_signed_saml_response, generate_test_idp_credentials
 from apps.companies.models import Company, CompanyOAuthClient, CompanyOAuthRedirect
@@ -85,6 +87,8 @@ class SAMLACSSecurityTests(TestCase):
         acs_url = reverse('shellui-saml-acs', kwargs={'organization_slug': self.app.client_id})
         finish_url = reverse('shellui-saml-finish-acs', kwargs={'organization_slug': self.app.client_id})
         session = self.client.session
+        if request_id:
+            session[SHELLUI_SAML_AUTHN_REQUEST_SESSION_KEY] = request_id
         session.save()
         response = self.client.post(
             acs_url,
@@ -177,21 +181,130 @@ class SAMLACSSecurityTests(TestCase):
         status = self._post_saml(saml, request_id=request_id)
         self.assertEqual(status, 400)
 
-    def test_rejects_replayed_assertion(self):
-        request_id = '_replayreq001'
+    def test_rejects_replayed_assertion_id(self):
         assertion_id = '_replay-assertion-id'
+        request_id_a = '_replayreq001a'
+        saml_a = build_signed_saml_response(
+            creds=self.creds,
+            sp_entity_id=self.sp['entity_id'],
+            acs_url=self.sp['acs_url'],
+            name_id='user-006a',
+            in_response_to=request_id_a,
+            assertion_id=assertion_id,
+        )
+        first = self._post_saml(saml_a, request_id=request_id_a)
+        self.assertIn(first, {302, 200})
+        request_id_b = '_replayreq001b'
+        stash_saml_request_id(
+            request_id=request_id_b,
+            payload={
+                'company_id': self.company.id,
+                'redirect_to': 'https://shell.example.com/callback',
+                'token_delivery': 'code',
+            },
+        )
+        saml_b = build_signed_saml_response(
+            creds=self.creds,
+            sp_entity_id=self.sp['entity_id'],
+            acs_url=self.sp['acs_url'],
+            name_id='user-006b',
+            in_response_to=request_id_b,
+            assertion_id=assertion_id,
+        )
+        second = self._post_saml(saml_b, request_id=request_id_b)
+        self.assertEqual(second, 400)
+
+    def test_rejects_reused_in_response_to(self):
+        request_id = '_reuseirtreq01'
+        saml_first = build_signed_saml_response(
+            creds=self.creds,
+            sp_entity_id=self.sp['entity_id'],
+            acs_url=self.sp['acs_url'],
+            name_id='user-006c',
+            in_response_to=request_id,
+            assertion_id='_assert-first-001',
+        )
+        first = self._post_saml(saml_first, request_id=request_id)
+        self.assertIn(first, {302, 200})
+        saml_second = build_signed_saml_response(
+            creds=self.creds,
+            sp_entity_id=self.sp['entity_id'],
+            acs_url=self.sp['acs_url'],
+            name_id='user-006d',
+            in_response_to=request_id,
+            assertion_id='_assert-second-002',
+        )
+        second = self._post_saml(saml_second, request_id=request_id)
+        self.assertEqual(second, 400)
+
+    def test_rejects_in_response_to_without_login_session_binding(self):
+        request_id = '_crossbrowser01'
+        stash_saml_request_id(
+            request_id=request_id,
+            payload={
+                'company_id': self.company.id,
+                'redirect_to': 'https://shell.example.com/callback',
+                'token_delivery': 'code',
+            },
+        )
         saml = build_signed_saml_response(
             creds=self.creds,
             sp_entity_id=self.sp['entity_id'],
             acs_url=self.sp['acs_url'],
-            name_id='user-006',
+            name_id='user-006e',
             in_response_to=request_id,
-            assertion_id=assertion_id,
         )
-        first = self._post_saml(saml, request_id=request_id)
-        self.assertIn(first, {302, 200})
-        second = self._post_saml(saml, request_id=request_id)
-        self.assertEqual(second, 400)
+        other_client = Client()
+        acs_url = reverse('shellui-saml-acs', kwargs={'organization_slug': self.app.client_id})
+        response = other_client.post(
+            acs_url,
+            data={'SAMLResponse': saml},
+            follow=False,
+            HTTP_HOST=self.http_host,
+        )
+        self.assertEqual(response.status_code, 302)
+        finish = other_client.get(response['Location'], follow=False, HTTP_HOST=self.http_host)
+        self.assertEqual(finish.status_code, 400)
+        self.assertEqual(finish.content.decode(), 'saml_in_response_to_session_mismatch')
+
+    def test_rejects_wrong_destination(self):
+        request_id = '_destreq001'
+        saml = build_signed_saml_response(
+            creds=self.creds,
+            sp_entity_id=self.sp['entity_id'],
+            acs_url=self.sp['acs_url'],
+            name_id='user-dest',
+            in_response_to=request_id,
+            destination='https://evil.example/acs',
+        )
+        status = self._post_saml(saml, request_id=request_id)
+        self.assertEqual(status, 400)
+
+    def test_rejects_wrong_recipient(self):
+        request_id = '_recipreq001'
+        saml = build_signed_saml_response(
+            creds=self.creds,
+            sp_entity_id=self.sp['entity_id'],
+            acs_url=self.sp['acs_url'],
+            name_id='user-recip',
+            in_response_to=request_id,
+            recipient='https://evil.example/acs',
+        )
+        status = self._post_saml(saml, request_id=request_id)
+        self.assertEqual(status, 400)
+
+    def test_rejects_assertion_valid_beyond_replay_ttl(self):
+        request_id = '_longlived001'
+        saml = build_signed_saml_response(
+            creds=self.creds,
+            sp_entity_id=self.sp['entity_id'],
+            acs_url=self.sp['acs_url'],
+            name_id='user-long',
+            in_response_to=request_id,
+            not_on_or_after_offset_seconds=3600,
+        )
+        status = self._post_saml(saml, request_id=request_id)
+        self.assertEqual(status, 400)
 
     def test_rejects_signature_wrapping_attempt(self):
         request_id = '_wrapreq001'
@@ -271,7 +384,8 @@ class SAMLACSSecurityTests(TestCase):
         )
         status = self._post_saml(saml, request_id=request_id)
         self.assertIn(status, {302, 200})
-        account = SocialAccount.objects.filter(user=existing, provider='saml').first()
+        provider_key = saml_social_account_provider_key(self.app)
+        account = SocialAccount.objects.filter(user=existing, provider=provider_key).first()
         self.assertIsNotNone(account)
 
     def test_malicious_idp_asserting_foreign_user_email_returns_conflict(self):

@@ -14,7 +14,18 @@ Shellui identity-service acts as the SAML service provider (SP). Each company ca
    - `metadata_url`: SP metadata XML for import
 4. In the IdP, map attributes for `uid`, email, and optional name fields to match your `attribute_mapping`.
 
-Optional: set `metadata_url` instead of manual `sso_url` and `x509cert`. Metadata import uses the same SSRF-pinned HTTP fetch as OAuth discovery (512KB cap).
+Optional: set `metadata_url` instead of manual `sso_url` and `x509cert`. Metadata import uses the same SSRF-pinned HTTP fetch as OAuth discovery (512KB cap). Imported and manual `sso_url` / `slo_url` values must be public HTTP(S) URLs.
+
+### Account isolation
+
+Each company SAML IdP maps to its own SocialAccount provider key (`saml-<social_app_id>`). The same IdP entity ID cannot be registered for two different companies (`saml_idp_entity_id_in_use`).
+
+### ACS hardening
+
+- `strict` and signed assertions are always enforced; admin `advanced` settings cannot weaken them.
+- `InResponseTo` is single-use, bound to the browser session that started login, and passed into SAML response validation.
+- Assertion replay IDs are stored in the shared Django cache with TTL tied to the assertion `NotOnOrAfter` (max 15 minutes). LocMemCache is allowed in DEBUG only; production must use a shared cache backend.
+- SP-initiated login at `/api/v1/saml/<slug>/login/` validates `redirect_to` and `token_delivery` like `/api/v1/authorize`.
 
 ### IdP-initiated SSO
 

@@ -52,11 +52,14 @@ def parse_idp_metadata(xml_bytes: bytes, *, expected_entity_id: str) -> dict:
     cert = ''.join(str(cert_node.text or '').split())
     slo_node = target.find('.//md:SingleLogoutService', METADATA_PARSE_NS)
     slo_url = str(slo_node.get('Location') or '').strip() if slo_node is not None else ''
+    sso_url = str(sso.get('Location') or '').strip()
+    assert_public_http_url(sso_url)
     idp: dict = {
         'entity_id': entity_id,
-        'sso_url': str(sso.get('Location') or '').strip(),
+        'sso_url': sso_url,
         'x509cert': cert,
     }
     if slo_url:
+        assert_public_http_url(slo_url)
         idp['slo_url'] = slo_url
     return {'idp': idp}

@@ -21,12 +21,20 @@ def get_bound_oauth_social_app(request) -> SocialApp | None:
     return _ctx_bound_app()
 
 
+def saml_social_account_provider_key(social_app: SocialApp) -> str:
+    return f'saml-{int(social_app.pk)}'
+
+
 def social_account_provider_key(*, entry: ProviderCatalogEntry | None, social_app: SocialApp) -> str:
     if entry is not None and entry.allauth_id == 'openid_connect':
         sub = str(getattr(social_app, 'provider_id', '') or entry.social_app_provider_id()).strip()
         return sub or entry.docs_slug
+    if entry is not None and entry.allauth_id == 'saml':
+        return saml_social_account_provider_key(social_app)
     if entry is not None:
         return entry.allauth_id
+    if str(social_app.provider).strip().lower() == 'saml':
+        return saml_social_account_provider_key(social_app)
     return str(social_app.provider).strip().lower()
 
 
