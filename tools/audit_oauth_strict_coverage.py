@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify the eight release supported providers pass strict OAuth adapter tests."""
+"""Verify release supported providers pass strict OAuth adapter tests."""
 
 from __future__ import annotations
 
@@ -41,9 +41,12 @@ def _try_slug(slug: str, *, company: Company, site: Site, factory: RequestFactor
     if entry is None:
         return 'missing catalog entry'
     settings_payload = extra_settings_for_supported(slug, company_slug=company.slug)
+    provider_id = entry.social_app_provider_id()
+    if entry.allauth_id == 'openid_connect' and not provider_id:
+        provider_id = 'corp-fixture'
     app = SocialApp.objects.create(
         provider=entry.allauth_id,
-        provider_id=entry.social_app_provider_id(),
+        provider_id=provider_id,
         name=f'strict-{slug}',
         client_id=f'client-{slug}',
         secret='secret',

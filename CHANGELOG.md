@@ -25,7 +25,8 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 ### ✨ Feature
 
-- **OAuth provider catalog:** identity-service ships a checked-in django-allauth provider catalog (`apps/authapi/provider_catalog.json`) with **97** OAuth2/OIDC providers marked `supported: true` on the identity-hosted adapter (114 total catalog entries). Admin API: `GET /api/v1/oauth-provider-catalog`. OAuth app CRUD accepts `docs_slug` plus validated `extra_settings`. Catalog generation tracks the installed django-allauth version and end-to-end adapter test coverage per provider.
+- **OAuth batch 2 providers:** identity-hosted OAuth adds **LinkedIn** (OpenID Connect), **Slack** (OpenID Connect userInfo claims), generic **OpenID Connect** and **Keycloak**, **Okta**, and **Auth0**, each with hand-written strict adapter fixtures and literal uid assertions. Supported release total: **14** providers (`tools/data/oauth_e2e_covered_slugs.json`).
+- **OAuth provider catalog:** identity-service ships a checked-in django-allauth provider catalog (`apps/authapi/provider_catalog.json`) with catalog entries for OAuth2/OIDC providers. Admin API: `GET /api/v1/oauth-provider-catalog`. OAuth app CRUD accepts `docs_slug` plus validated `extra_settings`. Catalog generation tracks the installed django-allauth version and end-to-end adapter test coverage per provider.
 - **django-allauth 65.19.5:** dependency upgraded to match the provider dataset.
 
 ### 🔒 Security
@@ -39,10 +40,12 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 ### 🚨 Changed
 
 - **OAuth provider catalog v2:** `console_url` entries are `{kind, url, form}` with optional `placeholders` (no embedded English). Extra settings schema exposes `name`, `type`, `required`, and `secret` only; Shellui admin translates by field name. `GET /api/v1/oauth-provider-catalog` adds `console_link_kinds` and `console_link_forms` for admin mapping.
-- **Honest `supported` count:** `supported: true` follows `tools/data/oauth_e2e_covered_slugs.json`, which is regenerated only for providers that pass the real adapter harness (`tools/audit_oauth_provider_coverage.py`). **62** providers supported in this release (not 97).
+- **Honest `supported` count:** `supported: true` follows `tools/data/oauth_e2e_covered_slugs.json`, which is regenerated only for providers that pass the strict adapter harness (`tools/audit_oauth_strict_coverage.py`). **14** providers supported in this release.
 
 ### 🔒 Security
 
+- **Google id_token on callback:** login callback verifies Google id_tokens against JWKS before email linking; wrong issuer, audience, or signature does not link an existing user.
+- **Okta and Auth0 base URLs:** missing `OKTA_BASE_URL` or `AUTH0_URL` fails closed instead of calling `https://None/...` endpoints.
 - OpenID Connect migration **0014** rekeys existing `SocialAccount` rows to `(provider_id, issuer|sub)` with audit-backed reverse.
 - OAuth uses `request_context` plus a `ContextVar` for the company `SocialApp` (no `allauth_context.request` assignment).
 - Apple `form_post` bridges via a single-use cookie; POST `id_token` must verify against Apple JWKS and nonce before use.

@@ -24,13 +24,19 @@ OUT_PATH = ROOT / 'apps' / 'authapi' / 'provider_catalog.json'
 SUPPORTED_RELEASE_SLUGS = frozenset(
     {
         'apple',
+        'auth0',
         'github',
         'gitlab',
         'google',
+        'keycloak',
         'line',
+        'linkedin',
         'microsoft',
+        'okta',
+        'openid_connect',
         'reddit',
         'shopify',
+        'slack',
     }
 )
 

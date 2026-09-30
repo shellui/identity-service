@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from allauth.socialaccount.models import SocialApp
+from allauth.socialaccount.providers.oauth2.client import OAuth2Error
 from allauth.socialaccount.providers.openid_connect.views import OpenIDConnectOAuth2Adapter
 
 from apps.authapi.oauth_safe_http import assert_public_http_url, safe_get_json
@@ -20,8 +21,10 @@ def _bind_adapter_url_properties(
     authorize_url: str,
     access_token_url: str,
     profile_url: str,
+    userinfo_url: str | None = None,
 ) -> None:
     cls = adapter.__class__
+    userinfo = userinfo_url or profile_url
     adapter.__class__ = type(
         f'Shellui{cls.__name__}',
         (cls,),
@@ -29,6 +32,7 @@ def _bind_adapter_url_properties(
             'authorize_url': property(lambda self, url=authorize_url: url),
             'access_token_url': property(lambda self, url=access_token_url: url),
             'profile_url': property(lambda self, url=profile_url: url),
+            'userinfo_url': property(lambda self, url=userinfo: url),
         },
     )
 
@@ -61,22 +65,24 @@ def apply_oauth_adapter_settings(
 
     if slug == 'auth0':
         base = str(settings.get('AUTH0_URL') or '').strip().rstrip('/')
-        if base:
-            adapter.provider_base_url = base
-            adapter.access_token_url = f'{base}/oauth/token'
-            adapter.authorize_url = f'{base}/authorize'
-            adapter.profile_url = f'{base}/userinfo'
+        if not base:
+            raise OAuth2Error('Missing Auth0 AUTH0_URL in company OAuth settings.')
+        adapter.provider_base_url = base
+        adapter.access_token_url = f'{base}/oauth/token'
+        adapter.authorize_url = f'{base}/authorize'
+        adapter.profile_url = f'{base}/userinfo'
         return
 
     if slug == 'okta':
         base = str(settings.get('OKTA_BASE_URL') or '').strip().rstrip('/')
-        if base:
-            _bind_adapter_url_properties(
-                adapter,
-                authorize_url=f'{base}/oauth2/v1/authorize',
-                access_token_url=f'{base}/oauth2/v1/token',
-                profile_url=f'{base}/oauth2/v1/userinfo',
-            )
+        if not base:
+            raise OAuth2Error('Missing Okta OKTA_BASE_URL in company OAuth settings.')
+        _bind_adapter_url_properties(
+            adapter,
+            authorize_url=f'{base}/oauth2/v1/authorize',
+            access_token_url=f'{base}/oauth2/v1/token',
+            profile_url=f'{base}/oauth2/v1/userinfo',
+        )
         return
 
     if slug == 'amazon_cognito':

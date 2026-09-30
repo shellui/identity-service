@@ -172,6 +172,111 @@ class OAuthIdentityResolutionTests(TestCase):
         self.assertEqual(profile.social_uid, '7-cn')
         self.assertEqual(profile.provider_id, '7-cn')
 
+    def test_linkedin_oidc_unverified_id_token_claims_do_not_link(self):
+        entry = get_provider_catalog().by_slug()['linkedin']
+        profile, err = extract_oauth_profile(
+            'linkedin',
+            {'sub': 'li-sub', 'email': 'victim@example.com'},
+            'token',
+            id_token_claims={'email': 'victim@example.com', 'email_verified': True},
+            catalog_entry=entry,
+        )
+        self.assertIsNone(err)
+        assert profile is not None
+        self.assertFalse(profile.email_verified_for_link)
+
+    def test_linkedin_oidc_verified_claims_link_when_email_matches(self):
+        entry = get_provider_catalog().by_slug()['linkedin']
+        profile, err = extract_oauth_profile(
+            'linkedin',
+            {'sub': 'li-sub', 'email': 'victim@example.com'},
+            'token',
+            id_token_claims={
+                'iss': 'https://www.linkedin.com/oauth',
+                'email': 'victim@example.com',
+                'email_verified': True,
+            },
+            catalog_entry=entry,
+        )
+        self.assertIsNone(err)
+        assert profile is not None
+        self.assertTrue(profile.email_verified_for_link)
+
+    def test_slack_unverified_email_does_not_link(self):
+        entry = get_provider_catalog().by_slug()['slack']
+        app = SocialApp(provider='slack', client_id='slack-client', secret='secret')
+        profile, err = extract_oauth_profile(
+            'slack',
+            {
+                'https://slack.com/user_id': 'U1',
+                'https://slack.com/team_id': 'T1',
+                'email': 'victim@example.com',
+                'email_verified': False,
+            },
+            'token',
+            catalog_entry=entry,
+            social_app=app,
+        )
+        self.assertIsNone(err)
+        assert profile is not None
+        self.assertFalse(profile.email_verified_for_link)
+
+    def test_slack_verified_email_links(self):
+        entry = get_provider_catalog().by_slug()['slack']
+        app = SocialApp(provider='slack', client_id='slack-client', secret='secret')
+        profile, err = extract_oauth_profile(
+            'slack',
+            {
+                'https://slack.com/user_id': 'U1',
+                'https://slack.com/team_id': 'T1',
+                'email': 'victim@example.com',
+                'email_verified': True,
+            },
+            'token',
+            catalog_entry=entry,
+            social_app=app,
+        )
+        self.assertIsNone(err)
+        assert profile is not None
+        self.assertTrue(profile.email_verified_for_link)
+
+    def test_keycloak_oidc_requires_verified_id_token_iss_for_email_link(self):
+        entry = get_provider_catalog().by_slug()['keycloak']
+        profile, err = extract_oauth_profile(
+            'keycloak',
+            {'sub': 'kc-sub', 'email': 'victim@example.com'},
+            'token',
+            id_token_claims={'email': 'victim@example.com', 'email_verified': True},
+            catalog_entry=entry,
+        )
+        self.assertIsNone(err)
+        assert profile is not None
+        self.assertFalse(profile.email_verified_for_link)
+
+    def test_okta_verified_userinfo_email_links(self):
+        entry = get_provider_catalog().by_slug()['okta']
+        profile, err = extract_oauth_profile(
+            'okta',
+            {'sub': 'okta-sub', 'email': 'victim@example.com', 'email_verified': True},
+            'token',
+            catalog_entry=entry,
+        )
+        self.assertIsNone(err)
+        assert profile is not None
+        self.assertTrue(profile.email_verified_for_link)
+
+    def test_auth0_unverified_email_does_not_link(self):
+        entry = get_provider_catalog().by_slug()['auth0']
+        profile, err = extract_oauth_profile(
+            'auth0',
+            {'sub': 'auth0-sub', 'email': 'victim@example.com', 'email_verified': False},
+            'token',
+            catalog_entry=entry,
+        )
+        self.assertIsNone(err)
+        assert profile is not None
+        self.assertFalse(profile.email_verified_for_link)
+
     def test_sociallogin_userinfo_propagates_allauth_account_uid(self):
         from types import SimpleNamespace
 

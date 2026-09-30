@@ -1,4 +1,4 @@
-"""Strict OAuth adapter tests for the eight supported release providers."""
+"""Strict OAuth adapter tests for supported release providers."""
 
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ class OAuthStrictProviderTests(TestCase):
         self.company = Company.objects.create(name='Strict Co', slug='strict-co')
         self.site = Site.objects.get_current()
 
-    def test_release_supported_slugs_are_exactly_eight(self):
+    def test_release_supported_slugs_match_e2e_coverage_file(self):
         self.assertEqual(RELEASE_SUPPORTED_OAUTH_SLUGS, frozenset(_load_e2e_slugs()))
 
     def test_catalog_supported_matches_release_list(self):
@@ -44,9 +44,12 @@ class OAuthStrictProviderTests(TestCase):
             entry = catalog.by_slug()[slug]
             with self.subTest(provider=slug):
                 settings_payload = extra_settings_for_supported(slug, company_slug=self.company.slug)
+                provider_id = entry.social_app_provider_id()
+                if entry.allauth_id == 'openid_connect' and not provider_id:
+                    provider_id = 'corp-fixture'
                 app = SocialApp.objects.create(
                     provider=entry.allauth_id,
-                    provider_id=entry.social_app_provider_id(),
+                    provider_id=provider_id,
                     name=f'strict-{slug}',
                     client_id=f'client-{slug}',
                     secret='secret',

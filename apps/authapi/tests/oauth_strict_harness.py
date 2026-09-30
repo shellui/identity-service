@@ -1,4 +1,4 @@
-"""Strict OAuth tests for the eight supported providers (exact routes, literal uid constants)."""
+"""Strict OAuth adapter tests (exact routes, literal uid constants, local JWKS for id_tokens)."""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from urllib.parse import urlparse
 from allauth.core import context as allauth_context
 from allauth.socialaccount.models import SocialApp
 from allauth.socialaccount.providers import registry
+from allauth.socialaccount.providers.openid_connect.views import OpenIDConnectOAuth2Adapter
 from django.test import RequestFactory
 
 from apps.authapi.oauth import build_authorize_url
@@ -21,6 +22,14 @@ from apps.authapi.oauth_allauth import exchange_allauth_code
 from apps.authapi.oauth_request_context import oauth_allauth_request
 from apps.authapi.oauth_social_account import bind_oauth_social_app
 from apps.authapi.provider_registry import get_provider_catalog
+from apps.authapi.tests.oauth_oidc_strict_fixtures import (
+    OidcCompanyFixture,
+    company_auth0_base,
+    company_generic_oidc,
+    company_keycloak_oidc,
+    company_linkedin_oidc,
+    company_okta_base,
+)
 from apps.authapi.tests.oauth_supported_provider_fixtures import (
     RELEASE_SUPPORTED_OAUTH_SLUGS,
     company_gitlab_url,
@@ -103,16 +112,17 @@ def _assert_adapter_hosts(
     profile_host = _host_from_url(profile_url)
     if not auth_host or not token_host:
         raise ValueError(f'{slug}: authorize or token URL host is missing after adapter settings')
-    if slug == 'gitlab':
+    company_scoped = {'gitlab', 'linkedin', 'keycloak', 'openid_connect', 'okta', 'auth0'}
+    if slug in company_scoped:
         if not company_host:
-            raise ValueError('gitlab requires company_host')
+            raise ValueError(f'{slug} requires company_host')
         for label, host in (
             ('authorize', auth_host),
             ('token', token_host),
             ('profile', profile_host),
         ):
-            if host != company_host:
-                raise ValueError(f'gitlab {label} host {host!r} != company host {company_host!r}')
+            if host and host != company_host:
+                raise ValueError(f'{slug} {label} host {host!r} != company host {company_host!r}')
         return
     expected: dict[str, set[str]] = {
         'apple': {'appleid.apple.com'},
@@ -122,6 +132,7 @@ def _assert_adapter_hosts(
         'microsoft': {'login.microsoftonline.com', 'graph.microsoft.com'},
         'reddit': {'www.reddit.com', 'oauth.reddit.com', 'reddit.com'},
         'shopify': {'fixture-shop.myshopify.com'},
+        'slack': {'slack.com'},
     }
     allowed = expected.get(slug)
     if allowed is None:
@@ -133,6 +144,119 @@ def _assert_adapter_hosts(
     ):
         if host and host not in allowed:
             raise ValueError(f'{slug} {label} host {host!r} not in allowed {sorted(allowed)}')
+
+
+def _company_host_for_slug(slug: str, *, company_slug: str, social_app: SocialApp) -> str | None:
+    if slug == 'gitlab':
+        return urlparse(company_gitlab_url(company_slug)).hostname
+    if slug == 'linkedin':
+        return company_linkedin_oidc(company_slug).hostname
+    if slug == 'keycloak':
+        return company_keycloak_oidc(company_slug).hostname
+    if slug == 'openid_connect':
+        return company_generic_oidc(company_slug).hostname
+    if slug == 'okta':
+        return urlparse(company_okta_base(company_slug)).hostname
+    if slug == 'auth0':
+        return urlparse(company_auth0_base(company_slug)).hostname
+    return None
+
+
+def _oidc_fixture_for_slug(slug: str, company_slug: str) -> OidcCompanyFixture:
+    if slug == 'linkedin':
+        return company_linkedin_oidc(company_slug)
+    if slug == 'keycloak':
+        return company_keycloak_oidc(company_slug)
+    if slug == 'openid_connect':
+        return company_generic_oidc(company_slug)
+    raise ValueError(f'provider {slug} is not an OpenID Connect catalog entry')
+
+
+def _oidc_discovery_document(oidc: OidcCompanyFixture) -> dict[str, str]:
+    issuer = oidc.issuer
+    return {
+        'issuer': issuer,
+        'authorization_endpoint': f'{issuer}/authorize',
+        'token_endpoint': f'{issuer}/token',
+        'userinfo_endpoint': f'{issuer}/userinfo',
+        'jwks_uri': f'{issuer}/jwks',
+        'token_endpoint_auth_methods_supported': ['client_secret_post'],
+    }
+
+
+def _build_oidc_strict_spec(
+    *,
+    slug: str,
+    company_slug: str,
+    social_app: SocialApp,
+    fixture_expected_uid: str,
+    profile: dict,
+    signing: OAuthTestSigningKey | None = None,
+) -> StrictProviderSpec:
+    oidc = _oidc_fixture_for_slug(slug, company_slug)
+    discovery = _oidc_discovery_document(oidc)
+    authorize_url = discovery['authorization_endpoint']
+    access_token_url = discovery['token_endpoint']
+    profile_url = discovery['userinfo_endpoint']
+    company_host = oidc.hostname
+    signing = signing or generate_oauth_test_signing_key(kid=f'{slug}-oidc-kid')
+    client_id = social_app.client_id
+    now = int(time.time())
+    id_token = signing.sign_rs256(
+        {
+            'iss': discovery['issuer'],
+            'aud': client_id,
+            'sub': fixture_expected_uid,
+            'email': profile.get('email'),
+            'email_verified': True,
+            'exp': now + 3600,
+            'iat': now,
+        }
+    )
+    routes: dict[tuple[str, str, str], RouteHandler] = {}
+    hostnames: set[str] = {company_host}
+    discovery_path = urlparse(oidc.server_url).path or '/.well-known/openid-configuration'
+    routes[(company_host, 'GET', discovery_path)] = json_response_handler(discovery)
+    jwks_path = urlparse(discovery['jwks_uri']).path or '/jwks'
+    routes[(company_host, 'GET', jwks_path)] = json_response_handler(signing.jwks_document())
+    token_key = _route_key(access_token_url, method='POST')
+    routes[token_key] = _token_json_handler(
+        {'access_token': f'at-{slug}', 'token_type': 'Bearer', 'id_token': id_token}
+    )
+    profile_key = _route_key(profile_url)
+    routes[profile_key] = _json_handler(profile)
+    authorize_netloc = (urlparse(authorize_url).hostname or '').lower()
+    return StrictProviderSpec(
+        slug=slug,
+        authorize_netloc=authorize_netloc,
+        routes=routes,
+        hostnames=sorted(hostnames),
+        expected_uid=fixture_expected_uid,
+        company_host=company_host,
+    )
+
+
+def _assert_oidc_adapter_urls_with_live_discovery(
+    *,
+    slug: str,
+    request,
+    social_app: SocialApp,
+    company_slug: str,
+) -> None:
+    entry = get_provider_catalog().by_slug()[slug]
+    company_host = _company_host_for_slug(slug, company_slug=company_slug, social_app=social_app)
+    bind_oauth_social_app(request, social_app)
+    with oauth_allauth_request(request, social_app=social_app), allauth_context.request_context(request):
+        adapter = OpenIDConnectOAuth2Adapter(request, social_app.provider_id)
+        apply_oauth_adapter_settings(adapter, social_app=social_app, entry=entry)
+        profile_url = adapter.profile_url
+        _assert_adapter_hosts(
+            slug=slug,
+            authorize_url=adapter.authorize_url,
+            access_token_url=adapter.access_token_url,
+            profile_url=profile_url,
+            company_host=company_host,
+        )
 
 
 def build_strict_spec(
@@ -148,10 +272,18 @@ def build_strict_spec(
         raise ValueError(f'provider {slug} is not in the supported release set')
     fixture = supported_provider_fixture(slug)
     entry = get_provider_catalog().by_slug()[slug]
+    profile = dict(fixture.profile_document)
+    if entry.allauth_id == 'openid_connect':
+        return _build_oidc_strict_spec(
+            slug=slug,
+            company_slug=company_slug,
+            social_app=social_app,
+            fixture_expected_uid=fixture.expected_uid,
+            profile=profile,
+            signing=signing,
+        )
     bind_oauth_social_app(request, social_app)
-    company_host: str | None = None
-    if slug == 'gitlab':
-        company_host = urlparse(company_gitlab_url(company_slug)).hostname
+    company_host = _company_host_for_slug(slug, company_slug=company_slug, social_app=social_app)
 
     with oauth_allauth_request(request, social_app=social_app), allauth_context.request_context(request):
         provider = registry.get_class(entry.allauth_id)(request, app=social_app)
@@ -176,7 +308,6 @@ def build_strict_spec(
             profile_url=profile_url,
             company_host=company_host,
         )
-        profile = dict(fixture.profile_document)
         return _build_routes_for_fixture(
             slug=slug,
             fixture_expected_uid=fixture.expected_uid,
@@ -303,6 +434,11 @@ def _build_routes_for_fixture(
         profile_key = _route_key(profile_url or '')
         hostnames.add(profile_key[0])
         routes[profile_key] = _json_handler(profile)
+    elif slug == 'slack':
+        routes[token_key] = _token_json_handler({'access_token': 'slack-openid-at', 'token_type': 'Bearer'})
+        profile_key = _route_key(profile_url or '')
+        hostnames.add(profile_key[0])
+        routes[profile_key] = _json_handler(profile)
     else:
         routes[token_key] = _token_json_handler({'access_token': f'at-{slug}', 'token_type': 'Bearer'})
         if profile_url:
@@ -362,6 +498,17 @@ def run_strict_provider_round_trip(
     except Exception as exc:
         return f'spec: {exc}'
     with strict_provider_http(spec):
+        entry = get_provider_catalog().by_slug()[slug]
+        if entry.allauth_id == 'openid_connect':
+            try:
+                _assert_oidc_adapter_urls_with_live_discovery(
+                    slug=slug,
+                    request=request,
+                    social_app=social_app,
+                    company_slug=company_slug,
+                )
+            except Exception as exc:
+                return f'oidc adapter hosts: {exc}'
         parsed_authorize = urlparse(
             build_authorize_url(
                 slug,
