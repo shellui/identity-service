@@ -84,7 +84,7 @@ class SAMLStrictAdvancedTests(TestCase):
         )
         finish = self._finish(saml, request_id)
         self.assertEqual(finish.status_code, 400)
-        self.assertEqual(finish.content.decode(), 'saml_audience_mismatch')
+        self.assertEqual(finish.json()['error_code'], 'saml_audience_mismatch')
 
     def test_unsigned_assertion_rejected_even_when_advanced_requests_weak_mode(self):
         request_id = '_strictunsigned1'
@@ -123,4 +123,4 @@ class SAMLStrictAdvancedTests(TestCase):
         )
         finish = self.client.get(response['Location'], follow=False, HTTP_HOST=self.http_host)
         self.assertEqual(finish.status_code, 400)
-        self.assertEqual(finish.content.decode(), 'saml_signature_missing')
+        self.assertEqual(finish.json()['error_code'], 'saml_signature_missing')

@@ -48,10 +48,10 @@ def get_saml_app_for_slug(request, organization_slug: str) -> SocialApp:
             raise SocialApp.DoesNotExist()
         return bound
     slug = assert_valid_organization_slug(organization_slug)
-    try:
-        app = SocialApp.objects.get(provider='saml', client_id=slug)
-    except SocialApp.DoesNotExist as exc:
-        raise Http404('saml_app_not_found') from exc
+    matches = list(SocialApp.objects.filter(provider='saml', client_id=slug).order_by('pk')[:2])
+    if len(matches) != 1:
+        raise Http404('saml_app_not_found')
+    app = matches[0]
     if str(app.provider).strip().lower() != 'saml':
         raise Http404('saml_app_not_found')
     return app

@@ -75,7 +75,7 @@ class ShellUISAMLFinishACSView(SAMLViewMixin, View):
         acs_session.delete()
         if not acs_request_data:
             logger.error('SAML ACS session missing')
-            return saml_http_error(error_code='saml_acs_session_missing', status=HTTPStatus.BAD_REQUEST)
+            return saml_json_error(error_code='saml_acs_session_missing', status=HTTPStatus.BAD_REQUEST)
         acs_request = httpkit.deserialize_request(acs_request_data, HttpRequest())
         if not acs_request.META.get('HTTP_HOST'):
             acs_request.META['HTTP_HOST'] = request.get_host()
@@ -90,29 +90,29 @@ class ShellUISAMLFinishACSView(SAMLViewMixin, View):
             pending = request.session.pop(SHELLUI_SAML_AUTHN_REQUEST_SESSION_KEY, None)
             if not pending or str(pending) != str(in_response_to):
                 logger.error('SAML InResponseTo session binding failed')
-                return saml_http_error(error_code='saml_in_response_to_session_mismatch', status=HTTPStatus.BAD_REQUEST)
+                return saml_json_error(error_code='saml_in_response_to_session_mismatch', status=HTTPStatus.BAD_REQUEST)
 
         try:
             with oauth_allauth_request(acs_request, social_app=social_app):
                 auth = build_auth(acs_request, social_app)
         except SAMLConfigError:
             logger.error('SAML IdP configuration invalid for app %s', social_app.pk)
-            return saml_http_error(error_code='saml_idp_config_invalid', status=HTTPStatus.INTERNAL_SERVER_ERROR)
+            return saml_json_error(error_code='saml_idp_config_invalid', status=HTTPStatus.INTERNAL_SERVER_ERROR)
         auth.process_response(request_id=in_response_to)
         if auth.shellui_error_code or not auth.is_authenticated():
             error_code = auth.shellui_error_code or 'saml_response_invalid'
             logger.warning('SAML ACS rejected: %s (%s)', error_code, auth.get_last_error_reason())
-            return saml_http_error(error_code=error_code, status=HTTPStatus.BAD_REQUEST)
+            return saml_json_error(error_code=error_code, status=HTTPStatus.BAD_REQUEST)
         acs_url = auth.get_settings().get_sp_data()['assertionConsumerService']['url']
         try:
             validated = check_validated_assertion(auth.validated_response, acs_url=acs_url)
         except SAMLFlowError as exc:
             logger.warning('SAML ACS rejected: %s', exc.error_code)
-            return saml_http_error(error_code=exc.error_code, status=exc.status)
+            return saml_json_error(error_code=exc.error_code, status=exc.status)
 
         company_id = shellui_company_id_from_app(social_app)
         if company_id is None:
-            return saml_http_error(error_code='saml_company_mismatch', status=HTTPStatus.FORBIDDEN)
+            return saml_json_error(error_code='saml_company_mismatch', status=HTTPStatus.FORBIDDEN)
         idp_entity = idp_entity_id_from_settings(
             social_app.settings if isinstance(social_app.settings, dict) else {}
         )
@@ -123,7 +123,7 @@ class ShellUISAMLFinishACSView(SAMLViewMixin, View):
             assertion_id=validated.assertion_id,
             ttl_seconds=validated.replay_ttl_seconds,
         ):
-            return saml_http_error(error_code='saml_assertion_replay', status=HTTPStatus.BAD_REQUEST)
+            return saml_json_error(error_code='saml_assertion_replay', status=HTTPStatus.BAD_REQUEST)
 
         shellui_state = None
         if in_response_to:
@@ -136,11 +136,11 @@ class ShellUISAMLFinishACSView(SAMLViewMixin, View):
             advanced = settings_data.get('advanced') if isinstance(settings_data.get('advanced'), dict) else {}
             if advanced.get('reject_idp_initiated_sso', True):
                 logger.error('IdP-initiated SAML rejected')
-                return saml_http_error(error_code='saml_idp_initiated_rejected', status=HTTPStatus.BAD_REQUEST)
+                return saml_json_error(error_code='saml_idp_initiated_rejected', status=HTTPStatus.BAD_REQUEST)
             shellui_state = {'company_id': company_id, 'redirect_to': '/', 'token_delivery': 'code'}
 
         if not isinstance(shellui_state, dict):
-            return saml_http_error(error_code='saml_in_response_to_invalid', status=HTTPStatus.BAD_REQUEST)
+            return saml_json_error(error_code='saml_in_response_to_invalid', status=HTTPStatus.BAD_REQUEST)
 
         bind_oauth_social_app(request, social_app)
         return complete_shellui_saml_login(
@@ -224,6 +224,48 @@ class ShellUISAMLLoginView(SAMLViewMixin, View):
         return HttpResponseRedirect(redirect_url)
 
 
+def _revoke_saml_company_refresh_sessions(request: HttpRequest, *, social_app, company: Company) -> None:
+    """Revoke refresh sessions for the NameID in a validated IdP logout request."""
+    from django.utils import timezone
+    from onelogin.saml2.logout_request import OneLogin_Saml2_Logout_Request
+    from onelogin.saml2.utils import OneLogin_Saml2_Utils
+
+    from allauth.socialaccount.models import SocialAccount
+
+    from apps.authapi.models import RefreshTokenSession
+    from apps.authapi.oauth_social_account import saml_social_account_provider_key
+
+    raw = request.GET.get('SAMLRequest') or request.POST.get('SAMLRequest')
+    if not raw:
+        return
+    try:
+        xml = OneLogin_Saml2_Utils.decode_base64_and_inflate(raw)
+        name_id = str(OneLogin_Saml2_Logout_Request.get_nameid(xml) or '').strip()
+    except Exception:
+        logger.warning('SAML logout NameID could not be read')
+        return
+    if not name_id:
+        return
+    settings_data = social_app.settings if isinstance(social_app.settings, dict) else {}
+    entity_id = idp_entity_id_from_settings(settings_data)
+    uids = {name_id}
+    if entity_id:
+        uids.add(f'{entity_id}|{name_id}')
+    user_ids = list(
+        SocialAccount.objects.filter(
+            provider=saml_social_account_provider_key(social_app),
+            uid__in=uids,
+        ).values_list('user_id', flat=True)
+    )
+    if not user_ids:
+        return
+    RefreshTokenSession.objects.filter(
+        user_id__in=user_ids,
+        company=company,
+        revoked_at__isnull=True,
+    ).update(revoked_at=timezone.now())
+
+
 def _validate_saml_slo_relay_state(request: HttpRequest, *, company: Company) -> str | None:
     relay = str(request.GET.get('RelayState') or request.POST.get('RelayState') or '').strip()
     if not relay:
@@ -258,6 +300,7 @@ class ShellUISAMLSLSView(SAMLViewMixin, View):
             return saml_http_error(error_code='saml_idp_config_invalid', status=HTTPStatus.INTERNAL_SERVER_ERROR)
 
         def _end_session() -> None:
+            _revoke_saml_company_refresh_sessions(request, social_app=social_app, company=company)
             django_auth_logout(request)
 
         try:

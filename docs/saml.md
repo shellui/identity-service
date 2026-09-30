@@ -14,18 +14,27 @@ Shellui identity-service acts as the SAML service provider (SP). Each company ca
    - `metadata_url`: SP metadata XML for import
 4. In the IdP, map attributes for `uid`, email, and optional name fields to match your `attribute_mapping`.
 
-Optional: set `metadata_url` instead of manual `sso_url` and `x509cert`. Metadata import uses the same SSRF-pinned HTTP fetch as OAuth discovery (512KB cap). Imported and manual `sso_url` / `slo_url` values must be public HTTP(S) URLs.
+Optional: set `metadata_url` instead of manual `sso_url` and `x509cert`. On save, Shellui fetches that URL (same SSRF-pinned HTTP client as OAuth discovery, 512KB cap), stores the redirect SSO URL, and keeps a signing certificate (`KeyDescriptor` use `signing`, or a key with no use). An encryption-only certificate is rejected with `saml_metadata_missing_certificate`. Imported and manual `sso_url` / `slo_url` values must be public HTTPS URLs.
 
 ### Account isolation
 
-Each company SAML IdP maps to its own SocialAccount provider key (`saml-<social_app_id>`). The same IdP entity ID cannot be registered for two different companies (`saml_idp_entity_id_in_use`).
+Each SAML SocialApp belongs to one company, and that mapping cannot move to another company. SocialAccount rows use `saml-{social_app_id}`, not the bare provider id `saml`. The same IdP entity ID cannot be registered for two different companies (`saml_idp_entity_id_in_use`).
+
+Changing `client_id` (the organization slug) on PUT is rejected with `oauth_app_client_id_taken` when another SocialApp already has that value. A slug that matches more than one SAML app returns 404 (`saml_app_not_found`) instead of a server error.
 
 ### ACS hardening
 
 - `strict` and signed assertions are always enforced; admin `advanced` settings cannot weaken them.
 - `InResponseTo` is single-use, bound to the browser session that started login, and passed into SAML response validation.
 - Assertion replay IDs are stored in the shared Django cache with TTL tied to the assertion `NotOnOrAfter` (max 15 minutes). LocMemCache is allowed in DEBUG only; production must use a shared cache backend.
-- SP-initiated login at `/api/v1/saml/<slug>/login/` validates `redirect_to` and `token_delivery` like `/api/v1/authorize`.
+- SP-initiated login at `/api/v1/saml/organization_slug/login/` validates `redirect_to` the same way as `/api/v1/authorize`. `token_delivery` accepts `code` or `fragment` and ignores any other value, matching authorize. The server default is `OAUTH_TOKEN_DELIVERY`.
+- ACS failures return JSON `{"error_code": "..."}`. A transient NameID used as the account id returns `saml_nameid_transient`. An assertion with no email returns `saml_email_required`. Shellui does not invent an email.
+- A successful login is recorded once, when the confirm step completes (or when confirm is skipped).
+- An assertion with no `Audience` returns `saml_audience_missing`.
+
+### Logout
+
+IdP-initiated logout at the SLS URL requires a signed logout request. When the NameID matches a SAML SocialAccount for that IdP, Shellui revokes that user's refresh sessions for the IdP's company.
 
 ### IdP-initiated SSO
 

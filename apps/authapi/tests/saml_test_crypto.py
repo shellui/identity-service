@@ -105,6 +105,9 @@ def build_signed_saml_response(
     assertion_email: str | None = None,
     destination: str | None = None,
     recipient: str | None = None,
+    name_id_format: str | None = None,
+    include_attributes: bool = True,
+    include_audience: bool = True,
 ) -> str:
     """Return base64-encoded SAMLResponse for HTTP-POST binding."""
     now = datetime.datetime.now(datetime.timezone.utc)
@@ -154,7 +157,7 @@ def build_signed_saml_response(
     name_id_el = etree.SubElement(
         subject,
         '{urn:oasis:names:tc:SAML:2.0:assertion}NameID',
-        Format='urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified',
+        Format=name_id_format or 'urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified',
     )
     name_id_el.text = name_id
     sub_conf = etree.SubElement(
@@ -176,15 +179,16 @@ def build_signed_saml_response(
     conditions = etree.SubElement(assertion, '{urn:oasis:names:tc:SAML:2.0:assertion}Conditions')
     conditions.set('NotBefore', issue_instant)
     conditions.set('NotOnOrAfter', not_on_or_after)
-    audience_restriction = etree.SubElement(
-        conditions,
-        '{urn:oasis:names:tc:SAML:2.0:assertion}AudienceRestriction',
-    )
-    audience_el = etree.SubElement(
-        audience_restriction,
-        '{urn:oasis:names:tc:SAML:2.0:assertion}Audience',
-    )
-    audience_el.text = audience_value
+    if include_audience:
+        audience_restriction = etree.SubElement(
+            conditions,
+            '{urn:oasis:names:tc:SAML:2.0:assertion}AudienceRestriction',
+        )
+        audience_el = etree.SubElement(
+            audience_restriction,
+            '{urn:oasis:names:tc:SAML:2.0:assertion}Audience',
+        )
+        audience_el.text = audience_value
 
     authn_statement = etree.SubElement(
         assertion,
@@ -201,7 +205,15 @@ def build_signed_saml_response(
         '{urn:oasis:names:tc:SAML:2.0:assertion}AuthnContextClassRef',
     ).text = 'urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport'
 
-    attr_statement = etree.SubElement(assertion, '{urn:oasis:names:tc:SAML:2.0:assertion}AttributeStatement')
+    attr_statement = (
+        etree.SubElement(assertion, '{urn:oasis:names:tc:SAML:2.0:assertion}AttributeStatement')
+        if include_attributes
+        else None
+    )
+    if attr_statement is None:
+        _sign_assertion(assertion, creds)
+        raw = etree.tostring(response)
+        return base64.b64encode(raw).decode('ascii')
     email_value = assertion_email or (name_id if '@' in name_id else f'{name_id}@example.com')
     for attr_name, attr_value in (
         ('urn:oid:0.9.2342.19200300.100.1.3', email_value),

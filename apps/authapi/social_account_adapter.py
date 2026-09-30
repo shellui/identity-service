@@ -27,7 +27,7 @@ class ShellUISocialAccountAdapter(DefaultSocialAccountAdapter):
                 raise SocialApp.DoesNotExist()
         elif bound_provider == 'saml':
             expected = saml_social_account_provider_key(bound)
-            if provider_key not in {expected, bound_provider, 'saml'}:
+            if provider_key not in {expected, bound_provider}:
                 raise SocialApp.DoesNotExist()
         elif bound_provider != provider_key:
             raise SocialApp.DoesNotExist()

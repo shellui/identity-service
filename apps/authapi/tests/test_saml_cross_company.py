@@ -121,6 +121,8 @@ class SAMLCrossCompanyIsolationTests(TestCase):
         )
         self.assertIn(status_a, {302, 200})
         provider_a = saml_social_account_provider_key(self.app_a)
+        self.assertEqual(provider_a, f'saml-{self.app_a.pk}')
+        self.assertNotEqual(provider_a, 'saml')
         linked = SocialAccount.objects.filter(provider=provider_a).select_related('user').first()
         self.assertIsNotNone(linked)
         user_a = linked.user
@@ -137,3 +139,10 @@ class SAMLCrossCompanyIsolationTests(TestCase):
         account_b = SocialAccount.objects.filter(provider=provider_b).select_related('user').first()
         self.assertIsNotNone(account_b)
         self.assertNotEqual(account_b.user_id, user_a.id)
+        self.assertFalse(SocialAccount.objects.filter(provider='saml', user=user_a).exists())
+
+    def test_social_app_cannot_be_mapped_to_a_second_company(self):
+        from django.core.exceptions import ValidationError
+
+        with self.assertRaises(ValidationError):
+            CompanyOAuthClient.objects.create(company=self.company_b, social_app=self.app_a, is_active=True)

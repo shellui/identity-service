@@ -113,7 +113,7 @@ class SAMLACSSecurityTests(TestCase):
     def _assert_rejected(self, saml_b64: str, request_id: str | None, error_code: str) -> None:
         finish = self._post_saml(saml_b64, request_id=request_id, return_response=True)
         self.assertEqual(finish.status_code, 400)
-        self.assertEqual(finish.content.decode(), error_code)
+        self.assertEqual(finish.json()['error_code'], error_code)
 
     def test_valid_login_accepts_signed_assertion(self):
         request_id = '_validrequest001'
@@ -264,7 +264,7 @@ class SAMLACSSecurityTests(TestCase):
         self.assertEqual(response.status_code, 302)
         finish = other_client.get(response['Location'], follow=False, HTTP_HOST=self.http_host)
         self.assertEqual(finish.status_code, 400)
-        self.assertEqual(finish.content.decode(), 'saml_in_response_to_session_mismatch')
+        self.assertEqual(finish.json()['error_code'], 'saml_in_response_to_session_mismatch')
 
     def test_rejects_wrong_destination(self):
         request_id = '_destreq001'
@@ -451,3 +451,169 @@ class SAMLACSSecurityTests(TestCase):
         self.assertFalse(SocialAccount.objects.filter(user=victim).exists())
         victim.refresh_from_db()
         self.assertEqual(victim.email, 'victim@victimco.example')
+
+    def test_rejects_reference_retargeted_to_response_id(self):
+        import base64
+
+        from lxml import etree
+
+        request_id = '_retargetref001'
+        saml = build_signed_saml_response(
+            creds=self.creds,
+            sp_entity_id=self.sp['entity_id'],
+            acs_url=self.sp['acs_url'],
+            name_id='user-retarget',
+            in_response_to=request_id,
+        )
+        root = etree.fromstring(base64.b64decode(saml.encode('ascii')))
+        for ref in root.xpath('//*[local-name()="Reference"]'):
+            ref.set('URI', f'#{root.get("ID")}')
+        forged = base64.b64encode(etree.tostring(root)).decode('ascii')
+        self._assert_rejected(forged, request_id, 'saml_signature_invalid')
+
+    def test_rejects_signature_moved_under_subject(self):
+        import base64
+
+        from lxml import etree
+
+        request_id = '_movesig001'
+        saml = build_signed_saml_response(
+            creds=self.creds,
+            sp_entity_id=self.sp['entity_id'],
+            acs_url=self.sp['acs_url'],
+            name_id='user-movesig',
+            in_response_to=request_id,
+        )
+        root = etree.fromstring(base64.b64decode(saml.encode('ascii')))
+        signature = root.find('.//{http://www.w3.org/2000/09/xmldsig#}Signature')
+        subject = root.find('.//{urn:oasis:names:tc:SAML:2.0:assertion}Subject')
+        signature.getparent().remove(signature)
+        subject.append(signature)
+        forged = base64.b64encode(etree.tostring(root)).decode('ascii')
+        self._assert_rejected(forged, request_id, 'saml_signature_invalid')
+
+    def test_rejects_assertion_without_audience(self):
+        request_id = '_noaudience001'
+        saml = build_signed_saml_response(
+            creds=self.creds,
+            sp_entity_id=self.sp['entity_id'],
+            acs_url=self.sp['acs_url'],
+            name_id='user-no-audience',
+            in_response_to=request_id,
+            include_audience=False,
+        )
+        self._assert_rejected(saml, request_id, 'saml_audience_missing')
+
+    def test_rejects_transient_nameid_used_as_uid(self):
+        request_id = '_transient001'
+        saml = build_signed_saml_response(
+            creds=self.creds,
+            sp_entity_id=self.sp['entity_id'],
+            acs_url=self.sp['acs_url'],
+            name_id='transient-subject',
+            in_response_to=request_id,
+            name_id_format='urn:oasis:names:tc:SAML:2.0:nameid-format:transient',
+            include_attributes=False,
+        )
+        self._assert_rejected(saml, request_id, 'saml_nameid_transient')
+
+    def test_rejects_assertion_without_email(self):
+        request_id = '_noemail001'
+        saml = build_signed_saml_response(
+            creds=self.creds,
+            sp_entity_id=self.sp['entity_id'],
+            acs_url=self.sp['acs_url'],
+            name_id='stable-subject',
+            in_response_to=request_id,
+            include_attributes=False,
+        )
+        self._assert_rejected(saml, request_id, 'saml_email_required')
+
+    def test_successful_login_records_one_login_event(self):
+        from apps.authapi.models import LoginEvent
+
+        request_id = '_onelogin001'
+        saml = build_signed_saml_response(
+            creds=self.creds,
+            sp_entity_id=self.sp['entity_id'],
+            acs_url=self.sp['acs_url'],
+            name_id='once-user',
+            in_response_to=request_id,
+        )
+        finish = self._post_saml(saml, request_id=request_id, return_response=True)
+        self.assertEqual(finish.status_code, 200)
+        self.assertEqual(LoginEvent.objects.filter(outcome=LoginEvent.OUTCOME_SUCCESS).count(), 0)
+        confirm_token = None
+        for line in finish.content.decode().splitlines():
+            if 'name="confirm_token"' not in line:
+                continue
+            start = line.find('value="') + len('value="')
+            end = line.find('"', start)
+            confirm_token = line[start:end]
+        self.assertTrue(confirm_token)
+        confirmed = self.client.post(
+            '/api/v1/oauth/confirm',
+            {'confirm_token': confirm_token},
+            HTTP_HOST=self.http_host,
+        )
+        self.assertIn(confirmed.status_code, {302, 200})
+        self.assertEqual(LoginEvent.objects.filter(outcome=LoginEvent.OUTCOME_SUCCESS).count(), 1)
+
+    def test_slo_revokes_company_refresh_sessions(self):
+        import xmlsec
+        from onelogin.saml2.auth import OneLogin_Saml2_Auth
+        from onelogin.saml2.constants import OneLogin_Saml2_Constants
+        from onelogin.saml2.utils import OneLogin_Saml2_Utils
+
+        from apps.authapi.models import LoginEvent, RefreshTokenSession
+
+        request_id = '_slotestlogin01'
+        name_id = 'slo-user'
+        saml = build_signed_saml_response(
+            creds=self.creds,
+            sp_entity_id=self.sp['entity_id'],
+            acs_url=self.sp['acs_url'],
+            name_id=name_id,
+            in_response_to=request_id,
+        )
+        finish = self._post_saml(saml, request_id=request_id, return_response=True)
+        confirm_token = None
+        for line in finish.content.decode().splitlines():
+            if 'name="confirm_token"' not in line:
+                continue
+            start = line.find('value="') + len('value="')
+            end = line.find('"', start)
+            confirm_token = line[start:end]
+        self.client.post('/api/v1/oauth/confirm', {'confirm_token': confirm_token}, HTTP_HOST=self.http_host)
+        self.assertEqual(LoginEvent.objects.filter(outcome=LoginEvent.OUTCOME_SUCCESS).count(), 1)
+        account = SocialAccount.objects.get(provider=saml_social_account_provider_key(self.app))
+        self.assertTrue(
+            RefreshTokenSession.objects.filter(user=account.user, company=self.company, revoked_at__isnull=True).exists()
+        )
+        self.app.settings['idp']['slo_url'] = 'https://idp.test.example/slo'
+        self.app.save(update_fields=['settings'])
+        sls_path = reverse('shellui-saml-sls', kwargs={'organization_slug': self.app.client_id})
+        destination = f'http://{self.http_host}{sls_path}'
+        issued = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+        logout_xml = (
+            '<samlp:LogoutRequest xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" '
+            'xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" '
+            f'ID="_logout{request_id}" Version="2.0" IssueInstant="{issued}" Destination="{destination}">'
+            f'<saml:Issuer>{self.creds.entity_id}</saml:Issuer>'
+            f'<saml:NameID>{name_id}</saml:NameID>'
+            '</samlp:LogoutRequest>'
+        )
+        encoded = OneLogin_Saml2_Utils.deflate_and_base64_encode(logout_xml)
+        sigalg = OneLogin_Saml2_Constants.RSA_SHA256
+        signed_query = OneLogin_Saml2_Auth._build_sign_query(encoded, None, sigalg, 'SAMLRequest')
+        signature = OneLogin_Saml2_Utils.sign_binary(
+            signed_query,
+            self.creds.private_key_pem,
+            xmlsec.Transform.RSA_SHA256,
+        )
+        query = f'{signed_query}&Signature={OneLogin_Saml2_Utils.escape_url(OneLogin_Saml2_Utils.b64encode(signature))}'
+        response = self.client.get(f'{sls_path}?{query}', follow=False, HTTP_HOST=self.http_host)
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(
+            RefreshTokenSession.objects.filter(user=account.user, company=self.company, revoked_at__isnull=True).exists()
+        )

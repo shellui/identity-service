@@ -169,6 +169,12 @@ def check_validated_assertion(response, *, acs_url: str) -> ValidatedAssertion:
     if destination is not None and not _same_url(destination, acs_url):
         raise SAMLFlowError('saml_destination_mismatch')
 
+    audiences = OneLogin_Saml2_XML.query(
+        assertion, './saml:Conditions/saml:AudienceRestriction/saml:Audience'
+    )
+    if not audiences:
+        raise SAMLFlowError('saml_audience_missing')
+
     bearer = [
         node
         for node in OneLogin_Saml2_XML.query(assertion, './saml:Subject/saml:SubjectConfirmation')

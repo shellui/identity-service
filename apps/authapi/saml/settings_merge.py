@@ -35,24 +35,34 @@ def merge_saml_social_settings(
     metadata_url = str(
         extra.get('metadata_url') or idp_input.get('metadata_url') or ''
     ).strip()
-    if metadata_url:
-        try:
-            assert_public_http_url(metadata_url)
-        except Exception:
-            return base, 'error_code:saml_metadata_url_blocked'
-        idp['metadata_url'] = metadata_url
-
     sso_url = str(extra.get('sso_url') or idp_input.get('sso_url') or '').strip()
     cert = str(extra.get('x509cert') or idp_input.get('x509cert') or '').strip()
-    if not metadata_url:
-        if not sso_url or not cert:
-            return base, 'error_code:saml_idp_manual_fields_required'
+    if metadata_url and not (sso_url and cert):
+        from apps.authapi.saml.metadata_import import fetch_idp_metadata_xml, parse_idp_metadata
+
+        try:
+            xml_bytes = fetch_idp_metadata_xml(metadata_url)
+            parsed = parse_idp_metadata(xml_bytes, expected_entity_id=entity_id)
+        except ValueError as exc:
+            return base, f'error_code:{exc}'
+        imported = parsed.get('idp') if isinstance(parsed.get('idp'), dict) else {}
+        idp.update(imported)
+        idp['metadata_url'] = metadata_url
+    elif not sso_url or not cert:
+        return base, 'error_code:saml_idp_manual_fields_required'
+    else:
         try:
             assert_public_http_url(sso_url)
         except Exception:
             return base, 'error_code:saml_sso_url_blocked'
         idp['sso_url'] = sso_url
         idp['x509cert'] = cert
+        if metadata_url:
+            try:
+                assert_public_http_url(metadata_url)
+            except Exception:
+                return base, 'error_code:saml_metadata_url_blocked'
+            idp['metadata_url'] = metadata_url
     slo_url = str(extra.get('slo_url') or idp_input.get('slo_url') or '').strip()
     if slo_url:
         try:
@@ -92,6 +102,13 @@ def merge_saml_social_settings(
 
     trusted = bool(extra.get('trusted_for_verified_domains', base.get('trusted_for_verified_domains', False)))
 
+    existing_owner = (existing or {}).get('shellui_company_id') if isinstance(existing, dict) else None
+    if existing_owner is not None:
+        try:
+            if int(existing_owner) != int(company_id):
+                return base, 'error_code:saml_company_mismatch'
+        except (TypeError, ValueError):
+            return base, 'error_code:saml_company_mismatch'
     base['catalog_slug'] = entry.docs_slug
     base['shellui_company_id'] = int(company_id)
     base['idp'] = idp

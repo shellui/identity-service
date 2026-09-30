@@ -7,7 +7,6 @@ from django.http import HttpRequest, HttpResponseRedirect
 
 from apps.actions.user_hooks import emit_oauth_user_created_if_new
 from apps.authapi.login_audit import record_login_event
-from apps.authapi import metrics as auth_metrics
 from apps.authapi.models import LoginEvent
 from apps.authapi.oauth import should_skip_oauth_confirm
 from apps.authapi.oauth_social_account import bind_oauth_social_app, compose_social_account_uid
@@ -31,9 +30,17 @@ def profile_from_saml_auth(request: HttpRequest, social_app, auth) -> tuple[OAut
     uid = str(sociallogin.account.uid or '').strip()
     if not uid:
         return None, 'saml_profile_invalid'
+    name_id = str(auth.get_nameid() or '').strip()
+    name_id_format = str(auth.get_nameid_format() or '').strip()
+    if (
+        name_id_format == 'urn:oasis:names:tc:SAML:2.0:nameid-format:transient'
+        and name_id
+        and uid == name_id
+    ):
+        return None, 'saml_nameid_transient'
     email = str(sociallogin.user.email or '').strip().lower()
-    if not email:
-        email = f'{uid}@saml.local'
+    if not email or email.endswith('@saml.local'):
+        return None, 'saml_email_required'
     full_name = sociallogin.user.get_full_name() or email.split('@')[0]
     composed_uid = compose_social_account_uid(
         entry=entry,
@@ -111,7 +118,7 @@ def complete_shellui_saml_login(
         return _shellui_oauth_bounce_or_json(
             request,
             message=perror or 'SAML sign-in failed.',
-            error_code='saml_identity_failed',
+            error_code=perror or 'saml_identity_failed',
             redirect_to_raw=redirect_to,
         )
     user, created, uerror = resolve_saml_user(
@@ -131,7 +138,11 @@ def complete_shellui_saml_login(
             client_timezone=client_tz,
             client_device_id=client_dev,
         )
-        error_code = SAML_EMAIL_CONFLICT if uerror == SAML_EMAIL_CONFLICT else 'saml_identity_failed'
+        error_code = uerror if uerror in {
+            SAML_EMAIL_CONFLICT,
+            'saml_nameid_transient',
+            'saml_email_required',
+        } else 'saml_identity_failed'
         return _shellui_oauth_bounce_or_json(
             request,
             message=failure_code,
@@ -172,16 +183,6 @@ def complete_shellui_saml_login(
                 ),
                 redirect_to=redirect_to,
             )
-        auth_metrics.record_successful_login(provider, company_id=company.id)
-        record_login_event(
-            request=request,
-            outcome=LoginEvent.OUTCOME_SUCCESS,
-            provider=provider,
-            user=user,
-            company=company,
-            client_timezone=client_tz,
-            client_device_id=client_dev,
-        )
         return _finalize_shellui_oauth_login(
             request,
             user=user,
@@ -193,15 +194,6 @@ def complete_shellui_saml_login(
             client_dev=client_dev,
             token_delivery=shellui_state.get('token_delivery'),
         )
-    record_login_event(
-        request=request,
-        outcome=LoginEvent.OUTCOME_SUCCESS,
-        provider=provider,
-        user=user,
-        company=company,
-        client_timezone=client_tz,
-        client_device_id=client_dev,
-    )
     return _render_oauth_confirm_page(
         request,
         user=user,
