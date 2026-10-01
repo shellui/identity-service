@@ -142,7 +142,7 @@ from apps.scim.provisioning_events import (
 )
 from apps.scim.tokens import generate_scim_token
 from apps.actions.user_hooks import emit_oauth_user_created_if_new
-from .account_lifecycle import delete_user_account
+from .account_lifecycle import delete_user_account, remove_user_from_company
 from .self_service_delete import check_self_service_account_delete_allowed
 
 User = get_user_model()
@@ -2787,13 +2787,16 @@ class ShellUILogoutView(APIView):
         tags=['auth-profile'],
         summary='Delete current user account (self-service)',
         description=(
-            'Permanently delete the authenticated user account (GDPR/RGPD erasure support). '
-            'Requires JSON body `{"confirm": true}`. Session access JWT only (not personal access '
-            'tokens); the access token must be recently issued (`iat` within '
-            '`SELF_SERVICE_ACCOUNT_DELETE_MAX_IAT_AGE`, default 5m). When the user belongs to '
-            'more than one company, returns 409 until other memberships are removed. Emits '
-            '`identity.user.deleted` once per company membership with `source: self`. Revokes '
-            'refresh sessions and personal access tokens.'
+            'Permanently delete the authenticated user account for the token company '
+            '(GDPR/RGPD erasure support). Requires JSON body `{"confirm": true}`. Session access '
+            'JWT only (not personal access tokens); the access token must be recently issued '
+            '(`auth_time` within `SELF_SERVICE_ACCOUNT_DELETE_MAX_IAT_AGE`, default 5m). '
+            'When the user also belongs to other companies, only this company membership and its '
+            'company-scoped data (sessions, tokens, groups, ownership, company OAuth links) are '
+            'removed and the account stays for the other companies. Otherwise the user row is '
+            'deleted. Emits `identity.user.deleted` for each removed membership with `source: self`. '
+            'Refused with 409 `last_company_owner` when the user is the only owner of a company '
+            'that would lose them; add another owner first.'
         ),
         request=ShellUIUserDeleteSerializer,
         responses={
@@ -2801,7 +2804,7 @@ class ShellUILogoutView(APIView):
             400: OpenApiResponse(description='Missing or false confirm flag'),
             401: OpenApiResponse(description='Missing or invalid bearer token'),
             403: OpenApiResponse(description='PAT or stale access token'),
-            409: OpenApiResponse(description='User belongs to more than one company'),
+            409: OpenApiResponse(description='User is the only owner of an affected company'),
         },
     ),
 )
@@ -2895,7 +2898,7 @@ class ShellUIUserView(APIView):
         user = _authenticate_bearer_user(request)
         if not user:
             return Response({'error': 'Unauthorized'}, status=status.HTTP_401_UNAUTHORIZED)
-        _company, company_err = _required_company_from_request(request, user=user)
+        company, company_err = _required_company_from_request(request, user=user)
         if company_err:
             return company_err
 
@@ -2908,7 +2911,7 @@ class ShellUIUserView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        blocked = check_self_service_account_delete_allowed(request, user)
+        blocked = check_self_service_account_delete_allowed(request, user, company)
         if blocked is not None:
             return blocked
 
@@ -2927,7 +2930,10 @@ class ShellUIUserView(APIView):
             except Exception:
                 pass
 
-        delete_user_account(user, source='self')
+        if user.company_memberships.exclude(company=company).exists():
+            remove_user_from_company(user, company, source='self')
+        else:
+            delete_user_account(user, source='self')
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 

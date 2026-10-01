@@ -135,12 +135,13 @@ Content-Type: application/json
 | Item | Behavior |
 |------|----------|
 | **Auth** | Session access JWT for the subject only (not personal access tokens). The token `iat` must fall within `SELF_SERVICE_ACCOUNT_DELETE_MAX_IAT_AGE` (default 5 minutes); sign in or refresh if it is older |
-| **Multi-company** | If the user belongs to more than one company, the API returns **409** until other memberships are removed (SCIM deprovision, admin, or equivalent). Self-service delete hard-deletes the global user for every company |
+| **Multi-company** | Deletion is scoped to the token company. If the user also belongs to other companies, only this company's membership and company-scoped data are removed (refresh sessions, PATs, OAuth delivery codes, magic link tokens, group memberships, ownership, and `SocialAccount` links for OAuth apps owned only by this company). Login events for the company are kept without the user link. The account and other memberships stay |
+| **Last owner** | Refused with **409** `error_code: "last_company_owner"` when the user is the only owner of a company that would lose them: the token company, or, for a full delete, any company they own. The body lists `companies: [{id, name}]`. Make another member an owner first. Company owners also cannot clear the owner list through `PATCH /api/v1/companies/<id>/` (`owner_ids: []` returns **400** `company_owner_required`) |
 | **Confirmation** | JSON body must include `"confirm": true` |
-| **Response** | `204 No Content` on success; **403** for PAT or stale token; **409** when multiple company memberships remain |
+| **Response** | `204 No Content` on success; **403** for PAT or stale token (`error_code: "recent_login_required"`); **409** for last owner |
 | **Sessions** | Revokes all refresh sessions and personal access tokens; optional `refresh_token` in the body is revoked like logout; the current access token is denylisted |
-| **Data removal** | Hard-deletes the `User` row (same as Django admin delete). Cascades remove company memberships, OAuth `SocialAccount` links, preferences, PAT metadata, refresh session rows, and SCIM bridge fields tied to the user |
-| **Action events** | Emits [`identity.user.deleted`](actions.md) **once per company membership** with `data.source: "self"` so Action rules (email, webhooks) can run |
+| **Data removal** | When this is the user's only company, hard-deletes the `User` row (same as Django admin delete). Cascades remove company memberships, OAuth `SocialAccount` links, preferences, PAT metadata, refresh session rows, and SCIM bridge fields tied to the user |
+| **Action events** | Emits [`identity.user.deleted`](actions.md) **once per removed company membership** with `data.source: "self"` so Action rules (email, webhooks) can run |
 
 This endpoint supports product workflows for **right-to-erasure** requests. It is not legal advice: operators may still retain data under billing, security, or legal-hold policies (for example anonymized **login audit** rows where the user FK is nulled).
 

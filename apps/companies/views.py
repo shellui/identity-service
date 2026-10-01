@@ -64,6 +64,14 @@ class CompanyViewSet(
         serializer = CompanyUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         validated = serializer.validated_data
+        if 'owner_ids' in validated and not validated['owner_ids']:
+            return Response(
+                {
+                    'error': 'A company needs at least one owner.',
+                    'error_code': 'company_owner_required',
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         update_fields: list[str] = []
         if 'name' in validated:

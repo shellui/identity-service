@@ -39,7 +39,7 @@ Magic-link sign-in emails are **not** Action rules. Identity sends them directly
 | `identity.scim.user.provisioned` | SCIM user create or re-enable (`active: true`) | Company **access** only; not account creation |
 | `identity.scim.user.deprovisioned` | SCIM deprovision / `active: false` | Disables membership; user row remains |
 | `identity.user.created` | First OAuth sign-in creates a User, or Django admin adds a user with company membership | **Company-scoped** |
-| `identity.user.deleted` | Django admin or `DELETE /api/v1/user` (self-service) deletes a User | One emit **per company membership** before delete |
+| `identity.user.deleted` | Django admin deletes a User, or `DELETE /api/v1/user` (self-service) deletes the account for a company | One emit **per removed company membership** before delete (self-service removes only the token company when the user has others) |
 | `identity.user.updated` | — | Registered; **`emit_by_default=false`** |
 | `identity.group.created` | SCIM or Django admin group create | |
 | `identity.group.updated` | Display name / external id change | |

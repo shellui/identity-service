@@ -60,11 +60,11 @@ Without trusted proxies, clients cannot spoof audit IPs by sending `X-Forwarded-
 
 ## Self-service account deletion
 
-`DELETE /api/v1/user` hard-deletes the global Django user. Guards:
+`DELETE /api/v1/user` deletes the account for the token company. When the user has other company memberships, only this company's membership and company-scoped data are removed; otherwise the global Django user is hard-deleted. Guards:
 
 - Personal access tokens are rejected (**403**).
+- The only owner of an affected company is refused (**409** `last_company_owner`) so a company is never left without anyone who can manage it. This check runs before the recent sign-in check.
 - Session access JWTs must have `iat` within `SELF_SERVICE_ACCOUNT_DELETE_MAX_IAT_AGE` (default **5m**). Sign in or refresh the token before deleting.
-- Users with more than one company membership get **409** until other memberships are removed; the endpoint does not remove a single company only.
 
 ## Personal access token lifetime
 
