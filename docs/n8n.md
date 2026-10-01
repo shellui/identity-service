@@ -221,6 +221,7 @@ Use this only for Docker/Coolify networks you control.
     "request_id": "00000000-0000-0000-0000-000000000001",
     "email": "ada@acme.com",
     "expires_at": "2026-09-25T10:00:00+00:00",
+    "magic_link_url": "https://auth.example.com/api/v1/magic-link/verify?token=example-token&company_id=1",
     "source": "magic_link",
     "language": "en",
     "region": "UTC"
@@ -228,7 +229,9 @@ Use this only for Docker/Coolify networks you control.
 }
 ```
 
-No sign-in URL or token appears in webhook JSON.
+While this rule is enabled, identity-service does not send its own sign-in email, so your workflow must deliver `magic_link_url` to the user. Disable the rule to go back to the built-in email.
+
+`magic_link_url` signs the user in until `expires_at` or first use. Treat it as a secret: avoid logging it, and limit who can read n8n execution history for this workflow.
 
 ---
 

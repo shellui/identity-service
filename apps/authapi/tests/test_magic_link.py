@@ -159,7 +159,7 @@ class MagicLinkAuthTests(TestCase):
         )
         self.assertEqual(response.status_code, 200, response.data)
 
-    def test_action_emit_without_secret_in_envelope(self):
+    def test_action_emit_includes_magic_link_url(self):
         ActionRule.objects.create(
             company=self.company,
             event_type='identity.auth.magic_link.requested',
@@ -174,18 +174,53 @@ class MagicLinkAuthTests(TestCase):
             with patch(
                 'apps.authapi.magic_link_views.send_magic_link_email',
                 return_value=None,
-            ):
+            ) as send_email:
                 self._request_link()
+        send_email.assert_not_called()
         outbox = ActionOutbox.objects.filter(event_type='identity.auth.magic_link.requested').first()
         self.assertIsNotNone(outbox)
         data = outbox.envelope['data']
         self.assertIn('request_id', data)
         self.assertIn('expires_at', data)
         self.assertNotIn('token', data)
-        self.assertNotIn('magic_link_url', data)
-        body = json.dumps(outbox.envelope)
+        self.assertIn('magic_link_url', data)
+        url = data['magic_link_url']
+        self.assertTrue(url.startswith('https://auth.example.com/api/v1/magic-link/verify?'))
+        self.assertIn(f'company_id={self.company.id}', url)
+        raw = re.search(r'token=([^&]+)', url).group(1)
         row = MagicLinkToken.objects.get(pk=data['request_id'])
+        self.assertEqual(row.token_hash, hash_magic_link_token(raw))
+        body = json.dumps(outbox.envelope)
         self.assertNotIn(row.token_hash, body)
+
+    @override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
+    def test_email_sent_when_magic_link_webhook_rule_disabled(self):
+        ActionRule.objects.create(
+            company=self.company,
+            event_type='identity.auth.magic_link.requested',
+            action_kind=ActionRule.ACTION_WEBHOOK,
+            enabled=False,
+            config={
+                'url': 'https://hooks.example.com/magic',
+                'secret': 'whsec_test',
+            },
+        )
+        mail.outbox.clear()
+        with self.captureOnCommitCallbacks(execute=True):
+            self._request_link()
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertFalse(ActionOutbox.objects.filter(event_type='identity.auth.magic_link.requested').exists())
+
+    @override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
+    def test_email_sent_when_webhook_emit_fails(self):
+        mail.outbox.clear()
+        with self.captureOnCommitCallbacks(execute=True):
+            with patch(
+                'apps.authapi.magic_link_views.emit_magic_link_requested',
+                side_effect=RuntimeError('boom'),
+            ):
+                self._request_link()
+        self.assertEqual(len(mail.outbox), 1)
 
     @override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
     def test_plaintext_email_link_contains_unescaped_company_id(self):

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 
 from urllib.parse import urlencode
@@ -47,6 +48,7 @@ from apps.authapi.views import (
 )
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
 
 MAGIC_LINK_PROVIDER = 'magic_link'
 
@@ -142,6 +144,17 @@ class ShellUIMagicLinkRequestView(APIView):
 
         def _after_commit() -> None:
             try:
+                queued = emit_magic_link_requested(company, row, user=existing, raw_token=raw_token)
+            except Exception:  # noqa: BLE001
+                logger.exception(
+                    'magic_link_webhook_emit_failed company_id=%s request_id=%s',
+                    company.pk,
+                    row.pk,
+                )
+                queued = []
+            if queued:
+                return
+            try:
                 send_magic_link_email(
                     row=row,
                     company=company,
@@ -150,14 +163,11 @@ class ShellUIMagicLinkRequestView(APIView):
                     raw_token=raw_token,
                 )
             except Exception:  # noqa: BLE001
-                import logging
-
-                logging.getLogger(__name__).exception(
+                logger.exception(
                     'magic_link_email_failed company_id=%s request_id=%s',
                     company.pk,
                     row.pk,
                 )
-            emit_magic_link_requested(company, row, user=existing)
 
         transaction.on_commit(_after_commit)
         return Response(_GENERIC_REQUEST_OK, status=status.HTTP_200_OK)

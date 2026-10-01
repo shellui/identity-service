@@ -35,7 +35,8 @@ OAuth providers remain independent — a company can use magic link only, OAuth 
 - **`redirect_to`** must match the company OAuth redirect allowlist (same rules as OAuth login).
 - When magic link is **disabled**, the API returns **403** with `error_code: magic_link_disabled`.
 - When enabled, the API always returns **200** with a generic message (does not reveal whether the email exists).
-- Sends the sign-in email directly from static Django templates in the repo (`apps/authapi/templates/authapi/magic_link/`, EN and FR, HTML and plain text, locale from user preference with EN fallback). Not configurable in admin or Actions. Optionally emits **`identity.auth.magic_link.requested`** to webhook Action rules (see [actions.md](actions.md)).
+- When the company has an enabled webhook Action rule for **`identity.auth.magic_link.requested`**, the event is sent to that webhook with `magic_link_url`, and identity-service does **not** send the sign-in email. Your webhook (for example an n8n workflow) delivers the link. See [actions.md](actions.md).
+- Otherwise, identity-service sends the sign-in email from static Django templates in the repo (`apps/authapi/templates/authapi/magic_link/`, EN and FR, HTML and plain text, locale from user preference with EN fallback). If queuing the webhook fails, the email is sent instead.
 
 Rate limits: `AUTH_RATE_LIMIT_MAGIC_LINK` (default 10/min) per client IP, email+company, and company.
 
@@ -67,7 +68,7 @@ Returns the same JWT payload as `POST /api/v1/token` / OAuth finalize on success
 | **TTL** | `MAGIC_LINK_TTL_SECONDS` (default **1800** = 30 minutes) |
 | **One-time use** | Token invalidated on successful consume |
 | **Link URL** | Built from **`JWT_ISSUER`** (HTTPS required when `DEBUG=false`) |
-| **Secrets in webhooks** | Webhook payloads include `request_id`, `email`, `expires_at` — **not** the raw token or sign-in URL. The email contains the one-time link only. |
+| **Secrets in webhooks** | Webhook payloads include `request_id`, `email`, `expires_at`, and `magic_link_url` (the one-time sign-in link). Anyone with the URL can sign in until it expires or is used, so only point this rule at endpoints you trust. The raw token is never stored; only its hash is. |
 | **Webhook user fields** | `user_id`, `language`, and `region` are included only when the email matches a user who already has membership in that company. |
 | **Privacy** | Request endpoint does not enumerate valid emails |
 

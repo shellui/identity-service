@@ -25,6 +25,8 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 ### ✨ Feature
 
+- **Magic link webhook URL:** `identity.auth.magic_link.requested` webhooks now include `magic_link_url`, and the admin sample payload shows it. When a company has an enabled webhook rule for this event, identity-service skips its own sign-in email so users don't get two links; without a rule, the built-in email is sent as before. The URL signs the user in until it expires or is used, so send this event only to endpoints you trust. See [docs/magic-link.md](docs/magic-link.md).
+
 - **SAML 2.0 SSO:** Company admins can configure multiple SAML IdPs per company via `oauth-social-apps`. Identity-service exposes SP metadata, ACS, login, and optional SLO under `/api/v1/saml/<organization_slug>/`. See [docs/saml.md](docs/saml.md).
 - **OAuth batch 2 providers:** identity-hosted OAuth adds **LinkedIn** (OpenID Connect), **Slack** (OpenID Connect userInfo claims), generic **OpenID Connect** and **Keycloak**, **Okta**, and **Auth0**, each with hand-written strict adapter fixtures and literal uid assertions. Supported release total: **14** providers (`tools/data/oauth_e2e_covered_slugs.json`).
 - **OAuth provider catalog:** identity-service ships a checked-in django-allauth provider catalog (`apps/authapi/provider_catalog.json`) with catalog entries for OAuth2/OIDC providers and SAML. Admin API: `GET /api/v1/oauth-provider-catalog`. OAuth app CRUD accepts `docs_slug` plus validated `extra_settings`. Catalog generation tracks the installed django-allauth version and end-to-end adapter test coverage per provider.
