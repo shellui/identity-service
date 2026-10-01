@@ -109,6 +109,13 @@ When `MAGIC_LINK_ENABLED=false` on the deployment, `magic_link_globally_enabled`
 
 New companies default to magic link **enabled** (`enable_magic_link=true`).
 
+The Admin REST API keeps at least one sign-in method per company. It returns **400** (`login_method_required`) when a request would leave the company with no magic link and no active OAuth or SAML provider:
+
+- disabling magic link with no active provider configured
+- deactivating (`is_active: false`) or deleting the last OAuth client, or deleting the last social app, while magic link is disabled
+
+Enable another method first, then remove the old one. Django admin edits and the global `MAGIC_LINK_ENABLED` switch are not checked.
+
 ---
 
 ## Related docs

@@ -144,7 +144,11 @@ from apps.scim.provisioning_events import (
 from apps.scim.tokens import generate_scim_token
 from apps.actions.user_hooks import emit_oauth_user_created_if_new
 from .account_lifecycle import delete_user_account, remove_user_from_company
-from .self_service_delete import check_self_service_account_delete_allowed
+from .self_service_delete import (
+    LAST_COMPANY_OWNER,
+    check_self_service_account_delete_allowed,
+    sole_owner_companies,
+)
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -1364,6 +1368,35 @@ def _scim_base_url_for_company(request, company: Company) -> str:
 
 def _active_scim_token_count(company: Company) -> int:
     return CompanyScimToken.objects.filter(company=company, revoked_at__isnull=True).count()
+
+
+def _login_lockout_response(
+    company: Company,
+    *,
+    enable_magic_link: bool | None = None,
+    removed_client_ids: tuple[int, ...] = (),
+) -> Response | None:
+    """
+    Refuse a change that would leave the company with no sign-in method at all.
+
+    Only the company magic-link flag counts, not the deployment kill switch, which is an
+    operator decision.
+    """
+    magic_on = company.enable_magic_link if enable_magic_link is None else enable_magic_link
+    if magic_on:
+        return None
+    if any(row.pk not in removed_client_ids for row in _company_oauth_clients(company)):
+        return None
+    return Response(
+        {
+            'error': (
+                'Keep at least one sign-in method for this company. '
+                'Enable magic link or another provider first.'
+            ),
+            'error_code': 'login_method_required',
+        },
+        status=status.HTTP_400_BAD_REQUEST,
+    )
 
 
 def _auth_methods_admin_payload(company: Company) -> dict:
@@ -3148,6 +3181,23 @@ class ShellUIAdminUserListView(APIView):
         ),
         request=ShellUIAdminUserUpdateSerializer,
     ),
+    delete=extend_schema(
+        tags=['directory-users'],
+        summary='Delete user from this company (staff or company owner)',
+        description=(
+            'Removes the user and their data from the requested company. The account itself is '
+            'deleted only when this is their last company. Emits `identity.user.deleted` with '
+            '`source=admin`. Refuses to delete yourself (400), a staff user unless the caller is '
+            'staff (403), or the only owner of a company (409 `last_company_owner`).'
+        ),
+        responses={
+            204: OpenApiResponse(description='User removed from the company'),
+            400: OpenApiResponse(description='Caller tried to delete themselves'),
+            403: OpenApiResponse(description='Not staff or owner, or owner targeting a staff user'),
+            404: OpenApiResponse(description='User is not a member of this company'),
+            409: OpenApiResponse(description='User is the only owner of an affected company'),
+        },
+    ),
 )
 class ShellUIAdminUserDetailView(APIView):
     permission_classes = [ShellUIPermission]
@@ -3278,6 +3328,43 @@ class ShellUIAdminUserDetailView(APIView):
                 merged['shelluiPreferences'] = _user_preferences_payload(target)
 
         return Response(_admin_user_payload(target, company))
+
+    def delete(self, request, pk):
+        actor, company, err = _require_staff_or_company_owner(request)
+        if err:
+            return err
+        try:
+            target = User.objects.get(pk=pk, companies=company)
+        except User.DoesNotExist:
+            return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        if target.pk == actor.pk:
+            return Response(
+                {'error': 'You cannot delete yourself here. Delete your account from Settings.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if target.is_staff and not actor.is_staff:
+            return Response(
+                {'error': 'Only staff may delete a staff user.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        orphaned = sole_owner_companies(target, company)
+        if orphaned:
+            names = ', '.join(c.name for c in orphaned)
+            return Response(
+                {
+                    'error': f'This user is the only owner of {names}. Add another owner first.',
+                    'error_code': LAST_COMPANY_OWNER,
+                    'companies': [{'id': c.pk, 'name': c.name} for c in orphaned],
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        if target.company_memberships.exclude(company=company).exists():
+            remove_user_from_company(target, company, source='admin')
+        else:
+            delete_user_account(target, source='admin')
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 def _admin_group_row(g: CompanyGroup) -> dict:
@@ -3901,6 +3988,9 @@ class ShellUIAdminOAuthSocialAppDetailView(APIView):
                 {'error': 'Cannot delete this key because it is mapped to another company.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        blocked = _login_lockout_response(company, removed_client_ids=(mapping.pk,))
+        if blocked:
+            return blocked
         app.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -3964,6 +4054,10 @@ class ShellUIAdminOAuthClientDetailView(APIView):
                 )
             row.social_app = social_app
         if 'is_active' in validated:
+            if not validated['is_active']:
+                blocked = _login_lockout_response(company, removed_client_ids=(row.pk,))
+                if blocked:
+                    return blocked
             row.is_active = validated['is_active']
         try:
             row.save()
@@ -3983,6 +4077,9 @@ class ShellUIAdminOAuthClientDetailView(APIView):
             row = CompanyOAuthClient.objects.get(pk=pk, company=company)
         except CompanyOAuthClient.DoesNotExist:
             return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        blocked = _login_lockout_response(company, removed_client_ids=(row.pk,))
+        if blocked:
+            return blocked
         row.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -4651,7 +4748,11 @@ class ShellUIAdminAuthMethodsView(APIView):
                 {'error': 'Provide enable_magic_link (boolean).'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        company.enable_magic_link = bool(serializer.validated_data['enable_magic_link'])
+        enable_magic_link = bool(serializer.validated_data['enable_magic_link'])
+        blocked = _login_lockout_response(company, enable_magic_link=enable_magic_link)
+        if blocked:
+            return blocked
+        company.enable_magic_link = enable_magic_link
         company.save(update_fields=['enable_magic_link'])
         return Response(_auth_methods_admin_payload(company))
 
