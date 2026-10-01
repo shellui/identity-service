@@ -209,10 +209,12 @@ class ShellUIMagicLinkRequestView(APIView):
 @extend_schema_view(
     get=extend_schema(
         tags=['auth-magic-link'],
-        summary='Confirm magic link (browser)',
+        summary='Open magic link (browser)',
         description=(
-            'Shows a confirmation page for email clients and link scanners. Does not consume the token. '
-            'Submit the form (POST) to finish sign-in and redirect with Shellui tokens.'
+            'Returns a page that submits itself (POST) right away in a browser, so the user is '
+            'signed in and redirected without clicking. Does not consume the token, so email link '
+            'scanners that only fetch the URL do not burn it. Without JavaScript the page shows a '
+            '"Continue sign-in" button.'
         ),
         auth=[],
         parameters=[
@@ -220,7 +222,7 @@ class ShellUIMagicLinkRequestView(APIView):
             OpenApiParameter(name='company_id', type=int, location=OpenApiParameter.QUERY, required=True),
         ],
         responses={
-            200: OpenApiResponse(description='HTML confirmation page'),
+            200: OpenApiResponse(description='HTML page that auto-submits the sign-in form'),
             400: OpenApiResponse(description='Invalid or expired link'),
         },
     ),

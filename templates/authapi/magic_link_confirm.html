@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Confirm sign-in</title>
+  <title>{% if error_message %}Sign-in link problem{% else %}Completing sign-in…{% endif %}</title>
   <style>
     :root {
       color-scheme: light dark;
@@ -74,24 +74,50 @@
       color: var(--card);
     }
     button:hover { background: var(--primary-hover); }
+    .status {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.875rem;
+    }
   </style>
 </head>
 <body>
-  <div class="card">
-    <h1>Confirm sign-in</h1>
-    {% if error_message %}
+  {% if error_message %}
+    <div class="card">
+      <h1>Sign-in link problem</h1>
       <p class="error">{{ error_message }}</p>
-    {% else %}
-      <p class="subtitle">
-        Continue to <strong>{{ company_name }}</strong> as <strong>{{ email }}</strong>?
-      </p>
-      <form method="post" action="{{ form_action }}">
-        {% csrf_token %}
-        <input type="hidden" name="token" value="{{ token }}">
-        <input type="hidden" name="company_id" value="{{ company_id }}">
-        <button type="submit">Continue sign-in</button>
-      </form>
-    {% endif %}
-  </div>
+    </div>
+  {% else %}
+    <form id="magic-link-form" method="post" action="{{ form_action }}">
+      {% csrf_token %}
+      <input type="hidden" name="token" value="{{ token }}">
+      <input type="hidden" name="company_id" value="{{ company_id }}">
+      <p class="status" role="status">Completing sign-in…</p>
+      <noscript>
+        <div class="card">
+          <h1>Continue sign-in</h1>
+          <p class="subtitle">
+            Continue to <strong>{{ company_name }}</strong> as <strong>{{ email }}</strong>.
+          </p>
+          <button type="submit">Continue sign-in</button>
+        </div>
+        <style>.status { display: none; }</style>
+      </noscript>
+    </form>
+    {% comment %}
+      The token is consumed by POST only, so email link scanners that fetch the URL
+      without running scripts do not burn it. Real browsers submit right away.
+    {% endcomment %}
+    <script>
+      (function () {
+        var form = document.getElementById('magic-link-form');
+        if (!form) return;
+        window.addEventListener('pageshow', function (event) {
+          if (event.persisted) return;
+          form.submit();
+        });
+      })();
+    </script>
+  {% endif %}
 </body>
 </html>

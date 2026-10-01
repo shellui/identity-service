@@ -46,7 +46,7 @@ Rate limits: `AUTH_RATE_LIMIT_MAGIC_LINK` (default 10/min) per client IP, email+
 
 `GET /api/v1/magic-link/verify?token=…&company_id=…`
 
-Renders a confirmation page and **does not consume** the token (safe for email link scanners). Submit the form with **POST** to the same URL (include `company_id` in the query string) to finish sign-in, apply company join rules, and redirect to `redirect_to` with tokens (session code or fragment).
+Returns a page that submits itself with **POST** to the same URL (with `company_id` in the query string) as soon as it loads. The user is signed in and redirected to `redirect_to` with tokens (session code or fragment) without clicking anything; company join rules apply as usual. The GET itself **does not consume** the token, so email link scanners that only fetch the URL do not burn it. Without JavaScript, the page shows a **Continue sign-in** button.
 
 ### Consume (JSON)
 

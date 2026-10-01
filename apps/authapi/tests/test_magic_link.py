@@ -249,6 +249,7 @@ class MagicLinkAuthTests(TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertIn(b'Continue sign-in', response.content)
+        self.assertIn(b'form.submit()', response.content)
         row.refresh_from_db()
         self.assertIsNone(row.consumed_at)
 
