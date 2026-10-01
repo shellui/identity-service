@@ -41,6 +41,12 @@ class ShellUIMagicLinkRequestSerializer(serializers.Serializer):
     company_id = serializers.IntegerField(required=False, min_value=1)
     client_timezone = serializers.CharField(required=False, allow_blank=True, max_length=64)
     client_device_id = serializers.CharField(required=False, allow_blank=True, max_length=128)
+    language = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=35,
+        help_text='UI language of the requester (e.g. "fr" or "fr-FR"). Selects the email locale.',
+    )
 
 
 class ShellUIMagicLinkConsumeSerializer(serializers.Serializer):

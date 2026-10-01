@@ -28,15 +28,17 @@ OAuth providers remain independent — a company can use magic link only, OAuth 
   "email": "ada@acme.com",
   "redirect_to": "https://app.example.com/login/callback",
   "client_timezone": "Europe/Paris",
-  "client_device_id": "optional-device-id"
+  "client_device_id": "optional-device-id",
+  "language": "fr"
 }
 ```
 
+- **`language`** (optional) is the requester's UI language (`fr`, `fr-FR`, …). It selects the email locale and is sent as `language` in the webhook payload. Unsupported values are ignored.
 - **`redirect_to`** must match the company OAuth redirect allowlist (same rules as OAuth login).
 - When magic link is **disabled**, the API returns **403** with `error_code: magic_link_disabled`.
 - When enabled, the API always returns **200** with a generic message (does not reveal whether the email exists).
 - When the company has an enabled webhook Action rule for **`identity.auth.magic_link.requested`**, the event is sent to that webhook with `magic_link_url`, and identity-service does **not** send the sign-in email. Your webhook (for example an n8n workflow) delivers the link. See [actions.md](actions.md).
-- Otherwise, identity-service sends the sign-in email from static Django templates in the repo (`apps/authapi/templates/authapi/magic_link/`, EN and FR, HTML and plain text, locale from user preference with EN fallback). If queuing the webhook fails, the email is sent instead.
+- Otherwise, identity-service sends the sign-in email from static Django templates in the repo (`apps/authapi/templates/authapi/magic_link/`, EN and FR, HTML and plain text). Locale order: request `language`, then the user's saved language, then `MAGIC_LINK_EMAIL_DEFAULT_LANGUAGE` (EN by default). If queuing the webhook fails, the email is sent instead.
 
 Rate limits: `AUTH_RATE_LIMIT_MAGIC_LINK` (default 10/min) per client IP, email+company, and company.
 

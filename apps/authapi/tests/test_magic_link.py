@@ -19,7 +19,7 @@ from apps.authapi.magic_link import (
     hash_magic_link_token,
     redeem_magic_link_token,
 )
-from apps.authapi.models import MagicLinkToken
+from apps.authapi.models import MagicLinkToken, UserPreference
 from apps.companies.access import set_company_access
 from apps.companies.models import Company, CompanyOAuthRedirect
 
@@ -52,15 +52,18 @@ class MagicLinkAuthTests(TestCase):
         )
         set_company_access(self.company, self.user, enabled=True)
 
-    def _request_link(self, email='member@example.com', company=None, **extra_headers):
+    def _request_link(self, email='member@example.com', company=None, language=None, **extra_headers):
         company = company or self.company
+        body = {
+            'company_id': company.id,
+            'email': email,
+            'redirect_to': self.redirect_to,
+        }
+        if language is not None:
+            body['language'] = language
         return self.client.post(
             '/api/v1/magic-link/request',
-            {
-                'company_id': company.id,
-                'email': email,
-                'redirect_to': self.redirect_to,
-            },
+            body,
             format='json',
             **extra_headers,
         )
@@ -332,6 +335,86 @@ class MagicLinkAuthTests(TestCase):
         self.assertIn(raw, html_part)
         row = MagicLinkToken.objects.get(company=self.company, email='member@example.com')
         self.assertEqual(row.token_hash, hash_magic_link_token(raw))
+
+    @override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
+    def test_request_language_selects_french_email(self):
+        for language in ('fr', 'fr-FR', 'FR_ca'):
+            with self.subTest(language=language):
+                cache.clear()
+                mail.outbox.clear()
+                with self.captureOnCommitCallbacks(execute=True):
+                    response = self._request_link(language=language)
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(len(mail.outbox), 1)
+                self.assertIn('Connexion à', mail.outbox[0].subject)
+
+    @override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
+    def test_request_language_overrides_stored_preference(self):
+        UserPreference.objects.update_or_create(
+            user=self.user,
+            defaults={'language': UserPreference.LANGUAGE_FR},
+        )
+        mail.outbox.clear()
+        with self.captureOnCommitCallbacks(execute=True):
+            self._request_link(language='en')
+        self.assertIn('Sign in to', mail.outbox[0].subject)
+
+    @override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
+    def test_unsupported_request_language_falls_back_to_preference(self):
+        UserPreference.objects.update_or_create(
+            user=self.user,
+            defaults={'language': UserPreference.LANGUAGE_FR},
+        )
+        mail.outbox.clear()
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self._request_link(language='de')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('Connexion à', mail.outbox[0].subject)
+
+    def test_request_language_sent_in_webhook_payload(self):
+        ActionRule.objects.create(
+            company=self.company,
+            event_type='identity.auth.magic_link.requested',
+            action_kind=ActionRule.ACTION_WEBHOOK,
+            enabled=True,
+            config={'url': 'https://hooks.example.com/magic', 'secret': 'whsec_test'},
+        )
+        with self.captureOnCommitCallbacks(execute=True):
+            with patch('apps.authapi.magic_link_views.send_magic_link_email', return_value=None):
+                self._request_link(language='fr')
+        outbox = ActionOutbox.objects.filter(event_type='identity.auth.magic_link.requested').first()
+        self.assertEqual(outbox.envelope['data']['language'], 'fr')
+
+    def _consume_new_user(self, email: str):
+        _row, raw = create_magic_link_token(
+            company=self.company,
+            email=email,
+            redirect_to=self.redirect_to,
+        )
+        return self.client.post(
+            '/api/v1/magic-link/verify',
+            {'token': raw, 'company_id': self.company.id},
+            format='json',
+        )
+
+    def test_new_user_username_uses_email_local_part(self):
+        self._consume_new_user('sebastien@example.com')
+        user = User.objects.get(email='sebastien@example.com')
+        self.assertEqual(user.username, 'sebastien')
+        self.assertFalse(user.has_usable_password())
+
+    def test_new_user_username_is_unique_when_taken(self):
+        User.objects.create_user(username='sebastien', email='other@example.com', password='unused')
+        self._consume_new_user('sebastien@acme.com')
+        user = User.objects.get(email='sebastien@acme.com')
+        self.assertNotEqual(user.username, 'sebastien')
+        self.assertTrue(user.username.startswith('sebastien'))
+        self.assertNotIn('magic_', user.username)
+
+    def test_new_user_username_is_ascii_without_plus_tag(self):
+        self._consume_new_user('sébastien.b+test@example.com')
+        user = User.objects.get(email='sébastien.b+test@example.com')
+        self.assertEqual(user.username, 'sebastien.b')
 
     def test_build_verify_url_uses_jwt_issuer(self):
         url = build_magic_link_verify_url(token='abc123', company_id=self.company.id)

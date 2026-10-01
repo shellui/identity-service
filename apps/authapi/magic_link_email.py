@@ -7,25 +7,21 @@ from django.core.mail import EmailMultiAlternatives
 from django.template import TemplateDoesNotExist
 from django.template.loader import render_to_string
 
-from apps.authapi.magic_link import magic_link_url_for_request
+from apps.authapi.magic_link import magic_link_url_for_request, normalize_magic_link_language
 from apps.companies.models import Company
-
-_SUPPORTED = frozenset({'en', 'fr'})
 
 
 def _resolve_language(*, user, payload_language: str | None) -> str:
-    if payload_language and str(payload_language).strip():
-        lang = str(payload_language).strip().lower().split('-')[0]
-        if lang in _SUPPORTED:
-            return lang
+    lang = normalize_magic_link_language(payload_language)
+    if lang:
+        return lang
     if user is not None:
         pref = getattr(user, 'preference', None)
         if pref is not None:
-            lang = (getattr(pref, 'language', None) or '').strip().lower().split('-')[0]
-            if lang in _SUPPORTED:
+            lang = normalize_magic_link_language(getattr(pref, 'language', None))
+            if lang:
                 return lang
-    default = (getattr(settings, 'MAGIC_LINK_EMAIL_DEFAULT_LANGUAGE', None) or 'en').strip().lower()
-    return default if default in _SUPPORTED else 'en'
+    return normalize_magic_link_language(getattr(settings, 'MAGIC_LINK_EMAIL_DEFAULT_LANGUAGE', None)) or 'en'
 
 
 def _render(template_name: str, context: dict, *, language: str) -> str:

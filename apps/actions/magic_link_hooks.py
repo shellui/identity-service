@@ -10,7 +10,7 @@ from django.utils import timezone
 from apps.actions.emit import emit_event_if_rules
 from apps.actions.identity_payloads import user_event_payload
 from apps.actions.models import ActionOutbox
-from apps.authapi.magic_link import magic_link_url_for_request
+from apps.authapi.magic_link import magic_link_url_for_request, normalize_magic_link_language
 from apps.companies.access import get_membership
 
 logger = logging.getLogger(__name__)
@@ -23,6 +23,7 @@ def emit_magic_link_requested(
     user=None,
     raw_token: str | None = None,
     fallback_base_url: str | None = None,
+    language: str | None = None,
 ) -> list[ActionOutbox]:
     """
     Emit ``identity.auth.magic_link.requested`` with the one-time sign-in URL.
@@ -55,4 +56,7 @@ def emit_magic_link_requested(
     else:
         payload['language'] = 'en'
         payload['region'] = 'UTC'
+    requested_lang = normalize_magic_link_language(language)
+    if requested_lang:
+        payload['language'] = requested_lang
     return emit_event_if_rules('identity.auth.magic_link.requested', company, payload)

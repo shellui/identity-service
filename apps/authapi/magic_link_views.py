@@ -7,8 +7,9 @@ import uuid
 
 from urllib.parse import urlencode
 
+from allauth.account.adapter import get_adapter as get_account_adapter
 from django.contrib.auth import get_user_model
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.http import HttpResponseRedirect
 from django.shortcuts import render
 from django.utils.decorators import method_decorator
@@ -30,6 +31,7 @@ from apps.authapi.magic_link import (
     create_magic_link_token,
     lookup_magic_link_token,
     magic_link_enabled_for_company,
+    normalize_magic_link_language,
     redeem_magic_link_token,
 )
 from apps.authapi.models import LoginEvent
@@ -59,6 +61,27 @@ _GENERIC_REQUEST_OK = {
         'you will receive a sign-in link shortly.'
     ),
 }
+
+
+def _create_magic_link_user(request, *, email: str):
+    """Create a user whose username is derived from the email local part (``ada`` for ``ada@acme.com``)."""
+    adapter = get_account_adapter(request)
+    local_part = email.split('@', 1)[0].split('+', 1)[0]
+    for _attempt in range(3):
+        username = adapter.generate_unique_username([local_part, email, 'user'])
+        user = User(username=username, email=email)
+        user.set_unusable_password()
+        try:
+            with transaction.atomic():
+                user.save()
+        except IntegrityError:
+            # Another sign-up claimed the same username between lookup and insert.
+            continue
+        return user
+    user = User(username=f'user_{uuid.uuid4().hex[:12]}', email=email)
+    user.set_unusable_password()
+    user.save()
+    return user
 
 
 def _magic_link_rate_limits(request, *, company_id: int, email: str) -> Response | None:
@@ -136,6 +159,7 @@ class ShellUIMagicLinkRequestView(APIView):
             client_timezone=client_tz,
             client_device_id=client_dev,
         )
+        requested_lang = normalize_magic_link_language(serializer.validated_data.get('language'))
         pref_lang = None
         if existing is not None:
             pref = getattr(existing, 'preference', None)
@@ -151,6 +175,7 @@ class ShellUIMagicLinkRequestView(APIView):
                     user=existing,
                     raw_token=raw_token,
                     fallback_base_url=request_base_url,
+                    language=requested_lang,
                 )
             except Exception:  # noqa: BLE001
                 logger.exception(
@@ -166,7 +191,7 @@ class ShellUIMagicLinkRequestView(APIView):
                     row=row,
                     company=company,
                     user=existing,
-                    language=pref_lang,
+                    language=requested_lang or pref_lang,
                     raw_token=raw_token,
                     fallback_base_url=request_base_url,
                 )
@@ -330,11 +355,7 @@ class ShellUIMagicLinkVerifyView(APIView):
         if user is None:
             user = User.objects.filter(email__iexact=row.email).first()
         if user is None:
-            local = row.email.split('@', 1)[0] or 'user'
-            username = f'magic_{local}_{uuid.uuid4().hex[:8]}'
-            user = User(username=username, email=row.email)
-            user.set_unusable_password()
-            user.save()
+            user = _create_magic_link_user(request, email=row.email)
             created = True
             row.user = user
             row.save(update_fields=['user'])

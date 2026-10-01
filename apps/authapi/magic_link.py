@@ -17,6 +17,13 @@ from apps.companies.models import Company
 from .models import MagicLinkToken
 
 MAGIC_LINK_VERIFY_PATH = '/api/v1/magic-link/verify'
+MAGIC_LINK_LANGUAGES = frozenset({'en', 'fr'})
+
+
+def normalize_magic_link_language(raw: str | None) -> str | None:
+    """Map a language tag (``fr``, ``fr-FR``, ``fr_CA``) to a supported email locale."""
+    lang = str(raw or '').strip().lower().replace('_', '-').split('-')[0]
+    return lang if lang in MAGIC_LINK_LANGUAGES else None
 
 
 def hash_magic_link_token(raw: str) -> str:
