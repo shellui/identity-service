@@ -67,7 +67,7 @@ Returns the same JWT payload as `POST /api/v1/token` / OAuth finalize on success
 | ----- | -------- |
 | **TTL** | `MAGIC_LINK_TTL_SECONDS` (default **1800** = 30 minutes) |
 | **One-time use** | Token invalidated on successful consume |
-| **Link URL** | Built from **`JWT_ISSUER`** (HTTPS required when `DEBUG=false`) |
+| **Link URL** | Built from **`JWT_ISSUER`** (HTTPS required when `DEBUG=false`). With `DEBUG=true` and no `JWT_ISSUER`, the request base URL is used instead (local development only) |
 | **Secrets in webhooks** | Webhook payloads include `request_id`, `email`, `expires_at`, and `magic_link_url` (the one-time sign-in link). Anyone with the URL can sign in until it expires or is used, so only point this rule at endpoints you trust. The raw token is never stored; only its hash is. |
 | **Webhook user fields** | `user_id`, `language`, and `region` are included only when the email matches a user who already has membership in that company. |
 | **Privacy** | Request endpoint does not enumerate valid emails |

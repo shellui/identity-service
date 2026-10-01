@@ -45,8 +45,13 @@ def send_magic_link_email(
     user=None,
     language: str | None = None,
     raw_token: str,
+    fallback_base_url: str | None = None,
 ) -> None:
-    magic_link_url = magic_link_url_for_request(row.pk, raw_token=raw_token)
+    magic_link_url = magic_link_url_for_request(
+        row.pk,
+        raw_token=raw_token,
+        fallback_base_url=fallback_base_url,
+    )
     if not magic_link_url:
         return
 

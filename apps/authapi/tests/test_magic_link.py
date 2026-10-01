@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
+from django.core.exceptions import ImproperlyConfigured
 from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
@@ -248,6 +249,38 @@ class MagicLinkAuthTests(TestCase):
         row.refresh_from_db()
         self.assertIsNone(row.consumed_at)
 
+    def test_get_verify_rejects_quoted_printable_mangled_url(self):
+        row, raw = create_magic_link_token(
+            company=self.company,
+            email='member@example.com',
+            redirect_to=self.redirect_to,
+            user=self.user,
+        )
+        response = self.client.get(
+            '/api/v1/magic-link/verify',
+            {'token': f'3D{raw[:20]}={raw[20:]}', 'company_id': f'3D{self.company.id}'},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data['error'], 'Invalid company_id parameter.')
+        row.refresh_from_db()
+        self.assertIsNone(row.consumed_at)
+
+    def test_get_verify_rejects_mangled_token_with_valid_company(self):
+        row, raw = create_magic_link_token(
+            company=self.company,
+            email='member@example.com',
+            redirect_to=self.redirect_to,
+            user=self.user,
+        )
+        response = self.client.get(
+            '/api/v1/magic-link/verify',
+            {'token': f'3D{raw[:20]}={raw[20:]}', 'company_id': self.company.id},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertNotIn(b'Continue sign-in', response.content)
+        row.refresh_from_db()
+        self.assertIsNone(row.consumed_at)
+
     def test_webhook_omits_user_id_without_company_membership(self):
         outsider = User.objects.create_user(
             username='outsider',
@@ -303,6 +336,45 @@ class MagicLinkAuthTests(TestCase):
     def test_build_verify_url_uses_jwt_issuer(self):
         url = build_magic_link_verify_url(token='abc123', company_id=self.company.id)
         self.assertTrue(url.startswith('https://auth.example.com/api/v1/magic-link/verify'))
+
+    def test_build_verify_url_prefers_jwt_issuer_over_fallback(self):
+        url = build_magic_link_verify_url(
+            token='abc123',
+            company_id=self.company.id,
+            fallback_base_url='http://localhost:8000/',
+        )
+        self.assertTrue(url.startswith('https://auth.example.com/api/v1/magic-link/verify'))
+
+    @override_settings(JWT_ISSUER=None, DEBUG=True)
+    def test_build_verify_url_uses_fallback_in_debug_without_issuer(self):
+        url = build_magic_link_verify_url(
+            token='abc123',
+            company_id=self.company.id,
+            fallback_base_url='http://localhost:8000/',
+        )
+        self.assertTrue(url.startswith('http://localhost:8000/api/v1/magic-link/verify?'))
+
+    @override_settings(JWT_ISSUER=None, DEBUG=False)
+    def test_build_verify_url_ignores_fallback_outside_debug(self):
+        with self.assertRaises(ImproperlyConfigured):
+            build_magic_link_verify_url(
+                token='abc123',
+                company_id=self.company.id,
+                fallback_base_url='https://evil.example.com/',
+            )
+
+    @override_settings(
+        JWT_ISSUER=None,
+        DEBUG=True,
+        EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend',
+    )
+    def test_request_email_uses_request_host_in_debug_without_issuer(self):
+        mail.outbox.clear()
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self._request_link()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn('http://testserver/api/v1/magic-link/verify?', mail.outbox[0].body)
 
     def test_redeem_marks_consumed(self):
         row, raw = create_magic_link_token(

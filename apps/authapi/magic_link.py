@@ -42,10 +42,7 @@ def identity_public_base_url(*, fallback: str | None = None) -> str:
     issuer = (getattr(settings, 'JWT_ISSUER', None) or '').strip().rstrip('/')
     if issuer:
         return issuer
-    if fallback:
-        base = fallback.rstrip('/')
-        if base.startswith('https://') or (settings.DEBUG and base.startswith('http://')):
-            return base
+    # Request-derived URLs come from the Host header; only trust them for local development.
     if settings.DEBUG and fallback:
         return fallback.rstrip('/')
     raise ImproperlyConfigured(
@@ -58,8 +55,9 @@ def build_magic_link_verify_url(
     token: str,
     company_id: int,
     base_url: str | None = None,
+    fallback_base_url: str | None = None,
 ) -> str:
-    base = (base_url or identity_public_base_url()).rstrip('/')
+    base = (base_url or identity_public_base_url(fallback=fallback_base_url)).rstrip('/')
     if not settings.DEBUG and not base.startswith('https://'):
         raise ImproperlyConfigured('Magic link URLs must use HTTPS when DEBUG=false.')
     query = urlencode({'token': token, 'company_id': str(company_id)})
@@ -70,6 +68,7 @@ def magic_link_url_for_request(
     request_id: str | uuid.UUID | None,
     *,
     raw_token: str | None = None,
+    fallback_base_url: str | None = None,
 ) -> str | None:
     if not request_id or not raw_token:
         return None
@@ -79,7 +78,11 @@ def magic_link_url_for_request(
         return None
     if row.consumed_at is not None or row.expires_at <= timezone.now():
         return None
-    return build_magic_link_verify_url(token=raw_token, company_id=row.company_id)
+    return build_magic_link_verify_url(
+        token=raw_token,
+        company_id=row.company_id,
+        fallback_base_url=fallback_base_url,
+    )
 
 
 def create_magic_link_token(

@@ -141,10 +141,17 @@ class ShellUIMagicLinkRequestView(APIView):
             pref = getattr(existing, 'preference', None)
             if pref is not None:
                 pref_lang = getattr(pref, 'language', None)
+        request_base_url = request.build_absolute_uri('/')
 
         def _after_commit() -> None:
             try:
-                queued = emit_magic_link_requested(company, row, user=existing, raw_token=raw_token)
+                queued = emit_magic_link_requested(
+                    company,
+                    row,
+                    user=existing,
+                    raw_token=raw_token,
+                    fallback_base_url=request_base_url,
+                )
             except Exception:  # noqa: BLE001
                 logger.exception(
                     'magic_link_webhook_emit_failed company_id=%s request_id=%s',
@@ -161,6 +168,7 @@ class ShellUIMagicLinkRequestView(APIView):
                     user=existing,
                     language=pref_lang,
                     raw_token=raw_token,
+                    fallback_base_url=request_base_url,
                 )
             except Exception:  # noqa: BLE001
                 logger.exception(
@@ -211,7 +219,7 @@ class ShellUIMagicLinkVerifyView(APIView):
     def get(self, request):
         company, company_err = _required_company_from_request(request)
         if company_err:
-            return Response({'error': 'company_id is required.'}, status=status.HTTP_400_BAD_REQUEST)
+            return company_err
         if not magic_link_enabled_for_company(company):
             return Response(
                 {
@@ -267,7 +275,7 @@ class ShellUIMagicLinkVerifyView(APIView):
         try:
             company_id = int(request.POST.get('company_id') or '')
         except (TypeError, ValueError):
-            return Response({'error': 'company_id is required.'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': 'Missing or invalid company_id.'}, status=status.HTTP_400_BAD_REQUEST)
         return self._consume(
             request,
             browser_redirect=True,
@@ -284,8 +292,6 @@ class ShellUIMagicLinkVerifyView(APIView):
         company_id: int | None = None,
     ):
         company, company_err = _required_company_from_request(request)
-        if company_err and browser_redirect:
-            return Response({'error': 'company_id is required.'}, status=status.HTTP_400_BAD_REQUEST)
         if company_err:
             return company_err
 

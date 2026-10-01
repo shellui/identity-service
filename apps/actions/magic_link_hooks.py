@@ -17,7 +17,12 @@ logger = logging.getLogger(__name__)
 
 
 def emit_magic_link_requested(
-    company, row, *, user=None, raw_token: str | None = None
+    company,
+    row,
+    *,
+    user=None,
+    raw_token: str | None = None,
+    fallback_base_url: str | None = None,
 ) -> list[ActionOutbox]:
     """
     Emit ``identity.auth.magic_link.requested`` with the one-time sign-in URL.
@@ -32,7 +37,11 @@ def emit_magic_link_requested(
         'source': 'magic_link',
     }
     try:
-        magic_link_url = magic_link_url_for_request(row.pk, raw_token=raw_token)
+        magic_link_url = magic_link_url_for_request(
+            row.pk,
+            raw_token=raw_token,
+            fallback_base_url=fallback_base_url,
+        )
     except ImproperlyConfigured:
         logger.exception('magic_link_webhook_url_failed company_id=%s request_id=%s', company.pk, row.pk)
         magic_link_url = None

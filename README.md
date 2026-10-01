@@ -30,7 +30,7 @@ Each company turns SCIM on by creating a **Company SCIM token** in Shellui admin
 
 Company **webhook rules** in Django admin map catalog events (`identity.scim.user.provisioned`, `identity.user.created`, group changes, SCIM conflicts, …) to **signed HTTPS endpoints** (n8n-friendly). Delivery uses a DB outbox and `transaction.on_commit` with `manage.py retry_webhooks` for retries. See **[docs/actions.md](docs/actions.md)** and **[docs/n8n.md](docs/n8n.md)**.
 
-**Try locally:** set `EMAIL_BACKEND=django.core.mail.backends.console.EmailBackend`, create an Action rule for `identity.scim.user.provisioned`, then provision a user via SCIM.
+**Try locally:** set `EMAIL_BACKEND=config.email_backends.ConsoleEmailBackend` (default when `DEBUG=true`), create an Action rule for `identity.scim.user.provisioned`, then provision a user via SCIM.
 
 ## Project Structure
 

@@ -71,7 +71,7 @@ Flow and allowlist: [OAuth login](oauth-login.md).
 | `MAGIC_LINK_TTL_SECONDS` | `1800` | One-time link lifetime (seconds) |
 | `AUTH_RATE_LIMIT_MAGIC_LINK` | `10` | Requests per minute bucket (per client IP and per email+company) |
 
-Links are built from **`JWT_ISSUER`** (HTTPS when `DEBUG=false`). See [magic-link.md](magic-link.md).
+Links are built from **`JWT_ISSUER`** (HTTPS when `DEBUG=false`). In local development (`DEBUG=true`) without `JWT_ISSUER`, links fall back to the base URL of the incoming request. See [magic-link.md](magic-link.md).
 
 ---
 

@@ -313,7 +313,7 @@ SOCIALACCOUNT_ADAPTER = 'apps.authapi.social_account_adapter.ShellUISocialAccoun
 # Local default: print to console. Production: set EMAIL_HOST / EMAIL_BACKEND.
 EMAIL_BACKEND = os.getenv(
     'EMAIL_BACKEND',
-    'django.core.mail.backends.console.EmailBackend' if DEBUG else 'django.core.mail.backends.smtp.EmailBackend',
+    'config.email_backends.ConsoleEmailBackend' if DEBUG else 'django.core.mail.backends.smtp.EmailBackend',
 )
 EMAIL_HOST = os.getenv('EMAIL_HOST', 'localhost')
 EMAIL_PORT = int(os.getenv('EMAIL_PORT', '25') or '25')
