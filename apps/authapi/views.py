@@ -143,7 +143,7 @@ from apps.scim.provisioning_events import (
 )
 from apps.scim.tokens import generate_scim_token
 from apps.actions.user_hooks import emit_oauth_user_created_if_new
-from .account_lifecycle import delete_user_account, remove_user_from_company
+from .account_lifecycle import delete_user_for_company
 from .self_service_delete import (
     LAST_COMPANY_OWNER,
     check_self_service_account_delete_allowed,
@@ -2848,12 +2848,12 @@ class ShellUILogoutView(APIView):
             '(GDPR/RGPD erasure support). Requires JSON body `{"confirm": true}`. Session access '
             'JWT only (not personal access tokens); the access token must be recently issued '
             '(`auth_time` within `SELF_SERVICE_ACCOUNT_DELETE_MAX_IAT_AGE`, default 5m). '
-            'When the user also belongs to other companies, only this company membership and its '
-            'company-scoped data (sessions, tokens, groups, ownership, company OAuth links) are '
-            'removed and the account stays for the other companies. Otherwise the user row is '
-            'deleted. Emits `identity.user.deleted` for each removed membership with `source: self`. '
-            'Refused with 409 `last_company_owner` when the user is the only owner of a company '
-            'that would lose them; add another owner first.'
+            'When the user is still linked to another company (membership, ownership or group), '
+            'only this company membership and its company-scoped data (sessions, tokens, groups, '
+            'ownership, company OAuth links) are removed and the account stays for the other '
+            'companies. Otherwise the user row is deleted. Emits `identity.user.deleted` for this '
+            'company with `source: self`. Refused with 409 `last_company_owner` when the user is '
+            'the only owner of this company; ownership of other companies never blocks the delete.'
         ),
         request=ShellUIUserDeleteSerializer,
         responses={
@@ -3010,10 +3010,7 @@ class ShellUIUserView(APIView):
             except Exception:
                 pass
 
-        if user.company_memberships.exclude(company=company).exists():
-            remove_user_from_company(user, company, source='self')
-        else:
-            delete_user_account(user, source='self')
+        delete_user_for_company(user, company, source='self')
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -3360,10 +3357,7 @@ class ShellUIAdminUserDetailView(APIView):
                 status=status.HTTP_409_CONFLICT,
             )
 
-        if target.company_memberships.exclude(company=company).exists():
-            remove_user_from_company(target, company, source='admin')
-        else:
-            delete_user_account(target, source='admin')
+        delete_user_for_company(target, company, source='admin')
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 

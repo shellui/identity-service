@@ -9,7 +9,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from apps.actions.user_hooks import emit_user_account_deleted, emit_user_deleted_for_all_companies
-from apps.companies.models import CompanyGroup, CompanyMembership
+from apps.companies.models import Company, CompanyGroup, CompanyMembership
 
 from .models import (
     LoginEvent,
@@ -95,3 +95,30 @@ def remove_user_from_company(user, company, *, source: str) -> None:
     LoginEvent.objects.filter(user=user, company=company).update(user=None)
     CompanyMembership.objects.filter(user=user, company=company).delete()
     cache.delete(f'shellui:user_metadata:{user.id}')
+
+
+def has_other_company_links(user, company) -> bool:
+    """
+    True when ``user`` is tied to any company besides ``company``.
+
+    Ownership and groups count as well as memberships: Django admin can set owners or group
+    members without a membership row, and deleting the account would strip them from that company.
+    """
+    return (
+        CompanyMembership.objects.filter(user=user).exclude(company=company).exists()
+        or Company.objects.filter(owners=user).exclude(pk=company.pk).exists()
+        or CompanyGroup.objects.filter(members=user).exclude(company=company).exists()
+    )
+
+
+@transaction.atomic
+def delete_user_for_company(user, company, *, source: str) -> bool:
+    """
+    Remove ``user`` from ``company``. The account row is deleted only when no other company
+    links remain. Returns True when the whole account was deleted.
+    """
+    if has_other_company_links(user, company):
+        remove_user_from_company(user, company, source=source)
+        return False
+    delete_user_account(user, source=source)
+    return True

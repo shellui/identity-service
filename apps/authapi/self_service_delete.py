@@ -6,7 +6,6 @@ import time
 from typing import TYPE_CHECKING
 
 from django.conf import settings
-from django.db.models import Count
 from rest_framework import status
 from rest_framework.response import Response
 
@@ -31,20 +30,15 @@ def _token_claims(request: HttpRequest) -> dict | None:
 
 def sole_owner_companies(user: AbstractBaseUser, company: Company) -> list[Company]:
     """
-    Companies that would be left without an owner if ``user`` deleted their account from ``company``.
+    ``[company]`` when ``user`` is its only owner, else ``[]``.
 
-    When the user keeps other memberships only ``company`` is affected; otherwise the whole
-    account goes, which also drops ownership of any other company.
+    Only the company being left is checked. Owning another company counts as a link in
+    ``has_other_company_links``, so that ownership is kept and never blocks this delete.
     """
-    owned_ids = Company.objects.filter(owners=user).values_list('pk', flat=True)
-    if user.company_memberships.exclude(company=company).exists():
-        owned_ids = owned_ids.filter(pk=company.pk)
-    return list(
-        Company.objects.filter(pk__in=owned_ids)
-        .annotate(owner_count=Count('owners', distinct=True))
-        .filter(owner_count=1)
-        .order_by('name')
-    )
+    owners = company.owners.all()
+    if owners.filter(pk=user.pk).exists() and owners.count() == 1:
+        return [company]
+    return []
 
 
 def check_self_service_account_delete_allowed(

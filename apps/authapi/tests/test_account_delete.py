@@ -389,17 +389,27 @@ class SelfServiceAccountDeleteTests(TestCase):
         self.assertEqual(response.status_code, 204)
         self.assertTrue(self.other_company.owners.filter(pk=self.user.pk).exists())
 
-    def test_full_delete_blocked_when_sole_owner_of_another_company(self):
+    def test_ownership_elsewhere_without_membership_keeps_account(self):
         self.other_company.owners.add(self.user)
 
         response = self._delete(self._tokens())
 
-        self.assertEqual(response.status_code, 409)
-        self.assertEqual(
-            response.data['companies'],
-            [{'id': self.other_company.id, 'name': 'Other Erase'}],
-        )
+        self.assertEqual(response.status_code, 204)
         self.assertTrue(User.objects.filter(pk=self.user.pk).exists())
+        self.assertFalse(
+            CompanyMembership.objects.filter(user=self.user, company=self.company).exists()
+        )
+        self.assertTrue(self.other_company.owners.filter(pk=self.user.pk).exists())
+
+    def test_group_elsewhere_without_membership_keeps_account(self):
+        other_group = CompanyGroup.objects.create(company=self.other_company, display_name='Legacy')
+        other_group.members.add(self.user)
+
+        response = self._delete(self._tokens())
+
+        self.assertEqual(response.status_code, 204)
+        self.assertTrue(User.objects.filter(pk=self.user.pk).exists())
+        self.assertTrue(other_group.members.filter(pk=self.user.pk).exists())
 
     def _create_pat(self):
         from apps.authapi.views import _issue_personal_access_token

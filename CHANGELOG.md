@@ -25,6 +25,8 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 ### ✨ Feature
 
+- **Admin user delete:** `DELETE /api/v1/users/<id>` lets staff and company owners remove a user from their company. Accounts that belong to other companies are kept; the account is deleted only when this was its last company. The API refuses to delete yourself, a staff user (unless you are staff), or a company's only owner (409 `last_company_owner`). Emits `identity.user.deleted` with `source=admin`.
+- **Safer account deletion scope:** admin and self-service deletes now delete the account row only when the user has no link left to any other company. Ownership and group membership count as links, not just membership rows, so an owner or group member set through Django admin is never wiped from another company. The only-owner guard (409 `last_company_owner`) checks the company being left only; being the only owner of another company no longer blocks the delete.
 - **No sign-in lock-out:** the Admin REST API refuses (400 `login_method_required`) to disable magic link, or to deactivate or delete the last OAuth/SAML provider, when that would leave a company with no way to sign in. New companies keep magic link enabled by default. See [docs/magic-link.md](docs/magic-link.md).
 
 - **Magic link webhook URL:** `identity.auth.magic_link.requested` webhooks now include `magic_link_url`, and the admin sample payload shows it. When a company has an enabled webhook rule for this event, identity-service skips its own sign-in email so users don't get two links; without a rule, the built-in email is sent as before. The URL signs the user in until it expires or is used, so send this event only to endpoints you trust. See [docs/magic-link.md](docs/magic-link.md).

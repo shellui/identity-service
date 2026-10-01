@@ -3,8 +3,10 @@ from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
 from apps.actions.models import ActionOutbox, ActionRule
+from apps.authapi.models import RefreshTokenSession
+from apps.authapi.views import _issue_shellui_tokens
 from apps.companies.access import set_company_access
-from apps.companies.models import Company, CompanyMembership
+from apps.companies.models import Company, CompanyGroup, CompanyMembership
 
 User = get_user_model()
 
@@ -52,6 +54,72 @@ class AdminUserDeleteTests(TestCase):
         self.assertTrue(
             CompanyMembership.objects.filter(user=self.target, company=self.other_company).exists()
         )
+
+    def test_other_company_data_is_untouched(self):
+        set_company_access(self.other_company, self.target, enabled=True)
+        self.other_company.owners.add(self.target)
+        other_group = CompanyGroup.objects.create(
+            company=self.other_company,
+            display_name='Other team',
+            source=CompanyGroup.SOURCE_MANUAL,
+        )
+        other_group.members.add(self.target)
+        _issue_shellui_tokens(self.target, company=self.company)
+        _issue_shellui_tokens(self.target, company=self.other_company)
+
+        response = self._delete(self.target.pk)
+
+        self.assertEqual(response.status_code, 204)
+        self.assertTrue(User.objects.filter(pk=self.target.pk).exists())
+        self.assertFalse(self.company.members.filter(pk=self.target.pk).exists())
+        self.assertTrue(self.other_company.members.filter(pk=self.target.pk).exists())
+        self.assertTrue(self.other_company.owners.filter(pk=self.target.pk).exists())
+        self.assertTrue(other_group.members.filter(pk=self.target.pk).exists())
+        self.assertFalse(RefreshTokenSession.objects.filter(user=self.target, company=self.company).exists())
+        self.assertTrue(
+            RefreshTokenSession.objects.filter(
+                user=self.target,
+                company=self.other_company,
+                revoked_at__isnull=True,
+            ).exists()
+        )
+        self.assertFalse(
+            ActionOutbox.objects.filter(event_type='identity.user.deleted', company=self.other_company).exists()
+        )
+
+    def test_keeps_account_when_owner_elsewhere_without_membership(self):
+        co_owner = User.objects.create_user(username='co', email='co@del.com', password='x')
+        self.other_company.owners.add(self.target, co_owner)
+        response = self._delete(self.target.pk)
+        self.assertEqual(response.status_code, 204)
+        self.assertTrue(User.objects.filter(pk=self.target.pk).exists())
+        self.assertTrue(self.other_company.owners.filter(pk=self.target.pk).exists())
+
+    def test_keeps_account_when_in_other_company_group_without_membership(self):
+        other_group = CompanyGroup.objects.create(
+            company=self.other_company,
+            display_name='Legacy',
+            source=CompanyGroup.SOURCE_MANUAL,
+        )
+        other_group.members.add(self.target)
+        response = self._delete(self.target.pk)
+        self.assertEqual(response.status_code, 204)
+        self.assertTrue(User.objects.filter(pk=self.target.pk).exists())
+        self.assertTrue(other_group.members.filter(pk=self.target.pk).exists())
+
+    def test_sole_owner_of_other_company_can_be_deleted_here(self):
+        set_company_access(self.other_company, self.target, enabled=True)
+        self.other_company.owners.add(self.target)
+        response = self._delete(self.target.pk)
+        self.assertEqual(response.status_code, 204, getattr(response, 'data', None))
+        self.assertTrue(User.objects.filter(pk=self.target.pk).exists())
+        self.assertEqual(list(self.other_company.owners.all()), [self.target])
+
+    def test_co_owner_of_current_company_can_be_deleted(self):
+        self.company.owners.add(self.target)
+        response = self._delete(self.target.pk)
+        self.assertEqual(response.status_code, 204, getattr(response, 'data', None))
+        self.assertEqual(list(self.company.owners.all()), [self.owner])
 
     def test_cannot_delete_self(self):
         self.company.owners.add(self.target)
