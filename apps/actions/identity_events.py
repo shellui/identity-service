@@ -19,6 +19,19 @@ _USER = (
     ),
 )
 
+_INVITATION = (
+    EventFieldDoc('invitation_id', 'Invitation primary key', 7),
+    EventFieldDoc('email', 'Invited email (lowercase)', 'ada@acme.com'),
+    EventFieldDoc('language', 'Invitation email language (en, fr)', 'fr'),
+    EventFieldDoc('invited_by', 'Email of the admin who sent the invitation', 'grace@acme.com'),
+    EventFieldDoc(
+        'invitation_url',
+        'App URL the invitation links to (not a sign-in credential); null when not provided',
+        'https://app.acme.com/',
+    ),
+    EventFieldDoc('source', 'Always invitation', 'invitation'),
+)
+
 _ACCOUNT_USER = _USER + (
     EventFieldDoc('oauth_provider', 'OAuth provider id when source=oauth', 'github'),
 )
@@ -55,20 +68,24 @@ register_event(
         id='identity.user.invited',
         label='User invited',
         description=(
-            'A company owner or staff member invited someone by email. The user account is created '
-            'when needed and gets access to the company. When the company has an enabled webhook rule '
-            'for this event, identity-service skips its own invitation email.'
+            'A company owner or staff member invited someone by email. No account is created yet: '
+            'the invitee gets access on their first sign-in with that email. When the company has an '
+            'enabled webhook rule for this event, identity-service skips its own invitation email.'
         ),
-        payload_fields=_USER
-        + (
-            EventFieldDoc('invited_by', 'Email of the admin who sent the invitation', 'grace@acme.com'),
-            EventFieldDoc(
-                'invitation_url',
-                'App URL the invitation links to (not a sign-in credential); null when not provided',
-                'https://app.acme.com/',
-            ),
-            EventFieldDoc('user_created', 'True when the invitation created the user account', True),
+        payload_fields=_INVITATION,
+    )
+)
+
+register_event(
+    DomainEventType(
+        id='identity.user.invitation_revoked',
+        label='User invitation revoked',
+        description=(
+            'A company owner or staff member revoked a pending invitation. Sign-in with that email is '
+            'refused for this company until a new invitation is sent.'
         ),
+        payload_fields=_INVITATION
+        + (EventFieldDoc('revoked_by', 'Email of the admin who revoked the invitation', 'grace@acme.com'),),
     )
 )
 

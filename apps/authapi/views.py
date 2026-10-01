@@ -40,9 +40,12 @@ from apps.companies.oauth_client_uniqueness import (
     find_duplicate_for_social_app,
 )
 from apps.companies.access import (
+    ERROR_INVITATION_REVOKED,
+    MSG_INVITATION_REVOKED,
     JoinDecision,
     apply_company_join,
     is_company_access_enabled,
+    is_login_blocked_by_revoked_invitation,
     notify_user_access_enabled,
     set_company_access,
 )
@@ -416,6 +419,8 @@ def _resolve_oauth_login_user(
     )
     if perror or profile is None:
         return None, False, None, perror or 'Invalid provider profile.', None
+    if is_login_blocked_by_revoked_invitation(company, profile.email):
+        return None, False, profile, MSG_INVITATION_REVOKED, ERROR_INVITATION_REVOKED
     user, created, uerror, uerror_code = resolve_oauth_user(
         provider=provider,
         profile=profile,

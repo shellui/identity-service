@@ -301,3 +301,75 @@ class CompanyOAuthRedirect(models.Model):
 
     def __str__(self) -> str:
         return f'{self.company_id}:{self.base_url}'
+
+
+class CompanyInvitation(models.Model):
+    """
+    Email invitation to a company. No user account exists until the invitee signs in.
+
+    The latest invitation per (company, email) decides sign-in: pending is accepted on the first
+    sign-in with that verified email, revoked blocks sign-in until a new invitation is sent.
+    """
+
+    STATUS_PENDING = 'pending'
+    STATUS_ACCEPTED = 'accepted'
+    STATUS_REVOKED = 'revoked'
+    STATUS_CHOICES = [
+        (STATUS_PENDING, 'Pending'),
+        (STATUS_ACCEPTED, 'Accepted'),
+        (STATUS_REVOKED, 'Revoked'),
+    ]
+
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.CASCADE,
+        related_name='invitations',
+    )
+    email = models.EmailField(max_length=254, help_text='Stored lowercase.')
+    language = models.CharField(max_length=8, default='en')
+    app_url = models.CharField(max_length=500, blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    invited_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='+',
+    )
+    accepted_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='+',
+    )
+    revoked_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='+',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    accepted_at = models.DateTimeField(null=True, blank=True)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at', '-id']
+        indexes = [
+            models.Index(fields=['company', 'email'], name='company_invitation_email_idx'),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=['company', 'email'],
+                condition=Q(status='pending'),
+                name='company_invitation_one_pending_per_email',
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f'{self.company_id}:{self.email}:{self.status}'
+
+    def save(self, *args, **kwargs):
+        self.email = (self.email or '').strip().lower()
+        super().save(*args, **kwargs)

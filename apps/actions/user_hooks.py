@@ -28,22 +28,31 @@ def emit_user_account_created(company, user, *, source: str) -> None:
     )
 
 
-def emit_user_invited(
-    company,
-    user,
-    *,
-    invited_by: str | None,
-    invitation_url: str | None,
-    user_created: bool,
-    language: str,
-) -> list:
+def _actor_email(actor) -> str | None:
+    return ((getattr(actor, 'email', None) or '').strip() or None) if actor is not None else None
+
+
+def invitation_event_payload(invitation) -> dict:
+    """No ``user_id``: the invitee may not have an account yet, and must not reveal accounts in other companies."""
+    return {
+        'invitation_id': invitation.pk,
+        'email': invitation.email,
+        'language': invitation.language,
+        'invited_by': _actor_email(invitation.invited_by),
+        'invitation_url': invitation.app_url or None,
+        'source': 'invitation',
+    }
+
+
+def emit_user_invited(invitation) -> list:
     """Emit ``identity.user.invited``; returns queued outbox rows (empty without an enabled rule)."""
-    payload = user_event_payload(user, source='invitation')
-    payload['language'] = language
-    payload['invited_by'] = invited_by
-    payload['invitation_url'] = invitation_url
-    payload['user_created'] = user_created
-    return emit_event_if_rules('identity.user.invited', company, payload)
+    return emit_event_if_rules('identity.user.invited', invitation.company, invitation_event_payload(invitation))
+
+
+def emit_user_invitation_revoked(invitation) -> None:
+    payload = invitation_event_payload(invitation)
+    payload['revoked_by'] = _actor_email(invitation.revoked_by)
+    emit_event_if_rules('identity.user.invitation_revoked', invitation.company, payload)
 
 
 def emit_user_account_deleted(company, user, *, source: str) -> None:

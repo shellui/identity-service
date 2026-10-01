@@ -9,7 +9,7 @@ from unittest.mock import patch
 from apps.authapi.oauth import OAuthTokenBundle
 from apps.authapi.provider_registry import get_provider_catalog
 from apps.authapi.views import _resolve_oauth_login_user
-from apps.companies.models import Company, CompanyOAuthClient
+from apps.companies.models import Company, CompanyInvitation, CompanyOAuthClient
 
 User = get_user_model()
 
@@ -80,3 +80,26 @@ class OidcLoginCollisionTests(TestCase):
         self.assertNotEqual(user_a.id, user_b.id)
         self.assertNotEqual(profile_a.social_uid, profile_b.social_uid)
         self.assertNotEqual(profile_a.social_provider, profile_b.social_provider)
+
+    def test_revoked_invitation_refused_before_creating_user(self):
+        CompanyInvitation.objects.create(
+            company=self.company,
+            email='ada@example.com',
+            status=CompanyInvitation.STATUS_REVOKED,
+        )
+        app = self._oidc_app(slug='openid_connect', provider_id='tenant-a', issuer='https://issuer-a.example.com')
+        client = CompanyOAuthClient.objects.get(social_app=app)
+        catalog = self._catalog_with_openid_connect_supported()
+        with patch('apps.authapi.provider_registry.get_provider_catalog', return_value=catalog):
+            user, created, _profile, err, code = _resolve_oauth_login_user(
+                provider='openid_connect',
+                company=self.company,
+                userinfo={'sub': 'ada-sub', 'email': 'Ada@example.com'},
+                token_bundle=OAuthTokenBundle(access_token='at', id_token=None),
+                company_oauth_client_id=client.id,
+            )
+        self.assertIsNone(user)
+        self.assertFalse(created)
+        self.assertEqual(code, 'invitation_revoked')
+        self.assertIsNotNone(err)
+        self.assertFalse(User.objects.filter(email__iexact='ada@example.com').exists())

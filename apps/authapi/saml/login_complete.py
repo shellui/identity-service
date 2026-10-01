@@ -14,7 +14,13 @@ from apps.authapi.oauth_user import OAuthProfile
 from apps.authapi.provider_registry import catalog_entry_for_social_app
 from apps.authapi.saml.organization import idp_entity_id_from_settings, shellui_company_id_from_app
 from apps.authapi.saml.user_resolution import SAML_EMAIL_CONFLICT, resolve_saml_user
-from apps.companies.access import JoinDecision, apply_company_join, is_company_access_enabled
+from apps.companies.access import (
+    JoinDecision,
+    apply_company_join,
+    invitation_revoked_decision,
+    is_company_access_enabled,
+    is_login_blocked_by_revoked_invitation,
+)
 from apps.companies.models import Company
 
 
@@ -121,6 +127,19 @@ def complete_shellui_saml_login(
             error_code=perror or 'saml_identity_failed',
             redirect_to_raw=redirect_to,
         )
+    if is_login_blocked_by_revoked_invitation(company, profile.email):
+        revoked = invitation_revoked_decision()
+        record_login_event(
+            request=request,
+            outcome=LoginEvent.OUTCOME_FAILURE,
+            provider=provider,
+            user=None,
+            company=company,
+            failure_reason=revoked.error_code,
+            client_timezone=client_tz,
+            client_device_id=client_dev,
+        )
+        return _join_denied_response(decision=revoked, redirect_to=redirect_to)
     user, created, uerror = resolve_saml_user(
         company=company,
         social_app=social_app,

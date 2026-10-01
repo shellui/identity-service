@@ -23,7 +23,11 @@ from rest_framework.views import APIView
 from apps.actions.magic_link_hooks import emit_magic_link_requested
 from apps.authapi.magic_link_email import send_magic_link_email
 from apps.actions.user_hooks import emit_user_account_created
-from apps.companies.access import apply_company_join
+from apps.companies.access import (
+    apply_company_join,
+    invitation_revoked_decision,
+    is_login_blocked_by_revoked_invitation,
+)
 from apps.companies.redirect_allowlist import validate_redirect_to_for_company
 from apps.authapi import metrics as auth_metrics
 from apps.authapi.login_audit import client_ip_rate_limit_key, get_client_ip, record_login_event
@@ -148,6 +152,8 @@ class ShellUIMagicLinkRequestView(APIView):
             return limited
 
         existing = User.objects.filter(email__iexact=email).first()
+        if is_login_blocked_by_revoked_invitation(company, email, existing):
+            return Response(_GENERIC_REQUEST_OK, status=status.HTTP_200_OK)
         client_tz = serializer.validated_data.get('client_timezone') or ''
         client_dev = serializer.validated_data.get('client_device_id') or None
 
@@ -356,6 +362,21 @@ class ShellUIMagicLinkVerifyView(APIView):
         created = False
         if user is None:
             user = User.objects.filter(email__iexact=row.email).first()
+        if is_login_blocked_by_revoked_invitation(company, row.email, user):
+            join = invitation_revoked_decision()
+            record_login_event(
+                request=request,
+                outcome=LoginEvent.OUTCOME_FAILURE,
+                provider=MAGIC_LINK_PROVIDER,
+                user=user,
+                company=company,
+                failure_reason=join.error_code,
+                client_timezone=client_tz,
+                client_device_id=client_dev,
+            )
+            if browser_redirect:
+                return _join_denied_response(decision=join, redirect_to=redirect_to)
+            return _join_denied_response(decision=join)
         if user is None:
             user = _create_magic_link_user(request, email=row.email)
             created = True

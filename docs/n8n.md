@@ -199,20 +199,17 @@ Use this only for Docker/Coolify networks you control.
   "time": "2026-09-24T13:30:30+00:00",
   "company": { "id": 1, "slug": "acme", "name": "Acme" },
   "data": {
-    "user_id": 42,
+    "invitation_id": 7,
     "email": "ada@acme.com",
-    "username": "ada",
-    "source": "invitation",
     "language": "fr",
-    "region": "UTC",
     "invited_by": "grace@acme.com",
     "invitation_url": "https://app.acme.com/",
-    "user_created": true
+    "source": "invitation"
   }
 }
 ```
 
-While this rule is enabled, identity-service does not send its own invitation email, so your workflow must notify the user. `invitation_url` only opens the app; the user still signs in normally.
+While this rule is enabled, identity-service does not send its own invitation email, so your workflow must notify the user. `invitation_url` only opens the app; the user still signs in normally, and the account is created on that first sign-in (`identity.user.created`). `identity.user.invitation_revoked` has the same payload plus `revoked_by`.
 
 ### `identity.scim.user.provisioned`
 
