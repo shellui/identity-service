@@ -31,12 +31,14 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 - **OAuth batch 2 providers:** identity-hosted OAuth adds **LinkedIn** (OpenID Connect), **Slack** (OpenID Connect userInfo claims), generic **OpenID Connect** and **Keycloak**, **Okta**, and **Auth0**, each with hand-written strict adapter fixtures and literal uid assertions. Supported release total: **14** providers (`tools/data/oauth_e2e_covered_slugs.json`).
 - **OAuth provider catalog:** identity-service ships a checked-in django-allauth provider catalog (`apps/authapi/provider_catalog.json`) with catalog entries for OAuth2/OIDC providers and SAML. Admin API: `GET /api/v1/oauth-provider-catalog`. OAuth app CRUD accepts `docs_slug` plus validated `extra_settings`. Catalog generation tracks the installed django-allauth version and end-to-end adapter test coverage per provider.
 - **django-allauth 65.19.5:** dependency upgraded to match the provider dataset.
+- **Editable display name:** `PATCH /api/v1/user` with `{"name": "…"}` sets the user's name (first word in `first_name`, the rest in `last_name`). New tokens and `GET /api/v1/user` use it.
 - **Magic link email language:** `POST /api/v1/magic-link/request` accepts an optional `language` (`fr`, `fr-FR`, …) that picks the email locale and the webhook `language` field.
 
 ### 🚨 Changed
 
 - **Self-service account deletion per company:** `DELETE /api/v1/user` no longer returns **409** for users in several companies. It removes only the token company's membership and company-scoped data, and keeps the account for the other companies. Users with a single company are still fully deleted.
 - **Last company owner protection:** `DELETE /api/v1/user` returns **409** `last_company_owner` (with the affected `companies`) when the user is the only owner of a company that would lose them. `PATCH /api/v1/companies/<id>/` with `owner_ids: []` returns **400** `company_owner_required`. Both prevent a company from being left without an owner.
+- **Names are never overwritten on sign-in:** OAuth and SAML sign-ins that link to an existing user by email only fill the name when the user has none. Previously an empty `last_name` was filled from the provider even when `first_name` was set. `GET` and `PUT /api/v1/user` now always return `name`/`full_name` from the user row instead of cached metadata.
 - **Magic link usernames:** new magic link users get a username from their email (`ada` for `ada@acme.com`, with a short suffix when taken) instead of `magic_<name>_<random>`.
 
 ### 🔒 Security

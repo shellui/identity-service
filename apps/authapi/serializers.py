@@ -69,6 +69,21 @@ class ShellUIUserDeleteSerializer(serializers.Serializer):
     )
 
 
+class ShellUIUserProfileUpdateSerializer(serializers.Serializer):
+    name = serializers.CharField(
+        required=True,
+        allow_blank=False,
+        max_length=150,
+        help_text='Display name. Stored as first_name (first word) and last_name (the rest).',
+    )
+
+    def validate_name(self, value: str) -> str:
+        collapsed = ' '.join(value.split())
+        if not collapsed:
+            raise serializers.ValidationError('Name cannot be blank.')
+        return collapsed
+
+
 class UserPreferenceSerializer(serializers.Serializer):
     themeName = serializers.CharField(required=False, allow_blank=False, max_length=100)
     language = serializers.ChoiceField(required=False, choices=['en', 'fr'])

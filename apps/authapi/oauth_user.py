@@ -58,15 +58,12 @@ def get_or_create_user_for_oauth(*, email: str, defaults: dict) -> tuple[User, b
 
 
 def _backfill_user_names_from_profile(user: User, profile: OAuthProfile) -> None:
-    updates: list[str] = []
-    if not user.first_name and profile.full_name:
-        user.first_name = profile.full_name.split(' ')[0]
-        updates.append('first_name')
-    if not user.last_name and ' ' in profile.full_name:
-        user.last_name = ' '.join(profile.full_name.split(' ')[1:])
-        updates.append('last_name')
-    if updates:
-        user.save(update_fields=updates)
+    """Fill the name only when the user has none, so a user-chosen name is never overwritten."""
+    if user.first_name or user.last_name or not profile.full_name:
+        return
+    user.first_name = profile.full_name.split(' ')[0]
+    user.last_name = ' '.join(profile.full_name.split(' ')[1:])
+    user.save(update_fields=['first_name', 'last_name'])
 
 
 @dataclass(frozen=True)

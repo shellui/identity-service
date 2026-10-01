@@ -54,6 +54,7 @@ Company **webhook rules** in Django admin map catalog events (`identity.scim.use
 - `POST /api/v1/logout` logout endpoint (revokes refresh session and denylists access token)
 - `GET /api/v1/user` return authenticated user profile + metadata
 - `PUT /api/v1/user` update user metadata
+- `PATCH /api/v1/user` set the display name (`{"name": "Ada Lovelace"}`); sign-ins never overwrite a name once set
 - `DELETE /api/v1/user` self-service account deletion (`{"confirm": true}`; emits `identity.user.deleted` per company — see [docs/oauth-login.md](docs/oauth-login.md))
 
 ## Staff admin endpoints

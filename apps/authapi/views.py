@@ -130,6 +130,7 @@ from .serializers import (
     ShellUIAdminAuthMethodsUpdateSerializer,
     ShellUIAdminUserUpdateSerializer,
     ShellUIUserDeleteSerializer,
+    ShellUIUserProfileUpdateSerializer,
     UserPreferenceSerializer,
 )
 from apps.scim.models import CompanyScimToken, ScimProvisioningEvent
@@ -155,6 +156,13 @@ _SHELLUI_JWT_PRIVILEGED_METADATA_KEYS = frozenset({'is_staff', 'is_company_owner
 
 def _is_user_company_owner(user: User, company: Company) -> bool:
     return company.owners.filter(pk=user.pk).exists()
+
+
+def _apply_display_name(user: User, user_metadata: dict) -> None:
+    """The Django user row is the source of truth for the name, not cached metadata."""
+    display_name = user.get_full_name() or user.get_username()
+    user_metadata['name'] = display_name
+    user_metadata['full_name'] = display_name
 
 
 def _notify_user_logged_in_for_oauth(request, user: User) -> None:
@@ -2783,6 +2791,22 @@ class ShellUILogoutView(APIView):
             401: OpenApiResponse(description='Missing or invalid bearer token'),
         },
     ),
+    patch=extend_schema(
+        tags=['auth-profile'],
+        summary='Update current user display name',
+        description=(
+            'Set the display name from JSON `{"name": "Ada Lovelace"}`. Stored as `first_name` '
+            '(first word) and `last_name` (the rest), so `user_metadata.name` in new tokens and '
+            '`GET /api/v1/user` reflects it. OAuth, SAML, and magic link sign-ins never overwrite '
+            'a name once set; SCIM provisioning and admin user updates can.'
+        ),
+        request=ShellUIUserProfileUpdateSerializer,
+        responses={
+            200: OpenApiResponse(description='Updated user payload'),
+            400: OpenApiResponse(description='Missing, blank, or too long name'),
+            401: OpenApiResponse(description='Missing or invalid bearer token'),
+        },
+    ),
     delete=extend_schema(
         tags=['auth-profile'],
         summary='Delete current user account (self-service)',
@@ -2827,6 +2851,7 @@ class ShellUIUserView(APIView):
             'avatar_url': None,
             'is_staff': bool(user.is_staff),
         }
+        _apply_display_name(user, user_metadata)
         user_metadata['is_staff'] = bool(user.is_staff)
         user_metadata['is_company_owner'] = _is_user_company_owner(user, company)
         user_metadata['shelluiPreferences'] = _user_preferences_payload(user)
@@ -2841,6 +2866,27 @@ class ShellUIUserView(APIView):
                 'user_metadata': user_metadata,
             }
         )
+
+    def patch(self, request):
+        user = _authenticate_bearer_user(request)
+        if not user:
+            return Response({'error': 'Unauthorized'}, status=status.HTTP_401_UNAUTHORIZED)
+        _company, company_err = _required_company_from_request(request, user=user)
+        if company_err:
+            return company_err
+        serializer = ShellUIUserProfileUpdateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        first, _, last = serializer.validated_data['name'].partition(' ')
+        user.first_name = first
+        user.last_name = last
+        user.save(update_fields=['first_name', 'last_name'])
+        cache_key = f'shellui:user_metadata:{user.id}'
+        cached = cache.get(cache_key)
+        if isinstance(cached, dict):
+            _apply_display_name(user, cached)
+            cache.set(cache_key, cached, timeout=60 * 60 * 24 * 30)
+        return self.get(request)
 
     def put(self, request):
         user = _authenticate_bearer_user(request)
@@ -2881,6 +2927,7 @@ class ShellUIUserView(APIView):
         merged['groups'] = _user_group_names(user, company)
         merged.pop('last_seen_at', None)
         merged['last_seen_at'] = _last_seen_at_for_user(user)
+        _apply_display_name(user, merged)
         merged['is_staff'] = bool(user.is_staff)
         merged['is_company_owner'] = _is_user_company_owner(user, company)
         _enrich_user_metadata_avatar(user, merged)
