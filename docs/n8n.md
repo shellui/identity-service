@@ -190,6 +190,30 @@ Use this only for Docker/Coolify networks you control.
 }
 ```
 
+### `identity.user.invited`
+
+```json
+{
+  "id": "880e8400-e29b-41d4-a716-446655440003",
+  "type": "identity.user.invited",
+  "time": "2026-09-24T13:30:30+00:00",
+  "company": { "id": 1, "slug": "acme", "name": "Acme" },
+  "data": {
+    "user_id": 42,
+    "email": "ada@acme.com",
+    "username": "ada",
+    "source": "invitation",
+    "language": "fr",
+    "region": "UTC",
+    "invited_by": "grace@acme.com",
+    "invitation_url": "https://app.acme.com/",
+    "user_created": true
+  }
+}
+```
+
+While this rule is enabled, identity-service does not send its own invitation email, so your workflow must notify the user. `invitation_url` only opens the app; the user still signs in normally.
+
 ### `identity.scim.user.provisioned`
 
 ```json

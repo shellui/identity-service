@@ -460,6 +460,7 @@ AUTH_RATE_LIMITS = {
     'admin_login': {'limit': _env_int('AUTH_RATE_LIMIT_ADMIN_LOGIN', 10), 'window': 300},
     'pat': {'limit': _env_int('AUTH_RATE_LIMIT_PAT', 30), 'window': 60},
     'magic_link': {'limit': _env_int('AUTH_RATE_LIMIT_MAGIC_LINK', 10), 'window': 60},
+    'invitation': {'limit': _env_int('AUTH_RATE_LIMIT_INVITATION', 30), 'window': 300},
 }
 
 # Database

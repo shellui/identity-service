@@ -49,6 +49,35 @@ class ShellUIMagicLinkRequestSerializer(serializers.Serializer):
     )
 
 
+class ShellUIInvitationCreateSerializer(serializers.Serializer):
+    email = serializers.EmailField(max_length=254)
+    language = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=35,
+        help_text='Invitation email language (en or fr; tags like "fr-FR" accepted). Defaults to en.',
+    )
+    app_url = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=2048,
+        help_text=(
+            'App URL linked from the email (usually the shell origin). Must match the company '
+            'OAuth redirect allowlist. Omit to send the email without a link.'
+        ),
+    )
+
+    def validate_language(self, value: str) -> str:
+        from .magic_link import normalize_magic_link_language
+
+        if not (value or '').strip():
+            return 'en'
+        normalized = normalize_magic_link_language(value)
+        if not normalized:
+            raise serializers.ValidationError('Unsupported language. Use en or fr.')
+        return normalized
+
+
 class ShellUIMagicLinkConsumeSerializer(serializers.Serializer):
     token = serializers.CharField(max_length=128)
     company_id = serializers.IntegerField(min_value=1)

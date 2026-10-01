@@ -38,8 +38,9 @@ Magic-link sign-in emails are **not** Action rules. Identity sends them directly
 | ---------- | ------------- | ----- |
 | `identity.scim.user.provisioned` | SCIM user create or re-enable (`active: true`) | Company **access** only; not account creation |
 | `identity.scim.user.deprovisioned` | SCIM deprovision / `active: false` | Disables membership; user row remains |
-| `identity.user.created` | First OAuth sign-in creates a User, or Django admin adds a user with company membership | **Company-scoped** |
-| `identity.user.deleted` | Django admin deletes a User, or `DELETE /api/v1/user` (self-service) deletes the account for a company | One emit **per removed company membership** before delete (self-service removes only the token company when the user has others) |
+| `identity.user.created` | First OAuth or magic link sign-in creates a User, an invitation creates one (`source: invitation`), or Django admin adds a user with company membership | **Company-scoped** |
+| `identity.user.invited` | `POST /api/v1/invitations` (admin panel **Invite user**) | Payload adds `invited_by`, `invitation_url` (app URL, not a credential) and `user_created`; `language` is the invitation language. While an enabled rule exists, identity-service skips its own invitation email |
+| `identity.user.deleted` | Django admin deletes a User, `DELETE /api/v1/users/<id>` (admin panel), or `DELETE /api/v1/user` (self-service) | Admin panel and self-service deletes emit for the current company only and keep accounts linked to other companies; Django admin emits **once per membership** before deleting the account |
 | `identity.user.updated` | — | Registered; **`emit_by_default=false`** |
 | `identity.group.created` | SCIM or Django admin group create | |
 | `identity.group.updated` | Display name / external id change | |

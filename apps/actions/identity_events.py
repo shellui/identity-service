@@ -52,6 +52,28 @@ register_event(
 
 register_event(
     DomainEventType(
+        id='identity.user.invited',
+        label='User invited',
+        description=(
+            'A company owner or staff member invited someone by email. The user account is created '
+            'when needed and gets access to the company. When the company has an enabled webhook rule '
+            'for this event, identity-service skips its own invitation email.'
+        ),
+        payload_fields=_USER
+        + (
+            EventFieldDoc('invited_by', 'Email of the admin who sent the invitation', 'grace@acme.com'),
+            EventFieldDoc(
+                'invitation_url',
+                'App URL the invitation links to (not a sign-in credential); null when not provided',
+                'https://app.acme.com/',
+            ),
+            EventFieldDoc('user_created', 'True when the invitation created the user account', True),
+        ),
+    )
+)
+
+register_event(
+    DomainEventType(
         id='identity.user.deleted',
         label='User account deleted',
         description='The user account was permanently deleted. Emitted once per company membership before removal.',

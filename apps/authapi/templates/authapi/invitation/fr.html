@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html lang="fr">
+<body style="font-family: system-ui, sans-serif; line-height: 1.5; color: #111;">
+  <p>Shellui · {{ company_name }}</p>
+  <h1>Vous êtes invité à rejoindre {{ company_name }}</h1>
+  <p>{{ inviter_name }} vous invite à rejoindre {{ company_name }}.</p>
+  {% if app_url %}
+  <p><a href="{{ app_url }}">Ouvrir {{ company_name }}</a></p>
+  <p>Si le bouton ne fonctionne pas, copiez cette URL dans votre navigateur :</p>
+  <p><a href="{{ app_url }}">{{ app_url }}</a></p>
+  {% endif %}
+  <p>Connectez-vous avec {{ email }} pour commencer.</p>
+  <p>Si vous n'attendiez pas cette invitation, ignorez cet e-mail.</p>
+</body>
+</html>

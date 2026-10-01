@@ -23,6 +23,17 @@ Configure via:
 
 Staff and company owners can set `is_active` on `PUT /api/v1/users/<id>` for the **current JWT company**. That field updates `CompanyMembership.is_enabled` for that company only (it does not change Django `User.is_active`). Enabling a previously disabled membership emails the user.
 
+## Invitations
+
+Staff and company owners can invite someone with `POST /api/v1/invitations` (admin panel: **Invite user** on the Users page, or in Company access when **Invitation only** is selected). Body: `email`, `language` (`en` or `fr`), and optional `app_url`.
+
+- The account with that email is reused, or created with an unusable password (username from the email, like magic link). A new account gets `language` as its UI language.
+- Access to the company is enabled right away, which also approves a pending access request. Returns **409** `already_member` when the user already has access.
+- The invitation email is sent in `language` from `apps/authapi/templates/authapi/invitation/` and links to `app_url`. It holds no sign-in credential: the user signs in with magic link or any OAuth provider that matches the email.
+- `app_url` must match the company OAuth redirect allowlist (**400** `invalid_app_url` otherwise). The admin panel sends the shell origin. Without it the email has no link.
+- `identity.user.invited` is emitted. When the company has an enabled webhook rule for it, identity-service skips its own email (same as magic link).
+- Rate limit: `AUTH_RATE_LIMIT_INVITATION` (default 30 per 5 minutes) per company.
+
 ## OAuth error codes
 
 When access is blocked for the requested company, OAuth responses include `error_code`:

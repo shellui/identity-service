@@ -64,6 +64,7 @@ These routes require a valid JWT whose user has `is_staff=true` (`user_metadata.
 - `GET /api/v1/users?q=&page=&page_size=` — paginated user list (`page_size` capped at 100)
 - `GET /api/v1/users/<id>` — single user (Django fields + `user_metadata` cache)
 - `PUT /api/v1/users/<id>` — JSON body may include `first_name`, `last_name`, `is_staff` (staff only), `is_active` (staff or company owner; **per-company** membership enable), and optional `data` object to merge into cached metadata (same idea as `PUT /api/v1/user`). You cannot remove your own staff flag or disable your own company access via this API. Enabling a previously disabled membership emails the user.
+- `POST /api/v1/invitations`: invites `email` to the current company (staff or company owner). Reuses or creates the account, enables access, and sends an invitation email in `language` (`en`, `fr`) linking to `app_url`, or emits `identity.user.invited` instead when a webhook rule exists. See [docs/company-access.md](docs/company-access.md#invitations).
 - `DELETE /api/v1/users/<id>`: removes the user and their data from the current company (staff or company owner). The account is deleted only when this was their last company. Emits `identity.user.deleted` with `source=admin`. Refuses to delete yourself (400), a staff user unless you are staff (403), or a company's only owner (409 `last_company_owner`).
 - `PATCH /api/v1/companies/<id>/` — company owners may update `name`, `owner_ids`, `access_mode` (`public` \| `domain` \| `invite`), and `allowed_email_domains`.
 

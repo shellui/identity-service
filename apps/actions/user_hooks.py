@@ -28,6 +28,24 @@ def emit_user_account_created(company, user, *, source: str) -> None:
     )
 
 
+def emit_user_invited(
+    company,
+    user,
+    *,
+    invited_by: str | None,
+    invitation_url: str | None,
+    user_created: bool,
+    language: str,
+) -> list:
+    """Emit ``identity.user.invited``; returns queued outbox rows (empty without an enabled rule)."""
+    payload = user_event_payload(user, source='invitation')
+    payload['language'] = language
+    payload['invited_by'] = invited_by
+    payload['invitation_url'] = invitation_url
+    payload['user_created'] = user_created
+    return emit_event_if_rules('identity.user.invited', company, payload)
+
+
 def emit_user_account_deleted(company, user, *, source: str) -> None:
     emit_event_if_rules(
         'identity.user.deleted',

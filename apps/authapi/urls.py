@@ -1,5 +1,6 @@
 from django.urls import include, path
 
+from .invitation_views import ShellUIAdminInvitationView
 from .magic_link_views import ShellUIMagicLinkRequestView, ShellUIMagicLinkVerifyView
 from .saml.views import (
     ShellUISAMLACSView,
@@ -104,6 +105,7 @@ urlpatterns = [
     ),
     path('scim/tokens', ShellUIAdminScimTokenListCreateView.as_view(), name='shellui-admin-scim-tokens'),
     path('users/<int:pk>', ShellUIAdminUserDetailView.as_view(), name='shellui-admin-user-detail'),
+    path('invitations', ShellUIAdminInvitationView.as_view(), name='shellui-admin-invitations'),
     path('preferences', ShellUIPreferenceView.as_view(), name='shellui-preferences'),
     path('providers/<str:provider>/authorize/', SocialAuthorizeView.as_view(), name='social-authorize'),
     path('providers/<str:provider>/login/', SocialLoginView.as_view(), name='social-login'),
