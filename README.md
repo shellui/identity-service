@@ -269,6 +269,8 @@ Runtime env vars:
 - `SENTRY_ENVIRONMENT` (optional; default `development` when `DEBUG=true`, else `production`)
 - `SENTRY_RELEASE` (optional; default `project.version` from `pyproject.toml`)
 - `SENTRY_TRACES_SAMPLE_RATE` (optional; default `0` — errors only; set e.g. `0.1` for performance traces)
+- `EMAIL_SERVICE_URL` (optional; production default `https://email.shellui.com`. Local: `http://localhost:8003`. From Docker: `http://host.docker.internal:8003`)
+- `EMAIL_SERVICE_API_KEY` (optional; `esk_` service key. Unset keeps SMTP / the console backend. See [docs/email-service.md](docs/email-service.md))
 
 ## Observability (Sentry)
 

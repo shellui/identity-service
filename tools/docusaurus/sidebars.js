@@ -20,6 +20,11 @@ const sidebars = {
     },
     {
       type: 'doc',
+      id: 'email-service',
+      label: 'Email',
+    },
+    {
+      type: 'doc',
       id: 'oauth-providers',
       label: 'OAuth providers',
     },

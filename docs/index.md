@@ -16,6 +16,7 @@ Live site: [https://identity.docs.shellui.com](https://identity.docs.shellui.com
 | **[Social login providers](oauth-providers.md)** | django-allauth catalog (primary starters + full list), enablement checklist, IdP callback URLs |
 | **[SCIM](scim.md)** | Opt-in enterprise provisioning (Users + Groups + nested groups), per-company bearer tokens |
 | **[Shellui webhooks](actions.md)** | Domain events → signed webhooks, DB outbox + `retry_webhooks` |
+| **[Email](email-service.md)** | Magic links and invitations via email-service, SMTP fallback, event forwarding |
 | **[Event log](event-log.md)** | Every event and sign-in in one table, per-company data retention, admin REST API |
 | **[Scheduled jobs](scheduled-jobs.md)** | `purge_expired_data` (hourly) and `retry_webhooks` (every minute), with Coolify, Compose and Kubernetes examples |
 | **[n8n integration](n8n.md)** | Webhook node setup, signature verification, retries |
