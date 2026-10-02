@@ -22,7 +22,7 @@ from rest_framework.views import APIView
 
 from apps.actions.email_client import TEMPLATE_MAGIC_LINK, EmailUnavailable, RecipientSuppressed
 from apps.actions.magic_link_hooks import emit_magic_link_requested
-from apps.authapi.email_delivery import deliver_magic_link_email, has_enabled_webhook_rule
+from apps.authapi.email_delivery import AuthEmailError, deliver_magic_link_email, has_enabled_webhook_rule
 from apps.actions.user_hooks import emit_user_account_created
 from apps.companies.access import (
     apply_company_join,
@@ -118,8 +118,11 @@ def _magic_link_rate_limits(request, *, company_id: int, email: str) -> Response
         request=ShellUIMagicLinkRequestSerializer,
         responses={
             200: OpenApiResponse(description='Request accepted (email may be sent via Action rules)'),
+            400: OpenApiResponse(description='`auth_link_missing` or `auth_link_host_not_allowed`'),
             403: OpenApiResponse(description='Magic link disabled for this company or deployment'),
+            409: OpenApiResponse(description='`provider_not_configured` or `platform_sender_not_allowed`'),
             422: OpenApiResponse(description='`recipient_suppressed`'),
+            429: OpenApiResponse(description='`company_rate_limited` or `recipient_rate_limited`'),
             503: OpenApiResponse(description='`email_unavailable`'),
         },
     ),
@@ -205,6 +208,9 @@ class ShellUIMagicLinkRequestView(APIView):
             except RecipientSuppressed:
                 transaction.set_rollback(True)
                 return Response({'error_code': 'recipient_suppressed'}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+            except AuthEmailError as exc:
+                transaction.set_rollback(True)
+                return Response({'error_code': exc.error_code}, status=exc.status)
             except EmailUnavailable:
                 logger.warning(
                     'magic_link_email_failed company_id=%s request_id=%s',

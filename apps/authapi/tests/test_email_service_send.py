@@ -229,6 +229,48 @@ class DirectSendTests(TestCase):
         self.assertFalse(MagicLinkToken.objects.exists())
 
     @patch('apps.actions.email_client.requests.post')
+    def test_company_rate_limit_is_returned_without_smtp(self, post):
+        post.return_value = _accepted(429, 'company_rate_limited')
+        response = self._magic()
+        self.assertEqual(response.status_code, 429)
+        self.assertEqual(response.data, {'error_code': 'company_rate_limited'})
+        self.assertEqual(post.call_count, 3)
+        self.assertEqual(mail.outbox, [])
+        self.assertFalse(MagicLinkToken.objects.exists())
+
+    @patch('apps.actions.email_client.requests.post')
+    def test_provider_not_configured_is_returned_without_smtp(self, post):
+        post.return_value = _accepted(409, 'provider_not_configured')
+        response = self._invite()
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.data, {'error_code': 'provider_not_configured'})
+        self.assertEqual(post.call_count, 3)
+        self.assertEqual(mail.outbox, [])
+        self.assertFalse(CompanyInvitation.objects.exists())
+
+    @patch('apps.actions.email_client.requests.post')
+    def test_platform_sender_not_allowed_is_returned_without_smtp(self, post):
+        post.return_value = _accepted(409, 'platform_sender_not_allowed')
+        response = self._magic()
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.data, {'error_code': 'platform_sender_not_allowed'})
+        self.assertEqual(mail.outbox, [])
+
+    @patch('apps.actions.email_client.requests.post')
+    def test_auth_link_errors_are_returned_without_smtp(self, post):
+        post.return_value = _accepted(400, 'auth_link_host_not_allowed')
+        response = self._magic()
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data, {'error_code': 'auth_link_host_not_allowed'})
+        self.assertEqual(post.call_count, 1)
+        self.assertEqual(mail.outbox, [])
+        post.return_value = _accepted(400, 'auth_link_missing')
+        response = self._magic()
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data, {'error_code': 'auth_link_missing'})
+        self.assertEqual(mail.outbox, [])
+
+    @patch('apps.actions.email_client.requests.post')
     def test_validation_error_does_not_fall_back_to_smtp(self, post):
         post.return_value = _accepted(400, 'validation_failed')
         response = self._invite()

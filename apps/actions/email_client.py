@@ -12,7 +12,7 @@ from urllib.parse import urlparse
 import requests
 from django.conf import settings
 
-from apps.actions.webhook_retry import parse_retry_after_header
+from apps.actions.webhook_retry import is_permanent_http_status, parse_retry_after_header
 
 logger = logging.getLogger(__name__)
 
@@ -23,27 +23,47 @@ DIRECT_SEND_EVENT_TYPES = frozenset({TEMPLATE_MAGIC_LINK, TEMPLATE_INVITED})
 MAGIC_LINK_TTL_SECONDS = 120
 INVITATION_TTL_SECONDS = 300
 
-# email-service caller policy: these responses are not retried unchanged.
-_PERMANENT_STATUSES = frozenset({400, 401, 403, 404, 422})
-_RETRYABLE_STATUSES = frozenset({409, 429})
+# Auth-lane refusals returned to the client. None of these are sent again over SMTP.
+PASSTHROUGH_SEND_CODES = {
+    'recipient_suppressed': 422,
+    'company_rate_limited': 429,
+    'recipient_rate_limited': 429,
+    'provider_not_configured': 409,
+    'auth_link_missing': 400,
+    'auth_link_host_not_allowed': 400,
+}
 
 
 class EmailServiceUnreachable(Exception):
-    """Network failure, timeout, or 5xx after the caller retry policy."""
+    """Network failure, timeout, redirect, or 5xx."""
+
+    def __init__(self, *, status: int | None = None, error_code: str = '', retry_after: int | None = None) -> None:
+        super().__init__(error_code or 'unreachable')
+        self.status = status
+        self.error_code = error_code
+        self.retry_after = retry_after
 
 
 class EmailServiceRejected(Exception):
-    """email-service answered. Do not fall back to SMTP.
+    """email-service answered with a non-2xx that is not treated as unreachable.
 
-    ``retryable`` is set for ``429`` and ``409 lane_paused`` after the caller retry
-    budget. Event delivery may try again later. Direct send returns an error.
+    ``retryable`` follows the caller retry table (not the permanent 4xx set).
+    Direct send does not fall back to SMTP for this exception.
     """
 
-    def __init__(self, *, status: int, error_code: str, retryable: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        status: int,
+        error_code: str,
+        retryable: bool = False,
+        retry_after: int | None = None,
+    ) -> None:
         super().__init__(error_code or str(status))
         self.status = status
         self.error_code = error_code or 'request_failed'
         self.retryable = retryable
+        self.retry_after = retry_after
 
 
 class EmailUnavailable(Exception):
@@ -109,16 +129,15 @@ def _error_code(response: requests.Response) -> str:
     return code.strip() if isinstance(code, str) else ''
 
 
-def _retryable(status: int, error_code: str) -> bool:
-    if status in _PERMANENT_STATUSES:
-        return False
-    if status == 409:
-        return error_code == 'lane_paused'
-    if status in _RETRYABLE_STATUSES:
-        return True
-    if 500 <= status < 600:
-        return True
-    return False
+def _outcome(status: int) -> str:
+    """``ok``, ``permanent``, ``retry``, or ``unreachable`` per the email-service caller table."""
+    if 200 <= status < 300:
+        return 'ok'
+    if 300 <= status < 400 or status >= 500:
+        return 'unreachable'
+    if is_permanent_http_status(status):
+        return 'permanent'
+    return 'retry'
 
 
 def _pause(attempt: int, response: requests.Response | None) -> None:
@@ -136,14 +155,31 @@ def _pause(attempt: int, response: requests.Response | None) -> None:
         time.sleep(delay)
 
 
-def post_json(path: str, body: dict) -> dict:
-    """
-    POST ``path`` (for example ``/api/v1/send``) with the service key.
+def _retry_after(response: requests.Response) -> int | None:
+    if response.status_code not in (429, 503):
+        return None
+    return parse_retry_after_header(response.headers.get('Retry-After'))
 
-    Retries ``409 lane_paused``, ``429``, and transport or 5xx failures with the same body.
-    ``400``, ``401``, ``403``, ``404``, and ``422`` are not retried.
-    Exhausted ``429`` and ``lane_paused`` raise ``EmailServiceRejected`` (retryable) so callers
-    do not fall back to SMTP. Transport failures and 5xx raise ``EmailServiceUnreachable``.
+
+def _read_json(response: requests.Response) -> dict:
+    try:
+        payload = response.json()
+    except ValueError:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def post_json(path: str, body: dict, *, attempts: int | None = None) -> dict:
+    """
+    POST ``path`` with the service key.
+
+    Direct send (``/api/v1/send``) retries transport failures, 5xx, and retryable 4xx
+    up to ``EMAIL_SERVICE_SEND_ATTEMPTS``. Exhausted retryable 4xx raise
+    ``EmailServiceRejected``. Transport failures and 5xx raise ``EmailServiceUnreachable``.
+
+    Event ingest passes ``attempts=1``. The outbox applies the caller retry table:
+    2xx is done (including ``skipped_reason``), permanent 4xx are not retried, and every
+    other failure is retried with the webhook backoff.
     """
     key = _api_key()
     if not key:
@@ -159,9 +195,9 @@ def post_json(path: str, body: dict) -> dict:
         'Content-Type': 'application/json',
         'User-Agent': 'shellui-identity-email/1.0',
     }
-    attempts = _max_attempts()
+    total = _max_attempts() if attempts is None else max(1, int(attempts))
     last_status = None
-    for attempt in range(1, attempts + 1):
+    for attempt in range(1, total + 1):
         response = None
         try:
             response = requests.post(
@@ -177,38 +213,44 @@ def post_json(path: str, body: dict) -> dict:
                 path,
                 attempt,
             )
-            if attempt >= attempts:
+            if attempt >= total:
                 raise EmailServiceUnreachable from None
             continue
         last_status = response.status_code
-        if 300 <= response.status_code < 400:
-            logger.warning('email_service_redirect_rejected path=%s status=%s', path, response.status_code)
-            raise EmailServiceUnreachable from None
-        if response.status_code == 202:
-            try:
-                payload = response.json()
-            except ValueError:
-                payload = {}
-            if not isinstance(payload, dict):
-                payload = {}
-            return payload
-        code = _error_code(response)
+        outcome = _outcome(response.status_code)
+        if outcome == 'ok':
+            return _read_json(response)
+        code = _error_code(response) or 'request_failed'
+        retry_after = _retry_after(response)
         logger.warning(
             'email_service_rejected path=%s status=%s error_code=%s attempt=%s',
             path,
             response.status_code,
-            code or 'request_failed',
+            code,
             attempt,
         )
-        if _retryable(response.status_code, code) and attempt < attempts:
+        if outcome == 'unreachable':
+            if attempt >= total:
+                raise EmailServiceUnreachable(
+                    status=response.status_code,
+                    error_code=code,
+                    retry_after=retry_after,
+                ) from None
             _pause(attempt, response)
             continue
-        if response.status_code >= 500:
-            raise EmailServiceUnreachable from None
+        if outcome == 'retry' and attempt < total:
+            _pause(attempt, response)
+            continue
         raise EmailServiceRejected(
             status=response.status_code,
-            error_code=code or 'request_failed',
-            retryable=_retryable(response.status_code, code),
+            error_code=code,
+            retryable=outcome == 'retry',
+            retry_after=retry_after,
         ) from None
     logger.warning('email_service_unreachable path=%s status=%s', path, last_status)
     raise EmailServiceUnreachable from None
+
+
+def post_event(body: dict) -> dict:
+    """One ``POST /api/v1/events``. The outbox owns retries."""
+    return post_json('/api/v1/events', body, attempts=1)

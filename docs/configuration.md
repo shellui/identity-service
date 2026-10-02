@@ -181,10 +181,10 @@ Documented in [SCIM](scim.md). Available on **`develop`** after migrations.
 | `EMAIL_SERVICE_URL` | `https://email.shellui.com` | Origin only. identity-service appends `/api/v1/send` and `/api/v1/events`. Local runs use `http://localhost:8003` (email-service). Containers use `http://host.docker.internal:8003` |
 | `EMAIL_SERVICE_API_KEY` | empty | Bearer key issued by email-service. Prefix `esk_` |
 | `EMAIL_SERVICE_TIMEOUT_SECONDS` | `5` | Timeout for one HTTP attempt |
-| `EMAIL_SERVICE_SEND_ATTEMPTS` | `3` | Attempts for one direct send, or for one event-delivery try |
+| `EMAIL_SERVICE_SEND_ATTEMPTS` | `3` | Attempts for one direct send. Event posts retry on the outbox (8 attempts) |
 | `EMAIL_SERVICE_RETRY_MAX_SLEEP_SECONDS` | `1` | Cap on the pause between direct-send retries |
 
-How the two paths fit together: [Email](email-service.md).
+How the two paths fit together: [Email](email-service.md). email-service `EMAIL_AUTH_LINK_HOSTS` must include the host of `JWT_ISSUER`. `localhost` is kept on that list only while email-service `DEBUG=true`.
 
 ---
 

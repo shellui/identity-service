@@ -14,6 +14,7 @@ from apps.actions.email_client import (
     EmailServiceRejected,
     EmailServiceUnreachable,
     EmailUnavailable,
+    PASSTHROUGH_SEND_CODES,
     RecipientSuppressed,
     email_service_configured,
     invitation_idempotency_key,
@@ -30,6 +31,21 @@ from apps.authapi.magic_link_email import _resolve_language, send_magic_link_ema
 from apps.companies.access import get_membership
 
 logger = logging.getLogger(__name__)
+
+
+class AuthEmailError(Exception):
+    """email-service refused an auth send. The API returns this code and does not use SMTP."""
+
+    def __init__(self, *, status: int, error_code: str) -> None:
+        super().__init__(error_code)
+        self.status = status
+        self.error_code = error_code
+
+
+def _passthrough_status(exc: EmailServiceRejected) -> int | None:
+    if exc.error_code == 'platform_sender_not_allowed':
+        return exc.status if exc.status in (403, 409) else 409
+    return PASSTHROUGH_SEND_CODES.get(exc.error_code)
 
 
 def _recipient_name(user) -> str:
@@ -71,6 +87,9 @@ def _send_or_fallback(*, path_body: dict, smtp_send) -> None:
     except EmailServiceRejected as exc:
         if exc.error_code == 'recipient_suppressed' or exc.status == 422:
             raise RecipientSuppressed from None
+        mapped = _passthrough_status(exc)
+        if mapped is not None:
+            raise AuthEmailError(status=mapped, error_code=exc.error_code) from None
         logger.warning(
             'email_service_send_rejected template=%s status=%s error_code=%s',
             path_body.get('template_key'),

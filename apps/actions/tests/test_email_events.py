@@ -125,7 +125,7 @@ class EmailEventForwardTests(TestCase):
 
         def fake_post(*args, **kwargs):
             calls['n'] += 1
-            if calls['n'] < 3:
+            if calls['n'] < 2:
                 raise requests.ConnectionError('down')
             return _response()
 
@@ -144,7 +144,7 @@ class EmailEventForwardTests(TestCase):
         self.assertEqual(stats['delivered'], 1)
         row.refresh_from_db()
         self.assertEqual(row.status, EmailEventOutbox.STATUS_DELIVERED)
-        self.assertGreaterEqual(post.call_count, 3)
+        self.assertEqual(post.call_count, 2)
         keys = [call.kwargs['json']['idempotency_key'] for call in post.call_args_list]
         self.assertEqual(set(keys), {first_key})
 
@@ -158,7 +158,7 @@ class EmailEventForwardTests(TestCase):
         row = EmailEventOutbox.objects.get()
         self.assertEqual(row.status, EmailEventOutbox.STATUS_FAILED)
         self.assertEqual(row.last_error, 'lane_paused')
-        self.assertEqual(post.call_count, 2)
+        self.assertEqual(post.call_count, 1)
 
     @patch('apps.actions.email_client.requests.post')
     def test_permanent_error_is_not_retried(self, post):
@@ -173,6 +173,70 @@ class EmailEventForwardTests(TestCase):
         stats = retry_pending_email_events()
         self.assertEqual(stats['processed'], 0)
         self.assertEqual(post.call_count, 1)
+
+    @patch('apps.actions.email_client.requests.post')
+    def test_skipped_reason_is_finished(self, post):
+        post.return_value = _response(202, {
+            'idempotent_replay': False,
+            'rule_enabled': False,
+            'skipped_reason': 'rule_disabled',
+            'messages': [],
+        })
+        self._emit(
+            'identity.user.deleted',
+            {'user_id': self.member.pk, 'email': 'ada@acme.com', 'source': 'admin'},
+        )
+        row = EmailEventOutbox.objects.get()
+        self.assertEqual(row.status, EmailEventOutbox.STATUS_DELIVERED)
+        self.assertEqual(post.call_count, 1)
+        stats = retry_pending_email_events()
+        self.assertEqual(stats['processed'], 0)
+
+    @patch('apps.actions.email_client.requests.post')
+    def test_not_found_is_retried_with_the_same_key(self, post):
+        post.return_value = _response(404, {'error_code': 'not_found'})
+        self._emit(
+            'identity.user.deleted',
+            {'user_id': self.member.pk, 'email': 'ada@acme.com', 'source': 'admin'},
+        )
+        row = EmailEventOutbox.objects.get()
+        self.assertEqual(row.status, EmailEventOutbox.STATUS_FAILED)
+        key = row.body['idempotency_key']
+        post.return_value = _response()
+        row.next_attempt_at = timezone.now() - timedelta(seconds=1)
+        row.locked_until = None
+        row.save(update_fields=['next_attempt_at', 'locked_until'])
+        retry_pending_email_events()
+        row.refresh_from_db()
+        self.assertEqual(row.status, EmailEventOutbox.STATUS_DELIVERED)
+        keys = [call.kwargs['json']['idempotency_key'] for call in post.call_args_list]
+        self.assertEqual(keys, [key, key])
+
+    @patch('apps.actions.email_client.requests.post')
+    def test_suppressed_event_is_permanent(self, post):
+        post.return_value = _response(422, {'error_code': 'recipient_suppressed'})
+        self._emit(
+            'identity.user.deleted',
+            {'user_id': self.member.pk, 'email': 'ada@acme.com', 'source': 'admin'},
+        )
+        row = EmailEventOutbox.objects.get()
+        self.assertEqual(row.status, EmailEventOutbox.STATUS_DEAD)
+        self.assertEqual(post.call_count, 1)
+
+    @patch('apps.actions.email_client.requests.post')
+    def test_retry_after_sets_the_next_attempt(self, post):
+        response = _response(429, {'error_code': 'company_rate_limited'})
+        response.headers = {'Retry-After': '120'}
+        post.return_value = response
+        self._emit(
+            'identity.user.deleted',
+            {'user_id': self.member.pk, 'email': 'ada@acme.com', 'source': 'admin'},
+        )
+        row = EmailEventOutbox.objects.get()
+        self.assertEqual(row.status, EmailEventOutbox.STATUS_FAILED)
+        wait = (row.next_attempt_at - timezone.now()).total_seconds()
+        self.assertGreaterEqual(wait, 100)
+        self.assertLessEqual(wait, 130)
 
 
 @override_settings(EMAIL_SERVICE_API_KEY='', ACTIONS_WEBHOOK_SYNC_DELIVERY=True)

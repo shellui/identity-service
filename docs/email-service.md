@@ -24,11 +24,18 @@ identity-service uses SMTP in two cases:
 - `EMAIL_SERVICE_API_KEY` is unset
 - email-service cannot be reached after the caller retry policy (connection errors, redirects, and HTTP 5xx)
 
-`409 lane_paused` and `429` are retried with the same idempotency key. The wait follows `Retry-After`, capped by `EMAIL_SERVICE_RETRY_MAX_SLEEP_SECONDS` (default `1` second) so a sign-in request does not wait out the full webhook backoff. After those retries, identity-service does not send that message over SMTP.
+Retryable responses (`409`, `429`, and HTTP 5xx) are tried again with the same idempotency key, up to `EMAIL_SERVICE_SEND_ATTEMPTS`. The wait follows `Retry-After`, capped by `EMAIL_SERVICE_RETRY_MAX_SLEEP_SECONDS` (default `1` second) so a sign-in request does not wait out the full webhook backoff.
 
-`422 recipient_suppressed` is not retried and is not sent over SMTP. The API returns that code.
+These codes are not sent over SMTP. The API returns the code itself:
 
-`400`, `401`, `403`, and `404` are not retried. The API returns **503** `email_unavailable`.
+| Code | HTTP |
+| ---- | ---- |
+| `recipient_suppressed` | 422 |
+| `company_rate_limited`, `recipient_rate_limited` | 429 |
+| `provider_not_configured`, `platform_sender_not_allowed` | 409 |
+| `auth_link_missing`, `auth_link_host_not_allowed` | 400 |
+
+Other `400`, `401`, and `403` responses are not retried. The API returns **503** `email_unavailable`.
 
 If SMTP also fails, the API returns **503** and this body:
 
@@ -58,7 +65,7 @@ When the event payload has an email, that address is the hint. Otherwise identit
 
 SCIM token events map the webhook field `name` to the template field `token_name`.
 
-Delivery uses the same outbox and `manage.py retry_webhooks` cron as Shellui Actions. A failed post is retried with the webhook backoff (30s, doubling, capped at 1 hour, 8 attempts). `400`, `401`, `403`, `404`, and `422` are not retried. The request that emitted the event does not wait for this HTTP call.
+Delivery uses the same outbox and `manage.py retry_webhooks` cron as Shellui Actions. Each try is one POST. A 2xx response is finished, including `skipped_reason` (`rule_disabled` or `no_recipients`). `400`, `401`, `403`, `405`, `410`, `413`, and `422` are not retried. `404`, `408`, `409`, `425`, `429`, any other 4xx, 5xx, timeouts, and connection errors are retried with the same idempotency key: 30 seconds times 2^(attempt-1), capped at 1 hour, 8 attempts. `429` and `503` honor `Retry-After`, still capped at 1 hour. The request that emitted the event does not wait for this HTTP call.
 
 Unset `EMAIL_SERVICE_API_KEY` and identity-service does not insert these rows.
 
@@ -69,10 +76,14 @@ Unset `EMAIL_SERVICE_API_KEY` and identity-service does not insert these rows.
 | `EMAIL_SERVICE_URL` | `https://email.shellui.com` | Origin only. identity-service appends `/api/v1/send` and `/api/v1/events`. Local: `http://localhost:8003`. From a container: `http://host.docker.internal:8003` |
 | `EMAIL_SERVICE_API_KEY` | empty | Service key (`esk_`). Sent as `Authorization: Bearer` |
 | `EMAIL_SERVICE_TIMEOUT_SECONDS` | `5` | HTTP timeout for one attempt |
-| `EMAIL_SERVICE_SEND_ATTEMPTS` | `3` | Attempts for one direct send, or for one event-delivery try |
+| `EMAIL_SERVICE_SEND_ATTEMPTS` | `3` | Attempts for one direct send. Event posts use the outbox (8 attempts) |
 | `EMAIL_SERVICE_RETRY_MAX_SLEEP_SECONDS` | `1` | Cap on the pause between direct-send retries |
 
-Issue the key in email-service with lanes `auth` and `transactional`, and template prefix `identity.`. Store it next to `SECRET_KEY`. Local SMTP settings (`EMAIL_HOST`, `DEFAULT_FROM_EMAIL`) still apply to the fallback and to company access notifications. See [Configuration](configuration.md).
+Issue the key in email-service with lanes `auth` and `transactional`, and template prefix `identity.`. Store it next to `SECRET_KEY`.
+
+Auth links (`magic_link_url`, and `invitation_url` when it points at identity) must use a host listed in email-service `EMAIL_AUTH_LINK_HOSTS`. Put the host of `JWT_ISSUER` there. For a local identity at `http://localhost:8000`, that host is `localhost`, and email-service must run with `DEBUG=true`. When email-service `DEBUG=false`, `localhost`, `127.0.0.1`, and `::1` are removed from the list even if the environment includes them, so a production-like email-service needs the public identity host (for example `id.shellui.com`).
+
+Local SMTP settings (`EMAIL_HOST`, `DEFAULT_FROM_EMAIL`) still apply to the fallback and to company access notifications. See [Configuration](configuration.md).
 
 ## Related
 

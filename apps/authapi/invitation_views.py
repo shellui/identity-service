@@ -17,7 +17,7 @@ from apps.actions.user_hooks import emit_user_invitation_revoked, emit_user_invi
 from apps.companies.models import CompanyInvitation, CompanyMembership
 from apps.companies.redirect_allowlist import validate_redirect_to_for_company
 
-from .email_delivery import deliver_invitation_email, has_enabled_webhook_rule
+from .email_delivery import AuthEmailError, deliver_invitation_email, has_enabled_webhook_rule
 from .permissions import ShellUIPermission
 from .serializers import ShellUIInvitationCreateSerializer, ShellUIOpenAPISerializer
 from .throttling import check_rate_limit
@@ -112,11 +112,13 @@ def _open_invitations(company):
         request=ShellUIInvitationCreateSerializer,
         responses={
             201: OpenApiResponse(description='Invitation created; body has `invitation`'),
-            400: OpenApiResponse(description='Invalid email, language, or app_url'),
+            400: OpenApiResponse(description='Invalid email, language, or app_url, or `auth_link_missing` / `auth_link_host_not_allowed`'),
             403: OpenApiResponse(description='Not staff or company owner'),
-            409: OpenApiResponse(description='Already a member, or invitation already pending'),
+            409: OpenApiResponse(
+                description='Already a member, invitation already pending, `provider_not_configured`, or `platform_sender_not_allowed`'
+            ),
             422: OpenApiResponse(description='`recipient_suppressed`'),
-            429: OpenApiResponse(description='Too many invitations'),
+            429: OpenApiResponse(description='Too many invitations, `company_rate_limited`, or `recipient_rate_limited`'),
             503: OpenApiResponse(description='`email_unavailable`'),
         },
     ),
@@ -211,6 +213,9 @@ class ShellUIAdminInvitationView(APIView):
             except RecipientSuppressed:
                 transaction.set_rollback(True)
                 return Response({'error_code': 'recipient_suppressed'}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+            except AuthEmailError as exc:
+                transaction.set_rollback(True)
+                return Response({'error_code': exc.error_code}, status=exc.status)
             except EmailUnavailable:
                 logger.warning(
                     'invitation_email_failed company_id=%s invitation_id=%s',

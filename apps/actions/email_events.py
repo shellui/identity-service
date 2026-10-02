@@ -24,7 +24,7 @@ from apps.actions.email_client import (
     EmailServiceRejected,
     EmailServiceUnreachable,
     email_service_configured,
-    post_json,
+    post_event,
 )
 from apps.actions.models import EmailEventOutbox
 from apps.actions.registry import DomainEventType
@@ -255,14 +255,17 @@ def deliver_email_event(row_id) -> EmailEventOutbox | None:
     http_status = None
     retry_after = None
     try:
-        post_json('/api/v1/events', body)
+        post_event(body)
         success = True
     except EmailServiceRejected as exc:
         permanent = not exc.retryable
         http_status = exc.status
         error = exc.error_code
-    except EmailServiceUnreachable:
-        error = 'unreachable'
+        retry_after = exc.retry_after
+    except EmailServiceUnreachable as exc:
+        error = exc.error_code or 'unreachable'
+        http_status = exc.status
+        retry_after = exc.retry_after
     except Exception as exc:
         logger.warning('email_event_post_failed outbox_id=%s error=%s', row_id, exc.__class__.__name__)
         error = 'request_failed'
