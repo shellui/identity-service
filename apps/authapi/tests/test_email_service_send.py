@@ -100,10 +100,10 @@ class DirectSendTests(TestCase):
         )
 
     def test_idempotency_key_is_stable_and_omits_the_token(self):
-        first = magic_link_idempotency_key(company_id=42, user_id=7, request_id='row-1')
-        second = magic_link_idempotency_key(company_id=42, user_id=7, request_id='row-1')
+        first = magic_link_idempotency_key(company_id=42, user_id=7, request_id='req_1')
+        second = magic_link_idempotency_key(company_id=42, user_id=7, request_id='req_1')
         self.assertEqual(first, second)
-        self.assertEqual(first, 'magic-link-42-user-7-row-1')
+        self.assertEqual(first, 'magic-link-42-user-7-req_1')
         self.assertNotIn('secret-token', first)
         self.assertEqual(
             invitation_idempotency_key(company_id=42, invitation_id=9),
