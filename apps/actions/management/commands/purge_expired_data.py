@@ -42,6 +42,7 @@ class Command(BaseCommand):
                 f'purge_expired_data: {verb} '
                 f"events={stats['events']} "
                 f"webhook_deliveries={stats['webhook_deliveries']} "
+                f"email_events={stats['email_events']} "
                 f"scim_provisioning_events={stats['scim_provisioning_events']} "
                 f"complete={str(stats['complete']).lower()}"
             )

@@ -162,7 +162,9 @@ Documented in [SCIM](scim.md). Available on **`develop`** after migrations.
 | `SETUP_TOKEN` | One-time web superuser bootstrap when `DEBUG=false` (prefer `createsuperuser`) |
 | `IDENTITY_SERVICE_PORT` | Local/docker-compose port hint |
 | `SENTRY_DSN`, `SENTRY_ENVIRONMENT`, `SENTRY_RELEASE`, `SENTRY_TRACES_SAMPLE_RATE` | Optional error reporting |
-| `EMAIL_*`, `DEFAULT_FROM_EMAIL` | SMTP for company access notifications ([company-access.md](company-access.md)) |
+| `EMAIL_*`, `DEFAULT_FROM_EMAIL` | SMTP for company access notifications and the email-service fallback ([company-access.md](company-access.md), [email-service.md](email-service.md)) |
+| `EMAIL_SERVICE_URL` | email-service origin (default `https://email.shellui.com`) |
+| `EMAIL_SERVICE_API_KEY` | Service key (`esk_`). Unset keeps SMTP / the console backend |
 | `ACTIONS_WEBHOOK_TIMEOUT_SECONDS` | Webhook POST timeout (default `5`) — see [actions.md](actions.md) |
 | `ACTIONS_OUTBOX_MAX_ATTEMPTS` | Outbox delivery retries (default `8`) |
 | `ACTIONS_WEBHOOK_ALLOW_PRIVATE` | Allow webhooks to private IPs (default `false`) |
@@ -172,8 +174,23 @@ Documented in [SCIM](scim.md). Available on **`develop`** after migrations.
 
 ---
 
+## Email service
+
+| Variable | Default | Purpose |
+| -------- | ------- | ------- |
+| `EMAIL_SERVICE_URL` | `https://email.shellui.com` | Origin only. identity-service appends `/api/v1/send` and `/api/v1/events` |
+| `EMAIL_SERVICE_API_KEY` | empty | Bearer key issued by email-service. Prefix `esk_` |
+| `EMAIL_SERVICE_TIMEOUT_SECONDS` | `5` | Timeout for one HTTP attempt |
+| `EMAIL_SERVICE_SEND_ATTEMPTS` | `3` | Attempts for one direct send, or for one event-delivery try |
+| `EMAIL_SERVICE_RETRY_MAX_SLEEP_SECONDS` | `1` | Cap on the pause between direct-send retries |
+
+How the two paths fit together: [Email](email-service.md).
+
+---
+
 ## Related
 
+- [Email](email-service.md)
 - [Introduction](index.md)
 - [OAuth login](oauth-login.md)
 - [Releases](RELEASES.md)

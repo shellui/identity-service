@@ -2,6 +2,7 @@ from django.core.management.base import BaseCommand
 from django.db import connection
 
 from apps.actions.delivery import retry_pending_webhooks
+from apps.actions.email_events import retry_pending_email_events
 
 
 class Command(BaseCommand):
@@ -44,6 +45,11 @@ class Command(BaseCommand):
             concurrency=concurrency,
             dry_run=dry_run,
         )
+        email_stats = retry_pending_email_events(
+            batch_size=batch_size,
+            max_seconds=max_seconds,
+            dry_run=dry_run,
+        )
         connection.close()
         self.stdout.write(
             self.style.SUCCESS(
@@ -51,6 +57,10 @@ class Command(BaseCommand):
                 f"processed={stats['processed']} "
                 f"delivered={stats['delivered']} "
                 f"retried={stats['retried']} "
-                f"dead={stats['dead']}"
+                f"dead={stats['dead']} "
+                f"email_processed={email_stats['processed']} "
+                f"email_delivered={email_stats['delivered']} "
+                f"email_retried={email_stats['retried']} "
+                f"email_dead={email_stats['dead']}"
             )
         )

@@ -36,9 +36,9 @@ OAuth providers remain independent — a company can use magic link only, OAuth 
 - **`language`** (optional) is the requester's UI language (`fr`, `fr-FR`, …). It selects the email locale and is sent as `language` in the webhook payload. Unsupported values are ignored.
 - **`redirect_to`** must match the company OAuth redirect allowlist (same rules as OAuth login).
 - When magic link is **disabled**, the API returns **403** with `error_code: magic_link_disabled`.
-- When enabled, the API always returns **200** with a generic message (does not reveal whether the email exists).
+- When the message is accepted, the API returns **200** with a generic message (it does not reveal whether the email exists).
 - When the company has an enabled webhook Action rule for **`identity.auth.magic_link.requested`**, the event is sent to that webhook with `magic_link_url`, and identity-service does **not** send the sign-in email. Your webhook (for example an n8n workflow) delivers the link. See [actions.md](actions.md).
-- Otherwise, identity-service sends the sign-in email from static Django templates in the repo (`apps/authapi/templates/authapi/magic_link/`, EN and FR, HTML and plain text). Locale order: request `language`, then the user's saved language, then `MAGIC_LINK_EMAIL_DEFAULT_LANGUAGE` (EN by default). If queuing the webhook fails, the email is sent instead.
+- Otherwise identity-service sends the sign-in email. With `EMAIL_SERVICE_API_KEY` set, that is `POST /api/v1/send` on email-service (`identity.auth.magic_link.requested`, TTL 120s). With no key, or when email-service cannot be reached, it uses the static templates in `apps/authapi/templates/authapi/magic_link/` (EN and FR). Locale order: request `language`, then the saved language, then `MAGIC_LINK_EMAIL_DEFAULT_LANGUAGE` (EN by default). If both paths fail, the API returns **503** `email_unavailable`. A hard bounce on the auth lane returns **422** `recipient_suppressed`. Those bodies are an `error_code` only. See [email-service.md](email-service.md).
 
 Rate limits: `AUTH_RATE_LIMIT_MAGIC_LINK` (default 10/min) per client IP, email+company, and company.
 

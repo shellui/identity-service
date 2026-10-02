@@ -12,11 +12,12 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.actions.email_client import TEMPLATE_INVITED, EmailUnavailable, RecipientSuppressed
 from apps.actions.user_hooks import emit_user_invitation_revoked, emit_user_invited
 from apps.companies.models import CompanyInvitation, CompanyMembership
 from apps.companies.redirect_allowlist import validate_redirect_to_for_company
 
-from .invitation_email import send_invitation_email
+from .email_delivery import deliver_invitation_email, has_enabled_webhook_rule
 from .permissions import ShellUIPermission
 from .serializers import ShellUIInvitationCreateSerializer, ShellUIOpenAPISerializer
 from .throttling import check_rate_limit
@@ -113,7 +114,9 @@ def _open_invitations(company):
             400: OpenApiResponse(description='Invalid email, language, or app_url'),
             403: OpenApiResponse(description='Not staff or company owner'),
             409: OpenApiResponse(description='Already a member, or invitation already pending'),
+            422: OpenApiResponse(description='`recipient_suppressed`'),
             429: OpenApiResponse(description='Too many invitations'),
+            503: OpenApiResponse(description='`email_unavailable`'),
         },
     ),
 )
@@ -186,25 +189,63 @@ class ShellUIAdminInvitationView(APIView):
             return already_invited
 
         inviter_name = actor.get_full_name() or (actor.email or '').strip() or actor.get_username()
+        webhook_delivers = has_enabled_webhook_rule(company, TEMPLATE_INVITED)
+
+        def _send_mail() -> None:
+            deliver_invitation_email(
+                company=company,
+                invitation=invitation,
+                email=email,
+                inviter_name=inviter_name,
+                app_url=app_url or None,
+                language=language,
+            )
+
+        if not webhook_delivers:
+            try:
+                _send_mail()
+            except RecipientSuppressed:
+                transaction.set_rollback(True)
+                return Response({'error_code': 'recipient_suppressed'}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+            except EmailUnavailable:
+                logger.warning(
+                    'invitation_email_failed company_id=%s invitation_id=%s',
+                    company.pk,
+                    invitation.pk,
+                )
+                transaction.set_rollback(True)
+                return Response({'error_code': 'email_unavailable'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
         def _after_commit() -> None:
             try:
                 queued = emit_user_invited(invitation)
             except Exception:  # noqa: BLE001
-                logger.exception('invitation_webhook_emit_failed company_id=%s invitation_id=%s', company.pk, invitation.pk)
-                queued = []
-            if queued:
+                logger.warning(
+                    'invitation_webhook_emit_failed company_id=%s invitation_id=%s',
+                    company.pk,
+                    invitation.pk,
+                )
+                if not webhook_delivers:
+                    return
+                try:
+                    _send_mail()
+                except Exception:  # noqa: BLE001
+                    logger.warning(
+                        'invitation_email_failed company_id=%s invitation_id=%s',
+                        company.pk,
+                        invitation.pk,
+                    )
+                return
+            if queued or not webhook_delivers:
                 return
             try:
-                send_invitation_email(
-                    company=company,
-                    email=email,
-                    inviter_name=inviter_name,
-                    app_url=app_url or None,
-                    language=language,
-                )
+                _send_mail()
             except Exception:  # noqa: BLE001
-                logger.exception('invitation_email_failed company_id=%s invitation_id=%s', company.pk, invitation.pk)
+                logger.warning(
+                    'invitation_email_failed company_id=%s invitation_id=%s',
+                    company.pk,
+                    invitation.pk,
+                )
 
         transaction.on_commit(_after_commit)
         return Response({'invitation': _invitation_payload(invitation)}, status=status.HTTP_201_CREATED)

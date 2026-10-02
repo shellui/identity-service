@@ -5,7 +5,7 @@ identity-service has no background worker. Two management commands keep it healt
 | Command | Schedule | Needed when | What happens if it never runs |
 | ------- | -------- | ----------- | ----------------------------- |
 | `purge_expired_data` | Every hour (for example at minute 17) | Always | The event log and webhook delivery history grow without limit. The admin panel and Django admin show an error once events are more than one day past retention |
-| `retry_webhooks` | Every minute | A company uses [webhooks](actions.md) | Failed webhook deliveries are never retried. First attempts still go out right after each event |
+| `retry_webhooks` | Every minute | A company uses [webhooks](actions.md), or `EMAIL_SERVICE_API_KEY` is set | Failed webhook deliveries and email-service event posts are never retried. First attempts still go out right after each event |
 
 Both commands are safe to run when there is nothing to do: they exit after one or two indexed queries.
 
@@ -74,7 +74,7 @@ Fix it by scheduling `purge_expired_data` as described above. The next successfu
 
 ## `retry_webhooks`
 
-Retries webhook deliveries whose first attempt failed, with exponential backoff (details in [actions.md](actions.md#delivery-retries-and-cron)).
+Retries webhook deliveries whose first attempt failed, with exponential backoff (details in [actions.md](actions.md#delivery-retries-and-cron)). The same command retries email-service event posts. See [Email](email-service.md).
 
 ```text
 * * * * * cd /app && python manage.py retry_webhooks >> /var/log/retry_webhooks.log 2>&1
