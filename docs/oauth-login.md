@@ -71,7 +71,7 @@ Twitch includes `email` on [Get Users](https://dev.twitch.tv/docs/api/reference#
 
 When Twitch omits `email`, sign-in stops with `oauth_identity_failed`. When the Helix user `id` is missing, or the profile request fails, sign-in stops with `token_exchange_failed`. No account is created in either case. The stored account id is the raw Helix user `id`, the same shape as a GitHub user id.
 
-State uses the signed OAuth state shared by every provider. PKCE uses that same server-side verifier cache. The allauth Twitch provider leaves PKCE off, and Shellui keeps that default.
+Twitch runs without PKCE. Sign-in relies on the signed OAuth state shared by every provider, plus the client secret on the token request.
 
 Configuring a provider does **not** mean Shellui pre-registers IdP clients — operators still create OAuth/SAML apps with each vendor. Listing a provider is not a security certification.
 

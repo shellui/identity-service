@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import datetime
 import json
+import re
 
 from allauth.socialaccount.models import SocialAccount, SocialApp
 from django.contrib.auth import get_user_model
 from django.contrib.sites.models import Site
+from django.core.cache import cache
 from django.test import Client, TestCase, override_settings
 from django.urls import reverse
+import xmlsec
 
 from apps.authapi.oauth_social_account import saml_social_account_provider_key
 from apps.authapi.saml.request_id import stash_saml_request_id
@@ -25,9 +28,17 @@ User = get_user_model()
     SECRET_KEY='test-secret-saml',
     DEBUG=True,
     ALLOWED_HOSTS=['identity.test.example', 'testserver', 'localhost', '127.0.0.1'],
+    # The suite shares one LocMemCache. A full cache culls single-use SAML request
+    # ids, and the oauth limiter (30/min per client IP) counts every earlier test.
+    AUTH_RATE_LIMIT_ENABLED=False,
 )
 class SAMLACSSecurityTests(TestCase):
     def setUp(self):
+        cache.clear()
+        # xmlsec keeps process-global state. Earlier crypto in the suite can make
+        # the next signature check fail closed. Reset it before each SAML case.
+        xmlsec.shutdown()
+        xmlsec.init()
         self.client = Client()
         self.site = Site.objects.get_current()
         self.company = Company.objects.create(name='SAML Co', slug='saml-co', allowed_email_domains=['example.com'])
@@ -109,6 +120,17 @@ class SAMLACSSecurityTests(TestCase):
         if return_response:
             return response
         return response.status_code
+
+    def _confirm_token_from_finish(self, finish) -> str:
+        body = finish.content.decode()
+        match = re.search(r'name="confirm_token" value="([^"]*)"', body)
+        self.assertIsNotNone(
+            match,
+            f'confirm form missing (status={finish.status_code}, body={body[:400]!r})',
+        )
+        token = match.group(1)
+        self.assertTrue(token)
+        return token
 
     def _assert_rejected(self, saml_b64: str, request_id: str | None, error_code: str) -> None:
         finish = self._post_saml(saml_b64, request_id=request_id, return_response=True)
@@ -543,14 +565,7 @@ class SAMLACSSecurityTests(TestCase):
         finish = self._post_saml(saml, request_id=request_id, return_response=True)
         self.assertEqual(finish.status_code, 200)
         self.assertEqual(LoginEvent.objects.filter(outcome=LoginEvent.OUTCOME_SUCCESS).count(), 0)
-        confirm_token = None
-        for line in finish.content.decode().splitlines():
-            if 'name="confirm_token"' not in line:
-                continue
-            start = line.find('value="') + len('value="')
-            end = line.find('"', start)
-            confirm_token = line[start:end]
-        self.assertTrue(confirm_token)
+        confirm_token = self._confirm_token_from_finish(finish)
         confirmed = self.client.post(
             '/api/v1/oauth/confirm',
             {'confirm_token': confirm_token},
@@ -577,13 +592,8 @@ class SAMLACSSecurityTests(TestCase):
             in_response_to=request_id,
         )
         finish = self._post_saml(saml, request_id=request_id, return_response=True)
-        confirm_token = None
-        for line in finish.content.decode().splitlines():
-            if 'name="confirm_token"' not in line:
-                continue
-            start = line.find('value="') + len('value="')
-            end = line.find('"', start)
-            confirm_token = line[start:end]
+        self.assertEqual(finish.status_code, 200, finish.content[:400])
+        confirm_token = self._confirm_token_from_finish(finish)
         self.client.post('/api/v1/oauth/confirm', {'confirm_token': confirm_token}, HTTP_HOST=self.http_host)
         self.assertEqual(LoginEvent.objects.filter(outcome=LoginEvent.OUTCOME_SUCCESS).count(), 1)
         account = SocialAccount.objects.get(provider=saml_social_account_provider_key(self.app))
