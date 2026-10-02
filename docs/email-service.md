@@ -38,7 +38,7 @@ If SMTP also fails, the API returns **503** and this body:
 
 There is no translated sentence in the JSON. A magic-link request that cannot be mailed does not keep the token. An invitation that cannot be mailed is not stored, so the same POST can be retried.
 
-An invitation with no `app_url` stays on the SMTP templates. The email-service template requires `invitation_url`, and identity-service allows that field to be empty.
+An invitation with no `app_url` still calls `/send`. `invitation_url` is then the identity public base (`JWT_ISSUER`, or the request base URL when `DEBUG=true` and `JWT_ISSUER` is unset). The same URL is used if SMTP has to send the message after email-service cannot be reached. With the key unset, an invitation that has no `app_url` stays on the SMTP templates and has no link.
 
 ## Event forwarding
 
@@ -66,7 +66,7 @@ Unset `EMAIL_SERVICE_API_KEY` and identity-service does not insert these rows.
 
 | Variable | Default | Purpose |
 | -------- | ------- | ------- |
-| `EMAIL_SERVICE_URL` | `https://email.shellui.com` | Origin only. identity-service appends `/api/v1/send` and `/api/v1/events` |
+| `EMAIL_SERVICE_URL` | `https://email.shellui.com` | Origin only. identity-service appends `/api/v1/send` and `/api/v1/events`. Local: `http://localhost:8003`. From a container: `http://host.docker.internal:8003` |
 | `EMAIL_SERVICE_API_KEY` | empty | Service key (`esk_`). Sent as `Authorization: Bearer` |
 | `EMAIL_SERVICE_TIMEOUT_SECONDS` | `5` | HTTP timeout for one attempt |
 | `EMAIL_SERVICE_SEND_ATTEMPTS` | `3` | Attempts for one direct send, or for one event-delivery try |

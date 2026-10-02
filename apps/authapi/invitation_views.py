@@ -103,7 +103,8 @@ def _open_invitations(company):
         description=(
             'Stores a pending invitation; no user account is created. The invitee gets access on their '
             'first sign-in with that email (magic link, or OAuth/SAML with a verified email). Sends an '
-            'invitation email in `language` linking to `app_url`, or emits `identity.user.invited` '
+            'invitation email in `language` linking to `app_url` (or the identity landing page when '
+            '`app_url` is empty), or emits `identity.user.invited` '
             'instead when the company has an enabled webhook rule for it. Returns 409 `already_member` '
             'when someone with this email already has access, or `already_invited` when an invitation '
             'is pending.'
@@ -191,6 +192,8 @@ class ShellUIAdminInvitationView(APIView):
         inviter_name = actor.get_full_name() or (actor.email or '').strip() or actor.get_username()
         webhook_delivers = has_enabled_webhook_rule(company, TEMPLATE_INVITED)
 
+        request_base_url = request.build_absolute_uri('/')
+
         def _send_mail() -> None:
             deliver_invitation_email(
                 company=company,
@@ -199,6 +202,7 @@ class ShellUIAdminInvitationView(APIView):
                 inviter_name=inviter_name,
                 app_url=app_url or None,
                 language=language,
+                fallback_base_url=request_base_url,
             )
 
         if not webhook_delivers:

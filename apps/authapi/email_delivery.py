@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 
+from django.core.exceptions import ImproperlyConfigured
+
 from apps.actions.email_client import (
     INVITATION_TTL_SECONDS,
     MAGIC_LINK_TTL_SECONDS,
@@ -19,7 +21,11 @@ from apps.actions.email_client import (
     post_json,
 )
 from apps.authapi.invitation_email import send_invitation_email
-from apps.authapi.magic_link import magic_link_url_for_request, normalize_magic_link_language
+from apps.authapi.magic_link import (
+    identity_public_base_url,
+    magic_link_url_for_request,
+    normalize_magic_link_language,
+)
 from apps.authapi.magic_link_email import _resolve_language, send_magic_link_email
 from apps.companies.access import get_membership
 
@@ -149,6 +155,19 @@ def deliver_magic_link_email(
     _send_or_fallback(path_body=body, smtp_send=smtp_send)
 
 
+def invitation_link(*, app_url: str | None, fallback_base_url: str | None = None) -> str:
+    """
+    URL for ``identity.user.invited``.
+
+    ``app_url`` wins. Otherwise the link is identity's public landing page
+    (``JWT_ISSUER``, or the request base URL when ``DEBUG`` is true and the issuer is unset).
+    """
+    provided = (app_url or '').strip()
+    if provided:
+        return provided
+    return f'{identity_public_base_url(fallback=fallback_base_url)}/'
+
+
 def deliver_invitation_email(
     *,
     company,
@@ -157,42 +176,46 @@ def deliver_invitation_email(
     inviter_name: str,
     app_url: str | None,
     language: str,
+    fallback_base_url: str | None = None,
 ) -> None:
     """Send the invitation. Raises ``EmailUnavailable`` or ``RecipientSuppressed``."""
     lang = normalize_magic_link_language(language) or 'en'
+    provided = (app_url or '').strip()
 
-    def smtp_send() -> None:
+    def smtp_send(link: str | None) -> None:
         send_invitation_email(
             company=company,
             email=email,
             inviter_name=inviter_name,
-            app_url=app_url,
+            app_url=link or None,
             language=lang,
         )
 
-    # The catalog template requires invitation_url. An invitation with no app URL
-    # cannot be represented on /send, so it stays on the SMTP templates.
-    if email_service_configured() and not (app_url or '').strip():
-        logger.info(
-            'invitation_smtp_without_app_url company_id=%s invitation_id=%s',
-            company.pk,
-            invitation.pk,
-        )
+    if not email_service_configured():
         try:
-            smtp_send()
+            smtp_send(provided or None)
         except Exception as exc:
             logger.warning('smtp_send_failed template=%s error=%s', TEMPLATE_INVITED, exc.__class__.__name__)
             raise EmailUnavailable from None
         return
 
+    try:
+        link = invitation_link(app_url=provided, fallback_base_url=fallback_base_url)
+    except ImproperlyConfigured:
+        logger.warning(
+            'invitation_url_unavailable company_id=%s invitation_id=%s',
+            company.pk,
+            invitation.pk,
+        )
+        raise EmailUnavailable from None
+
     variables = {
         'company_name': company.name,
+        'invitation_url': link,
         'recipient_email': email,
     }
     if (inviter_name or '').strip():
         variables['inviter_name'] = inviter_name.strip()
-    if (app_url or '').strip():
-        variables['invitation_url'] = app_url.strip()
     body = {
         'company_id': company.pk,
         'template_key': TEMPLATE_INVITED,
@@ -205,7 +228,7 @@ def deliver_invitation_email(
         'to': [{'email': email}],
         'variables': variables,
     }
-    _send_or_fallback(path_body=body, smtp_send=smtp_send)
+    _send_or_fallback(path_body=body, smtp_send=lambda: smtp_send(link))
 
 
 def has_enabled_webhook_rule(company, event_type: str) -> bool:

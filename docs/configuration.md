@@ -163,7 +163,7 @@ Documented in [SCIM](scim.md). Available on **`develop`** after migrations.
 | `IDENTITY_SERVICE_PORT` | Local/docker-compose port hint |
 | `SENTRY_DSN`, `SENTRY_ENVIRONMENT`, `SENTRY_RELEASE`, `SENTRY_TRACES_SAMPLE_RATE` | Optional error reporting |
 | `EMAIL_*`, `DEFAULT_FROM_EMAIL` | SMTP for company access notifications and the email-service fallback ([company-access.md](company-access.md), [email-service.md](email-service.md)) |
-| `EMAIL_SERVICE_URL` | email-service origin (default `https://email.shellui.com`) |
+| `EMAIL_SERVICE_URL` | email-service origin (production default `https://email.shellui.com`; local `http://localhost:8003`) |
 | `EMAIL_SERVICE_API_KEY` | Service key (`esk_`). Unset keeps SMTP / the console backend |
 | `ACTIONS_WEBHOOK_TIMEOUT_SECONDS` | Webhook POST timeout (default `5`) — see [actions.md](actions.md) |
 | `ACTIONS_OUTBOX_MAX_ATTEMPTS` | Outbox delivery retries (default `8`) |
@@ -178,7 +178,7 @@ Documented in [SCIM](scim.md). Available on **`develop`** after migrations.
 
 | Variable | Default | Purpose |
 | -------- | ------- | ------- |
-| `EMAIL_SERVICE_URL` | `https://email.shellui.com` | Origin only. identity-service appends `/api/v1/send` and `/api/v1/events` |
+| `EMAIL_SERVICE_URL` | `https://email.shellui.com` | Origin only. identity-service appends `/api/v1/send` and `/api/v1/events`. Local runs use `http://localhost:8003` (email-service). Containers use `http://host.docker.internal:8003` |
 | `EMAIL_SERVICE_API_KEY` | empty | Bearer key issued by email-service. Prefix `esk_` |
 | `EMAIL_SERVICE_TIMEOUT_SECONDS` | `5` | Timeout for one HTTP attempt |
 | `EMAIL_SERVICE_SEND_ATTEMPTS` | `3` | Attempts for one direct send, or for one event-delivery try |

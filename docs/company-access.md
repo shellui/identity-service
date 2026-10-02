@@ -29,7 +29,7 @@ Staff and company owners can invite someone with `POST /api/v1/invitations` (adm
 
 - A pending `CompanyInvitation` is stored; **no user account is created**. Returns **409** `already_member` when someone with this email already has access, or `already_invited` when an invitation is pending.
 - The invitation email is sent in `language` and links to `app_url`. It holds no sign-in credential. With `EMAIL_SERVICE_API_KEY` set, identity-service calls email-service `POST /api/v1/send` (`identity.user.invited`). Otherwise it uses `apps/authapi/templates/authapi/invitation/`. If both paths fail, the API returns **503** `email_unavailable` and does not store the invitation. See [email-service.md](email-service.md).
-- `app_url` must match the company OAuth redirect allowlist (**400** `invalid_app_url` otherwise). The admin panel sends the shell origin. Without it the email has no link.
+- `app_url` must match the company OAuth redirect allowlist (**400** `invalid_app_url` otherwise). The admin panel sends the shell origin. With the key unset and no `app_url`, the SMTP message has no link. With the key set, a missing `app_url` still goes through `/send`, and `invitation_url` is the identity public base (`JWT_ISSUER`).
 - Only `identity.user.invited` is emitted. When the company has an enabled webhook rule for it, identity-service skips its own email (same as magic link). The payload has no `user_id`, so it never reveals whether the email has an account in another company.
 - Rate limit: `AUTH_RATE_LIMIT_INVITATION` (default 30 per 5 minutes) per company.
 

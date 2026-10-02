@@ -238,12 +238,15 @@ class DirectSendTests(TestCase):
         self.assertEqual(mail.outbox, [])
 
     @patch('apps.actions.email_client.requests.post')
-    def test_missing_app_url_stays_on_smtp(self, post):
+    def test_missing_app_url_still_uses_email_service(self, post):
+        post.return_value = _accepted()
         response = self._invite(app_url='')
         self.assertEqual(response.status_code, 201, response.data)
-        post.assert_not_called()
-        self.assertEqual(len(mail.outbox), 1)
-        self.assertNotIn('https://', mail.outbox[0].body)
+        post.assert_called_once()
+        self.assertEqual(mail.outbox, [])
+        body = post.call_args.kwargs['json']
+        self.assertEqual(body['template_key'], 'identity.user.invited')
+        self.assertEqual(body['variables']['invitation_url'], 'https://auth.example.com/')
 
     @override_settings(EMAIL_SERVICE_API_KEY='')
     @patch('apps.actions.email_client.requests.post')
