@@ -12,5 +12,6 @@
   "openid_connect",
   "reddit",
   "shopify",
-  "slack"
+  "slack",
+  "twitch"
 ]

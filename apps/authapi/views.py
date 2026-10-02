@@ -418,7 +418,7 @@ def _resolve_oauth_login_user(
         social_app=social_app,
     )
     if perror or profile is None:
-        return None, False, None, perror or 'Invalid provider profile.', None
+        return None, False, None, perror or 'Invalid provider profile.', 'oauth_identity_failed'
     if is_login_blocked_by_revoked_invitation(company, profile.email):
         return None, False, profile, MSG_INVITATION_REVOKED, ERROR_INVITATION_REVOKED
     user, created, uerror, uerror_code = resolve_oauth_user(
@@ -1697,7 +1697,7 @@ class SocialLoginView(APIView):
                 client_device_id=client_dev,
             )
             return Response(
-                {'detail': _OAUTH_SIGNIN_FAILED_DETAIL},
+                {'detail': _OAUTH_SIGNIN_FAILED_DETAIL, 'error_code': 'token_exchange_failed'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -2293,7 +2293,10 @@ class ShellUIOAuthCallbackView(APIView):
             )
             if isinstance(bounced, HttpResponseRedirect):
                 return bounced
-            return Response({'detail': _OAUTH_SIGNIN_FAILED_DETAIL}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {'detail': _OAUTH_SIGNIN_FAILED_DETAIL, 'error_code': 'token_exchange_failed'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         emit_oauth_user_created_if_new(company, user, created=created, oauth_provider=provider)
         join_email = email if profile.email_verified_for_link else None
@@ -2610,7 +2613,10 @@ class ShellUIOAuthExchangeView(APIView):
                 client_timezone=client_tz,
                 client_device_id=client_dev,
             )
-            return Response({'detail': _OAUTH_SIGNIN_FAILED_DETAIL}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {'detail': _OAUTH_SIGNIN_FAILED_DETAIL, 'error_code': 'token_exchange_failed'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         emit_oauth_user_created_if_new(company, user, created=created, oauth_provider=provider)
         join_email = email if profile.email_verified_for_link else None

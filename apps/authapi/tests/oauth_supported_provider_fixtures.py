@@ -34,6 +34,7 @@ RELEASE_SUPPORTED_OAUTH_SLUGS: frozenset[str] = frozenset(
         'reddit',
         'shopify',
         'slack',
+        'twitch',
     }
 )
 
@@ -197,6 +198,23 @@ _FIXTURES: dict[str, SupportedProviderFixture] = {
             'user': {'id': 'decoy-user-id'},
         },
         fixture_source='Slack openid.connect.userInfo (https://slack.com/team_id and user_id claims)',
+    ),
+    'twitch': SupportedProviderFixture(
+        slug='twitch',
+        expected_uid='141981764',
+        profile_document={
+            'id': '141981764',
+            'login': 'twitch-fixture-user',
+            'display_name': 'Twitch Fixture',
+            'email': 'user-twitch@example.com',
+            'profile_image_url': 'https://static-cdn.example/twitch-fixture.png',
+            'sub': 'decoy-twitch-sub',
+            'email_verified': False,
+        },
+        fixture_source=(
+            'Twitch Helix GET /helix/users data[0].id '
+            '(allauth TwitchProvider.extract_uid); email_verified is a decoy'
+        ),
     ),
     'keycloak': SupportedProviderFixture(
         slug='keycloak',

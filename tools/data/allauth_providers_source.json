@@ -3583,8 +3583,8 @@
     "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/twitch.html",
     "console_url": [
       {
-        "text": "http://dev.twitch.tv/console",
-        "url": "http://dev.twitch.tv/console",
+        "text": "https://dev.twitch.tv/console",
+        "url": "https://dev.twitch.tv/console",
         "label": "App registration (get your key and secret here)",
         "form": "link"
       }
@@ -3607,7 +3607,7 @@
       "verified_http_200": true,
       "brand_guidelines": "https://brand.twitch.tv"
     },
-    "notes": "Register an application in the Twitch developer console to get a key and secret, and set the callback URL.",
+    "notes": "Register an application in the Twitch developer console, set the OAuth redirect URL to the Shellui identity callback, and copy the client ID and secret. Shellui requests user:read:email and pins id.twitch.tv and api.twitch.tv.",
     "caveats": []
   },
   {

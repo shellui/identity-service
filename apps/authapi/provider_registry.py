@@ -165,6 +165,13 @@ def validate_extra_settings(
     if entry.docs_slug == 'linkedin' and 'server_url' in incoming:
         errors.append("Setting 'server_url' is not allowed for LinkedIn.")
         incoming.pop('server_url', None)
+    if entry.docs_slug == 'twitch':
+        from apps.authapi.oauth_twitch import TWITCH_FORBIDDEN_SETTINGS
+
+        for key in list(incoming):
+            if key in TWITCH_FORBIDDEN_SETTINGS:
+                errors.append(f"Setting {key!r} is not allowed for Twitch.")
+                incoming.pop(key, None)
     normalized: dict[str, Any] = {}
     for field in entry.extra_settings_schema:
         if field.secret and field.name not in incoming and partial:

@@ -247,6 +247,14 @@ def _email_verified_for_link_from_policy(
             return True, None, None
         return False, None, None
 
+    if policy == 'twitch_verified_email':
+        # Helix `email` is the verified address and is omitted unless the token
+        # has user:read:email. Twitch does not send an email_verified boolean.
+        raw_email = info.get('email')
+        if isinstance(raw_email, str) and '@' in raw_email and raw_email.strip():
+            return True, None, raw_email.strip().lower()
+        return False, 'Twitch did not return a verified email.', None
+
     if policy == 'oauth2_email_verified_or_uid_only':
         if _truthy_claim(info.get('email_verified')):
             return True, None, None
@@ -291,7 +299,7 @@ def extract_oauth_profile(
         return None, 'OAuth provider did not return a user id.'
 
     email = info.get('email') or info.get('mail') or info.get('userPrincipalName')
-    full_name = info.get('name') or info.get('displayName') or ''
+    full_name = info.get('name') or info.get('displayName') or info.get('display_name') or ''
     email_verified_for_link, policy_error, email_override = _email_verified_for_link_from_policy(
         policy=policy,
         provider_key=social_provider,
@@ -313,7 +321,12 @@ def extract_oauth_profile(
     if not full_name:
         full_name = email.split('@')[0]
 
-    avatar_url = info.get('avatar_url') or info.get('picture') or info.get('photo')
+    avatar_url = (
+        info.get('avatar_url')
+        or info.get('picture')
+        or info.get('photo')
+        or info.get('profile_image_url')
+    )
     if not isinstance(avatar_url, str) or not avatar_url.strip():
         avatar_url = None
 

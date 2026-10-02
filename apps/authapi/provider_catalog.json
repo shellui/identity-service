@@ -3536,14 +3536,14 @@
       "replaced_by": null,
       "protocol": "OAuth2",
       "app": "allauth.socialaccount.providers.twitch",
-      "supported": false,
-      "unsupported_reason": "Not supported in this release; additional providers ship in follow-up PRs.",
-      "email_link_policy": "oauth2_email_verified_or_uid_only",
+      "supported": true,
+      "unsupported_reason": null,
+      "email_link_policy": "twitch_verified_email",
       "docs_url": "https://docs.allauth.org/en/latest/socialaccount/providers/twitch.html",
       "console_url": [
         {
           "kind": "app_registration",
-          "url": "http://dev.twitch.tv/console",
+          "url": "https://dev.twitch.tv/console",
           "form": "link"
         }
       ],
@@ -3558,7 +3558,7 @@
         "verified_http_200": true,
         "brand_guidelines": "https://brand.twitch.tv"
       },
-      "notes": "Register an application in the Twitch developer console to get a key and secret, and set the callback URL.",
+      "notes": "Register an application in the Twitch developer console, set the OAuth redirect URL to the Shellui identity callback, and copy the client ID and secret. Shellui requests user:read:email and pins id.twitch.tv and api.twitch.tv.",
       "multiple_allowed": false
     },
     {

@@ -120,6 +120,10 @@ def build_allauth_authorize_url(
         client = oauth2_adapter.get_client(request, social_app)
         client.state = state
         scope = provider.get_scope()
+        if entry.docs_slug == 'twitch':
+            from apps.authapi.oauth_twitch import TWITCH_SCOPE
+
+            scope = list(TWITCH_SCOPE)
         auth_params = dict(provider.get_auth_params())
         auth_params.update(
             authorize_extras_for_entry(
