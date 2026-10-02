@@ -11,6 +11,11 @@ from allauth.socialaccount.providers.openid_connect.views import OpenIDConnectOA
 
 from apps.authapi.oauth_errors import OAuthProviderConfigError
 from apps.authapi.oauth_linkedin import LINKEDIN_OIDC_SERVER_URL, load_linkedin_oidc_discovery
+from apps.authapi.oauth_twitch import (
+    TWITCH_ACCESS_TOKEN_URL,
+    TWITCH_AUTHORIZE_URL,
+    TWITCH_PROFILE_URL,
+)
 from apps.authapi.oauth_oidc_discovery import (
     discovery_url_for_server_url,
     load_validated_oidc_discovery,
@@ -129,6 +134,15 @@ def apply_oauth_adapter_settings(
             }
         prefetch_openid_connect_config(adapter, entry=entry)
         adapter._decode_id_token = types.MethodType(_unverified_id_token_claims, adapter)
+        return
+
+    if slug == 'twitch':
+        _bind_adapter_url_properties(
+            adapter,
+            authorize_url=TWITCH_AUTHORIZE_URL,
+            access_token_url=TWITCH_ACCESS_TOKEN_URL,
+            profile_url=TWITCH_PROFILE_URL,
+        )
         return
 
     if slug == 'google':

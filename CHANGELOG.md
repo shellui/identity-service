@@ -33,6 +33,7 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 - **Magic link webhook URL:** `identity.auth.magic_link.requested` webhooks now include `magic_link_url`, and the admin sample payload shows it. When a company has an enabled webhook rule for this event, identity-service skips its own sign-in email so users don't get two links; without a rule, the built-in email is sent as before. The URL signs the user in until it expires or is used, so send this event only to endpoints you trust. See [docs/magic-link.md](docs/magic-link.md).
 
 - **SAML 2.0 SSO:** Company admins can configure multiple SAML IdPs per company via `oauth-social-apps`. Identity-service exposes SP metadata, ACS, login, and optional SLO under `/api/v1/saml/<organization_slug>/`. See [docs/saml.md](docs/saml.md).
+- **Twitch login:** companies can add one Twitch OAuth app. Sign-in uses the Helix user id. A verified Helix email links an existing account. See [Set up Twitch](docs/oauth-login.md#set-up-twitch).
 - **OAuth batch 2 providers:** identity-hosted OAuth adds **LinkedIn** (OpenID Connect), **Slack** (OpenID Connect userInfo claims), generic **OpenID Connect** and **Keycloak**, **Okta**, and **Auth0**, each with hand-written strict adapter fixtures and literal uid assertions. Supported release total: **14** providers (`tools/data/oauth_e2e_covered_slugs.json`).
 - **OAuth provider catalog:** identity-service ships a checked-in django-allauth provider catalog (`apps/authapi/provider_catalog.json`) with catalog entries for OAuth2/OIDC providers and SAML. Admin API: `GET /api/v1/oauth-provider-catalog`. OAuth app CRUD accepts `docs_slug` plus validated `extra_settings`. Catalog generation tracks the installed django-allauth version and end-to-end adapter test coverage per provider.
 - **django-allauth 65.19.5:** dependency upgraded to match the provider dataset.
@@ -67,6 +68,7 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 - Company domain join uses only a verified email. A client-sent LinkedIn `server_url` is rejected (`oauth_setting_not_allowed`). URL settings must be https (`oauth_extra_settings_invalid`).
 - Auth0 and GitLab profile requests send the access token in the Authorization header.
 - OpenID Connect discovery `issuer` must match the configured server, and LinkedIn discovery hosts are pinned (`oauth_discovery_issuer_mismatch`, `oauth_provider_host_not_allowed`).
+- Twitch authorize and token hosts are pinned to `id.twitch.tv`. The profile host is pinned to `api.twitch.tv`. Company URL and scope overrides are rejected. Shellui requests `user:read:email` and treats the Helix `email` as verified, because Twitch returns that field only for a verified address. A missing email or user id does not create an account (`oauth_identity_failed`, `token_exchange_failed`).
 - OpenID Connect `SocialAccount` keys use per-app `provider_id` and issuer-scoped UIDs to prevent cross-issuer `sub` collisions.
 - OAuth SocialApp admin list and attach paths are company-scoped; secret `extra_settings` fields are redacted in API responses.
 - PKCE verifiers are stored server-side (nonce cache), not in signed OAuth `state`.
@@ -76,7 +78,7 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 ### 🚨 Changed
 
 - **OAuth provider catalog v2:** `console_url` entries are `{kind, url, form}` with optional `placeholders` (no embedded English). Extra settings schema exposes `name`, `type`, `required`, and `secret` only; Shellui admin translates by field name. `GET /api/v1/oauth-provider-catalog` adds `console_link_kinds` and `console_link_forms` for admin mapping.
-- **Honest `supported` count:** `supported: true` for OAuth follows `tools/data/oauth_e2e_covered_slugs.json`, which is regenerated only for providers that pass the strict adapter harness (`tools/audit_oauth_strict_coverage.py`). **14** OAuth providers are supported in this release, plus SAML.
+- **Honest `supported` count:** `supported: true` for OAuth follows `tools/data/oauth_e2e_covered_slugs.json`, which is regenerated only for providers that pass the strict adapter harness (`tools/audit_oauth_strict_coverage.py`). **15** OAuth providers are supported in this release, plus SAML.
 
 ### 🔒 Security
 

@@ -29,6 +29,7 @@ from apps.authapi.oauth_linkedin import (
     LINKEDIN_TOKEN_HOST,
     LINKEDIN_USERINFO_HOST,
 )
+from apps.authapi.oauth_twitch import TWITCH_API_HOST, TWITCH_ID_HOST
 from apps.authapi.tests.oauth_oidc_strict_fixtures import (
     OidcCompanyFixture,
     company_auth0_base,
@@ -138,6 +139,22 @@ def _assert_adapter_hosts(
         ):
             if label == 'jwks' and not host:
                 raise ValueError(f'{slug}: jwks URL host is missing after adapter settings')
+            allowed = per_endpoint[label]
+            if host not in allowed:
+                raise ValueError(f'{slug} {label} host {host!r} not in allowed {sorted(allowed)}')
+        return
+
+    if slug == 'twitch':
+        per_endpoint = {
+            'authorize': {TWITCH_ID_HOST},
+            'token': {TWITCH_ID_HOST},
+            'profile': {TWITCH_API_HOST},
+        }
+        for label, host in (
+            ('authorize', auth_host),
+            ('token', token_host),
+            ('profile', profile_host),
+        ):
             allowed = per_endpoint[label]
             if host not in allowed:
                 raise ValueError(f'{slug} {label} host {host!r} not in allowed {sorted(allowed)}')
@@ -587,6 +604,13 @@ def _build_routes_for_fixture(
         profile_key = _route_key(profile_url or '')
         hostnames.add(profile_key[0])
         routes[profile_key] = _json_handler(profile)
+    elif slug == 'twitch':
+        routes[token_key] = _token_json_handler(
+            {'access_token': 'twitch-access-token', 'token_type': 'bearer'}
+        )
+        profile_key = _route_key(profile_url or '')
+        hostnames.add(profile_key[0])
+        routes[profile_key] = _json_handler({'data': [profile]})
     else:
         routes[token_key] = _token_json_handler({'access_token': f'at-{slug}', 'token_type': 'Bearer'})
         if profile_url:

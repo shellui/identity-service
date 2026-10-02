@@ -50,9 +50,28 @@ Quick reference:
 | Tier | Examples | Stock Shellui OAuth wired? |
 | ---- | -------- | -------------------------- |
 | **Primary / common starters** | Google, Microsoft, GitHub, Apple, GitLab, Slack, Okta, Auth0, Keycloak (OIDC), OpenID Connect, SAML, Discord, Facebook, LinkedIn, Amazon Cognito | GitHub, Google, Microsoft only |
-| **Also available** | Full django-allauth **65.14.1** module list (X/Twitter OAuth 1+2, Twitch, Steam, …) | Requires custom enablement |
+| **Also available** | Full django-allauth **65.19.5** module list (X/Twitter OAuth 1+2, Steam, …) | Twitch is wired. Setup is in [Set up Twitch](#set-up-twitch) |
 
 Upstream source of truth: [django-allauth socialaccount providers](https://docs.allauth.org/en/latest/socialaccount/providers/index.html).
+
+## Set up Twitch
+
+Create an application in the [Twitch developer console](https://dev.twitch.tv/console). Set the OAuth Redirect URL to Shellui's identity callback:
+
+| Environment | Callback URL |
+|-------------|--------------|
+| Local | `http://localhost:8000/api/v1/oauth/callback` |
+| Production | `https://<identity-host>/api/v1/oauth/callback` |
+
+In Shellui admin, add one Twitch app for the company. The catalog id is `twitch`. Paste the client ID and client secret. A second Twitch app for that company returns **409** `oauth_app_duplicate_provider`.
+
+Shellui requests one scope, `user:read:email`. Authorize and token requests use `id.twitch.tv`. The profile request is `GET https://api.twitch.tv/helix/users` with a Bearer token and a `Client-Id` header, the same headers django-allauth sends. Those hosts are fixed. A company URL or scope setting is rejected (`oauth_setting_not_allowed`).
+
+Twitch includes `email` on [Get Users](https://dev.twitch.tv/docs/api/reference#get-users) when the token has `user:read:email`. Twitch documents that field as the verified email address. Shellui links an existing account when the field is present. There is no `email_verified` flag on that response, so the email field itself is the check.
+
+When Twitch omits `email`, sign-in stops with `oauth_identity_failed`. When the Helix user `id` is missing, or the profile request fails, sign-in stops with `token_exchange_failed`. No account is created in either case. The stored account id is the raw Helix user `id`, the same shape as a GitHub user id.
+
+Twitch runs without PKCE. Sign-in relies on the signed OAuth state shared by every provider, plus the client secret on the token request.
 
 Configuring a provider does **not** mean Shellui pre-registers IdP clients — operators still create OAuth/SAML apps with each vendor. Listing a provider is not a security certification.
 

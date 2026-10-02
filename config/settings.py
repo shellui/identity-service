@@ -403,6 +403,7 @@ SHELLUI_GEOIP_DATABASE_PATH = os.getenv('SHELLUI_GEOIP_DATABASE_PATH', '')
 # Scopes only — used by django-allauth provider modules and the admin UI.
 SOCIALACCOUNT_PROVIDERS = {
     'github': {'SCOPE': ['read:user', 'user:email']},
+    'twitch': {'SCOPE': ['user:read:email']},
     'google': {'SCOPE': ['openid', 'email', 'profile']},
     'microsoft': {
         'SCOPE': ['openid', 'email', 'profile', 'User.Read'],

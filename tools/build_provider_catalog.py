@@ -38,6 +38,7 @@ SUPPORTED_RELEASE_SLUGS = frozenset(
         'saml',
         'shopify',
         'slack',
+        'twitch',
     }
 )
 
@@ -45,6 +46,7 @@ SAML_SUPPORTED = True
 
 EMAIL_POLICY_BY_SLUG: dict[str, str] = {
     'github': 'github_verified_primary',
+    'twitch': 'twitch_verified_email',
     'google': 'google_email_verified',
     'microsoft': 'microsoft_tenant',
     'discord': 'discord_email_verified',
