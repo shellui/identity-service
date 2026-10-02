@@ -12,6 +12,9 @@ Shellui identity stays the source of truth for domain events. Automation (n8n, M
 Business code calls emit_event(type, company, payload)
         │
         ▼
+Record the event in the event log (always, rule or not)
+        │
+        ▼
 Match enabled webhook ActionRule rows for that company + event type
         │
         ▼
@@ -27,6 +30,8 @@ DeliveryAttempt audit log; retries via manage.py retry_webhooks
 - **No Celery / Redis required** for actions — the outbox lives in Postgres (or SQLite locally).
 - **SCIM and API paths never block** on slow external HTTP: delivery runs only after commit, with short webhook timeouts (default 5s).
 - Delivery is **at-least-once**; dedupe on the envelope `id` (same value as the `webhook-id` header).
+
+Every event is also stored in the [event log](event-log.md), shown in the admin panel under **Log events** and kept for the company data retention.
 
 Magic-link sign-in emails are **not** Action rules. Identity sends them directly when a user requests a link (see [magic-link.md](magic-link.md)).
 
@@ -51,6 +56,8 @@ Magic-link sign-in emails are **not** Action rules. Identity sends them directly
 | `identity.scim.token.revoked` | Token revoke | |
 | `identity.scim.provisioning_conflict` | SCIM 409 / displayName collision | Ties to `ScimProvisioningEvent` |
 | `identity.auth.magic_link.requested` | User requested a passwordless email sign-in link | Payload has `request_id`, `email`, `expires_at`, and `magic_link_url` (one-time sign-in link, treat as a secret). While an enabled rule exists, identity-service skips its own sign-in email |
+
+Sign-ins are recorded in the [event log](event-log.md) as `identity.auth.login.succeeded` and `identity.auth.login.failed`. They are log-only and cannot be used in webhook rules.
 
 ### Envelope shape (webhooks)
 
@@ -160,6 +167,8 @@ Cron example (every minute):
 
 On **Coolify**, add a **Scheduled Task** on the same identity-service image with that command and a 1-minute interval. Keep `--max-seconds` below 60 so overlapping runs stay safe (skip-locked claims + lease).
 
+Finished deliveries (`delivered`, `dead`) are deleted after the company data retention by `purge_expired_data`. See [Scheduled jobs](scheduled-jobs.md) for both jobs and recommended schedules.
+
 Flags:
 
 - `--batch-size` (default 50)
@@ -260,16 +269,18 @@ List, detail, and update responses never include top-level `secret`. Webhook `co
 
 ## Adding a new event type (developers)
 
-1. Register the type in `apps/actions/identity_events.py`.
+1. Register the type in `apps/actions/identity_events.py`. List payload keys that are live credentials in `sensitive_fields` so they are never written to the event log, and set `webhook=False` for log-only events.
 2. Call `emit_event(...)` or `emit_event_if_rules(...)` from the business path inside a transaction when appropriate.
 3. Document the payload in this file and add tests under `apps/actions/tests/`.
 
-To copy this pattern to **storage-service** or **hosting-service**, reuse the self-contained modules under `apps/actions/` (`emit.py`, `delivery.py`, `handlers/webhook.py`, `webhook_signing.py`, `webhook_transport.py`, `ssrf.py`, `management/commands/retry_webhooks.py`, models, and admin API views), register service-specific events, and wire `emit_event` from domain code.
+To copy this pattern to **storage-service** or **hosting-service**, reuse the self-contained modules under `apps/actions/` (`emit.py`, `event_log.py`, `retention.py`, `delivery.py`, `handlers/webhook.py`, `webhook_signing.py`, `webhook_transport.py`, `ssrf.py`, `management/commands/retry_webhooks.py`, `management/commands/purge_expired_data.py`, models, and admin API views), register service-specific events, and wire `emit_event` from domain code.
 
 ---
 
 ## Related docs
 
+- [Event log](event-log.md)
+- [Scheduled jobs](scheduled-jobs.md)
 - [SCIM](scim.md)
 - [Configuration](configuration.md)
 - [Magic link](magic-link.md)

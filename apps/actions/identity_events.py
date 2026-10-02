@@ -203,6 +203,42 @@ register_event(
                 'https://auth.example.com/api/v1/magic-link/verify?token=example-token&company_id=1',
             ),
         ),
+        sensitive_fields=('magic_link_url',),
+    )
+)
+
+_LOGIN = (
+    EventFieldDoc('provider', 'Sign-in method (github, google, saml, magic_link, django_admin, …)', 'github'),
+    EventFieldDoc('is_staff_at_event', 'Present and true when the user was Django staff', True),
+    EventFieldDoc('ip_hash', 'Salted SHA-256 of the client IP (raw IP is never stored)', 'b5bb9d80…'),
+    EventFieldDoc('user_agent', 'User-Agent, truncated to 512 characters', 'Mozilla/5.0 …'),
+    EventFieldDoc('client_timezone', 'IANA timezone sent by the client', 'Europe/Paris'),
+    EventFieldDoc('client_device_id_hash', 'Salted SHA-256 of the optional client device id', '7d865e95…'),
+    EventFieldDoc('client_country', 'GeoIP country when configured', 'FR'),
+    EventFieldDoc('client_city', 'GeoIP city when configured', 'Paris'),
+)
+
+register_event(
+    DomainEventType(
+        id='identity.auth.login.succeeded',
+        label='Sign-in succeeded',
+        description='A user signed in (OAuth, SAML, magic link, or Django admin). Event log only.',
+        payload_fields=_LOGIN,
+        webhook=False,
+    )
+)
+
+register_event(
+    DomainEventType(
+        id='identity.auth.login.failed',
+        label='Sign-in failed',
+        description=(
+            'A sign-in attempt was refused. The user is linked when it could be resolved. '
+            'Event log only: anonymous traffic can trigger it, so it is never sent to webhooks.'
+        ),
+        payload_fields=_LOGIN
+        + (EventFieldDoc('failure_reason', 'Why the sign-in was refused', 'Company access is disabled.'),),
+        webhook=False,
     )
 )
 

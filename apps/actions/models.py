@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import uuid
 
+from django.conf import settings
 from django.db import models
+from django.utils import timezone
 
 from apps.actions.registry import event_choices
 
@@ -126,3 +128,49 @@ class DeliveryAttempt(models.Model):
 
     def __str__(self) -> str:
         return f'attempt {self.attempt_number} ({self.status})'
+
+
+class EventLog(models.Model):
+    """
+    Append-only history of every catalog event (webhook events and sign-ins), one row per event.
+
+    Rows are deleted by ``manage.py purge_expired_data`` after ``Company.data_retention_days``.
+    ``data`` is the event payload without empty values, ``user_id`` (stored in ``user``) or
+    the event type's ``sensitive_fields``. The two composite indexes cover every read path
+    (company timeline, user timeline, retention purge), so the foreign keys carry no index of their own.
+    """
+
+    id = models.BigAutoField(primary_key=True)
+    company = models.ForeignKey(
+        'companies.Company',
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        db_index=False,
+        related_name='+',
+    )
+    # No DB constraint: inserts skip the users lookup; Django still nulls it when the user is deleted.
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        db_index=False,
+        db_constraint=False,
+        related_name='+',
+    )
+    event_type = models.CharField(max_length=64)
+    data = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        verbose_name = 'Event log entry'
+        verbose_name_plural = 'Event log'
+        ordering = ['-created_at', '-id']
+        indexes = [
+            models.Index(fields=['company', '-created_at'], name='actions_eventlog_company_idx'),
+            models.Index(fields=['user', '-created_at'], name='actions_eventlog_user_idx'),
+        ]
+
+    def __str__(self) -> str:
+        return f'{self.event_type} ({self.created_at:%Y-%m-%d %H:%M})'

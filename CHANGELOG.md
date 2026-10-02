@@ -25,6 +25,9 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 ### ✨ Feature
 
+- **Event log:** every catalog event (accounts, invitations, SCIM, groups, tokens, magic links) is now stored in one `EventLog` table, with or without a webhook rule, next to sign-ins recorded as `identity.auth.login.succeeded` and `identity.auth.login.failed`. Sign-in events are log-only and cannot trigger webhooks. Rows are compact: empty values dropped, user as a column, secrets such as `magic_link_url` never stored, two indexes only. New admin API: `GET /api/v1/events` (filter by `event_type`, `user_id`, `user` email, date range), `GET /api/v1/events/<id>`, `GET /api/v1/events/types`. See [docs/event-log.md](docs/event-log.md).
+- **Data retention:** companies have a `data_retention_days` (default 7), editable in Django admin only and returned read-only by the company API. New `manage.py purge_expired_data` deletes expired event log rows, finished webhook deliveries and SCIM provisioning events in short batches. `GET /api/v1/events/retention` and the Django admin company page report `stale_events` when events are more than one day past retention, which means the job is not scheduled. See [docs/scheduled-jobs.md](docs/scheduled-jobs.md) for recommended schedules (`purge_expired_data` hourly, `retry_webhooks` every minute).
+
 - **Invitations:** `POST /api/v1/invitations` lets staff and company owners invite someone by email, in English or French. The invitation stays pending and no account is created until the invitee signs in with that email, which gives them access in any access mode. `GET /api/v1/invitations` lists open invitations and `POST /api/v1/invitations/<id>/revoke` revokes one: sign-in with a revoked email is refused (`invitation_revoked`) until a new invitation is sent. `DELETE /api/v1/invitations/<id>` deletes a revoked invitation for good, which also lifts the block. New webhook events `identity.user.invited` (replaces the email when the company has an enabled rule for it, like magic link) and `identity.user.invitation_revoked`. See [docs/company-access.md](docs/company-access.md#invitations).
 - **Admin user delete:** `DELETE /api/v1/users/<id>` lets staff and company owners remove a user from their company. Accounts that belong to other companies are kept; the account is deleted only when this was its last company. The API refuses to delete yourself, a staff user (unless you are staff), or a company's only owner (409 `last_company_owner`). Emits `identity.user.deleted` with `source=admin`.
 - **Safer account deletion scope:** admin and self-service deletes now delete the account row only when the user has no link left to any other company. Ownership and group membership count as links, not just membership rows, so an owner or group member set through Django admin is never wiped from another company. The only-owner guard (409 `last_company_owner`) checks the company being left only; being the only owner of another company no longer blocks the delete.
@@ -40,6 +43,14 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 - **Editable display name:** `PATCH /api/v1/user` with `{"name": "…"}` sets the user's name (first word in `first_name`, the rest in `last_name`). New tokens and `GET /api/v1/user` use it.
 - **Magic link email language:** `POST /api/v1/magic-link/request` accepts an optional `language` (`fr`, `fr-FR`, …) that picks the email locale and the webhook `language` field.
 
+### ⚠️ Deprecated
+
+- `GET /api/v1/login-events` and `GET /api/v1/login-events/<id>` keep their response shape but read from the event log. Use `GET /api/v1/events?event_type=identity.auth.login.succeeded,identity.auth.login.failed`.
+
+### 🗑 Removed
+
+- The `LoginEvent` model. Migration `actions.0005` copies the last 7 days of sign-ins into the event log; older rows are dropped, as the default retention would delete them anyway. Event ids change, so links to `/login-events/<id>` from before the upgrade no longer resolve.
+
 ### 🚨 Changed
 
 - **Self-service account deletion per company:** `DELETE /api/v1/user` no longer returns **409** for users in several companies. It removes only the token company's membership and company-scoped data, and keeps the account for the other companies. Users with a single company are still fully deleted.
@@ -47,6 +58,10 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 - **Magic link opens without a confirmation click:** `GET /api/v1/magic-link/verify` returns a page that submits itself, so users land in the app straight away. The token is still consumed by POST only, so email link scanners that fetch the URL don't burn it. Without JavaScript a **Continue sign-in** button remains.
 - **Names are never overwritten on sign-in:** OAuth and SAML sign-ins that link to an existing user by email only fill the name when the user has none. Previously an empty `last_name` was filled from the provider even when `first_name` was set. `GET` and `PUT /api/v1/user` now always return `name`/`full_name` from the user row instead of cached metadata.
 - **Magic link usernames:** new magic link users get a username from their email (`ada` for `ada@acme.com`, with a short suffix when taken) instead of `magic_<name>_<random>`.
+
+### 🐛 Bug Fixes
+
+- **Group events from the admin API:** creating, renaming and deleting a group through `/api/v1/groups`, and changing a user's groups through `PUT /api/v1/users/<id>` (`group_ids`), now emit `identity.group.created`, `identity.group.updated`, `identity.group.deleted` and `identity.group.membership_changed`. Before, only Django admin and SCIM emitted them, so webhooks never fired for groups managed in the admin app. Django admin now also emits `identity.group.membership_changed` when members or nested groups are edited, and `identity.group.deleted` for the bulk **Delete selected** action. Membership changes for a single user are linked to that user in the event log.
 
 ### 🔒 Security
 

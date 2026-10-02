@@ -5,8 +5,8 @@ from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from apps.actions.models import ActionOutbox, ActionRule
-from apps.authapi.models import LoginEvent, PersonalAccessToken, RefreshTokenSession
+from apps.actions.models import ActionOutbox, ActionRule, EventLog
+from apps.authapi.models import PersonalAccessToken, RefreshTokenSession
 from apps.authapi.tokens import ShellUIAccessToken
 from apps.authapi.views import _issue_shellui_tokens
 from apps.companies.access import set_company_access
@@ -290,17 +290,17 @@ class SelfServiceAccountDeleteTests(TestCase):
             access_global_metrics=False,
             name='other',
         )
-        own_event = LoginEvent.objects.create(
+        own_event = EventLog.objects.create(
             user=self.user,
             company=self.company,
-            outcome=LoginEvent.OUTCOME_SUCCESS,
-            provider='github',
+            event_type='identity.auth.login.succeeded',
+            data={'provider': 'github'},
         )
-        other_event = LoginEvent.objects.create(
+        other_event = EventLog.objects.create(
             user=self.user,
             company=self.other_company,
-            outcome=LoginEvent.OUTCOME_SUCCESS,
-            provider='github',
+            event_type='identity.auth.login.succeeded',
+            data={'provider': 'github'},
         )
         tokens = self._tokens()
 

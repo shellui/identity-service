@@ -30,6 +30,10 @@ Each company turns SCIM on by creating a **Company SCIM token** in Shellui admin
 
 Company **webhook rules** in Django admin map catalog events (`identity.scim.user.provisioned`, `identity.user.created`, group changes, SCIM conflicts, …) to **signed HTTPS endpoints** (n8n-friendly). Delivery uses a DB outbox and `transaction.on_commit` with `manage.py retry_webhooks` for retries. See **[docs/actions.md](docs/actions.md)** and **[docs/n8n.md](docs/n8n.md)**.
 
+Every event, and every sign-in, is also stored in the **event log** (`GET /api/v1/events`) for the company data retention (default 7 days, Django admin only). See **[docs/event-log.md](docs/event-log.md)**.
+
+**Scheduled jobs:** run `manage.py purge_expired_data` every hour and `manage.py retry_webhooks` every minute. See **[docs/scheduled-jobs.md](docs/scheduled-jobs.md)**.
+
 **Try locally:** set `EMAIL_BACKEND=config.email_backends.ConsoleEmailBackend` (default when `DEBUG=true`), create an Action rule for `identity.scim.user.provisioned`, then provision a user via SCIM.
 
 ## Project Structure
@@ -66,7 +70,8 @@ These routes require a valid JWT whose user has `is_staff=true` (`user_metadata.
 - `PUT /api/v1/users/<id>` — JSON body may include `first_name`, `last_name`, `is_staff` (staff only), `is_active` (staff or company owner; **per-company** membership enable), and optional `data` object to merge into cached metadata (same idea as `PUT /api/v1/user`). You cannot remove your own staff flag or disable your own company access via this API. Enabling a previously disabled membership emails the user.
 - `POST /api/v1/invitations`: invites `email` to the current company (staff or company owner). Stores a pending invitation (no account yet) and sends an invitation email in `language` (`en`, `fr`) linking to `app_url`, or emits `identity.user.invited` instead when a webhook rule exists. The first sign-in with that email accepts it. `GET /api/v1/invitations` lists open invitations; `POST /api/v1/invitations/<id>/revoke` revokes one, which blocks sign-in for that email; `DELETE /api/v1/invitations/<id>` deletes a revoked one for good, which lifts the block. See [docs/company-access.md](docs/company-access.md#invitations).
 - `DELETE /api/v1/users/<id>`: removes the user and their data from the current company (staff or company owner). The account is deleted only when this was their last company. Emits `identity.user.deleted` with `source=admin`. Refuses to delete yourself (400), a staff user unless you are staff (403), or a company's only owner (409 `last_company_owner`).
-- `PATCH /api/v1/companies/<id>/` — company owners may update `name`, `owner_ids`, `access_mode` (`public` \| `domain` \| `invite`), and `allowed_email_domains`.
+- `PATCH /api/v1/companies/<id>/` — company owners may update `name`, `owner_ids`, `access_mode` (`public` \| `domain` \| `invite`), and `allowed_email_domains`. `data_retention_days` is read-only (Django admin).
+- `GET /api/v1/events`, `GET /api/v1/events/<id>`, `GET /api/v1/events/types`, `GET /api/v1/events/retention`: event log and retention status (staff or company owner). See [docs/event-log.md](docs/event-log.md).
 
 ## Quick Start
 

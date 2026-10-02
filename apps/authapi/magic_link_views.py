@@ -30,7 +30,12 @@ from apps.companies.access import (
 )
 from apps.companies.redirect_allowlist import validate_redirect_to_for_company
 from apps.authapi import metrics as auth_metrics
-from apps.authapi.login_audit import client_ip_rate_limit_key, get_client_ip, record_login_event
+from apps.authapi.login_audit import (
+    LoginOutcome,
+    client_ip_rate_limit_key,
+    get_client_ip,
+    record_login_event,
+)
 from apps.authapi.magic_link import (
     create_magic_link_token,
     lookup_magic_link_token,
@@ -38,7 +43,6 @@ from apps.authapi.magic_link import (
     normalize_magic_link_language,
     redeem_magic_link_token,
 )
-from apps.authapi.models import LoginEvent
 from apps.authapi.serializers import (
     ShellUIMagicLinkConsumeSerializer,
     ShellUIMagicLinkRequestSerializer,
@@ -346,7 +350,7 @@ class ShellUIMagicLinkVerifyView(APIView):
         if err or row is None:
             record_login_event(
                 request=request,
-                outcome=LoginEvent.OUTCOME_FAILURE,
+                outcome=LoginOutcome.FAILURE,
                 provider=MAGIC_LINK_PROVIDER,
                 user=None,
                 company=company,
@@ -366,7 +370,7 @@ class ShellUIMagicLinkVerifyView(APIView):
             join = invitation_revoked_decision()
             record_login_event(
                 request=request,
-                outcome=LoginEvent.OUTCOME_FAILURE,
+                outcome=LoginOutcome.FAILURE,
                 provider=MAGIC_LINK_PROVIDER,
                 user=user,
                 company=company,
@@ -390,7 +394,7 @@ class ShellUIMagicLinkVerifyView(APIView):
         if not join.allowed:
             record_login_event(
                 request=request,
-                outcome=LoginEvent.OUTCOME_FAILURE,
+                outcome=LoginOutcome.FAILURE,
                 provider=MAGIC_LINK_PROVIDER,
                 user=user,
                 company=company,
@@ -407,7 +411,7 @@ class ShellUIMagicLinkVerifyView(APIView):
         auth_metrics.record_successful_login(MAGIC_LINK_PROVIDER, company_id=company.id)
         record_login_event(
             request=request,
-            outcome=LoginEvent.OUTCOME_SUCCESS,
+            outcome=LoginOutcome.SUCCESS,
             provider=MAGIC_LINK_PROVIDER,
             user=user,
             company=company,

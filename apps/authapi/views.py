@@ -9,7 +9,6 @@ from django.conf import settings
 from django.core.cache import cache
 from django.core.exceptions import ObjectDoesNotExist
 from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
-from django.utils.dateparse import parse_datetime
 from django.contrib.auth import get_user_model
 from django.contrib.auth.signals import user_logged_in
 from django.contrib.sites.models import Site
@@ -56,7 +55,7 @@ from apps.companies.redirect_allowlist import (
     validate_redirect_uri_for_company,
 )
 from .renderers import PrometheusTextRenderer
-from .login_audit import oauth_provider_redirect_uri, record_login_event
+from .login_audit import LoginOutcome, oauth_provider_redirect_uri, record_login_event
 from .oauth_state import (
     apple_oauth_bridge_cookie_value,
     build_oauth_state,
@@ -89,7 +88,7 @@ from .refresh_sessions import (
     validate_refresh_session,
 )
 from .authentication import ShellUIJWTAuthentication
-from .models import LoginEvent, PersonalAccessToken, UserPreference
+from .models import PersonalAccessToken, UserPreference
 from .user_activity import touch_user_last_seen
 from .throttling import rate_limit
 from .oauth import (
@@ -145,6 +144,12 @@ from apps.scim.provisioning_events import (
     record_group_display_name_conflict,
 )
 from apps.scim.tokens import generate_scim_token
+from apps.actions.scim_hooks import (
+    emit_group_created,
+    emit_group_deleted,
+    emit_group_membership_changed,
+    emit_group_updated,
+)
 from apps.actions.user_hooks import emit_oauth_user_created_if_new
 from .account_lifecycle import delete_user_for_company
 from .self_service_delete import (
@@ -239,7 +244,7 @@ def _oauth_id_token_invalid_response(
     detail = 'OAuth identity token could not be verified.'
     record_login_event(
         request=request,
-        outcome=LoginEvent.OUTCOME_FAILURE,
+        outcome=LoginOutcome.FAILURE,
         provider=provider,
         user=None,
         company=company,
@@ -270,7 +275,7 @@ def _oauth_provider_error_response(
 ):
     record_login_event(
         request=request,
-        outcome=LoginEvent.OUTCOME_FAILURE,
+        outcome=LoginOutcome.FAILURE,
         provider=provider,
         user=None,
         company=company,
@@ -1007,7 +1012,7 @@ def _finalize_shellui_oauth_login(
     auth_metrics.record_successful_login(provider, company_id=company.id)
     record_login_event(
         request=request,
-        outcome=LoginEvent.OUTCOME_SUCCESS,
+        outcome=LoginOutcome.SUCCESS,
         provider=provider,
         user=user,
         company=company,
@@ -1472,26 +1477,6 @@ def _personal_access_token_row(t: PersonalAccessToken, *, include_access_token: 
     return row
 
 
-def _login_event_payload(event: LoginEvent) -> dict:
-    return {
-        'id': event.id,
-        'company_id': event.company_id,
-        'created_at': event.created_at,
-        'user_id': event.user_id,
-        'user_email': event.user.email if event.user_id else None,
-        'outcome': event.outcome,
-        'provider': event.provider,
-        'failure_reason': event.failure_reason or '',
-        'is_staff_at_event': event.is_staff_at_event,
-        'ip_hash': event.ip_hash or '',
-        'user_agent': event.user_agent or '',
-        'client_timezone': event.client_timezone or '',
-        'client_device_id_hash': event.client_device_id_hash or '',
-        'client_country': event.client_country or '',
-        'client_city': event.client_city or '',
-    }
-
-
 def _admin_user_payload(user: User, company: Company) -> dict:
     cache_key = f"shellui:user_metadata:{user.id}"
     user_metadata = cache.get(cache_key) or {
@@ -1662,7 +1647,7 @@ class SocialLoginView(APIView):
             if resolve_err or profile is None or user is None:
                 record_login_event(
                     request=request,
-                    outcome=LoginEvent.OUTCOME_FAILURE,
+                    outcome=LoginOutcome.FAILURE,
                     provider=provider,
                     user=None,
                     company=company,
@@ -1688,7 +1673,7 @@ class SocialLoginView(APIView):
         except Exception:
             record_login_event(
                 request=request,
-                outcome=LoginEvent.OUTCOME_FAILURE,
+                outcome=LoginOutcome.FAILURE,
                 provider=provider,
                 user=None,
                 company=company,
@@ -1719,7 +1704,7 @@ class SocialLoginView(APIView):
         if not join.allowed:
             record_login_event(
                 request=request,
-                outcome=LoginEvent.OUTCOME_FAILURE,
+                outcome=LoginOutcome.FAILURE,
                 provider=provider,
                 user=user,
                 company=company,
@@ -1733,7 +1718,7 @@ class SocialLoginView(APIView):
         auth_metrics.record_successful_login(provider, company_id=company.id)
         record_login_event(
             request=request,
-            outcome=LoginEvent.OUTCOME_SUCCESS,
+            outcome=LoginOutcome.SUCCESS,
             provider=provider,
             user=user,
             company=company,
@@ -2234,7 +2219,7 @@ class ShellUIOAuthCallbackView(APIView):
             if resolve_err or profile is None or user is None:
                 record_login_event(
                     request=request,
-                    outcome=LoginEvent.OUTCOME_FAILURE,
+                    outcome=LoginOutcome.FAILURE,
                     provider=provider,
                     user=None,
                     company=company,
@@ -2277,7 +2262,7 @@ class ShellUIOAuthCallbackView(APIView):
             )
             record_login_event(
                 request=request,
-                outcome=LoginEvent.OUTCOME_FAILURE,
+                outcome=LoginOutcome.FAILURE,
                 provider=provider,
                 user=None,
                 company=company,
@@ -2315,7 +2300,7 @@ class ShellUIOAuthCallbackView(APIView):
         if not join.allowed:
             record_login_event(
                 request=request,
-                outcome=LoginEvent.OUTCOME_FAILURE,
+                outcome=LoginOutcome.FAILURE,
                 provider=provider,
                 user=user,
                 company=company,
@@ -2579,7 +2564,7 @@ class ShellUIOAuthExchangeView(APIView):
             if resolve_err or profile is None or user is None:
                 record_login_event(
                     request=request,
-                    outcome=LoginEvent.OUTCOME_FAILURE,
+                    outcome=LoginOutcome.FAILURE,
                     provider=provider,
                     user=None,
                     company=company,
@@ -2605,7 +2590,7 @@ class ShellUIOAuthExchangeView(APIView):
         except Exception:
             record_login_event(
                 request=request,
-                outcome=LoginEvent.OUTCOME_FAILURE,
+                outcome=LoginOutcome.FAILURE,
                 provider=provider,
                 user=None,
                 company=company,
@@ -2635,7 +2620,7 @@ class ShellUIOAuthExchangeView(APIView):
         if not join.allowed:
             record_login_event(
                 request=request,
-                outcome=LoginEvent.OUTCOME_FAILURE,
+                outcome=LoginOutcome.FAILURE,
                 provider=provider,
                 user=user,
                 company=company,
@@ -2649,7 +2634,7 @@ class ShellUIOAuthExchangeView(APIView):
         auth_metrics.record_successful_login(provider, company_id=company.id)
         record_login_event(
             request=request,
-            outcome=LoginEvent.OUTCOME_SUCCESS,
+            outcome=LoginOutcome.SUCCESS,
             provider=provider,
             user=user,
             company=company,
@@ -3300,11 +3285,14 @@ class ShellUIAdminUserDetailView(APIView):
                     {'error': f'Unknown manual group ids for this company: {missing_ids}.'},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
+            current_ids = set(target.company_groups.filter(pk__in=existing_manual_ids).values_list('pk', flat=True))
             for g in manual_groups:
-                if g.id in requested_ids:
+                if g.id in requested_ids and g.id not in current_ids:
                     g.members.add(target)
-                else:
+                    emit_group_membership_changed(company, g, change='members_added', user_ids=[target.pk])
+                elif g.id not in requested_ids and g.id in current_ids:
                     g.members.remove(target)
+                    emit_group_membership_changed(company, g, change='members_removed', user_ids=[target.pk])
 
         data = validated.get('data')
         if isinstance(data, dict):
@@ -3490,6 +3478,7 @@ class ShellUIAdminGroupListView(APIView):
             if retry:
                 return retry
             raise
+        emit_group_created(company, g)
         return Response(_admin_group_row(g), status=status.HTTP_201_CREATED)
 
 
@@ -3552,6 +3541,7 @@ class ShellUIAdminGroupDetailView(APIView):
         )
         if conflict:
             return conflict
+        renamed = g.display_name != display_name
         g.display_name = display_name
         try:
             g.save(update_fields=['display_name'])
@@ -3565,6 +3555,8 @@ class ShellUIAdminGroupDetailView(APIView):
             if retry:
                 return retry
             raise
+        if renamed:
+            emit_group_updated(company, g, changed_fields=['display_name'])
         g = CompanyGroup.objects.filter(company=company).annotate(user_count=Count('members', distinct=True)).get(pk=g.pk)
         return Response(_admin_group_row(g))
 
@@ -3582,6 +3574,7 @@ class ShellUIAdminGroupDetailView(APIView):
         blocked = _forbid_scim_group_admin_mutation(g)
         if blocked:
             return blocked
+        emit_group_deleted(company, g)
         g.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -4307,213 +4300,6 @@ class ShellUIHostingOAuthRedirectSyncView(APIView):
             source=CompanyOAuthRedirect.SOURCE_HOSTING,
         ).delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
-
-
-@extend_schema_view(
-    get=extend_schema(
-        tags=['audit-events'],
-        summary='List login audit events (staff or company owner)',
-        description=(
-            'Paginated OAuth sign-in attempts (success and failure). '
-            'Contains privacy-oriented fields (hashed IP, truncated user-agent). '
-        ),
-        operation_id='api_v1_login_events_list',
-        parameters=[
-            OpenApiParameter(
-                name='user_id',
-                type=int,
-                location=OpenApiParameter.QUERY,
-                required=False,
-                description='Filter by Django user id.',
-            ),
-            OpenApiParameter(
-                name='outcome',
-                type=str,
-                location=OpenApiParameter.QUERY,
-                required=False,
-                description='success or failure.',
-            ),
-            OpenApiParameter(
-                name='provider',
-                type=str,
-                location=OpenApiParameter.QUERY,
-                required=False,
-                description='OAuth provider slug (github, google, microsoft).',
-            ),
-            OpenApiParameter(
-                name='is_staff_at_event',
-                type=bool,
-                location=OpenApiParameter.QUERY,
-                required=False,
-                description='Filter rows where the user was staff at login time.',
-            ),
-            OpenApiParameter(
-                name='created_after',
-                type=str,
-                location=OpenApiParameter.QUERY,
-                required=False,
-                description='ISO 8601 datetime (inclusive lower bound).',
-            ),
-            OpenApiParameter(
-                name='created_before',
-                type=str,
-                location=OpenApiParameter.QUERY,
-                required=False,
-                description='ISO 8601 datetime (exclusive upper bound).',
-            ),
-            OpenApiParameter(
-                name='client_country',
-                type=str,
-                location=OpenApiParameter.QUERY,
-                required=False,
-                description='Case-insensitive substring match on GeoIP country (stored value).',
-            ),
-            OpenApiParameter(
-                name='client_city',
-                type=str,
-                location=OpenApiParameter.QUERY,
-                required=False,
-                description='Case-insensitive substring match on GeoIP city.',
-            ),
-            OpenApiParameter(
-                name='client_timezone',
-                type=str,
-                location=OpenApiParameter.QUERY,
-                required=False,
-                description='Case-insensitive substring match on client IANA timezone.',
-            ),
-            OpenApiParameter(
-                name='language',
-                type=str,
-                location=OpenApiParameter.QUERY,
-                required=False,
-                description=(
-                    "Filter rows where the user's saved Shellui preference language matches "
-                    '(e.g. en, fr). Omits anonymous events (no user).'
-                ),
-            ),
-            OpenApiParameter(name='page', type=int, location=OpenApiParameter.QUERY, required=False),
-            OpenApiParameter(name='page_size', type=int, location=OpenApiParameter.QUERY, required=False),
-        ],
-        responses={200: OpenApiResponse(description='Paginated list of login audit events')},
-    ),
-)
-class ShellUIAdminLoginEventListView(APIView):
-    permission_classes = [ShellUIPermission]
-
-    def get(self, request):
-        _actor, company, err = _require_staff_or_company_owner(request)
-        if err:
-            return err
-
-        try:
-            page = max(1, int(request.GET.get('page') or 1))
-            page_size = min(100, max(1, int(request.GET.get('page_size') or 20)))
-        except (TypeError, ValueError):
-            return Response(
-                {'error': 'Invalid page or page_size.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        qs = LoginEvent.objects.filter(company=company).select_related('user').order_by('-created_at', '-id')
-
-        uid = request.GET.get('user_id')
-        if uid is not None and str(uid).strip():
-            try:
-                qs = qs.filter(user_id=int(uid))
-            except (TypeError, ValueError):
-                return Response({'error': 'Invalid user_id.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        outcome = (request.GET.get('outcome') or '').strip().lower()
-        if outcome:
-            if outcome not in (LoginEvent.OUTCOME_SUCCESS, LoginEvent.OUTCOME_FAILURE):
-                return Response({'error': 'Invalid outcome.'}, status=status.HTTP_400_BAD_REQUEST)
-            qs = qs.filter(outcome=outcome)
-
-        prov = (request.GET.get('provider') or '').strip().lower()
-        if prov:
-            qs = qs.filter(provider=prov)
-
-        staff_raw = request.GET.get('is_staff_at_event')
-        if staff_raw is not None and str(staff_raw).strip() != '':
-            s = str(staff_raw).strip().lower()
-            if s in ('1', 'true', 'yes'):
-                qs = qs.filter(is_staff_at_event=True)
-            elif s in ('0', 'false', 'no'):
-                qs = qs.filter(is_staff_at_event=False)
-            else:
-                return Response(
-                    {'error': 'Invalid is_staff_at_event (use true or false).'},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-
-        ca = (request.GET.get('created_after') or '').strip()
-        if ca:
-            dt = parse_datetime(ca)
-            if not dt:
-                return Response({'error': 'Invalid created_after.'}, status=status.HTTP_400_BAD_REQUEST)
-            qs = qs.filter(created_at__gte=dt)
-
-        cb = (request.GET.get('created_before') or '').strip()
-        if cb:
-            dt = parse_datetime(cb)
-            if not dt:
-                return Response({'error': 'Invalid created_before.'}, status=status.HTTP_400_BAD_REQUEST)
-            qs = qs.filter(created_at__lt=dt)
-
-        cc = (request.GET.get('client_country') or '').strip()
-        if cc:
-            qs = qs.filter(client_country__icontains=cc)
-
-        city = (request.GET.get('client_city') or '').strip()
-        if city:
-            qs = qs.filter(client_city__icontains=city)
-
-        ctz = (request.GET.get('client_timezone') or '').strip()
-        if ctz:
-            qs = qs.filter(client_timezone__icontains=ctz)
-
-        lang = (request.GET.get('language') or '').strip().lower()
-        if lang:
-            allowed_lang = {choice[0] for choice in UserPreference.LANGUAGE_CHOICES}
-            if lang not in allowed_lang:
-                return Response({'error': 'Invalid language.'}, status=status.HTTP_400_BAD_REQUEST)
-            qs = qs.filter(user__preference__language=lang)
-
-        total = qs.count()
-        start = (page - 1) * page_size
-        rows = [_login_event_payload(e) for e in qs[start : start + page_size]]
-        return Response(
-            {
-                'count': total,
-                'page': page,
-                'page_size': page_size,
-                'results': rows,
-            }
-        )
-
-
-@extend_schema_view(
-    get=extend_schema(
-        tags=['audit-events'],
-        summary='Retrieve login audit event (staff or company owner)',
-        description='Single login event row.',
-        operation_id='api_v1_login_events_retrieve',
-        responses={200: OpenApiResponse(description='Login audit event')},
-    ),
-)
-class ShellUIAdminLoginEventDetailView(APIView):
-    permission_classes = [ShellUIPermission]
-
-    def get(self, request, pk):
-        _actor, company, err = _require_staff_or_company_owner(request)
-        if err:
-            return err
-        try:
-            event = LoginEvent.objects.select_related('user').get(pk=pk, company=company)
-        except LoginEvent.DoesNotExist:
-            return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
-        return Response(_login_event_payload(event))
 
 
 @extend_schema_view(

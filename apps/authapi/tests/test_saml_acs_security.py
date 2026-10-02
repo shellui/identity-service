@@ -552,7 +552,7 @@ class SAMLACSSecurityTests(TestCase):
         self._assert_rejected(saml, request_id, 'saml_email_required')
 
     def test_successful_login_records_one_login_event(self):
-        from apps.authapi.models import LoginEvent
+        from apps.actions.models import EventLog
 
         request_id = '_onelogin001'
         saml = build_signed_saml_response(
@@ -564,7 +564,7 @@ class SAMLACSSecurityTests(TestCase):
         )
         finish = self._post_saml(saml, request_id=request_id, return_response=True)
         self.assertEqual(finish.status_code, 200)
-        self.assertEqual(LoginEvent.objects.filter(outcome=LoginEvent.OUTCOME_SUCCESS).count(), 0)
+        self.assertEqual(EventLog.objects.filter(event_type='identity.auth.login.succeeded').count(), 0)
         confirm_token = self._confirm_token_from_finish(finish)
         confirmed = self.client.post(
             '/api/v1/oauth/confirm',
@@ -572,7 +572,7 @@ class SAMLACSSecurityTests(TestCase):
             HTTP_HOST=self.http_host,
         )
         self.assertIn(confirmed.status_code, {302, 200})
-        self.assertEqual(LoginEvent.objects.filter(outcome=LoginEvent.OUTCOME_SUCCESS).count(), 1)
+        self.assertEqual(EventLog.objects.filter(event_type='identity.auth.login.succeeded').count(), 1)
 
     def test_slo_revokes_company_refresh_sessions(self):
         import xmlsec
@@ -580,7 +580,8 @@ class SAMLACSSecurityTests(TestCase):
         from onelogin.saml2.constants import OneLogin_Saml2_Constants
         from onelogin.saml2.utils import OneLogin_Saml2_Utils
 
-        from apps.authapi.models import LoginEvent, RefreshTokenSession
+        from apps.actions.models import EventLog
+        from apps.authapi.models import RefreshTokenSession
 
         request_id = '_slotestlogin01'
         name_id = 'slo-user'
@@ -595,7 +596,7 @@ class SAMLACSSecurityTests(TestCase):
         self.assertEqual(finish.status_code, 200, finish.content[:400])
         confirm_token = self._confirm_token_from_finish(finish)
         self.client.post('/api/v1/oauth/confirm', {'confirm_token': confirm_token}, HTTP_HOST=self.http_host)
-        self.assertEqual(LoginEvent.objects.filter(outcome=LoginEvent.OUTCOME_SUCCESS).count(), 1)
+        self.assertEqual(EventLog.objects.filter(event_type='identity.auth.login.succeeded').count(), 1)
         account = SocialAccount.objects.get(provider=saml_social_account_provider_key(self.app))
         self.assertTrue(
             RefreshTokenSession.objects.filter(user=account.user, company=self.company, revoked_at__isnull=True).exists()

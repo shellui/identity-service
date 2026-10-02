@@ -1,5 +1,14 @@
 from django.urls import include, path
 
+from apps.actions.event_log_views import (
+    ShellUIAdminEventDetailView,
+    ShellUIAdminEventListView,
+    ShellUIAdminEventRetentionView,
+    ShellUIAdminEventTypesView,
+    ShellUIAdminLoginEventDetailView,
+    ShellUIAdminLoginEventListView,
+)
+
 from .invitation_views import (
     ShellUIAdminInvitationDetailView,
     ShellUIAdminInvitationRevokeView,
@@ -16,8 +25,6 @@ from .saml.views import (
 from .views import (
     ShellUIAdminGroupDetailView,
     ShellUIAdminGroupListView,
-    ShellUIAdminLoginEventDetailView,
-    ShellUIAdminLoginEventListView,
     ShellUIAdminOAuthClientDetailView,
     ShellUIAdminOAuthClientListView,
     ShellUIAdminOAuthRedirectDetailView,
@@ -65,6 +72,10 @@ urlpatterns = [
     path('groups', ShellUIAdminGroupListView.as_view(), name='shellui-admin-groups'),
     path('groups/<int:pk>', ShellUIAdminGroupDetailView.as_view(), name='shellui-admin-group-detail'),
     path('users', ShellUIAdminUserListView.as_view(), name='shellui-admin-users'),
+    path('events', ShellUIAdminEventListView.as_view(), name='shellui-admin-events'),
+    path('events/types', ShellUIAdminEventTypesView.as_view(), name='shellui-admin-event-types'),
+    path('events/retention', ShellUIAdminEventRetentionView.as_view(), name='shellui-admin-event-retention'),
+    path('events/<int:pk>', ShellUIAdminEventDetailView.as_view(), name='shellui-admin-event-detail'),
     path('login-events', ShellUIAdminLoginEventListView.as_view(), name='shellui-admin-login-events'),
     path('login-events/<int:pk>', ShellUIAdminLoginEventDetailView.as_view(), name='shellui-admin-login-event-detail'),
     path('oauth-clients', ShellUIAdminOAuthClientListView.as_view(), name='shellui-admin-oauth-clients'),

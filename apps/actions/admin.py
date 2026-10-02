@@ -8,7 +8,7 @@ from django.utils.html import escape, format_html
 from django.utils.safestring import mark_safe
 
 from apps.actions.admin_forms import ActionRuleAdminForm
-from apps.actions.models import ActionOutbox, ActionRule, DeliveryAttempt
+from apps.actions.models import ActionOutbox, ActionRule, DeliveryAttempt, EventLog
 from apps.actions.registry import get_event_type
 
 _RECENT_DELIVERIES_INLINE_LIMIT = 20
@@ -371,3 +371,28 @@ class DeliveryAttemptAdmin(admin.ModelAdmin):
 
     def has_view_permission(self, request, obj=None):
         return request.user.is_active and request.user.is_staff
+
+
+@admin.register(EventLog)
+class EventLogAdmin(admin.ModelAdmin):
+    list_display = ('id', 'created_at', 'event_type', 'company', 'user')
+    list_filter = ('event_type',)
+    search_fields = ('user__email', 'company__slug')
+    list_select_related = ('company', 'user')
+    raw_id_fields = ('company', 'user')
+    ordering = ('-created_at', '-id')
+    # Counting a large log on every page load is the expensive part of this view.
+    show_full_result_count = False
+    readonly_fields = ('company', 'user', 'event_type', 'data_display', 'created_at')
+    fields = readonly_fields
+
+    @admin.display(description='Data')
+    def data_display(self, obj: EventLog) -> str:
+        text = json.dumps(obj.data or {}, indent=2, sort_keys=True, ensure_ascii=False)
+        return format_html('<pre style="margin:0;white-space:pre-wrap">{}</pre>', text)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False

@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.db.models import Q
 from django.utils.text import slugify
@@ -91,6 +92,15 @@ class Company(models.Model):
         help_text=(
             'When true (default for new companies), users can request passwordless email magic links '
             'for this company. Requires deployment MAGIC_LINK_ENABLED.'
+        ),
+    )
+    DEFAULT_DATA_RETENTION_DAYS = 7
+    data_retention_days = models.PositiveSmallIntegerField(
+        default=DEFAULT_DATA_RETENTION_DAYS,
+        validators=[MinValueValidator(1), MaxValueValidator(3650)],
+        help_text=(
+            'Days to keep the event log and finished webhook deliveries before '
+            '"manage.py purge_expired_data" deletes them. Django admin only.'
         ),
     )
 

@@ -6,8 +6,7 @@ from django.core.cache import cache
 from django.http import HttpRequest, HttpResponseRedirect
 
 from apps.actions.user_hooks import emit_oauth_user_created_if_new
-from apps.authapi.login_audit import record_login_event
-from apps.authapi.models import LoginEvent
+from apps.authapi.login_audit import LoginOutcome, record_login_event
 from apps.authapi.oauth import should_skip_oauth_confirm
 from apps.authapi.oauth_social_account import bind_oauth_social_app, compose_social_account_uid
 from apps.authapi.oauth_user import OAuthProfile
@@ -113,7 +112,7 @@ def complete_shellui_saml_login(
     if perror or profile is None:
         record_login_event(
             request=request,
-            outcome=LoginEvent.OUTCOME_FAILURE,
+            outcome=LoginOutcome.FAILURE,
             provider=provider,
             user=None,
             company=company,
@@ -131,7 +130,7 @@ def complete_shellui_saml_login(
         revoked = invitation_revoked_decision()
         record_login_event(
             request=request,
-            outcome=LoginEvent.OUTCOME_FAILURE,
+            outcome=LoginOutcome.FAILURE,
             provider=provider,
             user=None,
             company=company,
@@ -149,7 +148,7 @@ def complete_shellui_saml_login(
         failure_code = uerror or 'saml_user_resolution_failed'
         record_login_event(
             request=request,
-            outcome=LoginEvent.OUTCOME_FAILURE,
+            outcome=LoginOutcome.FAILURE,
             provider=provider,
             user=None,
             company=company,
@@ -183,7 +182,7 @@ def complete_shellui_saml_login(
     if not join.allowed:
         record_login_event(
             request=request,
-            outcome=LoginEvent.OUTCOME_FAILURE,
+            outcome=LoginOutcome.FAILURE,
             provider=provider,
             user=user,
             company=company,

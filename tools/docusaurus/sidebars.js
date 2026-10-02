@@ -35,8 +35,18 @@ const sidebars = {
     },
     {
       type: 'doc',
+      id: 'event-log',
+      label: 'Event log',
+    },
+    {
+      type: 'doc',
       id: 'configuration',
       label: 'Configuration',
+    },
+    {
+      type: 'doc',
+      id: 'scheduled-jobs',
+      label: 'Scheduled jobs',
     },
     {
       type: 'doc',

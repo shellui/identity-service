@@ -48,6 +48,7 @@ class CompanyAdminFormTests(TestCase):
                 'slug': company.slug,
                 'access_mode': Company.ACCESS_DOMAIN,
                 'allowed_email_domains': '@Acme.COM, other.io',
+                'data_retention_days': 7,
             },
             instance=company,
         )
@@ -80,6 +81,7 @@ class CompanyAdminFormTests(TestCase):
                 'slug': company.slug,
                 'access_mode': Company.ACCESS_DOMAIN,
                 'allowed_email_domains': "['sebastienbarbier.com']",
+                'data_retention_days': 7,
             },
             instance=company,
         )
@@ -106,6 +108,7 @@ class CompanyAdminFormTests(TestCase):
                 'slug': 'open',
                 'access_mode': Company.ACCESS_PUBLIC,
                 'allowed_email_domains': '',
+                'data_retention_days': 7,
             }
         )
         self.assertTrue(form.is_valid(), form.errors)

@@ -1,5 +1,5 @@
 """
-Record LoginEvent rows for Django admin username/password sign-in (contrib.admin login form).
+Record sign-in events for Django admin username/password sign-in (contrib.admin login form).
 
 Uses auth signals so we do not fork or wrap AdminSite. Scoped to requests whose path is the
 admin login URL (success and failure).
@@ -11,8 +11,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.signals import user_logged_in, user_login_failed
 from django.dispatch import receiver
 
-from .login_audit import record_login_event
-from .models import LoginEvent
+from .login_audit import LoginOutcome, record_login_event
 from .user_activity import touch_user_last_seen
 
 User = get_user_model()
@@ -46,7 +45,7 @@ def login_event_on_admin_session_login(sender, request, user, **kwargs):
         return
     record_login_event(
         request=request,
-        outcome=LoginEvent.OUTCOME_SUCCESS,
+        outcome=LoginOutcome.SUCCESS,
         provider=PROVIDER_DJANGO_ADMIN,
         user=user,
     )
@@ -60,7 +59,7 @@ def login_event_on_admin_session_login_failed(sender, credentials, request, **kw
     candidate = _user_from_failed_credentials(credentials if isinstance(credentials, dict) else None)
     record_login_event(
         request=request,
-        outcome=LoginEvent.OUTCOME_FAILURE,
+        outcome=LoginOutcome.FAILURE,
         provider=PROVIDER_DJANGO_ADMIN,
         user=candidate,
         failure_reason='Invalid credentials',

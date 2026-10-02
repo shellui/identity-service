@@ -156,24 +156,6 @@ class ShellUIAdminGroupUpdateSerializer(serializers.Serializer):
     display_name = serializers.CharField(max_length=150)
 
 
-class ShellUIAdminLoginEventSerializer(serializers.Serializer):
-    id = serializers.IntegerField()
-    company_id = serializers.IntegerField(allow_null=True)
-    created_at = serializers.DateTimeField()
-    user_id = serializers.IntegerField(allow_null=True)
-    user_email = serializers.EmailField(allow_null=True, required=False)
-    outcome = serializers.CharField()
-    provider = serializers.CharField()
-    failure_reason = serializers.CharField(allow_blank=True)
-    is_staff_at_event = serializers.BooleanField()
-    ip_hash = serializers.CharField(allow_blank=True)
-    user_agent = serializers.CharField(allow_blank=True)
-    client_timezone = serializers.CharField(allow_blank=True)
-    client_device_id_hash = serializers.CharField(allow_blank=True)
-    client_country = serializers.CharField(allow_blank=True)
-    client_city = serializers.CharField(allow_blank=True)
-
-
 class ShellUIAdminOAuthClientCreateSerializer(serializers.Serializer):
     social_app_id = serializers.IntegerField(min_value=1)
     is_active = serializers.BooleanField(required=False, default=True)

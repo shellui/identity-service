@@ -6,6 +6,7 @@ from typing import Any
 
 from apps.actions.delivery import schedule_outbox_delivery
 from apps.actions.envelope import build_envelope
+from apps.actions.event_log import record_event
 from apps.actions.models import ActionOutbox, ActionRule
 from apps.actions.registry import get_event_type
 from apps.companies.models import Company
@@ -20,12 +21,17 @@ def emit_event(
     force: bool = False,
 ) -> list[ActionOutbox]:
     """
-    Validate ``event_type``, match enabled webhook ``ActionRule`` rows for ``company``, write outbox rows.
+    Validate ``event_type``, record it in the event log, then write outbox rows for enabled
+    webhook ``ActionRule`` rows of ``company``.
 
     Schedules a best-effort delivery attempt after the surrounding database transaction commits.
     """
     event = get_event_type(event_type)
     if not event.emit_by_default and not force:
+        return []
+
+    record_event(event, company, payload)
+    if not event.webhook:
         return []
 
     rules = list(

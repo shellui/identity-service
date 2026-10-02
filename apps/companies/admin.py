@@ -5,7 +5,13 @@ from django.template.response import TemplateResponse
 from django.urls import path, reverse
 from django.utils.html import format_html
 
-from apps.actions.scim_hooks import emit_group_created, emit_group_deleted, emit_group_updated
+from apps.actions.retention import retention_status
+from apps.actions.scim_hooks import (
+    emit_group_created,
+    emit_group_deleted,
+    emit_group_membership_changed,
+    emit_group_updated,
+)
 from apps.authapi.provider_registry import supported_oauth_provider_slugs
 from .access import normalize_allowed_domains
 from .models import Company, CompanyGroup, CompanyMembership, CompanyOAuthClient, CompanyOAuthRedirect
@@ -78,6 +84,7 @@ class CompanyAdminForm(forms.ModelForm):
             'allowed_email_domains',
             'verified_email_domains',
             'enable_magic_link',
+            'data_retention_days',
             'owners',
         )
 
@@ -149,6 +156,7 @@ class CompanyAdmin(admin.ModelAdmin):
     search_fields = ('name', 'slug')
     filter_horizontal = ('owners',)
     inlines = [CompanyMembershipInline, CompanyOAuthClientInline]
+    readonly_fields = ('retention_status_display',)
     fieldsets = (
         (None, {'fields': ('name', 'slug')}),
         (
@@ -169,6 +177,17 @@ class CompanyAdmin(admin.ModelAdmin):
                     'Domains confirmed owned by this company. Required for SAML email linking when '
                     'an IdP has trusted_for_verified_domains. Set here after manual ownership proof; '
                     'company owners cannot change this through the Shellui admin API.'
+                ),
+            },
+        ),
+        (
+            'Data retention (platform only)',
+            {
+                'fields': ('data_retention_days', 'retention_status_display'),
+                'description': (
+                    'Event log rows, finished webhook deliveries and SCIM provisioning events are deleted '
+                    'after this many days by the purge_expired_data scheduled job. '
+                    'Company owners see the value in the admin panel but cannot change it.'
                 ),
             },
         ),
@@ -206,6 +225,20 @@ class CompanyAdmin(admin.ModelAdmin):
         if len(text) > 48:
             return text[:45] + '…'
         return text
+
+    @admin.display(description='Retention status')
+    def retention_status_display(self, obj: Company):
+        if not obj.pk:
+            return '-'
+        status = retention_status(obj)
+        if status['stale_events']:
+            return format_html(
+                '<strong style="color:#ba2121">Events older than {} days are still stored (oldest: {}). '
+                'Schedule "manage.py purge_expired_data" (see docs/scheduled-jobs.md).</strong>',
+                status['data_retention_days'] + 1,
+                status['oldest_event_at'],
+            )
+        return f"OK. Oldest event: {status['oldest_event_at'] or 'none'}."
 
     @admin.display(description='OAuth clients')
     def oauth_clients_link(self, obj: Company):
@@ -332,10 +365,35 @@ class CompanyGroupAdmin(admin.ModelAdmin):
             if changed:
                 emit_group_updated(obj.company, obj, changed_fields=changed)
 
+    def save_related(self, request, form, formsets, change):
+        group = form.instance
+        before_users = set(group.members.values_list('pk', flat=True)) if change else set()
+        before_groups = set(group.member_groups.values_list('pk', flat=True)) if change else set()
+        super().save_related(request, form, formsets, change)
+        after_users = set(group.members.values_list('pk', flat=True))
+        after_groups = set(group.member_groups.values_list('pk', flat=True))
+        for change_name, user_ids, group_ids in (
+            ('members_added', after_users - before_users, after_groups - before_groups),
+            ('members_removed', before_users - after_users, before_groups - after_groups),
+        ):
+            if user_ids or group_ids:
+                emit_group_membership_changed(
+                    group.company,
+                    group,
+                    change=change_name,
+                    user_ids=sorted(user_ids),
+                    nested_group_ids=sorted(group_ids),
+                )
+
     def delete_model(self, request, obj):
         company = obj.company
         emit_group_deleted(company, obj)
         super().delete_model(request, obj)
+
+    def delete_queryset(self, request, queryset):
+        for group in queryset.select_related('company'):
+            emit_group_deleted(group.company, group)
+        super().delete_queryset(request, queryset)
 
 
 @admin.register(CompanyOAuthClient)

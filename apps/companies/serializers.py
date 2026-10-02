@@ -16,13 +16,15 @@ class CompanySerializer(serializers.ModelSerializer):
             'owners',
             'access_mode',
             'allowed_email_domains',
+            'data_retention_days',
         ]
+        read_only_fields = ['data_retention_days']
 
 
 class CompanyUpdateSerializer(serializers.Serializer):
     """
-    Company owner settings API. ``verified_email_domains`` is intentionally omitted;
-    only platform operators set it in Django admin after domain ownership proof.
+    Company owner settings API. ``verified_email_domains`` and ``data_retention_days`` are
+    intentionally omitted; only platform operators set them in Django admin.
     """
 
     name = serializers.CharField(required=False, allow_blank=False, max_length=255)

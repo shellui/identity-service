@@ -20,6 +20,10 @@ class DomainEventType:
     description: str
     payload_fields: tuple[EventFieldDoc, ...] = ()
     emit_by_default: bool = True
+    # False: recorded in the event log only, never offered as a webhook rule trigger.
+    webhook: bool = True
+    # Payload keys sent to webhooks but never written to the event log (live credentials).
+    sensitive_fields: tuple[str, ...] = ()
 
 
 _REGISTRY: dict[str, DomainEventType] = {}
@@ -43,8 +47,17 @@ def is_registered_event(event_id: str) -> bool:
     return event_id in _REGISTRY
 
 
+def is_webhook_event(event_id: str) -> bool:
+    event = _REGISTRY.get(event_id)
+    return event is not None and event.webhook
+
+
 def all_event_types() -> list[DomainEventType]:
     return sorted(_REGISTRY.values(), key=lambda e: e.id)
+
+
+def webhook_event_types() -> list[DomainEventType]:
+    return [e for e in all_event_types() if e.webhook]
 
 
 def event_field_doc_dict(field: EventFieldDoc) -> dict:
@@ -62,5 +75,5 @@ def event_choices() -> list[tuple[str, str]]:
             f'{e.label} ({e.id})'
             + (' — not emitted yet' if not e.emit_by_default else ''),
         )
-        for e in all_event_types()
+        for e in webhook_event_types()
     ]

@@ -8,11 +8,11 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
+from apps.actions.models import EventLog
 from apps.actions.user_hooks import emit_user_account_deleted, emit_user_deleted_for_all_companies
 from apps.companies.models import Company, CompanyGroup, CompanyMembership
 
 from .models import (
-    LoginEvent,
     MagicLinkToken,
     OAuthSessionDeliveryCode,
     PersonalAccessToken,
@@ -76,7 +76,7 @@ def remove_user_from_company(user, company, *, source: str) -> None:
     """
     Erase the user's data scoped to ``company`` and keep the account for their other companies.
 
-    Emits ``identity.user.deleted`` for ``company`` only. Login audit rows for the company are
+    Emits ``identity.user.deleted`` for ``company`` only. Event log rows for the company are
     kept but detached from the user, matching what a full account delete does.
     """
     emit_user_account_deleted(company, user, source=source)
@@ -92,7 +92,7 @@ def remove_user_from_company(user, company, *, source: str) -> None:
         SocialAccount.objects.filter(user=user, provider__in=provider_ids).delete()
     user.company_groups.remove(*CompanyGroup.objects.filter(company=company, members=user))
     company.owners.remove(user)
-    LoginEvent.objects.filter(user=user, company=company).update(user=None)
+    EventLog.objects.filter(user=user, company=company).update(user=None)
     CompanyMembership.objects.filter(user=user, company=company).delete()
     cache.delete(f'shellui:user_metadata:{user.id}')
 
