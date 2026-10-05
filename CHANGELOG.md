@@ -23,6 +23,22 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 ## [Unreleased] - 2026-09-29
 
+### 🐛 Bug Fixes
+
+- **No more endless sign-in requests from a slow mail server:** SMTP now gives up after `EMAIL_TIMEOUT` seconds (default 10). Before, Django waited with no limit, so a company access email sent during an OAuth callback could hold the sign-in request forever.
+- **Postgres deadlines:** queries are cancelled after `POSTGRES_STATEMENT_TIMEOUT` seconds (default 15) and lock waits after `POSTGRES_LOCK_TIMEOUT` seconds (default 5). Set either to `0` to turn it off. They are not applied to `migrate` and have no effect on SQLite.
+
+### 🛠 Improvements
+
+- **Logs you can see in production:** gunicorn now writes access and error logs to stdout, and each access line ends with the request duration and request id. Django errors and warnings (500s, `DisallowedHost`, CSRF failures) are printed to stdout also when `DEBUG=false`. App log level is set with `LOG_LEVEL`.
+- **Request id:** every response carries an `X-Request-ID` header (taken from the incoming request when present, otherwise generated), and every log line includes it as `[req=<id>]`, like the other Shellui services.
+- **Slow request warning:** requests slower than `SLOW_REQUEST_THRESHOLD_SECONDS` (default 2) are logged as a warning with method, path, status and duration.
+- **Gunicorn:** heartbeat file in `/dev/shm`, workers recycled after `GUNICORN_MAX_REQUESTS` (default 1000) plus up to `GUNICORN_MAX_REQUESTS_JITTER` (default 200) requests, `GUNICORN_GRACEFUL_TIMEOUT` (default 30) and `GUNICORN_KEEP_ALIVE` (default 75).
+
+### 📚 Documentation
+
+- `GUNICORN_TIMEOUT` does not kill a worker whose `gthread` threads are stuck. The docs now say so and list the app timeouts that do bound a request.
+
 ### ✨ Feature
 
 - **Event log:** every catalog event (accounts, invitations, SCIM, groups, tokens, magic links) is now stored in one `EventLog` table, with or without a webhook rule, next to sign-ins recorded as `identity.auth.login.succeeded` and `identity.auth.login.failed`. Sign-in events are log-only and cannot trigger webhooks. Rows are compact: empty values dropped, user as a column, secrets such as `magic_link_url` never stored, two indexes only. New admin API: `GET /api/v1/events` (filter by `event_type`, `user_id`, `user` email, date range), `GET /api/v1/events/<id>`, `GET /api/v1/events/types`. See [docs/event-log.md](docs/event-log.md).
