@@ -2,7 +2,7 @@
 
 Operators configure identity-service with environment variables (see [`.env.example`](https://github.com/shellui/identity-service/blob/main/.env.example) in the repository root). Copy it to `.env` for local runs; pass the same keys to Docker, Coolify, or your orchestrator in production.
 
-Published docs: [https://identity.docs.shellui.com](https://identity.docs.shellui.com) (GitHub Pages `cname` on release tags).
+Published docs: [https://docs.shellui.com/identity](https://docs.shellui.com/identity), built from this repository's `docs/` folder by [shellui/shellui](https://github.com/shellui/shellui).
 
 ---
 

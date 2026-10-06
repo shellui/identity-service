@@ -37,6 +37,7 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 ### 📚 Documentation
 
+- **Docs move to docs.shellui.com/identity:** [shellui/shellui](https://github.com/shellui/shellui) now builds and publishes these docs. This repository no longer deploys a docs site on tags: `deploy-docs.yml`, `tools/docusaurus/` and `tools/generate-docs.sh` are removed, and the sidebar moved to `docs/sidebars.js` (now with n8n and SAML). CI gains a **Docs build** job that builds `docs/` with the shellui docs site and fails on broken links.
 - `GUNICORN_TIMEOUT` does not kill a worker whose `gthread` threads are stuck. The docs now say so and list the app timeouts that do bound a request.
 
 ### ✨ Feature

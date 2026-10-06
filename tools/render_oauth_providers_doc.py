@@ -28,7 +28,10 @@ def _icon_cell(icon: dict) -> str:
         hex_color = str(icon.get('hex') or '000000').lstrip('#')
         return (
             f'<img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/{slug}.svg" '
-            f'width="20" height="20" alt="" style="vertical-align:middle;background:#{hex_color};" />'
+            # JSX style object: docs.shellui.com renders this page as MDX, which
+            # rejects a plain HTML style string.
+            f'width="20" height="20" alt="" '
+            f"style={{{{verticalAlign:'middle',background:'#{hex_color}'}}}} />"
         )
     return '🔑'
 
