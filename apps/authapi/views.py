@@ -4573,7 +4573,9 @@ class ShellUIAdminAuthMethodsView(APIView):
         summary='Prometheus metrics (staff or company owner)',
         description=(
             'Prometheus text exposition (openmetrics) for the company in the Bearer token '
-            '(JWT or PAT must include a `company_id` claim). Do not send `company_id` as a query parameter.'
+            '(JWT or PAT must include a `company_id` claim). Do not send `company_id` as a query parameter. '
+            'Only that company\'s `shellui_auth_company_*` gauges and `shellui_auth_successful_logins_total` '
+            'series; no runtime, platform-wide or other-company metrics (use `/api/v1/metrics/all`).'
         ),
         responses={
             200: OpenApiResponse(description='text/plain Prometheus exposition'),
