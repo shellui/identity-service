@@ -150,6 +150,35 @@ def _caches_config(redis_url: str) -> dict:
     }
 
 
+def _celery_broker_url(redis_url: str, override: str) -> str:
+    """Broker for the scheduled jobs: ``CELERY_BROKER_URL`` when set, else ``REDIS_URL``."""
+    return (override or '').strip() or (redis_url or '').strip()
+
+
+def scheduled_jobs_beat_schedule() -> dict:
+    """
+    Celery beat entries for the scheduled jobs.
+
+    ``expires`` drops a message that waited longer than its period (worker down or
+    busy), so a backlog never turns into a burst of runs.
+    """
+    from celery.schedules import crontab
+
+    return {
+        'retry-webhooks': {
+            'task': 'actions.retry_webhooks',
+            'schedule': timedelta(seconds=60),
+            'options': {'expires': 55},
+        },
+        'purge-expired-data': {
+            'task': 'actions.purge_expired_data',
+            # Hourly at minute 17: off the top of the hour, where many jobs start.
+            'schedule': crontab(minute=17),
+            'options': {'expires': 3000},
+        },
+    }
+
+
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
@@ -386,7 +415,7 @@ EMAIL_SERVICE_TIMEOUT_SECONDS = _env_float('EMAIL_SERVICE_TIMEOUT_SECONDS', 5.0)
 EMAIL_SERVICE_SEND_ATTEMPTS = _env_int('EMAIL_SERVICE_SEND_ATTEMPTS', 3)
 EMAIL_SERVICE_RETRY_MAX_SLEEP_SECONDS = _env_float('EMAIL_SERVICE_RETRY_MAX_SLEEP_SECONDS', 1.0)
 
-# Action triggers (domain events → webhooks). DB outbox; no Celery required.
+# Webhooks (domain events to HTTPS endpoints). DB outbox; retries run on the scheduler.
 ACTIONS_WEBHOOK_TIMEOUT_SECONDS = _env_float('ACTIONS_WEBHOOK_TIMEOUT_SECONDS', 5.0)
 ACTIONS_OUTBOX_MAX_ATTEMPTS = _env_int('ACTIONS_OUTBOX_MAX_ATTEMPTS', 8)
 ACTIONS_WEBHOOK_ALLOW_PRIVATE = _env_bool('ACTIONS_WEBHOOK_ALLOW_PRIVATE', False)
@@ -527,6 +556,27 @@ AUTH_RATE_LIMITS = {
     'invitation': {'limit': _env_int('AUTH_RATE_LIMIT_INVITATION', 30), 'window': 300},
 }
 
+# Scheduled jobs (Celery worker + beat, started by the Docker entrypoint).
+# See docs/scheduled-jobs.md. The broker is REDIS_URL unless CELERY_BROKER_URL is set.
+# SCHEDULER_ENABLED is read by the entrypoint; it is here so tests and checks see it.
+SCHEDULER_ENABLED = _env_bool('SCHEDULER_ENABLED', True)
+CELERY_BROKER_URL = _celery_broker_url(REDIS_URL, os.getenv('CELERY_BROKER_URL', ''))
+# Own queue and lock prefix, so services sharing one Redis never take each other's tasks.
+CELERY_TASK_DEFAULT_QUEUE = 'identity-service'
+SCHEDULER_LOCK_PREFIX = 'identity-service:scheduler'
+CELERY_TIMEZONE = 'UTC'
+CELERY_ENABLE_UTC = True
+CELERY_TASK_IGNORE_RESULT = True
+CELERY_RESULT_EXPIRES = None
+CELERY_RESULT_BACKEND = None
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+CELERY_WORKER_HIJACK_ROOT_LOGGER = False
+CELERY_WORKER_REDIRECT_STDOUTS = False
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+CELERY_BEAT_SCHEDULE = scheduled_jobs_beat_schedule()
+
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
@@ -651,6 +701,7 @@ from config.scim_settings import SCIM_SERVICE_PROVIDER
 
 if SENTRY_DSN:
     import sentry_sdk
+    from sentry_sdk.integrations.celery import CeleryIntegration
     from sentry_sdk.integrations.django import DjangoIntegration
     from sentry_sdk.integrations.logging import LoggingIntegration
 
@@ -660,6 +711,7 @@ if SENTRY_DSN:
         dsn=SENTRY_DSN,
         integrations=[
             DjangoIntegration(),
+            CeleryIntegration(),
             LoggingIntegration(
                 level=logging.INFO,
                 event_level=logging.ERROR,
@@ -734,6 +786,24 @@ LOGGING = {
         'config': {
             'handlers': ['console'],
             'level': LOG_LEVEL,
+            'propagate': False,
+        },
+        # Celery's own DEBUG output is internals only, so it stops at INFO.
+        'celery': {
+            'handlers': ['console'],
+            'level': 'INFO' if LOG_LEVEL == 'DEBUG' else LOG_LEVEL,
+            'propagate': False,
+        },
+        # "Task received" and "Task succeeded" lines every minute are noise. Failures
+        # are still logged as errors. LOG_LEVEL=DEBUG shows them.
+        'celery.app.trace': {
+            'handlers': ['console'],
+            'level': 'INFO' if LOG_LEVEL == 'DEBUG' else 'WARNING',
+            'propagate': False,
+        },
+        'celery.worker.strategy': {
+            'handlers': ['console'],
+            'level': 'INFO' if LOG_LEVEL == 'DEBUG' else 'WARNING',
             'propagate': False,
         },
     },
