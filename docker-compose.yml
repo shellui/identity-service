@@ -45,6 +45,9 @@ services:
       SENTRY_ENVIRONMENT: "${SENTRY_ENVIRONMENT:-}"
       SENTRY_RELEASE: "${SENTRY_RELEASE:-}"
       SENTRY_TRACES_SAMPLE_RATE: "${SENTRY_TRACES_SAMPLE_RATE:-0}"
+      # Host email-service is on port 8003. localhost inside this container is not the host.
+      EMAIL_SERVICE_URL: "http://host.docker.internal:8003"
+      EMAIL_SERVICE_API_KEY: "${EMAIL_SERVICE_API_KEY:-}"
     volumes:
       - identity-service-data:/app/data
     restart: unless-stopped

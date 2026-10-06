@@ -368,6 +368,15 @@ DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@localhost')
 # so an unreachable mail server could hold a login request forever.
 EMAIL_TIMEOUT = _env_positive_float('EMAIL_TIMEOUT', 10.0)
 
+# Shellui email-service. Unset EMAIL_SERVICE_API_KEY keeps the SMTP / console backend.
+EMAIL_SERVICE_URL = (
+    os.getenv('EMAIL_SERVICE_URL', 'https://email.shellui.com').strip() or 'https://email.shellui.com'
+).rstrip('/')
+EMAIL_SERVICE_API_KEY = os.getenv('EMAIL_SERVICE_API_KEY', '').strip()
+EMAIL_SERVICE_TIMEOUT_SECONDS = _env_float('EMAIL_SERVICE_TIMEOUT_SECONDS', 5.0)
+EMAIL_SERVICE_SEND_ATTEMPTS = _env_int('EMAIL_SERVICE_SEND_ATTEMPTS', 3)
+EMAIL_SERVICE_RETRY_MAX_SLEEP_SECONDS = _env_float('EMAIL_SERVICE_RETRY_MAX_SLEEP_SECONDS', 1.0)
+
 # Action triggers (domain events → webhooks). DB outbox; no Celery required.
 ACTIONS_WEBHOOK_TIMEOUT_SECONDS = _env_float('ACTIONS_WEBHOOK_TIMEOUT_SECONDS', 5.0)
 ACTIONS_OUTBOX_MAX_ATTEMPTS = _env_int('ACTIONS_OUTBOX_MAX_ATTEMPTS', 8)

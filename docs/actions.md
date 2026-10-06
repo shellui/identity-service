@@ -263,7 +263,7 @@ POST /api/v1/actions/rules/1/rotate-secret?company_id=1
 
 List, detail, and update responses never include top-level `secret`. Webhook `config` includes `has_secret`, optional `secret_hint` (last four characters), and `authorization_header_set` instead of plaintext values.
 
-**Removed (admin UI):** email rule fields, email template endpoints, and `email_context_fields` on the events catalog. Magic-link email is always sent by identity on request (not configurable via Actions).
+**Removed (admin UI):** email rule fields, email template endpoints, and `email_context_fields` on the events catalog. Company email for catalog events is a separate call to email-service. See [email-service.md](email-service.md). Magic-link and invitation mail still skip the built-in send while an enabled webhook rule for that event exists.
 
 ---
 

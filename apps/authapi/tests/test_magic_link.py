@@ -176,7 +176,7 @@ class MagicLinkAuthTests(TestCase):
         )
         with self.captureOnCommitCallbacks(execute=True):
             with patch(
-                'apps.authapi.magic_link_views.send_magic_link_email',
+                'apps.authapi.email_delivery.send_magic_link_email',
                 return_value=None,
             ) as send_email:
                 self._request_link()
@@ -300,7 +300,7 @@ class MagicLinkAuthTests(TestCase):
         )
         with self.captureOnCommitCallbacks(execute=True):
             with patch(
-                'apps.authapi.magic_link_views.send_magic_link_email',
+                'apps.authapi.email_delivery.send_magic_link_email',
                 return_value=None,
             ):
                 self.client.post(
@@ -381,7 +381,7 @@ class MagicLinkAuthTests(TestCase):
             config={'url': 'https://hooks.example.com/magic', 'secret': 'whsec_test'},
         )
         with self.captureOnCommitCallbacks(execute=True):
-            with patch('apps.authapi.magic_link_views.send_magic_link_email', return_value=None):
+            with patch('apps.authapi.email_delivery.send_magic_link_email', return_value=None):
                 self._request_link(language='fr')
         outbox = ActionOutbox.objects.filter(event_type='identity.auth.magic_link.requested').first()
         self.assertEqual(outbox.envelope['data']['language'], 'fr')

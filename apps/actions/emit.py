@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from apps.actions.delivery import schedule_outbox_delivery
+from apps.actions.email_events import enqueue_email_event
 from apps.actions.envelope import build_envelope
 from apps.actions.event_log import record_event
 from apps.actions.models import ActionOutbox, ActionRule
@@ -30,9 +31,11 @@ def emit_event(
     if not event.emit_by_default and not force:
         return []
 
-    record_event(event, company, payload)
+    logged = record_event(event, company, payload)
     if not event.webhook:
         return []
+
+    enqueue_email_event(event, company, payload, event_log_id=logged.pk)
 
     rules = list(
         ActionRule.objects.filter(

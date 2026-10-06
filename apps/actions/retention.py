@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from django.db.models import Model, Q, QuerySet
 from django.utils import timezone
 
-from apps.actions.models import ActionOutbox, EventLog
+from apps.actions.models import ActionOutbox, EmailEventOutbox, EventLog
 from apps.companies.models import Company
 from apps.scim.models import ScimProvisioningEvent
 
@@ -18,11 +18,13 @@ STALE_GRACE = timedelta(days=1)
 
 # Pending and failed deliveries are still retried, so only finished ones expire.
 _FINISHED_DELIVERY = Q(status__in=(ActionOutbox.STATUS_DELIVERED, ActionOutbox.STATUS_DEAD))
+_FINISHED_EMAIL = Q(status__in=(EmailEventOutbox.STATUS_DELIVERED, EmailEventOutbox.STATUS_DEAD))
 
 # (label, model, extra filter, whether rows without a company exist)
 _PURGE_TARGETS: tuple[tuple[str, type[Model], Q, bool], ...] = (
     ('events', EventLog, Q(), True),
     ('webhook_deliveries', ActionOutbox, _FINISHED_DELIVERY, False),
+    ('email_events', EmailEventOutbox, _FINISHED_EMAIL, False),
     ('scim_provisioning_events', ScimProvisioningEvent, Q(), False),
 )
 

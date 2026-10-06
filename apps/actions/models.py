@@ -174,3 +174,57 @@ class EventLog(models.Model):
 
     def __str__(self) -> str:
         return f'{self.event_type} ({self.created_at:%Y-%m-%d %H:%M})'
+
+
+class EmailEventOutbox(models.Model):
+    """
+    DB outbox for ``POST /api/v1/events`` on Shellui email-service.
+
+    Same retry shape as webhook deliveries: ``retry_webhooks`` claims pending and failed rows.
+    The request path only inserts a row. It does not call email-service.
+    """
+
+    STATUS_PENDING = 'pending'
+    STATUS_DELIVERED = 'delivered'
+    STATUS_FAILED = 'failed'
+    STATUS_DEAD = 'dead'
+    STATUS_CHOICES = [
+        (STATUS_PENDING, 'Pending'),
+        (STATUS_DELIVERED, 'Delivered'),
+        (STATUS_FAILED, 'Failed'),
+        (STATUS_DEAD, 'Dead'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    company = models.ForeignKey(
+        'companies.Company',
+        on_delete=models.CASCADE,
+        related_name='email_event_outbox_rows',
+    )
+    event_type = models.CharField(max_length=128)
+    idempotency_key = models.CharField(max_length=200, unique=True)
+    body = models.JSONField()
+    status = models.CharField(
+        max_length=16,
+        choices=STATUS_CHOICES,
+        default=STATUS_PENDING,
+        db_index=True,
+    )
+    attempt_count = models.PositiveIntegerField(default=0)
+    next_attempt_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    locked_until = models.DateTimeField(null=True, blank=True, db_index=True)
+    last_error = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    delivered_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = 'Email event delivery'
+        verbose_name_plural = 'Email event deliveries'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['status', 'next_attempt_at']),
+        ]
+
+    def __str__(self) -> str:
+        return f'{self.event_type} ({self.status})'
