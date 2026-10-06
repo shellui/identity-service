@@ -264,7 +264,11 @@ Runtime env vars:
 - `GUNICORN_WORKERS` (default `4`)
 - `GUNICORN_THREADS` (default `4`)
 - `GET /health/live` — DB-free liveness probe (configure load balancers to use this instead of `/`)
-- `GUNICORN_TIMEOUT` (default `60`)
+- `GUNICORN_TIMEOUT` (default `60`; restarts a frozen worker process only, it does not stop a request stuck in a `gthread` worker)
+- `GUNICORN_GRACEFUL_TIMEOUT` (default `30`), `GUNICORN_KEEP_ALIVE` (default `75`), `GUNICORN_MAX_REQUESTS` (default `1000`), `GUNICORN_MAX_REQUESTS_JITTER` (default `200`)
+- `EMAIL_TIMEOUT` (default `10` seconds for SMTP)
+- `POSTGRES_STATEMENT_TIMEOUT` (default `15` seconds) and `POSTGRES_LOCK_TIMEOUT` (default `5` seconds); `0` turns one off
+- `LOG_LEVEL` (default `INFO`) and `SLOW_REQUEST_THRESHOLD_SECONDS` (default `2`; `0` turns it off)
 - `SENTRY_DSN` (optional; enable Sentry error reporting — leave empty in local dev)
 - `SENTRY_ENVIRONMENT` (optional; default `development` when `DEBUG=true`, else `production`)
 - `SENTRY_RELEASE` (optional; default `project.version` from `pyproject.toml`)

@@ -23,6 +23,22 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 ## [Unreleased] - 2026-09-29
 
+### 🐛 Bug Fixes
+
+- **No more endless sign-in requests from a slow mail server:** SMTP now gives up after `EMAIL_TIMEOUT` seconds (default 10). Before, Django waited with no limit, so a company access email sent during an OAuth callback could hold the sign-in request forever.
+- **Postgres deadlines:** queries are cancelled after `POSTGRES_STATEMENT_TIMEOUT` seconds (default 15) and lock waits after `POSTGRES_LOCK_TIMEOUT` seconds (default 5). Set either to `0` to turn it off. They are not applied to `migrate` and have no effect on SQLite.
+
+### 🛠 Improvements
+
+- **Logs you can see in production:** gunicorn now writes access and error logs to stdout, and each access line ends with the request duration and request id. Django errors and warnings (500s, `DisallowedHost`, CSRF failures) are printed to stdout also when `DEBUG=false`. App log level is set with `LOG_LEVEL`.
+- **Request id:** every response carries an `X-Request-ID` header (taken from the incoming request when present, otherwise generated), and every log line includes it as `[req=<id>]`, like the other Shellui services.
+- **Slow request warning:** requests slower than `SLOW_REQUEST_THRESHOLD_SECONDS` (default 2) are logged as a warning with method, path, status and duration.
+- **Gunicorn:** heartbeat file in `/dev/shm`, workers recycled after `GUNICORN_MAX_REQUESTS` (default 1000) plus up to `GUNICORN_MAX_REQUESTS_JITTER` (default 200) requests, `GUNICORN_GRACEFUL_TIMEOUT` (default 30) and `GUNICORN_KEEP_ALIVE` (default 75).
+
+### 📚 Documentation
+
+- `GUNICORN_TIMEOUT` does not kill a worker whose `gthread` threads are stuck. The docs now say so and list the app timeouts that do bound a request.
+
 ### ✨ Feature
 
 - **email-service:** magic-link and invitation mail call Shellui email-service `POST /api/v1/send` when `EMAIL_SERVICE_API_KEY` is set (auth templates, stable idempotency keys, TTL 120s and 300s). An invitation with no `app_url` still uses `/send`; `invitation_url` is the identity public base. SMTP remains the path when the key is unset, and the fallback when email-service cannot be reached after the caller retry policy. If both paths fail, the API returns **503** `email_unavailable`. An auth-lane hard bounce returns **422** `recipient_suppressed`. Those JSON bodies contain `error_code` only. Webhook catalog events other than the two direct-send templates are also posted to `POST /api/v1/events` through the existing outbox, retried by `manage.py retry_webhooks`, and do not block the request. Local `EMAIL_SERVICE_URL` is `http://localhost:8003` (containers use `http://host.docker.internal:8003`). Event posts follow the email-service caller retry table (2xx finished, including `skipped_reason`; permanent `400`/`401`/`403`/`405`/`410`/`413`/`422`; other failures retry on the outbox). Auth-lane `company_rate_limited`, `provider_not_configured`, `platform_sender_not_allowed`, `auth_link_missing`, and `auth_link_host_not_allowed` are returned as those codes and are not sent over SMTP. The host of `JWT_ISSUER` must be in email-service `EMAIL_AUTH_LINK_HOSTS` (`localhost` only while that service has `DEBUG=true`). See [docs/email-service.md](docs/email-service.md).
