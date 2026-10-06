@@ -29,11 +29,11 @@ Each company turns SCIM on by creating a **Company SCIM token** in Shellui admin
 
 ## Shellui webhooks (domain events)
 
-Company **webhook rules** in Django admin map catalog events (`identity.scim.user.provisioned`, `identity.user.created`, group changes, SCIM conflicts, …) to **signed HTTPS endpoints** (n8n-friendly). Delivery uses a DB outbox and `transaction.on_commit` with `manage.py retry_webhooks` for retries. See **[docs/actions.md](docs/actions.md)** and **[docs/n8n.md](docs/n8n.md)**.
+Company **webhook rules** in Django admin map catalog events (`identity.scim.user.provisioned`, `identity.user.created`, group changes, SCIM conflicts, …) to **signed HTTPS endpoints** (n8n-friendly). Delivery uses a DB outbox and `transaction.on_commit`, with retries every minute by the built-in scheduler. See **[docs/actions.md](docs/actions.md)** and **[docs/n8n.md](docs/n8n.md)**.
 
 Every event, and every sign-in, is also stored in the **event log** (`GET /api/v1/events`) for the company data retention (default 7 days, Django admin only). See **[docs/event-log.md](docs/event-log.md)**.
 
-**Scheduled jobs:** run `manage.py purge_expired_data` every hour and `manage.py retry_webhooks` every minute. See **[docs/scheduled-jobs.md](docs/scheduled-jobs.md)**.
+**Scheduled jobs:** the Docker image runs `purge_expired_data` every hour and `retry_webhooks` every minute (Celery worker and beat, Redis broker). Set `REDIS_URL` and there is nothing else to set up. See **[docs/scheduled-jobs.md](docs/scheduled-jobs.md)**.
 
 **Try locally:** set `EMAIL_BACKEND=config.email_backends.ConsoleEmailBackend` (default when `DEBUG=true`), create an Action rule for `identity.scim.user.provisioned`, then provision a user via SCIM.
 

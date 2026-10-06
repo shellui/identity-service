@@ -1,13 +1,79 @@
-# Scheduled jobs (cron)
+# Scheduled jobs
 
-identity-service has no background worker. Two management commands keep it healthy and should run on a schedule, from the same image and environment (database, `SECRET_KEY`) as the web service.
+identity-service runs two maintenance jobs on a schedule. The Docker image runs them for you: with `REDIS_URL` set, there is nothing to set up.
 
-| Command | Schedule | Needed when | What happens if it never runs |
-| ------- | -------- | ----------- | ----------------------------- |
-| `purge_expired_data` | Every hour (for example at minute 17) | Always | The event log and webhook delivery history grow without limit. The admin panel and Django admin show an error once events are more than one day past retention |
-| `retry_webhooks` | Every minute | A company uses [webhooks](actions.md), or `EMAIL_SERVICE_API_KEY` is set | Failed webhook deliveries and email-service event posts are never retried. First attempts still go out right after each event |
+| Job | Schedule | What happens if it never runs |
+| --- | -------- | ----------------------------- |
+| `purge_expired_data` | Every hour, at minute 17, for at most 5 minutes | The event log and webhook delivery history grow without limit. The admin panel and Django admin show an error once events are more than one day past retention |
+| `retry_webhooks` | Every minute | Failed [webhook](actions.md) deliveries and email-service event posts are never retried. First attempts still go out right after each event |
 
-Both commands are safe to run when there is nothing to do: they exit after one or two indexed queries.
+Both jobs are safe to run when there is nothing to do: they finish after one or two indexed queries.
+
+---
+
+## How it works
+
+The container starts two processes:
+
+- **gunicorn**, the web app
+- a **Celery worker with an embedded beat** (`celery -A config worker --beat`). Beat sends each job on time, the worker runs it. It uses one process with a pool of 2 threads, so an hourly purge never delays webhook retries.
+
+Redis is the message broker. The jobs are the same code as the `purge_expired_data` and `retry_webhooks` management commands, so their output and behavior are identical.
+
+The container entrypoint watches both processes. A `SIGTERM` (for example `docker stop` or a redeploy) is passed to both, so in-flight work finishes cleanly. If either process exits, the entrypoint stops the other one and the container exits, so Docker or Coolify restarts it.
+
+| Variable | Default | Purpose |
+| -------- | ------- | ------- |
+| `REDIS_URL` | unset | Redis for the shared cache and the job broker. Without it the jobs do not run and the container logs a warning at startup; the web app still starts |
+| `CELERY_BROKER_URL` | `REDIS_URL` | Use a different Redis for the jobs |
+| `SCHEDULER_ENABLED` | `true` | `false` keeps the worker out of this container. Use it with a dedicated worker container or your own cron |
+| `CELERY_WORKER_CONCURRENCY` | `2` | Threads in the worker. 2 lets a purge and a retry run at the same time |
+
+The worker uses the same settings as the web app: `LOG_LEVEL` and stdout logging, Sentry (task errors are reported when `SENTRY_DSN` is set), and `POSTGRES_STATEMENT_TIMEOUT` / `POSTGRES_LOCK_TIMEOUT`.
+
+Each run logs one summary line, for example:
+
+```text
+INFO [apps.actions.tasks] retry_webhooks: processed=0 delivered=0 retried=0 dead=0 email_processed=0 email_delivered=0 email_retried=0 email_dead=0
+```
+
+### Several containers
+
+Every job takes a Redis lock before it starts (`SET NX` with an expiry: 2 minutes for `retry_webhooks`, 15 minutes for `purge_expired_data`). When another container already runs the same job, the run is skipped and logs `skipped, another run is in progress`. So you can run several replicas of the image, each with its own beat, and a job never runs twice at the same time. The lock expires on its own if a container dies mid-run.
+
+Jobs use their own queue (`identity-service`) and lock keys, so one Redis can serve identity-service and other Shellui services.
+
+### Run the worker in its own container
+
+The image takes a mode as its command:
+
+| Command | Starts |
+| ------- | ------ |
+| `web` (default) | migrations, then gunicorn and the worker (unless `SCHEDULER_ENABLED=false`) |
+| `worker` | only the worker with beat. No migrations, no web server. Needs `REDIS_URL` |
+| anything else | runs that command as `appuser`, for example `python manage.py createsuperuser` |
+
+Docker Compose example with the same image and environment:
+
+```yaml
+services:
+  identity-service:
+    image: shellui/identity-service:latest
+    env_file: .env
+    environment:
+      SCHEDULER_ENABLED: "false"
+  identity-worker:
+    image: shellui/identity-service:latest
+    command: worker
+    env_file: .env
+    restart: unless-stopped
+```
+
+The web container runs migrations; the worker only needs the same database. With SQLite, both containers must mount the same `/app/data` volume, so prefer Postgres for this setup.
+
+### Turn it off and use your own scheduler
+
+Set `SCHEDULER_ENABLED=false` and run the management commands from any scheduler, with the same image, environment variables and database as the web service. Examples are in [Run the commands yourself](#run-the-commands-yourself).
 
 ---
 
@@ -39,20 +105,12 @@ Output example:
 purge_expired_data: deleted events=1840 webhook_deliveries=12 scim_provisioning_events=0 complete=true
 ```
 
-### Recommended schedule: every hour
-
-```text
-17 * * * * cd /app && python manage.py purge_expired_data --max-seconds 300 >> /var/log/purge_expired_data.log 2>&1
-```
-
-Why hourly rather than once at midnight:
+### Why every hour
 
 - **Small, steady work.** Each run deletes about one hour of old events instead of a full day at once. Transactions stay short, there is no nightly I/O spike, and PostgreSQL autovacuum keeps up, so the tables stay at a stable size and reuse freed space.
 - **Retention stays accurate.** Rows live at most one hour longer than the configured retention.
 - **Missed runs are harmless.** The next run catches up. The stale-events error in the admin panel only appears after a full day without a successful run, so a single failure never alerts anyone.
 - **Avoid minute 0.** Many jobs start on the hour; an odd minute such as 17 spreads the load.
-
-A daily run at a quiet hour (for example `17 3 * * *`) also works for small deployments. Expect events to live up to 8 days with a 7-day retention.
 
 ### Stale events warning
 
@@ -62,7 +120,7 @@ When the oldest event of a company is older than **retention + 1 day**, identity
 - Django admin shows it under **Data retention** on the company page
 - `GET /api/v1/events/retention` returns `"stale_events": true`
 
-Fix it by scheduling `purge_expired_data` as described above. The next successful run removes the warning.
+Check that the container has `REDIS_URL` set and that its logs show `purge_expired_data` runs (or that your own scheduler runs the command). The next successful run removes the warning.
 
 ### Storage notes
 
@@ -74,30 +132,34 @@ Fix it by scheduling `purge_expired_data` as described above. The next successfu
 
 ## `retry_webhooks`
 
-Retries webhook deliveries whose first attempt failed, with exponential backoff (details in [actions.md](actions.md#delivery-retries-and-cron)). The same command retries email-service event posts. See [Email](email-service.md).
+Retries webhook deliveries whose first attempt failed, with exponential backoff (details in [actions.md](actions.md#delivery-retries-and-scheduling)). The same job retries email-service event posts. See [Email](email-service.md).
 
-```text
-* * * * * cd /app && python manage.py retry_webhooks >> /var/log/retry_webhooks.log 2>&1
+```bash
+python manage.py retry_webhooks
+python manage.py retry_webhooks --batch-size 50 --max-seconds 50 --concurrency 4
 ```
 
 Keep `--max-seconds` (default 50) under 60 so a run finishes before the next one starts. Overlapping runs are still safe: rows are claimed with skip-locked leases.
 
 ---
 
-## Where to configure the jobs
+## Run the commands yourself
 
-Run the commands with the **same image, environment variables and database** as the web service. The image entrypoint runs migrations and starts Gunicorn, so override the command rather than starting a full container.
+Only needed with `SCHEDULER_ENABLED=false` or without Redis. Run the commands with the **same image, environment variables and database** as the web service.
+
+```text
+17 * * * * cd /app && python manage.py purge_expired_data --max-seconds 300
+*  * * * * cd /app && python manage.py retry_webhooks
+```
 
 ### Coolify
 
-On the identity-service resource, open **Scheduled Tasks** and add:
+Set `SCHEDULER_ENABLED=false`, then on the identity-service resource open **Scheduled Tasks** and add:
 
 | Name | Command | Frequency |
 | ---- | ------- | --------- |
 | Purge expired data | `python manage.py purge_expired_data --max-seconds 300` | `17 * * * *` |
 | Retry webhooks | `python manage.py retry_webhooks` | `* * * * *` |
-
-Tasks run inside the running container, so they share its environment.
 
 ### Docker Compose (host crontab)
 
@@ -131,11 +193,15 @@ spec:
                     name: identity-service-env
 ```
 
-Use the same pattern with `schedule: "* * * * *"` and `["python", "manage.py", "retry_webhooks"]` for webhook retries.
+Use the same pattern with `schedule: "* * * * *"` and `["python", "manage.py", "retry_webhooks"]` for webhook retries. On Kubernetes you can also run a `worker` Deployment instead of CronJobs.
 
-### Monitoring
+---
 
-Both commands print one summary line and exit with a non-zero status on errors, so any scheduler that alerts on failed jobs covers them. For `purge_expired_data`, the stale-events warning is a second safety net that needs no extra setup.
+## Monitoring
+
+- In-container jobs log one line per run. A failing run logs an error with the traceback, and is reported to Sentry when `SENTRY_DSN` is set.
+- The commands exit with a non-zero status on errors, so any external scheduler that alerts on failed jobs covers them.
+- For `purge_expired_data`, the stale-events warning is a second safety net that needs no extra setup.
 
 ---
 

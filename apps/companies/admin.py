@@ -234,7 +234,8 @@ class CompanyAdmin(admin.ModelAdmin):
         if status['stale_events']:
             return format_html(
                 '<strong style="color:#ba2121">Events older than {} days are still stored (oldest: {}). '
-                'Schedule "manage.py purge_expired_data" (see docs/scheduled-jobs.md).</strong>',
+                'The purge_expired_data job is not running: check REDIS_URL and the container logs '
+                '(see docs/scheduled-jobs.md).</strong>',
                 status['data_retention_days'] + 1,
                 status['oldest_event_at'],
             )

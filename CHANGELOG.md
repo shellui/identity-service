@@ -33,6 +33,7 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 - **Logs you can see in production:** gunicorn now writes access and error logs to stdout, and each access line ends with the request duration and request id. Django errors and warnings (500s, `DisallowedHost`, CSRF failures) are printed to stdout also when `DEBUG=false`. App log level is set with `LOG_LEVEL`.
 - **Request id:** every response carries an `X-Request-ID` header (taken from the incoming request when present, otherwise generated), and every log line includes it as `[req=<id>]`, like the other Shellui services.
 - **Slow request warning:** requests slower than `SLOW_REQUEST_THRESHOLD_SECONDS` (default 2) are logged as a warning with method, path, status and duration.
+- **Graceful shutdown:** the entrypoint drops privileges with `setpriv` instead of `runuser`. `runuser` killed gunicorn 2 seconds after `docker stop`, which cut `GUNICORN_GRACEFUL_TIMEOUT` short. The entrypoint now passes `SIGTERM` to gunicorn and the worker, and exits when either one exits, so Docker or Coolify restarts the container.
 - **Gunicorn:** heartbeat file in `/dev/shm`, workers recycled after `GUNICORN_MAX_REQUESTS` (default 1000) plus up to `GUNICORN_MAX_REQUESTS_JITTER` (default 200) requests, `GUNICORN_GRACEFUL_TIMEOUT` (default 30) and `GUNICORN_KEEP_ALIVE` (default 75).
 
 ### 📚 Documentation
@@ -42,6 +43,8 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 ### ✨ Feature
 
+- **Scheduled jobs run inside the container:** the Docker image now starts a Celery worker with an embedded beat next to gunicorn. It runs `retry_webhooks` every minute and `purge_expired_data` every hour (at most 5 minutes per run), with Redis (`REDIS_URL`) as the broker. Self-hosted installs no longer need cron or Coolify Scheduled Tasks. A Redis lock skips a run when another container already runs the same job, so replicas are safe. New variables: `SCHEDULER_ENABLED` (default `true`), `CELERY_BROKER_URL` (defaults to `REDIS_URL`) and `CELERY_WORKER_CONCURRENCY` (default `2`). Without `REDIS_URL` the container logs a warning and starts the web app only. The management commands still work for external cron. See [docs/scheduled-jobs.md](docs/scheduled-jobs.md).
+- **Container modes:** the image command selects what runs: `web` (default), `worker` (only the scheduled jobs, for a dedicated container) or any other command, run as `appuser`.
 - **Email-service delivery:** magic-link and invitation emails go through Shellui email-service when `EMAIL_SERVICE_API_KEY` is set, with SMTP as fallback, and catalog events are forwarded through the webhook outbox. See [docs/email-service.md](docs/email-service.md).
 - **Event log and data retention:** all catalog events and sign-ins are stored in one event log (`GET /api/v1/events`), purged per company `data_retention_days` by `manage.py purge_expired_data`. See [docs/event-log.md](docs/event-log.md) and [docs/scheduled-jobs.md](docs/scheduled-jobs.md).
 - **Invitations:** staff and company owners can invite, list, revoke, and delete email invitations (`/api/v1/invitations`), with `identity.user.invited` and `identity.user.invitation_revoked` webhooks. See [docs/company-access.md](docs/company-access.md#invitations).

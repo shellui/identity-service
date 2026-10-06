@@ -21,7 +21,7 @@ Usage: ./tools/pre-release-check.sh [options]
 Automates the PUBLISH.md pre-release checklist:
   1. Version alignment (pyproject.toml ↔ CHANGELOG dated entry)
   2. No secrets in git / Docker build context
-  3. Image smoke test (settings + JWKS RSA key)
+  3. Image smoke test (settings + JWKS RSA key, scheduled jobs worker)
 
 Options:
   --skip-docker     Skip Docker build and smoke test
@@ -214,5 +214,8 @@ assert keys[0].get("kty") == "RSA", f"expected RSA key, got {keys[0]!r}"
 kid = keys[0].get("kid") or "?"
 print(f"OK: JWKS has {len(keys)} RSA key(s), kid={kid[:16]}…")
 '
+
+log 'Scheduled jobs worker smoke test'
+"$(dirname "$0")/image-smoke-test.sh" "${IMAGE_TAG}"
 
 log "Pre-release check passed for ${VERSION}"

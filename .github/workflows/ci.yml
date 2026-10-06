@@ -234,6 +234,11 @@ jobs:
         with:
           context: .
           push: false
+          load: true
           tags: shellui/identity-service:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # Web server, Celery worker with beat, graceful stop, worker mode, no-Redis fallback.
+      - name: Image smoke test
+        run: ./tools/image-smoke-test.sh shellui/identity-service:ci

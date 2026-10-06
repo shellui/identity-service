@@ -152,7 +152,7 @@ generate_webhook_signing_secret()
 | 400, 401, 403, 405, 410, 413, 422 | Dead (fix config, then requeue) |
 | Timeouts, connection errors | Retry |
 
-Cron on identity: `python manage.py retry_webhooks` (see [actions.md](actions.md)).
+identity-service retries every minute with its built-in `retry_webhooks` job (see [Scheduled jobs](scheduled-jobs.md)).
 
 Re-queue dead rows from the delivery log in Shellui admin or `POST /api/v1/actions/deliveries/<uuid>/requeue`.
 

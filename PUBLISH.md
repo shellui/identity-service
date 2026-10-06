@@ -161,8 +161,11 @@ docker run -d \
   -e JWT_PRIVATE_KEY='replace-with-pem-from-generate_jwt_keys' \
   -e ALLOWED_HOSTS='auth.example.com' \
   -e CSRF_TRUSTED_ORIGINS='https://auth.example.com,https://app.example.com' \
+  -e REDIS_URL='redis://redis:6379/0' \
   shellui/identity-service:0.7.0
 ```
+
+With `REDIS_URL` set, the container also runs the scheduled jobs (`retry_webhooks` every minute, `purge_expired_data` every hour) in a Celery worker next to gunicorn. There is no cron to set up. See [docs/scheduled-jobs.md](docs/scheduled-jobs.md) for a dedicated worker container (`worker` command) or `SCHEDULER_ENABLED=false`.
 
 The entrypoint runs migrations on start, then starts **Gunicorn** (`config.wsgi:application`) as user `appuser`, not ASGI or uvicorn. Env vars `GUNICORN_WORKERS`, `GUNICORN_THREADS`, `GUNICORN_TIMEOUT`, `GUNICORN_GRACEFUL_TIMEOUT`, `GUNICORN_KEEP_ALIVE`, `GUNICORN_MAX_REQUESTS` and `GUNICORN_MAX_REQUESTS_JITTER` are passed through. The worker class is **`gthread`** (threaded sync workers). Access and error logs go to stdout, with the request duration and request id on each access log line.
 
@@ -214,7 +217,8 @@ Full OAuth login (fragment vs code delivery) cannot be verified without a config
 | `CORS_ALLOWED_ORIGINS`       | Used when `CORS_ALLOW_ALL_ORIGINS=false`; Shellui / admin front-end origins.                   |
 | `CORS_ALLOW_CREDENTIALS`     | Default `false`; must stay `false` when allow-all is enabled.                                  |
 | `POSTGRES_DATABASE_URL`      | Use Postgres instead of SQLite.                                                                |
-| `REDIS_URL`                  | Shared Redis cache (recommended when `GUNICORN_WORKERS` > 1). Example: `redis://redis:6379/0`. Without it, LocMem is per-worker. |
+| `REDIS_URL`                  | Shared Redis cache and broker for the scheduled jobs. Example: `redis://redis:6379/0`. Without it, LocMem is per-worker and the scheduled jobs do not run. |
+| `SCHEDULER_ENABLED`          | Default `true`: the container runs the scheduled jobs next to gunicorn. Set `false` with a dedicated `worker` container or external cron. See [docs/scheduled-jobs.md](docs/scheduled-jobs.md). |
 | `SENTRY_DSN`                 | Sentry error reporting.                                                                        |
 | `SENTRY_ENVIRONMENT`         | e.g. `staging`, `production`.                                                                  |
 | `JWT_ACCESS_TOKEN_LIFETIME`  | Default `5m`.                                                                                  |
@@ -232,7 +236,7 @@ With Postgres:
 
 ### Redis (Coolify / multi-worker Gunicorn)
 
-When `GUNICORN_WORKERS` is greater than 1 (Docker default), auth rate limits and the logout access-token denylist rely on Django cache. In-process LocMem is **not** shared between workers.
+When `GUNICORN_WORKERS` is greater than 1 (Docker default), auth rate limits and the logout access-token denylist rely on Django cache. In-process LocMem is **not** shared between workers. Redis is also the broker for the scheduled jobs (`retry_webhooks`, `purge_expired_data`), which the container runs on its own: no Coolify Scheduled Tasks to add.
 
 1. Add a **Redis** service in Coolify (or run Redis on the VPS).
 2. On the identity-service container, set **`REDIS_URL`** to the Redis connection URL, for example:
@@ -240,7 +244,7 @@ When `GUNICORN_WORKERS` is greater than 1 (Docker default), auth rate limits and
    - Managed Redis with password: `redis://:password@host:6379/0`
 3. Redeploy identity-service. `manage.py check --deploy` warns (`authapi.W002`) if production still uses LocMem with multiple workers.
 
-Local dev and single-worker installs can leave `REDIS_URL` unset.
+Local dev and single-worker installs can leave `REDIS_URL` unset, but then the scheduled jobs do not run (the container logs a warning at startup). See [docs/scheduled-jobs.md](docs/scheduled-jobs.md) to run them with cron instead.
 
 ## Security notes
 

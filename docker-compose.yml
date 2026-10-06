@@ -25,7 +25,12 @@ services:
       ALLOWED_HOSTS: "${ALLOWED_HOSTS:-}"
       CSRF_TRUSTED_ORIGINS: "${CSRF_TRUSTED_ORIGINS:-}"
       POSTGRES_DATABASE_URL: "${POSTGRES_DATABASE_URL:-}"
-      REDIS_URL: "${REDIS_URL:-}"
+      # Shared cache and broker for the scheduled jobs (Celery worker + beat in this container).
+      REDIS_URL: "${REDIS_URL:-redis://redis:6379/0}"
+      CELERY_BROKER_URL: "${CELERY_BROKER_URL:-}"
+      # Set false when the identity-worker service below runs the jobs instead.
+      SCHEDULER_ENABLED: "${SCHEDULER_ENABLED:-true}"
+      CELERY_WORKER_CONCURRENCY: "${CELERY_WORKER_CONCURRENCY:-2}"
       SQLITE_PATH: "/app/data/db.sqlite3"
       CORS_ALLOW_ALL_ORIGINS: "${CORS_ALLOW_ALL_ORIGINS:-true}"
       CORS_ALLOWED_ORIGINS: "${CORS_ALLOWED_ORIGINS:-}"
@@ -50,7 +55,30 @@ services:
       EMAIL_SERVICE_API_KEY: "${EMAIL_SERVICE_API_KEY:-}"
     volumes:
       - identity-service-data:/app/data
+    depends_on:
+      - redis
     restart: unless-stopped
+
+  redis:
+    image: redis:8-alpine
+    container_name: identity-service-redis
+    restart: unless-stopped
+
+  # Optional: run the scheduled jobs in their own container. Set SCHEDULER_ENABLED=false
+  # on identity-service, then uncomment. Same image and environment, command "worker".
+  # identity-worker:
+  #   image: shellui/identity-service:local
+  #   command: worker
+  #   environment:
+  #     SECRET_KEY: "${SECRET_KEY}"
+  #     DEBUG: "${DEBUG:-true}"
+  #     REDIS_URL: "${REDIS_URL:-redis://redis:6379/0}"
+  #     SQLITE_PATH: "/app/data/db.sqlite3"
+  #   volumes:
+  #     - identity-service-data:/app/data
+  #   depends_on:
+  #     - redis
+  #   restart: unless-stopped
 
 volumes:
   identity-service-data:

@@ -16,10 +16,10 @@ Live site: [https://docs.shellui.com/identity](https://docs.shellui.com/identity
 | **[Social login providers](oauth-providers.md)** | django-allauth catalog with 15 supported OAuth providers (Twitch, LinkedIn, Slack, OpenID Connect, Keycloak, Okta, Auth0, …), IdP callback URLs |
 | **[SAML](saml.md)** | SAML 2.0 SSO with multiple IdPs per company, SP metadata, ACS, and optional SLO |
 | **[SCIM](scim.md)** | Opt-in enterprise provisioning (Users + Groups + nested groups), per-company bearer tokens |
-| **[Shellui webhooks](actions.md)** | Domain events → signed webhooks, DB outbox + `retry_webhooks` |
+| **[Shellui webhooks](actions.md)** | Domain events → signed webhooks, DB outbox + `retry_webhooks` job |
 | **[Email](email-service.md)** | Magic links and invitations via email-service, SMTP fallback, event forwarding |
 | **[Event log](event-log.md)** | Every event and sign-in in one table, per-company data retention, admin REST API |
-| **[Scheduled jobs](scheduled-jobs.md)** | `purge_expired_data` (hourly) and `retry_webhooks` (every minute), with Coolify, Compose and Kubernetes examples |
+| **[Scheduled jobs](scheduled-jobs.md)** | `purge_expired_data` (hourly) and `retry_webhooks` (every minute) run inside the container; dedicated worker and external cron options |
 | **[n8n integration](n8n.md)** | Webhook node setup, signature verification, retries |
 | **[Configuration](configuration.md)** | JWT (`iss`/`aud`, RS256, HS256 legacy), CORS, `REDIS_URL`, Postgres timeouts, Gunicorn, `/health/live`, `SCIM_ENABLED`, `TRUSTED_PROXY_IPS`, token delivery |
 | **[Company access](company-access.md)** | Public, domain, and invitation-only join modes after OAuth, plus email invitations |
@@ -35,9 +35,9 @@ Live site: [https://docs.shellui.com/identity](https://docs.shellui.com/identity
 1. Copy [`.env.example`](https://github.com/shellui/identity-service/blob/develop/.env.example) and set `SECRET_KEY`, JWT keys, `JWT_ISSUER`, and `JWT_AUDIENCE` for production.
 2. Point load balancers at **`GET /health/live`**.
 3. Register IdP callbacks at `{identity-host}/api/v1/oauth/callback` and configure company redirect allowlists — [OAuth login](oauth-login.md).
-4. For multi-worker production, set **`REDIS_URL`** — [Configuration](configuration.md).
+4. Set **`REDIS_URL`**: it shares the cache across workers and runs the scheduled jobs. See [Configuration](configuration.md).
 5. For SCIM, run migrations and create a company SCIM token — [SCIM](scim.md).
-6. Schedule `purge_expired_data` every hour and, if you use webhooks, `retry_webhooks` every minute: [Scheduled jobs](scheduled-jobs.md).
+6. Scheduled jobs (`purge_expired_data`, `retry_webhooks`) run inside the container once `REDIS_URL` is set. Nothing to set up: [Scheduled jobs](scheduled-jobs.md).
 
 ---
 

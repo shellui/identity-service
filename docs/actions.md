@@ -24,10 +24,10 @@ Insert ActionOutbox row(s) in the same DB transaction
 transaction.on_commit → best-effort delivery (timeout-bounded HTTP, off the request thread)
         │
         ▼
-DeliveryAttempt audit log; retries via manage.py retry_webhooks
+DeliveryAttempt audit log; retries by the retry_webhooks scheduled job
 ```
 
-- **No Celery / Redis required** for actions — the outbox lives in Postgres (or SQLite locally).
+- The outbox lives in Postgres (or SQLite locally). Retries run every minute on the built-in scheduler, which uses Redis (`REDIS_URL`). See [Scheduled jobs](scheduled-jobs.md).
 - **SCIM and API paths never block** on slow external HTTP: delivery runs only after commit, with short webhook timeouts (default 5s).
 - Delivery is **at-least-once**; dedupe on the envelope `id` (same value as the `webhook-id` header).
 
@@ -135,7 +135,7 @@ Before delivery, identity **resolves the webhook hostname once**, rejects privat
 
 ---
 
-## Delivery, retries, and cron
+## Delivery, retries, and scheduling
 
 - After commit, identity attempts delivery once in a background thread (**5s** default timeout via `ACTIONS_WEBHOOK_TIMEOUT_SECONDS`; errors never fail the user request).
 - Failed deliveries schedule `next_attempt_at` with exponential backoff: **30s * 2^(attempt-1)**, capped at **1 hour**, unless **429** or **503** returns **Retry-After** (then the larger of backoff and Retry-After applies, still capped at 1 hour).
@@ -153,21 +153,15 @@ Before delivery, identity **resolves the webhook hostname once**, rejects privat
 
 Each attempt is logged in **Delivery attempts** (HTTP status, error excerpt, duration).
 
-Retry pending rows with:
+The Docker image retries pending rows every minute with the `retry_webhooks` job, so there is nothing to schedule when `REDIS_URL` is set. To run it from your own scheduler instead, set `SCHEDULER_ENABLED=false` and run every minute:
 
 ```bash
 python manage.py retry_webhooks --batch-size 50 --max-seconds 50 --concurrency 4
 ```
 
-Cron example (every minute):
+Keep `--max-seconds` below 60 so overlapping runs stay safe (skip-locked claims + lease).
 
-```text
-* * * * * cd /app && python manage.py retry_webhooks >> /var/log/retry_webhooks.log 2>&1
-```
-
-On **Coolify**, add a **Scheduled Task** on the same identity-service image with that command and a 1-minute interval. Keep `--max-seconds` below 60 so overlapping runs stay safe (skip-locked claims + lease).
-
-Finished deliveries (`delivered`, `dead`) are deleted after the company data retention by `purge_expired_data`. See [Scheduled jobs](scheduled-jobs.md) for both jobs and recommended schedules.
+Finished deliveries (`delivered`, `dead`) are deleted after the company data retention by `purge_expired_data`. See [Scheduled jobs](scheduled-jobs.md) for both jobs.
 
 Flags:
 
@@ -273,7 +267,7 @@ List, detail, and update responses never include top-level `secret`. Webhook `co
 2. Call `emit_event(...)` or `emit_event_if_rules(...)` from the business path inside a transaction when appropriate.
 3. Document the payload in this file and add tests under `apps/actions/tests/`.
 
-To copy this pattern to **storage-service** or **hosting-service**, reuse the self-contained modules under `apps/actions/` (`emit.py`, `event_log.py`, `retention.py`, `delivery.py`, `handlers/webhook.py`, `webhook_signing.py`, `webhook_transport.py`, `ssrf.py`, `management/commands/retry_webhooks.py`, `management/commands/purge_expired_data.py`, models, and admin API views), register service-specific events, and wire `emit_event` from domain code.
+To copy this pattern to **storage-service** or **hosting-service**, reuse the self-contained modules under `apps/actions/` (`emit.py`, `event_log.py`, `retention.py`, `delivery.py`, `handlers/webhook.py`, `webhook_signing.py`, `webhook_transport.py`, `ssrf.py`, `management/commands/retry_webhooks.py`, `management/commands/purge_expired_data.py`, `tasks.py`, models, and admin API views, plus `config/celery.py` and `config/task_lock.py` for the scheduler), register service-specific events, and wire `emit_event` from domain code.
 
 ---
 

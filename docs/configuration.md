@@ -141,7 +141,7 @@ The entrypoint also sets `--worker-tmp-dir /dev/shm` (heartbeat file in memory, 
 
 | Variable | Default | Purpose |
 | -------- | ------- | ------- |
-| `REDIS_URL` | unset | Django Redis cache backend for auth rate limits, logout access-token denylist, and last-seen throttling |
+| `REDIS_URL` | unset | Django Redis cache backend for auth rate limits, logout access-token denylist, and last-seen throttling. Also the broker for the [scheduled jobs](#scheduled-jobs) |
 
 When unset, Django uses in-process **LocMem** (fine for local dev or a single Gunicorn worker). With **`GUNICORN_WORKERS` > 1**, set `REDIS_URL` so limits and denylists are shared across workers. `manage.py check --deploy` emits **`authapi.W002`** when production uses LocMem with multiple workers.
 
@@ -153,6 +153,22 @@ REDIS_URL=redis://redis:6379/0
 ```
 
 See [PUBLISH.md](https://github.com/shellui/identity-service/blob/develop/PUBLISH.md) for Coolify Redis setup.
+
+---
+
+## Scheduled jobs
+
+The Docker image runs `retry_webhooks` every minute and `purge_expired_data` every hour in a Celery worker with an embedded beat, next to gunicorn. Set `REDIS_URL` and there is nothing else to set up. Details, multiple replicas and external cron: [Scheduled jobs](scheduled-jobs.md).
+
+| Variable | Default | Purpose |
+| -------- | ------- | ------- |
+| `SCHEDULER_ENABLED` | `true` | Start the worker and beat in the web container. Set `false` when a dedicated `worker` container or your own cron runs the jobs |
+| `CELERY_BROKER_URL` | `REDIS_URL` | Broker for the jobs, when it must differ from `REDIS_URL` |
+| `CELERY_WORKER_CONCURRENCY` | `2` | Worker threads. 2 lets an hourly purge and a webhook retry run at the same time |
+
+Without `REDIS_URL` (or `CELERY_BROKER_URL`), the container logs a warning at startup, does not start the worker, and serves the web app as before.
+
+The container command selects what runs: `web` (default: migrations, gunicorn and the worker), `worker` (only the worker and beat, no migrations) or any other command, run as `appuser`.
 
 ---
 
