@@ -93,7 +93,7 @@ _STAFF_DISABLED_PAGE = {
         'title': 'Sign-in links are off for staff accounts',
         'body': (
             "For security, staff accounts can't sign in with an email link. "
-            'Sign in with your password or SSO instead.'
+            'Sign in with your usual sign-in method instead.'
         ),
         'button': 'Go to sign-in',
     },
@@ -101,7 +101,7 @@ _STAFF_DISABLED_PAGE = {
         'title': 'Les liens de connexion sont désactivés pour les comptes staff',
         'body': (
             'Par sécurité, les comptes staff ne peuvent pas se connecter avec un lien envoyé par e-mail. '
-            'Connectez-vous avec votre mot de passe ou le SSO.'
+            'Connectez-vous avec votre méthode de connexion habituelle.'
         ),
         'button': 'Aller à la connexion',
     },

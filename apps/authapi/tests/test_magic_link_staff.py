@@ -108,7 +108,7 @@ class StaffMagicLinkRequestTests(_Base):
                 message = mail.outbox[0]
                 self.assertEqual(message.to, [user.email])
                 self.assertEqual((message.cc, message.bcc, message.reply_to), ([], [], []))
-                self.assertEqual(message.subject, '[Shellui] Sign in to Acme with your password or SSO')
+                self.assertEqual(message.subject, '[Shellui] Sign in to Acme with your usual sign-in method')
                 html = message.alternatives[0][0]
                 for body in (message.body, html, message.subject):
                     self.assertIsNone(_TOKEN_RE.search(body))
@@ -116,14 +116,18 @@ class StaffMagicLinkRequestTests(_Base):
                     self.assertNotIn('auth.example.com', body)
                 self.assertIn('No sign-in link for staff accounts', message.body)
                 self.assertIn("staff accounts can't sign in with an email link", message.body)
+                self.assertIn('Sign in with your usual sign-in method instead.', message.body)
+                self.assertIn('Sign in with your usual sign-in method instead.', html)
+                self.assertNotIn('password', message.body.lower())
                 self.assertIn('Go to sign-in: https://app.example.com/', message.body)
                 self.assertIn('href="https://app.example.com/"', html)
 
     def test_french_notice(self):
         self._request(self.staff.email, language='fr')
         message = mail.outbox[0]
-        self.assertEqual(message.subject, '[Shellui] Connectez-vous à Acme avec votre mot de passe ou le SSO')
+        self.assertEqual(message.subject, '[Shellui] Connectez-vous à Acme avec votre méthode de connexion habituelle')
         self.assertIn('Pas de lien de connexion pour les comptes staff', message.body)
+        self.assertIn('Connectez-vous avec votre méthode de connexion habituelle.', message.body)
 
     def test_staff_is_matched_by_address_case_insensitively(self):
         response = self._request('OPS@Shellui.Test')
@@ -265,6 +269,10 @@ class StaffMagicLinkVerifyTests(_Base):
         )
         self.assertEqual(response.status_code, 403, response.data)
         self.assertEqual(response.data['error_code'], 'magic_link_staff_disabled')
+        self.assertEqual(
+            response.data['error'],
+            'Magic link sign-in is disabled for staff accounts. Sign in with your usual sign-in method instead.',
+        )
         self.assertNotIn('access_token', response.data)
         self.assertIsNotNone(MagicLinkToken.objects.get().consumed_at)
         failure = EventLog.objects.filter(event_type='identity.auth.login.failed').latest('pk')
@@ -316,6 +324,7 @@ class StaffMagicLinkVerifyTests(_Base):
         page = response.content.decode()
         self.assertIn('Sign-in links are off for staff accounts', page)
         self.assertIn("staff accounts can&#x27;t sign in with an email link", page)
+        self.assertIn('Sign in with your usual sign-in method instead.', page)
         self.assertIn('href="https://app.example.com/"', page)
         self.assertIn('data-error-code="magic_link_staff_disabled"', page)
         self.assertNotIn('<form', page)
@@ -333,6 +342,7 @@ class StaffMagicLinkVerifyTests(_Base):
         self.assertIn('<html lang="fr">', page)
         self.assertIn('Les liens de connexion sont désactivés pour les comptes staff', page)
         self.assertIn('Aller à la connexion', page)
+        self.assertIn('Connectez-vous avec votre méthode de connexion habituelle.', page)
 
     def test_non_staff_token_still_signs_in(self):
         raw = self._token(self.member)

@@ -50,7 +50,7 @@ Rate limits: `AUTH_RATE_LIMIT_MAGIC_LINK` (default 10/min) per client IP, email+
 
 Returns a page that submits itself with **POST** to the same URL (with `company_id` in the query string) as soon as it loads. The user is signed in and redirected to `redirect_to` with tokens (session code or fragment) without clicking anything; company join rules apply as usual. The GET itself **does not consume** the token, so email link scanners that only fetch the URL do not burn it. Without JavaScript, the page shows a **Continue sign-in** button.
 
-When the token belongs to a staff account, the page does not submit. It answers **403** and explains, in English or French (browser language first, then the account language), that staff accounts sign in with a password or SSO, with a **Go to sign-in** link to the app the request came from. The card carries `data-error-code="magic_link_staff_disabled"`.
+When the token belongs to a staff account, the page does not submit. It answers **403** and explains, in English or French (browser language first, then the account language), that staff accounts can't use email sign-in links and should sign in with their usual sign-in method, with a **Go to sign-in** link to the app the request came from. The card carries `data-error-code="magic_link_staff_disabled"`.
 
 ### Consume (JSON)
 
@@ -91,7 +91,7 @@ Staff accounts (`is_staff` or `is_superuser`) cannot sign in with a magic link. 
 When someone asks for a link for a staff address:
 
 - identity-service creates no token and sends no link
-- the address gets a short notice instead: magic links are off for staff accounts, sign in with your password or SSO, and a **Go to sign-in** button to the app the request came from (the origin of `redirect_to`). It has no token and no sign-in link. A loopback `redirect_to` (CLI sign-in) gives no button
+- the address gets a short notice instead: magic links are off for staff accounts, sign in with your usual sign-in method, and a **Go to sign-in** button to the app the request came from (the origin of `redirect_to`). It has no token and no sign-in link. A loopback `redirect_to` (CLI sign-in) gives no button
 - the notice goes through the same auth path as the magic link: email-service `POST /api/v1/send` with the built-in template `identity.auth.magic_link.staff_blocked` (one recipient, Shellui copy that companies cannot edit or put rules on), or the static templates in `apps/authapi/templates/authapi/magic_link_staff/` (EN and FR) over SMTP. An email-service that does not know the template yet (`template_not_found`) also falls back to SMTP
 - the same rate limits apply as for a magic link
 - unused tokens already issued for the account are deleted

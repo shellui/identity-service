@@ -24,7 +24,7 @@ MAGIC_LINK_LANGUAGES = frozenset({'en', 'fr'})
 # Verify answers this when a token belongs to a staff account. Stable key, not translated text.
 MAGIC_LINK_STAFF_DISABLED = 'magic_link_staff_disabled'
 MAGIC_LINK_STAFF_DISABLED_MESSAGE = (
-    'Magic link sign-in is disabled for staff accounts. Sign in with your password or SSO.'
+    'Magic link sign-in is disabled for staff accounts. Sign in with your usual sign-in method instead.'
 )
 
 

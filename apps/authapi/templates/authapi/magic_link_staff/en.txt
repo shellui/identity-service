@@ -1,7 +1,7 @@
 {% autoescape off %}
 No sign-in link for staff accounts
 
-Someone asked for a sign-in link for this address on {{ company_name }}. For security, staff accounts can't sign in with an email link. Sign in with your password or SSO instead. If you didn't ask for this, you can ignore this email.
+Someone asked for a sign-in link for this address on {{ company_name }}. For security, staff accounts can't sign in with an email link. Sign in with your usual sign-in method instead. If you didn't ask for this, you can ignore this email.
 {% if sign_in_url %}
 Go to sign-in: {{ sign_in_url }}
 {% endif %}{% endautoescape %}

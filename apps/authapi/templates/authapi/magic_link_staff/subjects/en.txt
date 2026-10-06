@@ -1,1 +1,1 @@
-{% autoescape off %}[Shellui] Sign in to {{ company_name }} with your password or SSO{% endautoescape %}
+{% autoescape off %}[Shellui] Sign in to {{ company_name }} with your usual sign-in method{% endautoescape %}
