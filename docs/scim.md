@@ -115,10 +115,10 @@ Staff and company owners manage SCIM with a JWT scoped to the company (`company_
 | `POST` | `/api/v1/scim/tokens/{id}/revoke` | Revokes the token. Idempotent, also works when SCIM is off |
 
 ```bash
-curl -s -H "Authorization: Bearer your_access_token_here" \
+curl -s -H "Authorization: Bearer $ACCESS_TOKEN" \
   "https://auth.example.com/api/v1/scim?company_id=1"
 
-curl -s -X POST -H "Authorization: Bearer your_access_token_here" \
+curl -s -X POST -H "Authorization: Bearer $ACCESS_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"name":"Okta prod"}' \
   "https://auth.example.com/api/v1/scim/tokens?company_id=1"

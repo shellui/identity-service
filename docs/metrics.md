@@ -13,10 +13,10 @@ identity-service exposes Prometheus metrics for one company or for the whole dep
 
 ```bash
 curl -sS https://auth.example.com/api/v1/metrics \
-  -H 'Authorization: Bearer your_access_token_here'
+  -H "Authorization: Bearer $ACCESS_TOKEN"
 
 curl -sS https://auth.example.com/api/v1/metrics/all \
-  -H 'Authorization: Bearer your_access_token_here'
+  -H "Authorization: Bearer $ACCESS_TOKEN"
 ```
 
 ## Company metrics

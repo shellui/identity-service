@@ -78,7 +78,7 @@ This request adds a production shell origin for company `1`:
 
 ```bash
 curl -s -X POST "https://auth.example.com/api/v1/oauth-redirects?company_id=1" \
-  -H "Authorization: Bearer your_access_token_here" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"base_url":"https://app.example.com","label":"Production shell"}'
 ```
