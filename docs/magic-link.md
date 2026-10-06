@@ -37,8 +37,8 @@ OAuth providers remain independent — a company can use magic link only, OAuth 
 - **`redirect_to`** must match the company OAuth redirect allowlist (same rules as OAuth login).
 - When magic link is **disabled**, the API returns **403** with `error_code: magic_link_disabled`.
 - When the message is accepted, the API returns **200** with a generic message (it does not reveal whether the email exists).
-- When the company has an enabled webhook Action rule for **`identity.auth.magic_link.requested`**, the event is sent to that webhook with `magic_link_url`, and identity-service does **not** send the sign-in email. Your webhook (for example an n8n workflow) delivers the link. See [actions.md](actions.md).
-- Otherwise identity-service sends the sign-in email. With `EMAIL_SERVICE_API_KEY` set, that is `POST /api/v1/send` on email-service (`identity.auth.magic_link.requested`, TTL 120s). With no key, or when email-service cannot be reached, it uses the static templates in `apps/authapi/templates/authapi/magic_link/` (EN and FR). Locale order: request `language`, then the saved language, then `MAGIC_LINK_EMAIL_DEFAULT_LANGUAGE` (EN by default). If both paths fail, the API returns **503** `email_unavailable`. A hard bounce on the auth lane returns **422** `recipient_suppressed`. Those bodies are an `error_code` only. See [email-service.md](email-service.md).
+- Identity-service always sends the sign-in email itself. With `EMAIL_SERVICE_API_KEY` set, that is `POST /api/v1/send` on email-service (`identity.auth.magic_link.requested`, TTL 120s). With no key, or when email-service cannot be reached, it uses the static templates in `apps/authapi/templates/authapi/magic_link/` (EN and FR). Locale order: request `language`, then the saved language, then `MAGIC_LINK_EMAIL_DEFAULT_LANGUAGE` (EN by default). If both paths fail, the API returns **503** `email_unavailable`. A hard bounce on the auth lane returns **422** `recipient_suppressed`. Those bodies are an `error_code` only. See [email-service.md](email-service.md).
+- A webhook rule for **`identity.auth.magic_link.requested`** is a notification only. Its payload has `request_id`, `email`, `expires_at`, `source` and `language` (plus `user_id` and `region` for members), but never the sign-in link, the token or anything else that can be used to sign in. The rule does not replace the email. See [actions.md](actions.md).
 
 Rate limits: `AUTH_RATE_LIMIT_MAGIC_LINK` (default 10/min) per client IP, email+company, and company.
 
@@ -70,7 +70,8 @@ Returns the same JWT payload as `POST /api/v1/token` / OAuth finalize on success
 | **TTL** | `MAGIC_LINK_TTL_SECONDS` (default **1800** = 30 minutes) |
 | **One-time use** | Token invalidated on successful consume |
 | **Link URL** | Built from **`JWT_ISSUER`** (HTTPS required when `DEBUG=false`). With `DEBUG=true` and no `JWT_ISSUER`, the request base URL is used instead (local development only). email-service `EMAIL_AUTH_LINK_HOSTS` must include that host. `localhost` stays on the list only while email-service `DEBUG=true`. See [email-service.md](email-service.md) |
-| **Secrets in webhooks** | Webhook payloads include `request_id`, `email`, `expires_at`, and `magic_link_url` (the one-time sign-in link). Anyone with the URL can sign in until it expires or is used, so only point this rule at endpoints you trust. The raw token is never stored; only its hash is. |
+| **Token storage** | Only a SHA-256 hash of the token is stored (`MagicLinkToken.token_hash`). The raw token and the link exist in memory while the request runs, in the email sent to the user (rendered by identity for SMTP, or handed to email-service in the `/api/v1/send` request), and in the verify request. They are not in webhook payloads, webhook delivery records (`ActionOutbox`, `DeliveryAttempt`), the event log, Django admin, cache entries or app logs (with `DEBUG=true` the default console email backend prints the email, link included, for local development). The gunicorn access log has the path without the query string, and Sentry events drop query strings, request bodies and the Referer |
+| **Webhooks** | The `identity.auth.magic_link.requested` payload never contains the link or the token. Before 0.7.0 it carried `magic_link_url`; migration `actions.0007` removes it from stored delivery records |
 | **Webhook user fields** | `user_id`, `language`, and `region` are included only when the email matches a user who already has membership in that company. |
 | **Privacy** | Request endpoint does not enumerate valid emails |
 
@@ -105,7 +106,7 @@ When `MAGIC_LINK_ENABLED=false` on the deployment, `magic_link_globally_enabled`
 ## Disabling for a company
 
 1. **Admin REST:** `PATCH /api/v1/auth-methods?company_id=…` with `{ "enable_magic_link": false }`, or Django admin → **Companies** → uncheck **Enable magic link**.
-2. Optionally remove `magic_link` Action rules.
+2. Optionally remove webhook rules for `identity.auth.magic_link.requested`.
 
 New companies default to magic link **enabled** (`enable_magic_link=true`).
 
@@ -121,5 +122,5 @@ Enable another method first, then remove the old one. Django admin edits and the
 ## Related docs
 
 - [OAuth login](oauth-login.md) — redirect allowlist and token delivery
-- [Action triggers](actions.md) — `identity.auth.magic_link.requested`
+- [Webhooks](actions.md): `identity.auth.magic_link.requested`
 - [Configuration](configuration.md) — environment variables

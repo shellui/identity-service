@@ -9,7 +9,7 @@ from apps.actions.email_events import enqueue_email_event
 from apps.actions.envelope import build_envelope
 from apps.actions.event_log import record_event
 from apps.actions.models import ActionOutbox, ActionRule
-from apps.actions.registry import get_event_type
+from apps.actions.registry import get_event_type, strip_sensitive_fields
 from apps.companies.models import Company
 
 
@@ -25,11 +25,16 @@ def emit_event(
     Validate ``event_type``, record it in the event log, then write outbox rows for enabled
     webhook ``ActionRule`` rows of ``company``.
 
+    The event type's ``sensitive_fields`` are removed first, so they never reach the event
+    log, the webhook envelope or email-service.
+
     Schedules a best-effort delivery attempt after the surrounding database transaction commits.
     """
     event = get_event_type(event_type)
     if not event.emit_by_default and not force:
         return []
+    # Defense in depth: sign-in links and tokens are never logged, sent or stored.
+    payload = strip_sensitive_fields(event, payload)
 
     logged = record_event(event, company, payload)
     if not event.webhook:

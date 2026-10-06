@@ -121,7 +121,7 @@ Concurrency is about `workers x threads`. Under-provisioned pools can queue even
 
 **`GUNICORN_TIMEOUT` does not stop a stuck request.** With the `gthread` worker class, the worker keeps sending heartbeats while one of its threads is blocked (on SMTP, the database or an outbound HTTP call), so gunicorn never kills it. Requests sent to that worker can then wait with no response and no log line. Per-request deadlines come from the app instead: `EMAIL_TIMEOUT`, `POSTGRES_STATEMENT_TIMEOUT`, `POSTGRES_LOCK_TIMEOUT` and the 20 second OAuth HTTP timeouts. Set a response timeout on the reverse proxy as well. `GUNICORN_MAX_REQUESTS` recycles workers over time, which also replaces a worker that still serves some requests.
 
-The entrypoint also sets `--worker-tmp-dir /dev/shm` (heartbeat file in memory, not on the container disk) and writes the gunicorn access and error logs to stdout. Each access log line ends with the request duration and the request id, for example `"GET /api/v1/settings HTTP/1.1" 200 512 "-" "Mozilla/5.0" 182ms req=4f2c9a1e`.
+The entrypoint also sets `--worker-tmp-dir /dev/shm` (heartbeat file in memory, not on the container disk) and writes the gunicorn access and error logs to stdout. Each access log line ends with the request duration and the request id, for example `"GET /api/v1/settings HTTP/1.1" 200 512 "Mozilla/5.0" 182ms req=4f2c9a1e`. The line has the path without the query string and no Referer, because query strings carry magic-link tokens, OAuth codes, `confirm_token` and `setup_token`.
 
 ---
 

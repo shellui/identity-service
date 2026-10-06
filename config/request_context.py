@@ -25,6 +25,19 @@ REQUEST_ID_HEADER = 'X-Request-ID'
 _SAFE_REQUEST_ID_RE = re.compile(r'^[A-Za-z0-9._:-]{1,64}$')
 
 
+def url_without_query(url: str | None) -> str:
+    """``url`` without its query string and fragment, safe to log.
+
+    Query strings carry one-time secrets (magic-link ``token``, OAuth ``code`` and
+    ``state``, ``confirm_token``, ``setup_token``, ``shellui_auth_code``), so log lines,
+    error reports and breadcrumbs keep only the scheme, host and path.
+    """
+    value = str(url or '')
+    for sep in ('?', '#'):
+        value = value.split(sep, 1)[0]
+    return value
+
+
 def _new_request_id() -> str:
     return uuid.uuid4().hex
 
@@ -51,7 +64,8 @@ class RequestIdMiddleware:
     """Assign a request id, echo it as ``X-Request-ID`` and warn about slow requests.
 
     Requests slower than ``SLOW_REQUEST_THRESHOLD_SECONDS`` are logged as a warning with
-    the method, path, status and duration. Set the threshold to 0 to turn this off.
+    the method, path (never the query string), status and duration. Set the threshold to 0
+    to turn this off.
     """
 
     def __init__(self, get_response):

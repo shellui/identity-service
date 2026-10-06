@@ -242,7 +242,6 @@ While this rule is enabled, identity-service does not send its own invitation em
     "request_id": "00000000-0000-0000-0000-000000000001",
     "email": "ada@acme.com",
     "expires_at": "2026-09-25T10:00:00+00:00",
-    "magic_link_url": "https://auth.example.com/api/v1/magic-link/verify?token=example-token&company_id=1",
     "source": "magic_link",
     "language": "en",
     "region": "UTC"
@@ -250,9 +249,7 @@ While this rule is enabled, identity-service does not send its own invitation em
 }
 ```
 
-While this rule is enabled, identity-service does not send its own sign-in email, so your workflow must deliver `magic_link_url` to the user. Disable the rule to go back to the built-in email.
-
-`magic_link_url` signs the user in until `expires_at` or first use. Treat it as a secret: avoid logging it, and limit who can read n8n execution history for this workflow.
+This event is a notification. Identity-service always sends the sign-in email itself, and the payload never contains the sign-in link or the token, so a workflow cannot deliver or use the link. Use it for alerts or analytics, for example to count sign-in requests per company.
 
 ---
 

@@ -12,6 +12,7 @@ from rest_framework.test import APIClient
 
 from django.core import mail
 
+from apps.actions.delivery import deliver_outbox_row
 from apps.actions.models import ActionOutbox, ActionRule
 from apps.authapi.magic_link import (
     build_magic_link_verify_url,
@@ -163,7 +164,8 @@ class MagicLinkAuthTests(TestCase):
         )
         self.assertEqual(response.status_code, 200, response.data)
 
-    def test_action_emit_includes_magic_link_url(self):
+    @override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
+    def test_webhook_rule_does_not_replace_email_and_payload_has_no_link(self):
         ActionRule.objects.create(
             company=self.company,
             event_type='identity.auth.magic_link.requested',
@@ -174,28 +176,34 @@ class MagicLinkAuthTests(TestCase):
                 'secret': 'whsec_test',
             },
         )
-        with self.captureOnCommitCallbacks(execute=True):
-            with patch(
-                'apps.authapi.email_delivery.send_magic_link_email',
-                return_value=None,
-            ) as send_email:
-                self._request_link()
-        send_email.assert_not_called()
-        outbox = ActionOutbox.objects.filter(event_type='identity.auth.magic_link.requested').first()
-        self.assertIsNotNone(outbox)
+        mail.outbox.clear()
+        with patch('apps.actions.emit.schedule_outbox_delivery'):
+            with self.captureOnCommitCallbacks(execute=True):
+                response = self._request_link()
+        self.assertEqual(response.status_code, 200, response.data)
+        # Identity always sends the sign-in email, even with an enabled webhook rule.
+        self.assertEqual(len(mail.outbox), 1)
+        raw = self._raw_token_from_email()
+
+        outbox = ActionOutbox.objects.get(event_type='identity.auth.magic_link.requested')
         data = outbox.envelope['data']
         self.assertIn('request_id', data)
         self.assertIn('expires_at', data)
-        self.assertNotIn('token', data)
-        self.assertIn('magic_link_url', data)
-        url = data['magic_link_url']
-        self.assertTrue(url.startswith('https://auth.example.com/api/v1/magic-link/verify?'))
-        self.assertIn(f'company_id={self.company.id}', url)
-        raw = re.search(r'token=([^&]+)', url).group(1)
+        self.assertEqual(data['email'], 'member@example.com')
+        for key in ('magic_link_url', 'token', 'raw_token'):
+            self.assertNotIn(key, data)
+        stored = json.dumps(outbox.envelope)
         row = MagicLinkToken.objects.get(pk=data['request_id'])
         self.assertEqual(row.token_hash, hash_magic_link_token(raw))
-        body = json.dumps(outbox.envelope)
-        self.assertNotIn(row.token_hash, body)
+        self.assertNotIn(raw, stored)
+        self.assertNotIn('magic-link/verify', stored)
+        self.assertNotIn(row.token_hash, stored)
+        # The body actually handed to the webhook transport has no link either.
+        with patch('apps.actions.delivery.deliver_webhook_action', return_value=None) as deliver:
+            deliver_outbox_row(outbox.pk)
+        sent = json.dumps(deliver.call_args.kwargs['envelope'])
+        self.assertNotIn(raw, sent)
+        self.assertNotIn('magic-link/verify', sent)
 
     @override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
     def test_email_sent_when_magic_link_webhook_rule_disabled(self):

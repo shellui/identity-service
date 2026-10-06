@@ -134,11 +134,11 @@ class ShellUIAdminUserUpdateSerializer(serializers.Serializer):
     """Partial update for Django user fields plus optional Shellui user_metadata merge (`data`).
 
     ``is_active`` enables/disables ``CompanyMembership`` for the current company only.
+    ``is_staff`` and ``is_superuser`` are not writable here: only Django admin may change them.
     """
 
     first_name = serializers.CharField(required=False, allow_blank=True, max_length=150)
     last_name = serializers.CharField(required=False, allow_blank=True, max_length=150)
-    is_staff = serializers.BooleanField(required=False)
     is_active = serializers.BooleanField(required=False)
     data = serializers.JSONField(required=False)
     group_ids = serializers.ListField(

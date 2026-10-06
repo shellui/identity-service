@@ -654,6 +654,8 @@ if SENTRY_DSN:
     from sentry_sdk.integrations.django import DjangoIntegration
     from sentry_sdk.integrations.logging import LoggingIntegration
 
+    from config.sentry_scrub import before_breadcrumb, before_send, event_scrubber
+
     sentry_sdk.init(
         dsn=SENTRY_DSN,
         integrations=[
@@ -668,6 +670,10 @@ if SENTRY_DSN:
         traces_sample_rate=SENTRY_TRACES_SAMPLE_RATE,
         send_default_pii=False,
         attach_stacktrace=True,
+        # Strip query strings, request bodies, the Referer and secret-named locals.
+        before_send=before_send,
+        before_breadcrumb=before_breadcrumb,
+        event_scrubber=event_scrubber(),
     )
 
 LOGGING = {

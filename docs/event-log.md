@@ -33,7 +33,7 @@ To keep rows small, `data` is the webhook payload with:
 
 - empty values (`null`, empty strings and lists, `false`) removed
 - `user_id` removed, since it is the `user` column
-- secrets removed: `magic_link_url` is sent to webhooks but never stored
+- secret fields removed: an event type can list fields that are never logged, sent to webhooks or stored. No webhook payload contains a sign-in link or token
 
 Sign-in events store `provider`, `failure_reason`, `is_staff_at_event`, `ip_hash` (salted hash, never the raw IP), `user_agent` (truncated), `client_timezone`, `client_device_id_hash`, `client_country` and `client_city` (GeoIP, when configured).
 

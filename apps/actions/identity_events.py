@@ -190,20 +190,16 @@ register_event(
         label='Magic link requested',
         description=(
             'A user requested a passwordless email sign-in link for this company. '
-            'Webhook payloads include request_id, expires_at, and magic_link_url. '
-            'The URL signs the user in until it expires or is used once, so treat it as a secret.'
+            'Notification only: the payload has request_id and expires_at but never the sign-in '
+            'link or token. Identity always sends the sign-in email itself.'
         ),
         payload_fields=_USER
         + (
             EventFieldDoc('request_id', 'Magic link request UUID', '00000000-0000-0000-0000-000000000001'),
             EventFieldDoc('expires_at', 'ISO8601 expiry for the link', '2026-09-25T10:00:00+00:00'),
-            EventFieldDoc(
-                'magic_link_url',
-                'One-time sign-in URL (secret until expires_at or first use)',
-                'https://auth.example.com/api/v1/magic-link/verify?token=example-token&company_id=1',
-            ),
         ),
-        sensitive_fields=('magic_link_url',),
+        # Never sent or stored. Kept here so a future caller cannot leak them by mistake.
+        sensitive_fields=('magic_link_url', 'token', 'raw_token'),
     )
 )
 

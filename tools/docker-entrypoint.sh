@@ -28,8 +28,10 @@ runuser -u appuser -- python manage.py check --deploy
 # --keep-alive is above the reverse proxy idle time, so the proxy does not reuse a
 # connection gunicorn is closing (that gives random 502s).
 #
-# Access log format: gunicorn default plus request duration in ms and the X-Request-ID
-# returned by the app.
+# Access log format: method, path WITHOUT the query string (%(U)s), protocol, status,
+# size, user agent, duration in ms and the X-Request-ID returned by the app.
+# Never log the full request line (%(r)s), the query string (%(q)s) or the Referer
+# (%(f)s): they carry magic-link tokens, OAuth codes, confirm_token and setup_token.
 exec runuser -u appuser -- gunicorn \
   --bind 0.0.0.0:8000 \
   --worker-class gthread \
@@ -43,5 +45,5 @@ exec runuser -u appuser -- gunicorn \
   --worker-tmp-dir /dev/shm \
   --access-logfile - \
   --error-logfile - \
-  --access-logformat '%(h)s %(l)s %(u)s %(t)s "%(r)s" %(s)s %(b)s "%(f)s" "%(a)s" %(M)sms req=%({x-request-id}o)s' \
+  --access-logformat '%(h)s %(l)s %(u)s %(t)s "%(m)s %(U)s %(H)s" %(s)s %(b)s "%(a)s" %(M)sms req=%({x-request-id}o)s' \
   config.wsgi:application

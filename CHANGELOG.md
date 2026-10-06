@@ -47,7 +47,7 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 - **Invitations:** staff and company owners can invite, list, revoke, and delete email invitations (`/api/v1/invitations`), with `identity.user.invited` and `identity.user.invitation_revoked` webhooks. See [docs/company-access.md](docs/company-access.md#invitations).
 - **Broadcast audience:** `GET /api/v1/users/audience` lists company members for email broadcasts, filtered by groups, roles, access, join date, and last seen.
 - **User management:** staff and company owners can remove a user from their company (`DELETE /api/v1/users/<id>`), and users can edit their display name (`PATCH /api/v1/user`).
-- **Magic link:** webhooks include `magic_link_url` and replace the built-in email when a rule exists, and `POST /api/v1/magic-link/request` accepts a `language`. See [docs/magic-link.md](docs/magic-link.md).
+- **Magic link:** `POST /api/v1/magic-link/request` accepts a `language`, and the `identity.auth.magic_link.requested` webhook notifies you of each request. See [docs/magic-link.md](docs/magic-link.md).
 - **SAML 2.0 SSO:** multiple SAML IdPs per company, with SP metadata, ACS, login, and optional SLO under `/api/v1/saml/<organization_slug>/`. See [docs/saml.md](docs/saml.md).
 - **More OAuth providers:** Twitch, LinkedIn, Slack, generic OpenID Connect, Keycloak, Okta, and Auth0 (**15** supported providers plus SAML), with a provider catalog API (`GET /api/v1/oauth-provider-catalog`) and django-allauth 65.19.5. See [docs/oauth-providers.md](docs/oauth-providers.md).
 
@@ -77,6 +77,9 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 ### 🔒 Security
 
+- **Magic-link webhooks no longer carry the sign-in link (breaking change):** the `identity.auth.magic_link.requested` webhook payload no longer contains `magic_link_url`, the token, or anything else that can be used to sign in, and identity always sends the sign-in email itself, even when the company has a webhook rule for this event. Before, anyone who could read the webhook or its delivery records (for example a company owner) could sign in as the user who owns that email. Migration `actions.0007` removes links already stored in webhook delivery records. If you used the webhook link to deliver magic links yourself (for example from n8n), that no longer works: identity sends the email and the webhook is a notification only.
+- **No sign-in secrets in logs:** the gunicorn access log records the path without the query string and no longer records the Referer, so magic-link tokens, OAuth codes, `confirm_token` and `setup_token` stay out of the logs. The token refresh log line keeps only the Referer path, and Sentry events drop query strings, request bodies, the Referer and secret-named local variables.
+- **Staff flags only in Django admin:** `is_staff` and `is_superuser` can only be changed in Django admin. `PUT /api/v1/users/<id>` no longer accepts `is_staff` and returns **400** `admin_only_field` when the body contains `is_staff` or `is_superuser`.
 - **SAML:** signed assertions only, single-use `InResponseTo` and assertion IDs, company-scoped IdPs, and no email auto-linking outside trusted verified domains.
 - **OAuth identity:** id_tokens are verified (Google, Apple, OpenID Connect, Okta, Auth0), account ids are scoped by issuer or host, and company IdPs never auto-link by email.
 - **OAuth transport:** pinned provider hosts, SSRF-safe HTTP and discovery, server-side PKCE, atomic state consumption, and redacted secrets in API responses.

@@ -22,8 +22,17 @@ class DomainEventType:
     emit_by_default: bool = True
     # False: recorded in the event log only, never offered as a webhook rule trigger.
     webhook: bool = True
-    # Payload keys sent to webhooks but never written to the event log (live credentials).
+    # Payload keys that must never leave the process or be stored (live credentials).
+    # They are dropped before the event log row, the webhook envelope (``ActionOutbox``)
+    # and the email-service event body are built.
     sensitive_fields: tuple[str, ...] = ()
+
+
+def strip_sensitive_fields(event: DomainEventType, payload: dict[str, Any]) -> dict[str, Any]:
+    """Copy of ``payload`` without the event type's ``sensitive_fields``."""
+    if not event.sensitive_fields:
+        return dict(payload)
+    return {k: v for k, v in payload.items() if k not in event.sensitive_fields}
 
 
 _REGISTRY: dict[str, DomainEventType] = {}

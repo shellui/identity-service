@@ -55,7 +55,7 @@ Magic-link sign-in emails are **not** Action rules. Identity sends them directly
 | `identity.scim.token.created` | Admin REST or Django admin token create | No secret in payload |
 | `identity.scim.token.revoked` | Token revoke | |
 | `identity.scim.provisioning_conflict` | SCIM 409 / displayName collision | Ties to `ScimProvisioningEvent` |
-| `identity.auth.magic_link.requested` | User requested a passwordless email sign-in link | Payload has `request_id`, `email`, `expires_at`, and `magic_link_url` (one-time sign-in link, treat as a secret). While an enabled rule exists, identity-service skips its own sign-in email |
+| `identity.auth.magic_link.requested` | User requested a passwordless email sign-in link | Notification only. Payload has `request_id`, `email`, `expires_at`, `source` and `language`, but never the sign-in link or token. Identity-service always sends the sign-in email itself, whether or not a rule exists |
 
 Sign-ins are recorded in the [event log](event-log.md) as `identity.auth.login.succeeded` and `identity.auth.login.failed`. They are log-only and cannot be used in webhook rules.
 

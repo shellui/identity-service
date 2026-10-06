@@ -13,7 +13,7 @@ Magic links and invitations call `POST /api/v1/send`. identity-service does not 
 
 The idempotency key is stable for that magic-link row or that invitation. Retries send the same key and the same JSON body. The key does not contain the magic-link token, and identity-service does not log the token or the API key.
 
-A company Shellui Actions rule for either event still replaces this send. The webhook payload carries `magic_link_url` or `invitation_url`, and your endpoint delivers the message. See [Action triggers](actions.md).
+The magic-link email is always sent by identity-service. A webhook rule for `identity.auth.magic_link.requested` is a notification only: its payload never contains the sign-in link or the token. A webhook rule for `identity.user.invited` still replaces the invitation send: its payload carries `invitation_url` (an app URL, not a credential), and your endpoint delivers the message. See [webhooks](actions.md).
 
 These two events are not also posted to `POST /api/v1/events`. The catalog enables them by default, so a second post would send a second message. `/send` still goes out when a company turns the email rule off.
 

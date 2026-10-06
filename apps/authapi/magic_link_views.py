@@ -20,9 +20,9 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.actions.email_client import TEMPLATE_MAGIC_LINK, EmailUnavailable, RecipientSuppressed
+from apps.actions.email_client import EmailUnavailable, RecipientSuppressed
 from apps.actions.magic_link_hooks import emit_magic_link_requested
-from apps.authapi.email_delivery import AuthEmailError, deliver_magic_link_email, has_enabled_webhook_rule
+from apps.authapi.email_delivery import AuthEmailError, deliver_magic_link_email
 from apps.actions.user_hooks import emit_user_account_created
 from apps.companies.access import (
     apply_company_join,
@@ -117,7 +117,7 @@ def _magic_link_rate_limits(request, *, company_id: int, email: str) -> Response
         auth=[],
         request=ShellUIMagicLinkRequestSerializer,
         responses={
-            200: OpenApiResponse(description='Request accepted (email may be sent via Action rules)'),
+            200: OpenApiResponse(description='Request accepted. Identity sends the sign-in email'),
             400: OpenApiResponse(description='`auth_link_missing` or `auth_link_host_not_allowed`'),
             403: OpenApiResponse(description='Magic link disabled for this company or deployment'),
             409: OpenApiResponse(description='`provider_not_configured` or `platform_sender_not_allowed`'),
@@ -183,9 +183,11 @@ class ShellUIMagicLinkRequestView(APIView):
                 pref_lang = getattr(pref, 'language', None)
         request_base_url = request.build_absolute_uri('/')
         mail_language = requested_lang or pref_lang
-        webhook_delivers = has_enabled_webhook_rule(company, TEMPLATE_MAGIC_LINK)
 
-        def _send_mail() -> None:
+        # Identity always sends the sign-in email itself. A webhook rule for
+        # identity.auth.magic_link.requested is only a notification and never replaces
+        # this send (its payload carries no link or token).
+        try:
             deliver_magic_link_email(
                 row=row,
                 company=company,
@@ -194,66 +196,32 @@ class ShellUIMagicLinkRequestView(APIView):
                 raw_token=raw_token,
                 fallback_base_url=request_base_url,
             )
-
-        if not webhook_delivers:
-            try:
-                deliver_magic_link_email(
-                    row=row,
-                    company=company,
-                    user=existing,
-                    language=mail_language,
-                    raw_token=raw_token,
-                    fallback_base_url=request_base_url,
-                )
-            except RecipientSuppressed:
-                transaction.set_rollback(True)
-                return Response({'error_code': 'recipient_suppressed'}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
-            except AuthEmailError as exc:
-                transaction.set_rollback(True)
-                return Response({'error_code': exc.error_code}, status=exc.status)
-            except EmailUnavailable:
-                logger.warning(
-                    'magic_link_email_failed company_id=%s request_id=%s',
-                    company.pk,
-                    row.pk,
-                )
-                transaction.set_rollback(True)
-                return Response({'error_code': 'email_unavailable'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        except RecipientSuppressed:
+            transaction.set_rollback(True)
+            return Response({'error_code': 'recipient_suppressed'}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        except AuthEmailError as exc:
+            transaction.set_rollback(True)
+            return Response({'error_code': exc.error_code}, status=exc.status)
+        except EmailUnavailable:
+            logger.warning(
+                'magic_link_email_failed company_id=%s request_id=%s',
+                company.pk,
+                row.pk,
+            )
+            transaction.set_rollback(True)
+            return Response({'error_code': 'email_unavailable'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
         def _after_commit() -> None:
             try:
-                queued = emit_magic_link_requested(
+                emit_magic_link_requested(
                     company,
                     row,
                     user=existing,
-                    raw_token=raw_token,
-                    fallback_base_url=request_base_url,
                     language=requested_lang,
                 )
             except Exception:  # noqa: BLE001
                 logger.warning(
                     'magic_link_webhook_emit_failed company_id=%s request_id=%s',
-                    company.pk,
-                    row.pk,
-                )
-                if not webhook_delivers:
-                    return
-                try:
-                    _send_mail()
-                except Exception:  # noqa: BLE001
-                    logger.warning(
-                        'magic_link_email_failed company_id=%s request_id=%s',
-                        company.pk,
-                        row.pk,
-                    )
-                return
-            if queued or not webhook_delivers:
-                return
-            try:
-                _send_mail()
-            except Exception:  # noqa: BLE001
-                logger.warning(
-                    'magic_link_email_failed company_id=%s request_id=%s',
                     company.pk,
                     row.pk,
                 )

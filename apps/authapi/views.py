@@ -30,6 +30,7 @@ from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from .tokens import ShellUIAccessToken, ShellUIRefreshToken
 
 from . import metrics as auth_metrics
+from config.request_context import url_without_query
 from apps.companies.group_graph import effective_group_display_names_for_user, effective_group_ids_for_user
 from apps.companies.group_display_name import first_display_name_conflict
 from apps.companies.models import Company, CompanyGroup, CompanyOAuthClient, CompanyOAuthRedirect
@@ -163,7 +164,27 @@ logger = logging.getLogger(__name__)
 logger = logging.getLogger(__name__)
 
 # Client-supplied user_metadata merges cannot set these; they are derived from Django / company state.
-_SHELLUI_JWT_PRIVILEGED_METADATA_KEYS = frozenset({'is_staff', 'is_company_owner', 'groups'})
+_SHELLUI_JWT_PRIVILEGED_METADATA_KEYS = frozenset({'is_staff', 'is_superuser', 'is_company_owner', 'groups'})
+
+# Only Django admin may change these. No REST API writes them.
+ADMIN_ONLY_USER_FIELDS = ('is_staff', 'is_superuser')
+
+
+def admin_only_user_fields_response(data) -> Response | None:
+    """400 ``admin_only_field`` when a REST body tries to set ``is_staff`` or ``is_superuser``."""
+    if not hasattr(data, 'keys'):
+        return None
+    present = [name for name in ADMIN_ONLY_USER_FIELDS if name in data]
+    if not present:
+        return None
+    return Response(
+        {
+            'error': f'{" and ".join(present)} can only be changed in Django admin.',
+            'error_code': 'admin_only_field',
+            'fields': present,
+        },
+        status=status.HTTP_400_BAD_REQUEST,
+    )
 
 
 def _is_user_company_owner(user: User, company: Company) -> bool:
@@ -2679,7 +2700,8 @@ class ShellUITokenView(APIView):
         logger.info(
             'token refresh request origin=%s referer=%s ua=%s',
             request.headers.get('Origin') or '-',
-            request.headers.get('Referer') or '-',
+            # Path only: the Referer query can carry shellui_auth_code or other one-time secrets.
+            url_without_query(request.headers.get('Referer')) or '-',
             (request.headers.get('User-Agent') or '-')[:120],
         )
         grant_type = request.GET.get('grant_type') or request.data.get('grant_type')
@@ -3167,10 +3189,11 @@ class ShellUIAdminUserListView(APIView):
         summary='Update user (staff or company owner)',
         description=(
             'Update Django user fields and/or merge `data` into cached user_metadata (same shape as '
-            'PUT /api/v1/user). Staff may change is_staff. Staff and company owners may change '
-            'is_active (enables/disables access for this company only), first_name, last_name, '
-            'group_ids (within this company), and `data`. Enabling a previously disabled membership '
-            'emails the user.'
+            'PUT /api/v1/user). Staff and company owners may change is_active (enables/disables '
+            'access for this company only), first_name, last_name, group_ids (within this company), '
+            'and `data`. Enabling a previously disabled membership emails the user. `is_staff` and '
+            '`is_superuser` are read-only: only Django admin may change them, and a body that '
+            'contains either field is refused with 400 `admin_only_field`.'
         ),
         request=ShellUIAdminUserUpdateSerializer,
     ),
@@ -3215,22 +3238,15 @@ class ShellUIAdminUserDetailView(APIView):
         except User.DoesNotExist:
             return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
 
+        admin_only = admin_only_user_fields_response(request.data)
+        if admin_only is not None:
+            return admin_only
+
         serializer = ShellUIAdminUserUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         validated = serializer.validated_data
 
-        if not actor.is_staff and 'is_staff' in validated:
-            return Response(
-                {'error': 'Only staff may change is_staff.'},
-                status=status.HTTP_403_FORBIDDEN,
-            )
-
         if target.pk == actor.pk:
-            if validated.get('is_staff') is False:
-                return Response(
-                    {'error': 'You cannot remove your own staff status.'},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
             if validated.get('is_active') is False:
                 return Response(
                     {'error': 'You cannot disable your own company access.'},
@@ -3245,9 +3261,6 @@ class ShellUIAdminUserDetailView(APIView):
         if 'last_name' in validated:
             target.last_name = validated['last_name']
             update_fields.append('last_name')
-        if 'is_staff' in validated:
-            target.is_staff = validated['is_staff']
-            update_fields.append('is_staff')
         if update_fields:
             target.save(update_fields=list(dict.fromkeys(update_fields)))
 
