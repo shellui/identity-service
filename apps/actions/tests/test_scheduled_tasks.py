@@ -7,7 +7,7 @@ from unittest import mock
 import redis
 from celery.schedules import crontab
 from django.conf import settings
-from django.test import SimpleTestCase, override_settings
+from django.test import SimpleTestCase, TestCase, override_settings
 
 from apps.actions import tasks
 from config.celery import app as celery_app
@@ -93,7 +93,7 @@ class TaskLockTests(SimpleTestCase):
                 self.fail('must not run without the lock')
 
 
-class ScheduledTaskTests(SimpleTestCase):
+class ScheduledTaskTests(TestCase):
     def setUp(self):
         self.fake = FakeRedis()
         patcher = mock.patch('config.task_lock.get_lock_client', return_value=self.fake)
@@ -111,9 +111,12 @@ class ScheduledTaskTests(SimpleTestCase):
             result = tasks.retry_webhooks.apply().get()
 
         retry_webhooks.assert_called_once_with(
-            batch_size=50, max_seconds=50.0, concurrency=4, dry_run=False
+            batch_size=50, max_seconds=50.0, concurrency=4, dry_run=False, scheduled_job_run_id=mock.ANY
         )
-        retry_email.assert_called_once_with(batch_size=50, max_seconds=50.0, dry_run=False)
+        retry_email.assert_called_once_with(
+            batch_size=50, max_seconds=50.0, dry_run=False, scheduled_job_run_id=mock.ANY
+        )
+        self.assertIsInstance(retry_webhooks.call_args.kwargs['scheduled_job_run_id'], int)
         self.assertTrue(result.startswith('retry_webhooks: processed=2 delivered=1'))
         self.assertIn('retry_webhooks: processed=2', logs.output[0])
         self.assertEqual(self.fake.set_calls[0]['ex'], tasks.RETRY_WEBHOOKS_LOCK_TTL)
@@ -127,6 +130,7 @@ class ScheduledTaskTests(SimpleTestCase):
             'webhook_deliveries': 0,
             'email_events': 0,
             'scim_provisioning_events': 0,
+            'scheduled_job_runs': 0,
             'complete': True,
         }
 

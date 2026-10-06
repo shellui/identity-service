@@ -16,6 +16,8 @@ identity-service records every catalog event in one table, `EventLog`, whether o
 
 Sign-in events cannot trigger webhook rules: anonymous traffic can produce failed sign-ins, and forwarding them would let anyone flood your endpoints.
 
+Scheduled job runs are recorded as two staff-only platform events, described in [Platform events (staff only)](#platform-events-staff-only).
+
 `identity.user.updated` is not emitted by default, so it is not logged either.
 
 ## Row format
@@ -23,7 +25,7 @@ Sign-in events cannot trigger webhook rules: anonymous traffic can produce faile
 | Column | Content |
 | ------ | ------- |
 | `id` | Sequential id |
-| `company` | Company the event belongs to. Empty for a sign-in that failed before the company was known |
+| `company` | Company the event belongs to. Empty for a sign-in that failed before the company was known, and for platform events |
 | `user` | User the event is about, when there is one. Cleared when the user is deleted or removed from the company |
 | `event_type` | Catalog event type |
 | `data` | Event payload, compacted (see below) |
@@ -55,7 +57,7 @@ Same authentication as other Shellui admin endpoints: Bearer JWT (or PAT) plus `
 | ------ | ---- | ------- |
 | `GET` | `/api/v1/events` | Event log, newest first, paginated |
 | `GET` | `/api/v1/events/<id>` | One event |
-| `GET` | `/api/v1/events/types` | Event types with `label`, `description` and `webhook` (false for sign-ins) |
+| `GET` | `/api/v1/events/types` | Event types with `label`, `description` and `webhook` (false for sign-ins). Platform events are not listed |
 | `GET` | `/api/v1/events/retention` | `data_retention_days`, `oldest_event_at`, `stale_events` |
 
 `GET /api/v1/events` filters:
@@ -68,6 +70,7 @@ Same authentication as other Shellui admin endpoints: Bearer JWT (or PAT) plus `
 | `created_after` | ISO 8601 datetime, inclusive |
 | `created_before` | ISO 8601 datetime, exclusive |
 | `page`, `page_size` | Pagination, `page_size` up to 100 (default 20) |
+| `scope` | `company` (default) or `platform` (Django staff only, see [Platform events](#platform-events-staff-only)) |
 
 Example row:
 
@@ -88,6 +91,26 @@ Example row:
   }
 }
 ```
+
+## Platform events (staff only)
+
+Scheduled jobs are platform maintenance, not company activity, so their runs are logged without a company and only Django staff can read them:
+
+| Event type | When |
+| ---------- | ---- |
+| `identity.scheduled_job.succeeded` | A `retry_webhooks` or `purge_expired_data` run finished without error |
+| `identity.scheduled_job.failed` | A run failed |
+
+`data` holds `run_id`, `job`, `trigger` (`celery` or `command`), `duration_ms`, `counts` and `host`, plus `error_key` and `error_class` on failure. The run itself, with the sanitized error message, is at `GET /api/v1/scheduled-jobs/runs/<run_id>`. See [Scheduled jobs monitoring](scheduled-jobs.md#monitoring).
+
+These events never reach company owners or other companies:
+
+- `GET /api/v1/events` lists the company in the token only, so it never returns them
+- `GET /api/v1/events?scope=platform` and `GET /api/v1/events/<id>?scope=platform` return them to staff. Other callers get `403`
+- `GET /api/v1/events/types` does not list them
+- they cannot trigger webhook rules and are never forwarded to email-service
+
+They expire after the default retention of 7 days, like the runs.
 
 ### Deprecated: `/api/v1/login-events`
 

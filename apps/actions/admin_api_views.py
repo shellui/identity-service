@@ -44,19 +44,25 @@ def _action_rule_payload_with_secret(rule: ActionRule) -> dict:
     return payload
 
 
-def _delivery_attempt_payload(row: DeliveryAttempt) -> dict:
-    return {
+def _delivery_attempt_payload(row: DeliveryAttempt, *, staff: bool = False) -> dict:
+    data = {
         'id': row.pk,
         'status': row.status,
         'http_status': row.http_status,
         'error_message': row.error_message,
         'attempt_number': row.attempt_number,
         'duration_ms': row.duration_ms,
+        # ``dispatch`` or ``automatic_retry`` (null before 0.7.0). Company owners see this only.
+        'trigger': row.trigger or None,
         'created_at': row.created_at.isoformat(),
     }
+    if staff:
+        # Platform detail: the scheduled job run that made the attempt (staff only).
+        data['scheduled_job_run_id'] = row.scheduled_job_run_id
+    return data
 
 
-def _delivery_payload(row: ActionOutbox, *, include_attempts: bool = False) -> dict:
+def _delivery_payload(row: ActionOutbox, *, include_attempts: bool = False, staff: bool = False) -> dict:
     data = {
         'id': str(row.pk),
         'company_id': row.company_id,
@@ -74,7 +80,7 @@ def _delivery_payload(row: ActionOutbox, *, include_attempts: bool = False) -> d
     }
     if include_attempts:
         attempts = row.delivery_attempts.order_by('-created_at')
-        data['attempts'] = [_delivery_attempt_payload(a) for a in attempts]
+        data['attempts'] = [_delivery_attempt_payload(a, staff=staff) for a in attempts]
         data['envelope'] = row.envelope
     return data
 
@@ -352,6 +358,16 @@ class ShellUIAdminActionRuleRotateSecretView(APIView):
             OpenApiParameter(name='status', type=str, location=OpenApiParameter.QUERY, required=False),
             OpenApiParameter(name='event_type', type=str, location=OpenApiParameter.QUERY, required=False),
             OpenApiParameter(name='action_rule_id', type=int, location=OpenApiParameter.QUERY, required=False),
+            OpenApiParameter(
+                name='scheduled_job_run_id',
+                type=int,
+                location=OpenApiParameter.QUERY,
+                required=False,
+                description=(
+                    'Staff only (403 otherwise): deliveries with an attempt made by this scheduled job run '
+                    '(`GET /api/v1/scheduled-jobs/runs/<id>`).'
+                ),
+            ),
             OpenApiParameter(name='created_after', type=str, location=OpenApiParameter.QUERY, required=False),
             OpenApiParameter(name='created_before', type=str, location=OpenApiParameter.QUERY, required=False),
             OpenApiParameter(name='page', type=int, location=OpenApiParameter.QUERY, required=False),
@@ -366,7 +382,7 @@ class ShellUIAdminActionDeliveryListView(APIView):
     serializer_class = ShellUIOpenAPISerializer
 
     def get(self, request):
-        _actor, company, err = _require_staff_or_company_owner(request)
+        actor, company, err = _require_staff_or_company_owner(request)
         if err:
             return err
         try:
@@ -399,6 +415,18 @@ class ShellUIAdminActionDeliveryListView(APIView):
             except (TypeError, ValueError):
                 return Response({'error': 'Invalid action_rule_id.'}, status=status.HTTP_400_BAD_REQUEST)
 
+        run_raw = (request.GET.get('scheduled_job_run_id') or '').strip()
+        if run_raw:
+            if not actor.is_staff:
+                return Response({'error': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
+            try:
+                run_id = int(run_raw)
+            except ValueError:
+                return Response({'error': 'Invalid scheduled_job_run_id.'}, status=status.HTTP_400_BAD_REQUEST)
+            qs = qs.filter(
+                pk__in=DeliveryAttempt.objects.filter(scheduled_job_run_id=run_id).values('outbox_id')
+            )
+
         created_after = (request.GET.get('created_after') or '').strip()
         if created_after:
             dt = parse_datetime(created_after)
@@ -430,6 +458,10 @@ class ShellUIAdminActionDeliveryListView(APIView):
     get=extend_schema(
         tags=['actions-admin'],
         summary='Retrieve action delivery with attempts (staff or company owner)',
+        description=(
+            'Each attempt has `trigger`: `dispatch` (right after the event) or `automatic_retry` '
+            '(the `retry_webhooks` scheduled job). Staff also get `scheduled_job_run_id`.'
+        ),
         operation_id='api_v1_actions_deliveries_retrieve',
     ),
 )
@@ -438,14 +470,14 @@ class ShellUIAdminActionDeliveryDetailView(APIView):
     serializer_class = ShellUIOpenAPISerializer
 
     def get(self, request, delivery_id):
-        _actor, company, err = _require_staff_or_company_owner(request)
+        actor, company, err = _require_staff_or_company_owner(request)
         if err:
             return err
         try:
             row = ActionOutbox.objects.select_related('action_rule').get(pk=delivery_id, company=company)
         except ActionOutbox.DoesNotExist:
             return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
-        return Response(_delivery_payload(row, include_attempts=True))
+        return Response(_delivery_payload(row, include_attempts=True, staff=bool(actor.is_staff)))
 
 
 @extend_schema_view(

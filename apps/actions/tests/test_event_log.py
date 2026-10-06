@@ -331,4 +331,9 @@ class PurgeExpiredDataTests(TestCase):
         call_command('purge_expired_data', stdout=out)
         self.assertIn('deleted events=1 webhook_deliveries=1', out.getvalue())
         self.assertIn('complete=true', out.getvalue())
-        self.assertEqual(EventLog.objects.count(), 0)
+        # Only the staff-only platform event of this run remains (no company).
+        self.assertEqual(EventLog.objects.filter(company__isnull=False).count(), 0)
+        self.assertEqual(
+            list(EventLog.objects.values_list('event_type', 'company_id')),
+            [('identity.scheduled_job.succeeded', None)],
+        )

@@ -151,7 +151,7 @@ Before delivery, identity **resolves the webhook hostname once**, rejects privat
 | SSRF block (private URL not allowed) | No (dead) |
 | Disabled/deleted rule | No (dead) |
 
-Each attempt is logged in **Delivery attempts** (HTTP status, error excerpt, duration).
+Each attempt is logged in **Delivery attempts** (HTTP status, error excerpt, duration) with a `trigger`: `dispatch` for the first try right after the event, `automatic_retry` for a try made by the `retry_webhooks` job. Django staff also see the `scheduled_job_run_id` of the run that made it. See [Scheduled jobs monitoring](scheduled-jobs.md#from-a-run-to-its-webhooks-and-emails).
 
 The Docker image retries pending rows every minute with the `retry_webhooks` job, so there is nothing to schedule when `REDIS_URL` is set. To run it from your own scheduler instead, set `SCHEDULER_ENABLED=false` and run every minute:
 
@@ -188,7 +188,7 @@ Same authentication as other Shellui admin endpoints: Bearer JWT (or PAT) plus `
 | `DELETE` | `/api/v1/actions/rules/<id>` | Delete a rule |
 | `POST` | `/api/v1/actions/rules/<id>/send-test` | POST a sample envelope to the rule URL (no outbox row) |
 | `POST` | `/api/v1/actions/rules/<id>/rotate-secret` | Generate a new `whsec_` signing secret (returned once) |
-| `GET` | `/api/v1/actions/deliveries` | Paginated delivery log |
+| `GET` | `/api/v1/actions/deliveries` | Paginated delivery log. Staff can filter by `scheduled_job_run_id` |
 | `GET` | `/api/v1/actions/deliveries/<uuid>` | Delivery detail with `envelope` and `attempts` |
 | `POST` | `/api/v1/actions/deliveries/<uuid>/requeue` | Re-queue a row |
 

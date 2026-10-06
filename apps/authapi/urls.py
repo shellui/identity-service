@@ -8,6 +8,11 @@ from apps.actions.event_log_views import (
     ShellUIAdminLoginEventDetailView,
     ShellUIAdminLoginEventListView,
 )
+from apps.actions.scheduled_job_views import (
+    ScheduledJobRunDetailView,
+    ScheduledJobRunsView,
+    ScheduledJobsView,
+)
 
 from .audience_views import ShellUIAdminUserAudienceView
 from .invitation_views import (
@@ -113,6 +118,17 @@ urlpatterns = [
         name='shellui-personal-access-tokens',
     ),
     path('actions/', include('apps.actions.urls')),
+    path('scheduled-jobs', ScheduledJobsView.as_view(), name='shellui-admin-scheduled-jobs'),
+    path(
+        'scheduled-jobs/runs/<int:pk>',
+        ScheduledJobRunDetailView.as_view(),
+        name='shellui-admin-scheduled-job-run-detail',
+    ),
+    path(
+        'scheduled-jobs/<str:job>/runs',
+        ScheduledJobRunsView.as_view(),
+        name='shellui-admin-scheduled-job-runs',
+    ),
     path('auth-methods', ShellUIAdminAuthMethodsView.as_view(), name='shellui-admin-auth-methods'),
     path('scim', ShellUIAdminScimStatusView.as_view(), name='shellui-admin-scim-status'),
     path(

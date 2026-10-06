@@ -43,6 +43,10 @@ curl -sS 'http://localhost:8000/api/v1/metrics/all' \
   -H 'Authorization: Bearer <JWT or PAT>'
 ```
 
+### Scheduled job metrics
+
+The global endpoint also exposes `shellui_auth_scheduled_job_*` and `shellui_auth_scheduler_*` metrics for the `retry_webhooks` and `purge_expired_data` jobs. The company endpoint never includes them. Names, labels and alert rules are in [Scheduled jobs monitoring](scheduled-jobs.md#prometheus-metrics).
+
 ---
 
 ## Personal access tokens (PAT)

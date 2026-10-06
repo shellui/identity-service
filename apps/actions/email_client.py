@@ -13,6 +13,7 @@ import requests
 from django.conf import settings
 
 from apps.actions.webhook_retry import is_permanent_http_status, parse_retry_after_header
+from config.request_context import request_id_var
 
 logger = logging.getLogger(__name__)
 
@@ -195,6 +196,10 @@ def post_json(path: str, body: dict, *, attempts: int | None = None) -> dict:
         'Content-Type': 'application/json',
         'User-Agent': 'shellui-identity-email/1.0',
     }
+    # Same id as identity log lines (request id, or ``sjr-<run id>`` inside a scheduled job).
+    request_id = request_id_var.get()
+    if request_id and request_id != '-':
+        headers['X-Request-ID'] = request_id
     total = _max_attempts() if attempts is None else max(1, int(attempts))
     last_status = None
     for attempt in range(1, total + 1):

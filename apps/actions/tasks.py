@@ -2,8 +2,9 @@
 Celery tasks for the scheduled jobs.
 
 Each task runs the existing management command, so cron users and the in-container
-scheduler share one code path. A Redis lock (config.task_lock) makes sure only one
-run of each job is active across all containers.
+scheduler share one code path: the command records the run (``trigger=celery`` here,
+``command`` from cron). A Redis lock (config.task_lock) makes sure only one run of each
+job is active across all containers. See docs/scheduled-jobs.md#monitoring.
 """
 
 import io
@@ -12,6 +13,12 @@ import logging
 from celery import shared_task
 from django.core.management import call_command
 
+from apps.actions.scheduled_jobs import (
+    TRIGGER_CELERY,
+    ScheduledJobFailed,
+    record_failure_before_start,
+    record_skipped,
+)
 from config.task_lock import task_lock
 
 logger = logging.getLogger(__name__)
@@ -27,7 +34,7 @@ PURGE_EXPIRED_DATA_LOCK_TTL = 900
 
 def _run_command(name: str, **options) -> str:
     out = io.StringIO()
-    call_command(name, stdout=out, no_color=True, **options)
+    call_command(name, stdout=out, no_color=True, trigger=TRIGGER_CELERY, **options)
     summary = out.getvalue().strip()
     if summary:
         logger.info(summary)
@@ -35,11 +42,23 @@ def _run_command(name: str, **options) -> str:
 
 
 def _run_locked(name: str, ttl: int, **options) -> str:
-    with task_lock(name, ttl=ttl) as acquired:
-        if not acquired:
-            logger.info('%s: skipped, another run is in progress', name)
-            return 'skipped'
-        return _run_command(name, **options)
+    """
+    ``skipped`` when another run holds the lock, ``failed`` when the run failed (already
+    recorded, logged at ERROR and sent to Sentry by the command), else the command summary.
+    """
+    try:
+        with task_lock(name, ttl=ttl) as acquired:
+            if not acquired:
+                logger.info('%s: skipped, another run is in progress', name)
+                record_skipped(name, TRIGGER_CELERY)
+                return 'skipped'
+            return _run_command(name, **options)
+    except ScheduledJobFailed:
+        return 'failed'
+    except Exception as exc:  # noqa: BLE001
+        # Failed before the command could record it (Redis down while taking the lock).
+        record_failure_before_start(name, TRIGGER_CELERY, exc)
+        return 'failed'
 
 
 @shared_task(name='actions.retry_webhooks', ignore_result=True)

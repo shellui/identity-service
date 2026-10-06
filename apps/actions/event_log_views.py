@@ -10,7 +10,12 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.actions.models import EventLog
-from apps.actions.registry import all_event_types, get_event_type, is_registered_event
+from apps.actions.registry import (
+    company_event_types,
+    get_event_type,
+    is_registered_event,
+    staff_only_event_types,
+)
 from apps.actions.retention import retention_status
 from apps.authapi.login_audit import LOGIN_EVENT_TYPES
 from apps.authapi.models import UserPreference
@@ -29,6 +34,26 @@ def _bad_request(message: str) -> Response:
 
 def _company_events(company) -> QuerySet:
     return EventLog.objects.filter(company=company).annotate(user_email=F('user__email'))
+
+
+def _platform_events() -> QuerySet:
+    """Staff-only platform events (scheduled job runs). They never have a company."""
+    types = [e.id for e in staff_only_event_types()]
+    return EventLog.objects.filter(company__isnull=True, event_type__in=types).annotate(
+        user_email=F('user__email')
+    )
+
+
+def _scoped_events(request, actor, company) -> tuple[QuerySet | None, Response | None]:
+    """``scope=company`` (default) or ``scope=platform`` (Django staff only)."""
+    scope = (request.GET.get('scope') or 'company').strip().lower()
+    if scope == 'company':
+        return _company_events(company), None
+    if scope == 'platform':
+        if not getattr(actor, 'is_staff', False):
+            return None, Response({'error': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
+        return _platform_events(), None
+    return None, _bad_request('Invalid scope.')
 
 
 def _parse_page(request) -> tuple[int, int] | None:
@@ -109,6 +134,18 @@ _PAGE_PARAMS = [
     OpenApiParameter(name='page', type=int, location=OpenApiParameter.QUERY, required=False),
     OpenApiParameter(name='page_size', type=int, location=OpenApiParameter.QUERY, required=False),
 ]
+_SCOPE_PARAM = OpenApiParameter(
+    name='scope',
+    type=str,
+    location=OpenApiParameter.QUERY,
+    required=False,
+    enum=['company', 'platform'],
+    description=(
+        '`company` (default): events of the company in the token. `platform`: staff-only platform '
+        'events without a company (`identity.scheduled_job.succeeded`, `identity.scheduled_job.failed`). '
+        'Non-staff callers get 403.'
+    ),
+)
 _USER_ID_PARAM = OpenApiParameter(
     name='user_id',
     type=int,
@@ -128,6 +165,7 @@ _USER_ID_PARAM = OpenApiParameter(
         ),
         operation_id='api_v1_events_list',
         parameters=[
+            _SCOPE_PARAM,
             _USER_ID_PARAM,
             OpenApiParameter(
                 name='user',
@@ -154,13 +192,16 @@ class ShellUIAdminEventListView(APIView):
     serializer_class = ShellUIOpenAPISerializer
 
     def get(self, request):
-        _actor, company, err = _require_staff_or_company_owner(request)
+        actor, company, err = _require_staff_or_company_owner(request)
         if err:
             return err
         paging = _parse_page(request)
         if paging is None:
             return _bad_request('Invalid page or page_size.')
-        qs, err = _filter_common(request, _company_events(company))
+        base, err = _scoped_events(request, actor, company)
+        if err:
+            return err
+        qs, err = _filter_common(request, base)
         if err:
             return err
 
@@ -182,6 +223,7 @@ class ShellUIAdminEventListView(APIView):
         tags=['audit-events'],
         summary='Retrieve event log row (staff or company owner)',
         operation_id='api_v1_events_retrieve',
+        parameters=[_SCOPE_PARAM],
         responses={200: OpenApiResponse(description='Event log row')},
     ),
 )
@@ -190,10 +232,13 @@ class ShellUIAdminEventDetailView(APIView):
     serializer_class = ShellUIOpenAPISerializer
 
     def get(self, request, pk):
-        _actor, company, err = _require_staff_or_company_owner(request)
+        actor, company, err = _require_staff_or_company_owner(request)
         if err:
             return err
-        row = _company_events(company).filter(pk=pk).first()
+        base, err = _scoped_events(request, actor, company)
+        if err:
+            return err
+        row = base.filter(pk=pk).first()
         if row is None:
             return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
         return Response(_event_payload(row))
@@ -219,7 +264,7 @@ class ShellUIAdminEventTypesView(APIView):
             {
                 'results': [
                     {'type': e.id, 'label': e.label, 'description': e.description, 'webhook': e.webhook}
-                    for e in all_event_types()
+                    for e in company_event_types()
                     if e.emit_by_default
                 ]
             }

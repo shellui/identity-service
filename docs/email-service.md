@@ -67,6 +67,8 @@ SCIM token events map the webhook field `name` to the template field `token_name
 
 Delivery uses the same outbox and `retry_webhooks` scheduled job as Shellui webhooks. Each try is one POST. A 2xx response is finished, including `skipped_reason` (`rule_disabled` or `no_recipients`). `400`, `401`, `403`, `405`, `410`, `413`, and `422` are not retried. `404`, `408`, `409`, `425`, `429`, any other 4xx, 5xx, timeouts, and connection errors are retried with the same idempotency key: 30 seconds times 2^(attempt-1), capped at 1 hour, 8 attempts. `429` and `503` honor `Retry-After`, still capped at 1 hour. The request that emitted the event does not wait for this HTTP call.
 
+Each row keeps `last_trigger` (`dispatch` or `automatic_retry`) and, for retries, `last_scheduled_job_run_id`. Posts made during a scheduled job carry `X-Request-ID: sjr-<run id>`, so email-service logs show which run sent them. See [Scheduled jobs monitoring](scheduled-jobs.md#from-a-run-to-its-webhooks-and-emails).
+
 Unset `EMAIL_SERVICE_API_KEY` and identity-service does not insert these rows.
 
 ## Configuration

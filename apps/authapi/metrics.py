@@ -156,6 +156,10 @@ def record_successful_login(provider: str, company_id: int) -> None:
 def metrics_http_body(company_id: int | None = None) -> bytes:
     if company_id is None:
         refresh_db_gauges()
+        # Platform metrics (scheduled jobs) are global only, never in a company scrape.
+        from apps.actions.scheduled_job_metrics import scheduled_jobs_metrics_body
+
+        return generate_latest() + scheduled_jobs_metrics_body()
     else:
         try:
             company = Company.objects.get(pk=company_id)

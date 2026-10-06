@@ -12,7 +12,7 @@ This module only depends on Django settings named ``CELERY_*`` and
 import os
 
 from celery import Celery
-from celery.signals import setup_logging
+from celery.signals import before_task_publish, setup_logging
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
 
@@ -33,3 +33,24 @@ def _use_django_logging(**kwargs):
     from django.conf import settings
 
     logging.config.dictConfig(settings.LOGGING)
+
+
+def _scheduled_task_names() -> set[str]:
+    from django.conf import settings
+
+    return {entry['task'] for entry in getattr(settings, 'CELERY_BEAT_SCHEDULE', {}).values()}
+
+
+@before_task_publish.connect
+def _beat_heartbeat(sender=None, **kwargs):
+    """
+    Store a beat heartbeat in Redis each time a scheduled task is published.
+
+    Beat publishes ``retry_webhooks`` every minute, so the heartbeat tells "beat stopped"
+    apart from "worker stopped" (see docs/scheduled-jobs.md#monitoring).
+    """
+    if sender not in _scheduled_task_names():
+        return
+    from config.task_lock import record_beat_heartbeat
+
+    record_beat_heartbeat()

@@ -34,7 +34,7 @@ The worker uses the same settings as the web app: `LOG_LEVEL` and stdout logging
 Each run logs one summary line, for example:
 
 ```text
-INFO [apps.actions.tasks] retry_webhooks: processed=0 delivered=0 retried=0 dead=0 email_processed=0 email_delivered=0 email_retried=0 email_dead=0
+INFO [apps.actions.tasks] retry_webhooks: processed=0 delivered=0 retried=0 dead=0 email_processed=0 email_delivered=0 email_retried=0 email_dead=0 run_id=1234
 ```
 
 ### Several containers
@@ -84,8 +84,9 @@ Deletes rows older than each company's **data retention** (`Company.data_retenti
 - [event log](event-log.md) rows (every catalog event and sign-in)
 - finished webhook deliveries (`delivered` or `dead`) with their delivery attempts. `pending` and `failed` rows are kept so retries continue
 - SCIM provisioning events
+- [scheduled job runs](#monitoring) older than 7 days
 
-Events without a company (a sign-in that failed before the company was known) use the default of 7 days.
+Events without a company (a sign-in that failed before the company was known, or a staff-only scheduled job event) use the default of 7 days.
 
 ```bash
 python manage.py purge_expired_data
@@ -102,7 +103,7 @@ python manage.py purge_expired_data --max-seconds 300   # stop after 5 minutes, 
 Output example:
 
 ```text
-purge_expired_data: deleted events=1840 webhook_deliveries=12 scim_provisioning_events=0 complete=true
+purge_expired_data: deleted events=1840 webhook_deliveries=12 email_events=0 scim_provisioning_events=0 scheduled_job_runs=168 complete=true run_id=1235
 ```
 
 ### Why every hour
@@ -199,9 +200,163 @@ Use the same pattern with `schedule: "* * * * *"` and `["python", "manage.py", "
 
 ## Monitoring
 
-- In-container jobs log one line per run. A failing run logs an error with the traceback, and is reported to Sentry when `SENTRY_DSN` is set.
-- The commands exit with a non-zero status on errors, so any external scheduler that alerts on failed jobs covers them.
-- For `purge_expired_data`, the stale-events warning is a second safety net that needs no extra setup.
+Every run of both jobs is recorded, whether the in-container beat or your own cron started it, so you can check that the jobs run and what they did. The Shellui admin panel shows this to Django staff on the **Identity** dashboard. Company owners never see it.
+
+### What each run records
+
+The management command records its own run, so the Celery path and the cron path give the same data. Each run writes one `ScheduledJobRun` row:
+
+| Field | Content |
+| ----- | ------- |
+| `job` | `retry_webhooks` or `purge_expired_data` |
+| `trigger` | `celery` (in-container beat) or `command` (your scheduler, or a manual run) |
+| `status` | `running`, `succeeded` or `failed` |
+| `started_at`, `finished_at`, `duration_ms` | Timing |
+| `counts` | Items processed, see below |
+| `error_key`, `error_class`, `error_message` | On failure: a stable key (`database_error`, `redis_error`, `timeout`, `network_error`, `interrupted`, `unexpected_error`), the exception class and a short message without URL query strings, credentials or tokens |
+| `host` | Host name and process id |
+| `event_log_id` | The platform event written for this run |
+
+`counts` for `retry_webhooks`: `webhook_deliveries_attempted`, `webhook_deliveries_succeeded`, `webhook_deliveries_failed` (will be retried), `webhook_deliveries_given_up` (now `dead`), and the same four for `email_events_*` (email-service event posts).
+
+`counts` for `purge_expired_data`: rows deleted per type (`events`, `webhook_deliveries`, `email_events`, `scim_provisioning_events`, `scheduled_job_runs`) and `complete` (false when `--max-seconds` ran out).
+
+Some runs are not stored:
+
+- **Skipped runs**: when another container holds the lock, the run only increments the `skipped_locked` counter. With two replicas, one run in two is skipped, and a row for each would double the writes
+- **Dry runs**: `--dry-run` changes nothing, so it is not recorded
+
+Runs are kept 7 days: `purge_expired_data` deletes older ones. The latest timestamps per job (`ScheduledJobState`) and the metric counters (`ScheduledJobCounter`) are never purged. A `running` row older than the job's lock expiry (2 minutes for `retry_webhooks`, 15 minutes for `purge_expired_data`) belongs to a process that died, so the next run marks it `failed` with `error_key=interrupted`.
+
+### Health and overdue jobs
+
+A job is overdue when its last successful run is older than 3 times its interval:
+
+| Job | Interval | Overdue after |
+| --- | -------- | ------------- |
+| `retry_webhooks` | 1 minute | 3 minutes |
+| `purge_expired_data` | 1 hour | 2 hours 15 minutes |
+
+Before the first successful run, the clock starts when the monitoring tables were created (the migration). Each job gets one `health` value:
+
+- `disabled`: `SCHEDULER_ENABLED=false` and no run was ever recorded. Set up your cron (see [Run the commands yourself](#run-the-commands-yourself)); the first recorded run turns monitoring on
+- `failing`: the last finished run failed
+- `overdue`: no successful run within the limit above
+- `healthy`: none of the above
+
+Cron runs are monitored like in-container runs, so `SCHEDULER_ENABLED=false` with a working cron reports `healthy`.
+
+Two more signals cover the scheduler itself:
+
+- `redis_reachable`: identity-service answers a `PING` on the broker (`null` without a broker)
+- beat heartbeat: each time beat publishes a job, it stores the time in Redis (`identity-service:scheduler:beat:heartbeat`). `beat_stale` is true when the scheduler is enabled and beat published nothing for 3 minutes. A fresh heartbeat with an overdue job means the worker is stuck or down
+
+### Admin REST API (staff only)
+
+The endpoints use the same Bearer JWT or personal access token as other admin endpoints. They need Django `is_staff`: other callers get `403`, including company owners, and calls without a token get `401`. No `company_id` is needed. Responses contain keys and enums only (`health`, `status`, `error_key`, count names), which the admin panel translates.
+
+| Method | Path | Purpose |
+| ------ | ---- | ------- |
+| `GET` | `/api/v1/scheduled-jobs` | `scheduler_enabled`, `redis_reachable`, `beat_last_seen_at`, `beat_stale`, and per job: `health`, `overdue`, `last_run`, `last_success_at`, `last_failure_at`, `last_skipped_at`, `last_duration_ms`, `last_counts`, `next_expected_at`, `last_24h`, `skipped_locked_total` |
+| `GET` | `/api/v1/scheduled-jobs/<job>/runs?limit=20&status=failed` | Recent runs, newest first. `limit` 1 to 100, `status` optional |
+| `GET` | `/api/v1/scheduled-jobs/runs/<id>` | One run with the webhook delivery attempts and email-service event posts it made |
+| `GET` | `/api/v1/events?scope=platform` | The platform events of the runs (see [Event log](event-log.md#platform-events-staff-only)) |
+
+Example job entry:
+
+```json
+{
+  "job": "retry_webhooks",
+  "health": "healthy",
+  "overdue": false,
+  "interval_seconds": 60,
+  "overdue_after_seconds": 180,
+  "last_success_at": "2026-10-06T13:21:02.511+00:00",
+  "next_expected_at": "2026-10-06T13:22:01.904+00:00",
+  "last_counts": {"webhook_deliveries_attempted": 2, "webhook_deliveries_succeeded": 2},
+  "last_24h": {"succeeded": 1439, "failed": 1},
+  "skipped_locked_total": 0
+}
+```
+
+### From a run to its webhooks and emails
+
+Every webhook delivery attempt stores a `trigger` and, for retries, the run that made it:
+
+- `trigger=dispatch`: the first try, right after the event
+- `trigger=automatic_retry`: a `retry_webhooks` run, with `scheduled_job_run_id`
+
+Staff can go both ways:
+
+- run to deliveries: `GET /api/v1/scheduled-jobs/runs/<id>` lists the attempts of every company, and `GET /api/v1/actions/deliveries?scheduled_job_run_id=<id>` filters the delivery log of the token company
+- delivery to run: each attempt in `GET /api/v1/actions/deliveries/<uuid>` has `scheduled_job_run_id`
+
+Company owners see `trigger` on their own delivery attempts, so they know a retry was automatic, but never `scheduled_job_run_id` or any run detail. Filtering by `scheduled_job_run_id` as an owner returns `403`.
+
+Email-service event posts store `last_trigger` and `last_scheduled_job_run_id` for their latest attempt, so the run that delivered an email keeps the link. While a job runs, identity-service sends `X-Request-ID: sjr-<run id>` to email-service, and every identity log line of the run ends with `[req=sjr-<run id>]`, so you can search both services' logs for one run. Magic-link and invitation emails are sent on the request path (email-service or SMTP), never by a scheduled job.
+
+### Failed runs
+
+A failed run:
+
+- is stored with `status=failed` and its `error_key`
+- logs one ERROR line with the job, run id, trigger and sanitized error, plus the traceback. The original exception message is replaced by the sanitized one, so a URL query string or credential in it never reaches the logs
+- is reported to Sentry when `SENTRY_DSN` is set, through the same scrubbing as other events, tagged `scheduled_job`, `scheduled_job_trigger` and `scheduled_job_run_id`
+- increments `shellui_auth_scheduled_job_runs_total{status="failed"}`
+- makes the command exit with status 1 and print `retry_webhooks failed: OperationalError: … (run_id=1234)`, so an external scheduler that alerts on failed jobs still works
+
+If Redis is down when a Celery run tries to take its lock, that run is recorded as `failed` with `error_key=redis_error`.
+
+### Prometheus metrics
+
+`GET /api/v1/metrics/all` includes the scheduled job metrics. It needs Django staff or a personal access token with `access_global_metrics` (see [Metrics](metrics.md)). The company endpoint `GET /api/v1/metrics` never includes them. Values come from the database, so they are the same whichever gunicorn worker answers and survive restarts.
+
+| Metric | Type | Labels | Meaning |
+| ------ | ---- | ------ | ------- |
+| `shellui_auth_scheduled_job_runs_total` | counter | `job`, `status` | Finished runs: `succeeded`, `failed`, `skipped_locked` |
+| `shellui_auth_scheduled_job_items_total` | counter | `job`, `kind` | Items processed, `kind` is a `counts` name |
+| `shellui_auth_scheduled_job_last_success_timestamp_seconds` | gauge | `job` | Unix time of the last successful run (0 before the first one) |
+| `shellui_auth_scheduled_job_last_run_timestamp_seconds` | gauge | `job` | Unix time the last run started (0 before the first one) |
+| `shellui_auth_scheduled_job_last_run_duration_seconds` | gauge | `job` | Duration of the last finished run |
+| `shellui_auth_scheduled_job_overdue` | gauge | `job` | 1 when overdue (see the table above) |
+| `shellui_auth_scheduler_enabled` | gauge | none | 1 when `SCHEDULER_ENABLED` is true |
+| `shellui_auth_scheduler_redis_up` | gauge | none | 1 when the broker answers `PING`. Absent without a broker |
+| `shellui_auth_scheduler_beat_last_seen_timestamp_seconds` | gauge | none | Unix time beat last published a job. Absent before the first one |
+
+Suggested alert rules:
+
+```yaml
+groups:
+  - name: identity-scheduled-jobs
+    rules:
+      - alert: IdentityScheduledJobOverdue
+        expr: shellui_auth_scheduled_job_overdue == 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "identity-service job {{ $labels.job }} has no recent successful run"
+      - alert: IdentityScheduledJobFailing
+        expr: increase(shellui_auth_scheduled_job_runs_total{status="failed"}[15m]) >= 3
+        labels:
+          severity: warning
+      - alert: IdentitySchedulerRedisDown
+        expr: shellui_auth_scheduler_redis_up == 0
+        for: 2m
+        labels:
+          severity: critical
+      - alert: IdentityWebhooksGivenUp
+        expr: increase(shellui_auth_scheduled_job_items_total{kind="webhook_deliveries_given_up"}[1h]) > 0
+        labels:
+          severity: info
+```
+
+The overdue alert covers a stopped beat, a stuck worker and a missing cron line alike. Scrape every 30 to 60 seconds: each scrape runs a few indexed queries and one Redis `PING`.
+
+### Other safety nets
+
+- The commands exit with status 1 on errors, so any external scheduler that alerts on failed jobs covers them
+- For `purge_expired_data`, the stale-events warning is a second safety net that needs no setup
 
 ---
 

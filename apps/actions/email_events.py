@@ -34,6 +34,10 @@ from apps.authapi.magic_link import normalize_magic_link_language
 logger = logging.getLogger(__name__)
 
 _EXECUTOR: ThreadPoolExecutor | None = None
+
+# Same values as ``DeliveryAttempt.trigger``.
+TRIGGER_DISPATCH = 'dispatch'
+TRIGGER_AUTOMATIC_RETRY = 'automatic_retry'
 _MAX_RECIPIENTS = 50
 
 # Identity webhook payloads use ``name``. The email template token is ``token_name``.
@@ -184,10 +188,22 @@ def _safe_deliver(row_id) -> None:
         logger.warning('email_event_delivery_error outbox_id=%s error=%s', row_id, exc.__class__.__name__)
 
 
-def _apply_result(row: EmailEventOutbox, *, success: bool, permanent: bool, error: str, http_status: int | None, retry_after: int | None) -> EmailEventOutbox:
+def _apply_result(
+    row: EmailEventOutbox,
+    *,
+    success: bool,
+    permanent: bool,
+    error: str,
+    http_status: int | None,
+    retry_after: int | None,
+    trigger: str = TRIGGER_DISPATCH,
+    scheduled_job_run_id: int | None = None,
+) -> EmailEventOutbox:
     attempt_number = row.attempt_count + 1
     row.attempt_count = attempt_number
     row.locked_until = None
+    row.last_trigger = trigger
+    row.last_scheduled_job_run_id = scheduled_job_run_id
     if success:
         row.status = EmailEventOutbox.STATUS_DELIVERED
         row.delivered_at = timezone.now()
@@ -215,20 +231,31 @@ def _apply_result(row: EmailEventOutbox, *, success: bool, permanent: bool, erro
             'next_attempt_at',
             'delivered_at',
             'locked_until',
+            'last_trigger',
+            'last_scheduled_job_run_id',
             'updated_at',
         ]
     )
     logger.info(
-        'email_event_delivery outbox_id=%s attempt=%s success=%s http_status=%s',
+        'email_event_delivery outbox_id=%s attempt=%s success=%s http_status=%s trigger=%s '
+        'scheduled_job_run_id=%s',
         row.pk,
         attempt_number,
         success,
         http_status,
+        trigger,
+        scheduled_job_run_id,
     )
     return row
 
 
-def deliver_email_event(row_id) -> EmailEventOutbox | None:
+def deliver_email_event(
+    row_id,
+    *,
+    trigger: str = TRIGGER_DISPATCH,
+    scheduled_job_run_id: int | None = None,
+) -> EmailEventOutbox | None:
+    correlation = {'trigger': trigger, 'scheduled_job_run_id': scheduled_job_run_id}
     with transaction.atomic():
         row = (
             EmailEventOutbox.objects.select_for_update()
@@ -247,6 +274,7 @@ def deliver_email_event(row_id) -> EmailEventOutbox | None:
                 error='email_service_unconfigured',
                 http_status=None,
                 retry_after=None,
+                **correlation,
             )
 
     success = False
@@ -284,6 +312,7 @@ def deliver_email_event(row_id) -> EmailEventOutbox | None:
             error=error,
             http_status=http_status,
             retry_after=retry_after,
+            **correlation,
         )
 
 
@@ -314,8 +343,13 @@ def retry_pending_email_events(
     max_seconds: float = 50.0,
     dry_run: bool = False,
     now=None,
+    scheduled_job_run_id: int | None = None,
 ) -> dict[str, int]:
-    """Retry email-service event posts. Same cron entry as webhook deliveries."""
+    """
+    Retry email-service event posts. Same cron entry as webhook deliveries.
+
+    Each attempt stores ``last_trigger=automatic_retry`` and ``last_scheduled_job_run_id``.
+    """
     import time
 
     now = now or timezone.now()
@@ -330,7 +364,11 @@ def retry_pending_email_events(
             stats['processed'] += 1
             EmailEventOutbox.objects.filter(pk=row.pk).update(locked_until=None)
             continue
-        after = deliver_email_event(row.pk)
+        after = deliver_email_event(
+            row.pk,
+            trigger=TRIGGER_AUTOMATIC_RETRY,
+            scheduled_job_run_id=scheduled_job_run_id,
+        )
         stats['processed'] += 1
         if after is None:
             continue

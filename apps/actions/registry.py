@@ -26,6 +26,9 @@ class DomainEventType:
     # They are dropped before the event log row, the webhook envelope (``ActionOutbox``)
     # and the email-service event body are built.
     sensitive_fields: tuple[str, ...] = ()
+    # Platform event (no company): visible to Django staff only, never listed for company
+    # owners and never offered to webhook or email rules. Implies ``webhook=False``.
+    staff_only: bool = False
 
 
 def strip_sensitive_fields(event: DomainEventType, payload: dict[str, Any]) -> dict[str, Any]:
@@ -41,6 +44,8 @@ _REGISTRY: dict[str, DomainEventType] = {}
 def register_event(event: DomainEventType) -> DomainEventType:
     if event.id in _REGISTRY:
         raise ValueError(f'Duplicate event type registration: {event.id!r}')
+    if event.staff_only and event.webhook:
+        raise ValueError(f'Staff-only event type cannot be a webhook event: {event.id!r}')
     _REGISTRY[event.id] = event
     return event
 
@@ -58,7 +63,7 @@ def is_registered_event(event_id: str) -> bool:
 
 def is_webhook_event(event_id: str) -> bool:
     event = _REGISTRY.get(event_id)
-    return event is not None and event.webhook
+    return event is not None and event.webhook and not event.staff_only
 
 
 def all_event_types() -> list[DomainEventType]:
@@ -66,7 +71,16 @@ def all_event_types() -> list[DomainEventType]:
 
 
 def webhook_event_types() -> list[DomainEventType]:
-    return [e for e in all_event_types() if e.webhook]
+    return [e for e in all_event_types() if e.webhook and not e.staff_only]
+
+
+def company_event_types() -> list[DomainEventType]:
+    """Event types a company owner can see in the event log (no platform events)."""
+    return [e for e in all_event_types() if not e.staff_only]
+
+
+def staff_only_event_types() -> list[DomainEventType]:
+    return [e for e in all_event_types() if e.staff_only]
 
 
 def event_field_doc_dict(field: EventFieldDoc) -> dict:

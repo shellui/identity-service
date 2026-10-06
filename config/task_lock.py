@@ -66,3 +66,35 @@ def task_lock(name: str, ttl: int, client=None):
                 client.eval(_RELEASE_SCRIPT, 1, key, token)
             except redis.RedisError:
                 logger.warning('Could not release lock %s; it expires after %ss', key, ttl)
+
+
+# Beat heartbeat: the beat process stores the time it last published a scheduled task.
+# One SET per published task, kept for a day so a stopped beat still shows its last tick.
+BEAT_HEARTBEAT_TTL = 86400
+
+
+def beat_heartbeat_key() -> str:
+    return f'{settings.SCHEDULER_LOCK_PREFIX}:beat:heartbeat'
+
+
+def record_beat_heartbeat(now: float | None = None, client=None) -> None:
+    """Never raises: a Redis error must not stop beat from publishing the task."""
+    import time
+
+    client = client if client is not None else get_lock_client()
+    try:
+        client.set(beat_heartbeat_key(), f'{now if now is not None else time.time():.3f}', ex=BEAT_HEARTBEAT_TTL)
+    except redis.RedisError:
+        logger.warning('Could not store the beat heartbeat')
+
+
+def read_beat_heartbeat(client=None) -> float | None:
+    """Unix time of the last task published by beat, or None. Redis errors propagate."""
+    client = client if client is not None else get_lock_client()
+    raw = client.get(beat_heartbeat_key())
+    if raw is None:
+        return None
+    try:
+        return float(raw.decode() if isinstance(raw, bytes) else raw)
+    except (TypeError, ValueError):
+        return None
