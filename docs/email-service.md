@@ -9,7 +9,10 @@ Magic links and invitations call `POST /api/v1/send`. identity-service does not 
 | Message | Template | TTL |
 | ------- | -------- | --- |
 | Magic link | `identity.auth.magic_link.requested` | 120s |
+| Staff notice (sent instead of a magic link to a staff account, no link or token) | `identity.auth.magic_link.staff_blocked` | 300s |
 | Invitation | `identity.user.invited` | 300s |
+
+`identity.auth.magic_link.staff_blocked` uses Shellui's own copy in email-service. Companies cannot edit it, add rules on it, or receive it through `POST /api/v1/events`. Variables: `company_name` and `sign_in_url` (the origin of the request's `redirect_to`, omitted for a loopback callback). See [Staff accounts](magic-link.md#staff-accounts).
 
 The idempotency key is stable for that magic-link row or that invitation. Retries send the same key and the same JSON body. The key does not contain the magic-link token, and identity-service does not log the token or the API key.
 
@@ -23,6 +26,7 @@ identity-service uses SMTP in two cases:
 
 - `EMAIL_SERVICE_API_KEY` is unset
 - email-service cannot be reached after the caller retry policy (connection errors, redirects, and HTTP 5xx)
+- the staff notice only: email-service answers `template_not_found` (a version from before the template existed)
 
 Retryable responses (`409`, `429`, and HTTP 5xx) are tried again with the same idempotency key, up to `EMAIL_SERVICE_SEND_ATTEMPTS`. The wait follows `Retry-After`, capped by `EMAIL_SERVICE_RETRY_MAX_SLEEP_SECONDS` (default `1` second) so a sign-in request does not wait out the full webhook backoff.
 
@@ -49,7 +53,7 @@ An invitation with no `app_url` still calls `/send`. `invitation_url` is then th
 
 ## Event forwarding
 
-Every webhook event except the two direct-send templates is posted to `POST /api/v1/events` after the database commit. Sign-in events (`identity.auth.login.succeeded` and `identity.auth.login.failed`) stay in the [event log](event-log.md) only.
+Every webhook event except the direct-send templates is posted to `POST /api/v1/events` after the database commit. Sign-in events (`identity.auth.login.succeeded` and `identity.auth.login.failed`) stay in the [event log](event-log.md) only.
 
 The body includes:
 

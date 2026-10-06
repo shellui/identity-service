@@ -105,21 +105,21 @@ class OwnerMagicLinkTakeoverRegressionTests(TestCase):
                 }, format='json')
         self.assertEqual(r.status_code, 200, r.data)
 
-        # The real user gets the email, even though the company has a webhook rule.
+        # A staff account gets no sign-in link at all: only the notice, with no token.
+        self.assertFalse(MagicLinkToken.objects.exists())
         self.assertEqual(len(mail.outbox), 1)
         self.assertEqual(mail.outbox[0].to, ['ops@shellui.test'])
-        raw = _TOKEN_RE.search(mail.outbox[0].body).group(1)
+        self.assertIsNone(_TOKEN_RE.search(mail.outbox[0].body))
+        self.assertNotIn('magic-link/verify', mail.outbox[0].body)
 
         row = ActionOutbox.objects.get(company=self.company_a, event_type=EVENT)
         self.assertNotIn('magic_link_url', row.envelope['data'])
         stored = json.dumps(row.envelope)
-        self.assertNotIn(raw, stored)
         self.assertNotIn('token=', stored)
 
         detail = self.owner.get(f'/api/v1/actions/deliveries/{row.pk}' + self.q)
         self.assertEqual(detail.status_code, 200)
         body = json.dumps(detail.data, default=str)
-        self.assertNotIn(raw, body)
         self.assertNotIn('magic_link_url', body)
         self.assertNotIn('magic-link/verify', body)
 
@@ -129,11 +129,25 @@ class OwnerMagicLinkTakeoverRegressionTests(TestCase):
                           {'token': str(candidate), 'company_id': self.company_a.id}, format='json')
             self.assertEqual(r.status_code, 400)
 
-        # Defense in depth: even a genuine staff session in company A cannot grant is_staff.
+        # A token issued before this release (or read from provider logs) does not sign staff in.
+        from apps.authapi.magic_link import create_magic_link_token
+
+        old_row, raw = create_magic_link_token(
+            company=self.company_a, email='ops@shellui.test',
+            redirect_to='https://evil.example.com/login/callback', user=self.staff,
+        )
         r = anon.post(f'/api/v1/magic-link/verify{self.q}',
                       {'token': raw, 'company_id': self.company_a.id}, format='json')
-        self.assertEqual(r.status_code, 200, r.data)
-        access = r.data.get('access_token') or r.data.get('access')
+        self.assertEqual(r.status_code, 403, r.data)
+        self.assertEqual(r.data['error_code'], 'magic_link_staff_disabled')
+        self.assertNotIn('access_token', r.data)
+
+        # Defense in depth: even a genuine staff session in company A cannot grant is_staff.
+        from apps.authapi.views import _issue_shellui_tokens
+
+        set_company_access(self.company_a, self.staff, enabled=True)
+        payload = _issue_shellui_tokens(self.staff, company=self.company_a, oauth_provider='google')
+        access = payload.get('access_token') or payload.get('access')
         claims = jwt.decode(access, options={'verify_signature': False})
         self.assertEqual(int(claims.get('user_id') or claims.get('sub')), self.staff.pk)
         as_staff = APIClient()

@@ -9,8 +9,10 @@ from django.core.exceptions import ImproperlyConfigured
 from apps.actions.email_client import (
     INVITATION_TTL_SECONDS,
     MAGIC_LINK_TTL_SECONDS,
+    STAFF_NOTICE_TTL_SECONDS,
     TEMPLATE_INVITED,
     TEMPLATE_MAGIC_LINK,
+    TEMPLATE_MAGIC_LINK_STAFF_BLOCKED,
     EmailServiceRejected,
     EmailServiceUnreachable,
     EmailUnavailable,
@@ -20,6 +22,7 @@ from apps.actions.email_client import (
     invitation_idempotency_key,
     magic_link_idempotency_key,
     post_json,
+    staff_notice_idempotency_key,
 )
 from apps.authapi.invitation_email import send_invitation_email
 from apps.authapi.magic_link import (
@@ -27,7 +30,11 @@ from apps.authapi.magic_link import (
     magic_link_url_for_request,
     normalize_magic_link_language,
 )
-from apps.authapi.magic_link_email import _resolve_language, send_magic_link_email
+from apps.authapi.magic_link_email import (
+    _resolve_language,
+    send_magic_link_email,
+    send_staff_magic_link_notice_email,
+)
 from apps.companies.access import get_membership
 
 logger = logging.getLogger(__name__)
@@ -63,13 +70,14 @@ def _member_user_id(company, user) -> int | None:
     return user.pk
 
 
-def _send_or_fallback(*, path_body: dict, smtp_send) -> None:
+def _send_or_fallback(*, path_body: dict, smtp_send, smtp_on_codes: frozenset[str] = frozenset()) -> None:
     """
     POST ``/api/v1/send`` when a service key is set.
 
     SMTP is used when the key is unset, and when email-service cannot be reached
     after the caller retry policy. A refusal such as ``recipient_suppressed`` is not
-    sent again over SMTP.
+    sent again over SMTP. ``smtp_on_codes`` lists refusals that do go to SMTP, for
+    example ``template_not_found`` from an email-service that predates a template.
     """
     if not email_service_configured():
         try:
@@ -85,6 +93,22 @@ def _send_or_fallback(*, path_body: dict, smtp_send) -> None:
     try:
         post_json('/api/v1/send', path_body)
     except EmailServiceRejected as exc:
+        if exc.error_code in smtp_on_codes:
+            logger.warning(
+                'email_service_smtp_fallback template=%s error_code=%s',
+                path_body.get('template_key'),
+                exc.error_code,
+            )
+            try:
+                smtp_send()
+            except Exception as smtp_exc:
+                logger.warning(
+                    'smtp_fallback_failed template=%s error=%s',
+                    path_body.get('template_key'),
+                    smtp_exc.__class__.__name__,
+                )
+                raise EmailUnavailable from None
+            return
         if exc.error_code == 'recipient_suppressed' or exc.status == 422:
             raise RecipientSuppressed from None
         mapped = _passthrough_status(exc)
@@ -172,6 +196,62 @@ def deliver_magic_link_email(
         )
 
     _send_or_fallback(path_body=body, smtp_send=smtp_send)
+
+
+def deliver_staff_magic_link_notice(
+    *,
+    company,
+    email: str,
+    user=None,
+    language: str | None = None,
+    sign_in_url: str | None = None,
+    request_id,
+) -> None:
+    """
+    Tell a staff account that magic links are off for it. Sent instead of the sign-in link.
+
+    Same path as the magic link: ``POST /api/v1/send`` on the auth lane (one recipient,
+    built-in copy only), or SMTP. No link or token. An email-service that does not know
+    the template yet (``template_not_found``) falls back to SMTP.
+    Raises ``EmailUnavailable``, ``RecipientSuppressed`` or ``AuthEmailError`` like
+    ``deliver_magic_link_email``, so the API answers the same way as for other addresses.
+    """
+    lang = _resolve_language(user=user, payload_language=language)
+    user_id = _member_user_id(company, user)
+    recipient: dict = {'email': email}
+    if user_id is not None:
+        recipient['user_id'] = user_id
+    variables = {'company_name': company.name}
+    if sign_in_url:
+        variables['sign_in_url'] = sign_in_url
+    body = {
+        'company_id': company.pk,
+        'template_key': TEMPLATE_MAGIC_LINK_STAFF_BLOCKED,
+        'language': lang,
+        'idempotency_key': staff_notice_idempotency_key(
+            company_id=company.pk,
+            user_id=user_id,
+            request_id=request_id,
+        ),
+        'ttl_seconds': STAFF_NOTICE_TTL_SECONDS,
+        'to': [recipient],
+        'variables': variables,
+    }
+
+    def smtp_send() -> None:
+        send_staff_magic_link_notice_email(
+            company=company,
+            email=email,
+            user=user,
+            language=language,
+            sign_in_url=sign_in_url,
+        )
+
+    _send_or_fallback(
+        path_body=body,
+        smtp_send=smtp_send,
+        smtp_on_codes=frozenset({'template_not_found'}),
+    )
 
 
 def invitation_link(*, app_url: str | None, fallback_base_url: str | None = None) -> str:

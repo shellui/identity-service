@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{{ page_language|default:'en' }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% if error_message %}Sign-in link problem{% else %}Completing sign-in…{% endif %}</title>
+  <title>{% if staff_disabled %}{{ copy.title }}{% elif error_message %}Sign-in link problem{% else %}Completing sign-in…{% endif %}</title>
   <style>
     :root {
       color-scheme: light dark;
@@ -74,6 +74,18 @@
       color: var(--card);
     }
     button:hover { background: var(--primary-hover); }
+    a.button {
+      display: block;
+      text-align: center;
+      text-decoration: none;
+      border-radius: 10px;
+      padding: 0.75rem 1rem;
+      font-size: 0.95rem;
+      font-weight: 600;
+      background: var(--primary);
+      color: var(--card);
+    }
+    a.button:hover { background: var(--primary-hover); }
     .status {
       margin: 0;
       color: var(--muted);
@@ -82,7 +94,13 @@
   </style>
 </head>
 <body>
-  {% if error_message %}
+  {% if staff_disabled %}
+    <div class="card" data-error-code="{{ error_code }}">
+      <h1>{{ copy.title }}</h1>
+      <p class="subtitle">{{ copy.body }}</p>
+      {% if sign_in_url %}<a class="button" href="{{ sign_in_url }}">{{ copy.button }}</a>{% endif %}
+    </div>
+  {% elif error_message %}
     <div class="card">
       <h1>Sign-in link problem</h1>
       <p class="error">{{ error_message }}</p>

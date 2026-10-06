@@ -1,0 +1,8 @@
+<!DOCTYPE html>
+<html lang="fr">
+<body style="font-family: system-ui, sans-serif; line-height: 1.5; color: #111;">
+  <h1>Pas de lien de connexion pour les comptes staff</h1>
+  <p>Quelqu'un a demandé un lien de connexion pour cette adresse sur {{ company_name }}. Par sécurité, les comptes staff ne peuvent pas se connecter avec un lien envoyé par e-mail. Connectez-vous avec votre mot de passe ou le SSO. Si vous n'êtes pas à l'origine de cette demande, ignorez cet e-mail.</p>
+  {% if sign_in_url %}<p><a href="{{ sign_in_url }}">Aller à la connexion</a></p>{% endif %}
+</body>
+</html>

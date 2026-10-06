@@ -58,8 +58,9 @@ class MagicLinkRecipientTests(TestCase):
         self.owner = User.objects.create_user(username='mallory', email='owner@evil.example', password='x')
         set_company_access(self.company, self.owner, enabled=True)
         self.company.owners.add(self.owner)
-        self.staff = User.objects.create_user(username='ops', email='ops@shellui.test', password='x', is_staff=True)
-        set_company_access(self.company, self.staff, enabled=True)
+        # A regular member. Staff accounts get no link at all (see test_magic_link_staff).
+        self.member = User.objects.create_user(username='ops', email='ops@shellui.test', password='x')
+        set_company_access(self.company, self.member, enabled=True)
         # The owner subscribed everything they can to the event.
         ActionRule.objects.create(
             company=self.company,

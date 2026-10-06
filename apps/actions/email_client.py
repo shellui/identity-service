@@ -20,9 +20,12 @@ logger = logging.getLogger(__name__)
 SERVICE_NAME = 'identity'
 TEMPLATE_MAGIC_LINK = 'identity.auth.magic_link.requested'
 TEMPLATE_INVITED = 'identity.user.invited'
+# Built-in email-service copy sent to a staff account instead of a magic link. No link or token.
+TEMPLATE_MAGIC_LINK_STAFF_BLOCKED = 'identity.auth.magic_link.staff_blocked'
 DIRECT_SEND_EVENT_TYPES = frozenset({TEMPLATE_MAGIC_LINK, TEMPLATE_INVITED})
 MAGIC_LINK_TTL_SECONDS = 120
 INVITATION_TTL_SECONDS = 300
+STAFF_NOTICE_TTL_SECONDS = 300
 
 # Auth-lane refusals returned to the client. None of these are sent again over SMTP.
 PASSTHROUGH_SEND_CODES = {
@@ -83,6 +86,12 @@ def magic_link_idempotency_key(*, company_id: int, user_id: int | None, request_
     """Stable for one magic-link row. Does not include the raw token."""
     user_part = str(user_id) if user_id else '0'
     return f'magic-link-{company_id}-user-{user_part}-{request_id}'
+
+
+def staff_notice_idempotency_key(*, company_id: int, user_id: int | None, request_id) -> str:
+    """One staff notice per magic-link request (``request_id`` is a fresh UUID)."""
+    user_part = str(user_id) if user_id else '0'
+    return f'magic-link-staff-{company_id}-user-{user_part}-{request_id}'
 
 
 def invitation_idempotency_key(*, company_id: int, invitation_id: int) -> str:
