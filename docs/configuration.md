@@ -2,7 +2,7 @@
 
 Operators configure identity-service with environment variables (see [`.env.example`](https://github.com/shellui/identity-service/blob/main/.env.example) in the repository root). Copy it to `.env` for local runs; pass the same keys to Docker, Coolify, or your orchestrator in production.
 
-Published docs: [https://identity.docs.shellui.com](https://identity.docs.shellui.com) (GitHub Pages `cname` on release tags).
+Published docs: [https://docs.shellui.com/identity](https://docs.shellui.com/identity), built from this repository's `docs/` folder by [shellui/shellui](https://github.com/shellui/shellui).
 
 ---
 
@@ -95,9 +95,13 @@ OAuth **redirect** allowlist (`CompanyOAuthRedirect`) is separate and stricter �
 | `POSTGRES_DATABASE_URL` | empty | Postgres DSN; omit for SQLite (`SQLITE_PATH` or `/app/data/db.sqlite3` in Docker) |
 | `POSTGRES_SSL_REQUIRE` | `true` when not `DEBUG` | TLS to Postgres |
 | `POSTGRES_CONNECT_TIMEOUT` | `10` | Seconds; avoids workers stuck on dead TCP |
+| `POSTGRES_STATEMENT_TIMEOUT` | `15` | Seconds. Postgres cancels any query that runs longer. `0` turns it off. Not applied to `migrate`. Ignored with SQLite |
+| `POSTGRES_LOCK_TIMEOUT` | `5` | Seconds. Postgres gives up waiting for a row or table lock after this. `0` turns it off. Not applied to `migrate`. Ignored with SQLite |
 | `GET /health/live` | — | **Liveness probe** — no session/DB; use for load balancers (not `/` alone) |
 
 SQLite uses WAL mode on connect for better single-node concurrency (v0.5.1+).
+
+With Postgres, `CONN_HEALTH_CHECKS` is on, so a connection that died while idle is replaced before the next request uses it.
 
 ---
 
@@ -105,11 +109,19 @@ SQLite uses WAL mode on connect for better single-node concurrency (v0.5.1+).
 
 | Variable | Default | Purpose |
 | -------- | ------- | ------- |
-| `GUNICORN_WORKERS` | `4` | Sync worker processes |
+| `GUNICORN_WORKERS` | `4` | Worker processes |
 | `GUNICORN_THREADS` | `4` | Threads per worker (`gthread` worker class) |
-| `GUNICORN_TIMEOUT` | `60` | Worker request timeout (OAuth may use long outbound HTTP) |
+| `GUNICORN_TIMEOUT` | `60` | Seconds of silence before gunicorn restarts a frozen worker process. See the note below |
+| `GUNICORN_GRACEFUL_TIMEOUT` | `30` | Seconds a worker gets to finish open requests on restart or shutdown |
+| `GUNICORN_KEEP_ALIVE` | `75` | Seconds an idle keep-alive connection stays open. Keep it above the reverse proxy idle time to avoid random 502s |
+| `GUNICORN_MAX_REQUESTS` | `1000` | Restart a worker after this many requests. `0` turns it off |
+| `GUNICORN_MAX_REQUESTS_JITTER` | `200` | Random extra requests added to `GUNICORN_MAX_REQUESTS`, so workers do not all restart at once |
 
-Concurrency ≈ `workers × threads`. Under-provisioned pools can queue even simple requests when OAuth holds workers.
+Concurrency is about `workers x threads`. Under-provisioned pools can queue even simple requests when OAuth holds workers.
+
+**`GUNICORN_TIMEOUT` does not stop a stuck request.** With the `gthread` worker class, the worker keeps sending heartbeats while one of its threads is blocked (on SMTP, the database or an outbound HTTP call), so gunicorn never kills it. Requests sent to that worker can then wait with no response and no log line. Per-request deadlines come from the app instead: `EMAIL_TIMEOUT`, `POSTGRES_STATEMENT_TIMEOUT`, `POSTGRES_LOCK_TIMEOUT` and the 20 second OAuth HTTP timeouts. Set a response timeout on the reverse proxy as well. `GUNICORN_MAX_REQUESTS` recycles workers over time, which also replaces a worker that still serves some requests.
+
+The entrypoint also sets `--worker-tmp-dir /dev/shm` (heartbeat file in memory, not on the container disk) and writes the gunicorn access and error logs to stdout. Each access log line ends with the request duration and the request id, for example `"GET /api/v1/settings HTTP/1.1" 200 512 "-" "Mozilla/5.0" 182ms req=4f2c9a1e`.
 
 ---
 
@@ -161,8 +173,12 @@ Documented in [SCIM](scim.md). Available on **`develop`** after migrations.
 | `DEBUG` | Development mode; never `true` in production |
 | `SETUP_TOKEN` | One-time web superuser bootstrap when `DEBUG=false` (prefer `createsuperuser`) |
 | `IDENTITY_SERVICE_PORT` | Local/docker-compose port hint |
-| `SENTRY_DSN`, `SENTRY_ENVIRONMENT`, `SENTRY_RELEASE`, `SENTRY_TRACES_SAMPLE_RATE` | Optional error reporting |
 | `EMAIL_*`, `DEFAULT_FROM_EMAIL` | SMTP for company access notifications and the email-service fallback ([company-access.md](company-access.md), [email-service.md](email-service.md)) |
+| `SENTRY_DSN`, `SENTRY_ENVIRONMENT`, `SENTRY_RELEASE`, `SENTRY_TRACES_SAMPLE_RATE` | Optional error reporting. Sentry starts only when `SENTRY_DSN` is set. No personal data is sent. `SENTRY_TRACES_SAMPLE_RATE` defaults to `0` (errors only); set for example `0.1` to see slow requests |
+| `LOG_LEVEL` | Level for app logs on stdout (default `INFO`, or `DEBUG` when `DEBUG=true`). Django errors and warnings (500s, `DisallowedHost`, CSRF failures) are always printed, also when `DEBUG=false` |
+| `SLOW_REQUEST_THRESHOLD_SECONDS` | Log a warning for requests slower than this many seconds (default `2`). `0` turns it off |
+| `EMAIL_*`, `DEFAULT_FROM_EMAIL` | SMTP for company access notifications and the email-service fallback ([company-access.md](company-access.md), [email-service.md](email-service.md)) |
+| `EMAIL_TIMEOUT` | Seconds before an SMTP connect, read or write gives up (default `10`). Without it, a mail server that does not answer can hold a sign-in request forever |
 | `EMAIL_SERVICE_URL` | email-service origin (production default `https://email.shellui.com`; local `http://localhost:8003`) |
 | `EMAIL_SERVICE_API_KEY` | Service key (`esk_`). Unset keeps SMTP / the console backend |
 | `ACTIONS_WEBHOOK_TIMEOUT_SECONDS` | Webhook POST timeout (default `5`) — see [actions.md](actions.md) |

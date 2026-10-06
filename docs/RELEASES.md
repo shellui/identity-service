@@ -22,12 +22,11 @@ The image contains application code and collected static files only. Secrets and
 
 Operator-facing changes on the **0.7.0** line (see `CHANGELOG.md`):
 
-- **Email-service** — set `EMAIL_SERVICE_API_KEY` to send magic links and invitations through email-service, with SMTP as fallback ([email-service.md](email-service.md)).
-- **Event log** — every event and sign-in in one table, per-company `data_retention_days`; `GET /api/v1/login-events` is deprecated in favour of `GET /api/v1/events` ([event-log.md](event-log.md)).
-- **Scheduled jobs** — schedule `purge_expired_data` hourly and `retry_webhooks` every minute ([scheduled-jobs.md](scheduled-jobs.md)).
-- **SAML 2.0 SSO** — multiple IdPs per company ([saml.md](saml.md)).
-- **OAuth providers** — 15 supported providers plus SAML, including Twitch, LinkedIn, Slack, OpenID Connect, Keycloak, Okta, and Auth0 ([oauth-providers.md](oauth-providers.md)).
-- **Migrations** — `0014` and `0015` rekey OpenID Connect and GitLab social accounts; run `manage.py scope_gitlab_social_uids` if `0015` reports ambiguous rows.
+- **OAuth** — session-code delivery, redirect allowlist, company OAuth clients ([oauth-login.md](oauth-login.md)).
+- **Configuration** — consolidated env reference ([configuration.md](configuration.md)).
+- **Redis** — optional `REDIS_URL` shared cache for multi-worker Gunicorn (#26 on `develop`).
+- **SCIM** — enterprise user/group provisioning ([scim.md](scim.md)); enabled by default after deploy/migrations (per-company bearer token).
+- **Docs site**: these docs are part of [docs.shellui.com/identity](https://docs.shellui.com/identity), built by [shellui/shellui](https://github.com/shellui/shellui) from `docs/`.
 
 ## Pre-release checklist
 
@@ -47,7 +46,9 @@ Ensure these match the release version (e.g. `0.7.0`):
 - `CHANGELOG.md` entry with date
 - CI + pre-release workflows green on the release commit
 - Git tag `v0.7.0` (optional but recommended; not enforced by the script)
-- Docs at [identity.docs.shellui.com](https://identity.docs.shellui.com) deploy from release tags via GitHub Pages (see `.github/workflows/deploy-docs.yml`)
+- # Docs at [identity.docs.shellui.com](https://identity.docs.shellui.com) deploy from release tags via GitHub Pages (see `.github/workflows/deploy-docs.yml`)
+- Git tag `v0.6.0` (optional but recommended; not enforced by the script)
+- Docs at [docs.shellui.com/identity](https://docs.shellui.com/identity) are built and published by [shellui/shellui](https://github.com/shellui/shellui), not by a tag in this repository. CI here only checks that `docs/` builds (the **Docs build** job in `.github/workflows/ci.yml`)
 
 ### 2. No secrets in the build context
 

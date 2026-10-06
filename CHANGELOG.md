@@ -23,6 +23,23 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 ## [0.7.0] - 2026-10-06
 
+### 🐛 Bug Fixes
+
+- **No more endless sign-in requests from a slow mail server:** SMTP now gives up after `EMAIL_TIMEOUT` seconds (default 10). Before, Django waited with no limit, so a company access email sent during an OAuth callback could hold the sign-in request forever.
+- **Postgres deadlines:** queries are cancelled after `POSTGRES_STATEMENT_TIMEOUT` seconds (default 15) and lock waits after `POSTGRES_LOCK_TIMEOUT` seconds (default 5). Set either to `0` to turn it off. They are not applied to `migrate` and have no effect on SQLite.
+
+### 🛠 Improvements
+
+- **Logs you can see in production:** gunicorn now writes access and error logs to stdout, and each access line ends with the request duration and request id. Django errors and warnings (500s, `DisallowedHost`, CSRF failures) are printed to stdout also when `DEBUG=false`. App log level is set with `LOG_LEVEL`.
+- **Request id:** every response carries an `X-Request-ID` header (taken from the incoming request when present, otherwise generated), and every log line includes it as `[req=<id>]`, like the other Shellui services.
+- **Slow request warning:** requests slower than `SLOW_REQUEST_THRESHOLD_SECONDS` (default 2) are logged as a warning with method, path, status and duration.
+- **Gunicorn:** heartbeat file in `/dev/shm`, workers recycled after `GUNICORN_MAX_REQUESTS` (default 1000) plus up to `GUNICORN_MAX_REQUESTS_JITTER` (default 200) requests, `GUNICORN_GRACEFUL_TIMEOUT` (default 30) and `GUNICORN_KEEP_ALIVE` (default 75).
+
+### 📚 Documentation
+
+- **Docs move to docs.shellui.com/identity:** [shellui/shellui](https://github.com/shellui/shellui) now builds and publishes these docs. This repository no longer deploys a docs site on tags: `deploy-docs.yml`, `tools/docusaurus/` and `tools/generate-docs.sh` are removed, and the sidebar moved to `docs/sidebars.js` (now with n8n and SAML). CI gains a **Docs build** job that builds `docs/` with the shellui docs site and fails on broken links.
+- `GUNICORN_TIMEOUT` does not kill a worker whose `gthread` threads are stuck. The docs now say so and list the app timeouts that do bound a request.
+
 ### ✨ Feature
 
 - **Email-service delivery:** magic-link and invitation emails go through Shellui email-service when `EMAIL_SERVICE_API_KEY` is set, with SMTP as fallback, and catalog events are forwarded through the webhook outbox. See [docs/email-service.md](docs/email-service.md).

@@ -1,0 +1,19 @@
+{
+  "id": "index",
+  "title": "identity-service documentation",
+  "description": "Welcome to the identity-service documentation.",
+  "source": "@site/../../docs/index.md",
+  "sourceDirName": ".",
+  "slug": "/",
+  "permalink": "/",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "frontMatter": {},
+  "sidebar": "tutorialSidebar",
+  "next": {
+    "title": "OAuth login",
+    "permalink": "/oauth-login"
+  }
+}

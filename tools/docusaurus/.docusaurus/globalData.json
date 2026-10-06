@@ -1,0 +1,57 @@
+{
+  "docusaurus-plugin-content-docs": {
+    "default": {
+      "path": "/",
+      "versions": [
+        {
+          "name": "current",
+          "label": "Next",
+          "isLast": true,
+          "path": "/",
+          "mainDocId": "index",
+          "docs": [
+            {
+              "id": "company-access",
+              "path": "/company-access",
+              "sidebar": "tutorialSidebar"
+            },
+            {
+              "id": "index",
+              "path": "/",
+              "sidebar": "tutorialSidebar"
+            },
+            {
+              "id": "jwks",
+              "path": "/jwks",
+              "sidebar": "tutorialSidebar"
+            },
+            {
+              "id": "metrics",
+              "path": "/metrics",
+              "sidebar": "tutorialSidebar"
+            },
+            {
+              "id": "oauth-login",
+              "path": "/oauth-login",
+              "sidebar": "tutorialSidebar"
+            },
+            {
+              "id": "RELEASES",
+              "path": "/RELEASES"
+            }
+          ],
+          "draftIds": [],
+          "sidebars": {
+            "tutorialSidebar": {
+              "link": {
+                "path": "/",
+                "label": "Introduction"
+              }
+            }
+          }
+        }
+      ],
+      "breadcrumbs": true
+    }
+  }
+}

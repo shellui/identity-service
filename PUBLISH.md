@@ -164,7 +164,9 @@ docker run -d \
   shellui/identity-service:0.7.0
 ```
 
-The entrypoint runs migrations on start, then starts **Gunicorn** (`config.wsgi:application`) as user `appuser` — not ASGI/uvicorn. Env vars `GUNICORN_WORKERS`, `GUNICORN_THREADS`, and `GUNICORN_TIMEOUT` are passed through; worker class is **`gthread`** (threaded sync workers).
+The entrypoint runs migrations on start, then starts **Gunicorn** (`config.wsgi:application`) as user `appuser`, not ASGI or uvicorn. Env vars `GUNICORN_WORKERS`, `GUNICORN_THREADS`, `GUNICORN_TIMEOUT`, `GUNICORN_GRACEFUL_TIMEOUT`, `GUNICORN_KEEP_ALIVE`, `GUNICORN_MAX_REQUESTS` and `GUNICORN_MAX_REQUESTS_JITTER` are passed through. The worker class is **`gthread`** (threaded sync workers). Access and error logs go to stdout, with the request duration and request id on each access log line.
+
+**`GUNICORN_TIMEOUT` does not kill stuck `gthread` workers.** A worker keeps sending heartbeats while one of its threads is blocked, so gunicorn does not restart it. Per-request deadlines come from `EMAIL_TIMEOUT`, `POSTGRES_STATEMENT_TIMEOUT`, `POSTGRES_LOCK_TIMEOUT`, the OAuth HTTP timeouts, and a response timeout on the reverse proxy. See [docs/configuration.md](docs/configuration.md#gunicorn-docker-entrypoint).
 
 **Concurrency:** with defaults after this release, up to `workers × threads` requests run at once (e.g. `4 × 4 = 16`). With `GUNICORN_WORKERS=2` and `GUNICORN_THREADS=2` you only get **four** concurrent handlers. OAuth callbacks and token refresh perform several DB writes and up to ~20s outbound HTTP each; when all handlers are busy, **even `GET /` queues** (session middleware + DB) until the client or reverse proxy times out — intermittent “hang then works again”.
 

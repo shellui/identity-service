@@ -1,0 +1,23 @@
+{
+  "id": "jwks",
+  "title": "JWT signing and JWKS",
+  "description": "identity-service issues JWT access and refresh tokens for Shellui sessions and personal access tokens (PATs). External services can verify those tokens without sharing SECRET_KEY by fetching the public keys from the JWKS endpoint.",
+  "source": "@site/../../docs/jwks.md",
+  "sourceDirName": ".",
+  "slug": "/jwks",
+  "permalink": "/jwks",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "frontMatter": {},
+  "sidebar": "tutorialSidebar",
+  "previous": {
+    "title": "Company access",
+    "permalink": "/company-access"
+  },
+  "next": {
+    "title": "Metrics",
+    "permalink": "/metrics"
+  }
+}

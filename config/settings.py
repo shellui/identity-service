@@ -96,6 +96,38 @@ def _env_int(name, default: int) -> int:
         raise ImproperlyConfigured(f'{name} must be an integer. Got: {raw!r}') from exc
 
 
+def _env_positive_float(name, default):
+    value = _env_float(name, default)
+    if value <= 0:
+        raise ImproperlyConfigured(f'{name} must be greater than zero. Got: {value!r}')
+    return value
+
+
+def _env_non_negative_float(name, default):
+    value = _env_float(name, default)
+    if value < 0:
+        raise ImproperlyConfigured(f'{name} must be zero or greater. Got: {value!r}')
+    return value
+
+
+def _postgres_timeout_options(statement_timeout: float, lock_timeout: float) -> str:
+    """
+    Build the libpq ``options`` string that sets server-side query deadlines.
+
+    Values are in seconds. 0 turns a deadline off. Postgres expects milliseconds.
+    """
+    parts = []
+    if statement_timeout > 0:
+        parts.append(f'-c statement_timeout={int(statement_timeout * 1000)}')
+    if lock_timeout > 0:
+        parts.append(f'-c lock_timeout={int(lock_timeout * 1000)}')
+    return ' '.join(parts)
+
+
+def _running_management_command(*names: str) -> bool:
+    return len(sys.argv) > 1 and sys.argv[1] in names
+
+
 def _caches_config(redis_url: str) -> dict:
     """
     Shared cache for auth rate limits, access-token denylist, and activity throttles.
@@ -197,6 +229,15 @@ VERSION = _project_version()
 
 SCIM_ENABLED = _env_bool('SCIM_ENABLED', True)
 
+# Logging: always write to stdout (Docker / Coolify logs), also when DEBUG=false.
+LOG_LEVEL = os.getenv('LOG_LEVEL', '').strip().upper() or ('DEBUG' if DEBUG else 'INFO')
+if LOG_LEVEL not in {'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'}:
+    raise ImproperlyConfigured(
+        f'LOG_LEVEL must be DEBUG, INFO, WARNING, ERROR or CRITICAL. Got: {LOG_LEVEL!r}'
+    )
+# Requests slower than this many seconds are logged as a warning. 0 turns it off.
+SLOW_REQUEST_THRESHOLD_SECONDS = _env_non_negative_float('SLOW_REQUEST_THRESHOLD_SECONDS', 2.0)
+
 # Application definition
 
 INSTALLED_APPS = [
@@ -260,6 +301,7 @@ SPECTACULAR_SETTINGS = {
 }
 
 MIDDLEWARE = [
+    'config.request_context.RequestIdMiddleware',
     'apps.authapi.middleware.LivenessMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
@@ -322,6 +364,18 @@ EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
 EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'false').strip().lower() in {'1', 'true', 'yes', 'on'}
 EMAIL_USE_SSL = os.getenv('EMAIL_USE_SSL', 'false').strip().lower() in {'1', 'true', 'yes', 'on'}
 DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@localhost')
+# Seconds before an SMTP connect, read or write gives up. Django's default is no timeout,
+# so an unreachable mail server could hold a login request forever.
+EMAIL_TIMEOUT = _env_positive_float('EMAIL_TIMEOUT', 10.0)
+
+# Shellui email-service. Unset EMAIL_SERVICE_API_KEY keeps the SMTP / console backend.
+EMAIL_SERVICE_URL = (
+    os.getenv('EMAIL_SERVICE_URL', 'https://email.shellui.com').strip() or 'https://email.shellui.com'
+).rstrip('/')
+EMAIL_SERVICE_API_KEY = os.getenv('EMAIL_SERVICE_API_KEY', '').strip()
+EMAIL_SERVICE_TIMEOUT_SECONDS = _env_float('EMAIL_SERVICE_TIMEOUT_SECONDS', 5.0)
+EMAIL_SERVICE_SEND_ATTEMPTS = _env_int('EMAIL_SERVICE_SEND_ATTEMPTS', 3)
+EMAIL_SERVICE_RETRY_MAX_SLEEP_SECONDS = _env_float('EMAIL_SERVICE_RETRY_MAX_SLEEP_SECONDS', 1.0)
 
 # Shellui email-service. Unset EMAIL_SERVICE_API_KEY keeps the SMTP / console backend.
 EMAIL_SERVICE_URL = (
@@ -481,6 +535,10 @@ POSTGRES_DATABASE_URL = os.getenv('POSTGRES_DATABASE_URL', '').strip()
 if POSTGRES_DATABASE_URL:
     _postgres_ssl_require = _env_bool('POSTGRES_SSL_REQUIRE', not DEBUG)
     _postgres_connect_timeout = _env_int('POSTGRES_CONNECT_TIMEOUT', 10)
+    # Server-side deadlines in seconds (0 turns one off). Not applied to `migrate`, so a
+    # long migration at boot is not cut short.
+    POSTGRES_STATEMENT_TIMEOUT = _env_non_negative_float('POSTGRES_STATEMENT_TIMEOUT', 15.0)
+    POSTGRES_LOCK_TIMEOUT = _env_non_negative_float('POSTGRES_LOCK_TIMEOUT', 5.0)
     DATABASES = {
         'default': dj_database_url.parse(
             POSTGRES_DATABASE_URL,
@@ -491,6 +549,16 @@ if POSTGRES_DATABASE_URL:
     DATABASES['default']['CONN_HEALTH_CHECKS'] = True
     DATABASES['default'].setdefault('OPTIONS', {})
     DATABASES['default']['OPTIONS']['connect_timeout'] = _postgres_connect_timeout
+    if not _running_management_command('migrate'):
+        _postgres_timeouts = _postgres_timeout_options(
+            POSTGRES_STATEMENT_TIMEOUT,
+            POSTGRES_LOCK_TIMEOUT,
+        )
+        if _postgres_timeouts:
+            _existing_options = DATABASES['default']['OPTIONS'].get('options', '').strip()
+            DATABASES['default']['OPTIONS']['options'] = ' '.join(
+                part for part in (_existing_options, _postgres_timeouts) if part
+            )
 else:
     DATABASES = {
         'default': {
@@ -557,7 +625,7 @@ STORAGES = {
     },
 }
 
-# Sentry error reporting (optional — enabled when SENTRY_DSN is set)
+# Sentry error reporting (optional, turned on only when SENTRY_DSN is set)
 SENTRY_DSN = os.getenv('SENTRY_DSN', '').strip()
 SENTRY_ENVIRONMENT = os.getenv('SENTRY_ENVIRONMENT', '').strip() or (
     'development' if DEBUG else 'production'
@@ -601,3 +669,66 @@ if SENTRY_DSN:
         send_default_pii=False,
         attach_stacktrace=True,
     )
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'filters': {
+        'request_id': {
+            '()': 'config.request_context.RequestIdFilter',
+        },
+    },
+    'formatters': {
+        'console': {
+            'format': '{asctime} {levelname} [{name}] [req={request_id}] {message}',
+            'style': '{',
+            'datefmt': '%Y-%m-%d %H:%M:%S',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'stream': 'ext://sys.stdout',
+            'formatter': 'console',
+            'filters': ['request_id'],
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': LOG_LEVEL,
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        # 5xx as ERROR and 4xx as WARNING, including when DEBUG=false.
+        'django.request': {
+            'handlers': ['console'],
+            'level': 'WARNING',
+            'propagate': False,
+        },
+        # DisallowedHost, CSRF failures and other security warnings.
+        'django.security': {
+            'handlers': ['console'],
+            'level': 'WARNING',
+            'propagate': False,
+        },
+        'django.server': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'apps': {
+            'handlers': ['console'],
+            'level': LOG_LEVEL,
+            'propagate': False,
+        },
+        'config': {
+            'handlers': ['console'],
+            'level': LOG_LEVEL,
+            'propagate': False,
+        },
+    },
+}

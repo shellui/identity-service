@@ -163,23 +163,19 @@ Production auth abuse controls, HTTPS defaults, Postgres SSL, and trusted-proxy 
 - `/api/v1/settings` only enables providers configured for the requested company; OAuth client details require an authenticated company member.
 - Avatar URL from provider userinfo is included in JWT metadata (`user_metadata.avatar_url`) for Shellui profile display.
 
-## Documentation (Docusaurus)
+## Documentation
 
-Project docs live in `docs/` and are built with Docusaurus in `tools/docusaurus/` (Shellui-branded chrome aligned with [shellui/shellui](https://github.com/shellui/shellui)). Published at [https://identity.docs.shellui.com](https://identity.docs.shellui.com) on release tags.
+Project docs live in `docs/`, with the sidebar in `docs/sidebars.js`. They are published at [https://docs.shellui.com/identity](https://docs.shellui.com/identity) by [shellui/shellui](https://github.com/shellui/shellui), which builds the docs of every Shellui service into one site. This repository no longer builds or deploys its own docs site.
 
-Preview locally:
-
-```bash
-cd tools/docusaurus && npm install && npm start
-```
-
-Production build:
+Preview locally with live reload: clone `shellui` next to this repository, then run:
 
 ```bash
-./tools/generate-docs.sh
+cd ../shellui
+pnpm install
+DOCS_SERVICES=identity pnpm docs:start
 ```
 
-Output is generated in `tools/docusaurus/build`.
+See [Build the docs site](https://github.com/shellui/shellui/blob/develop/docs/docs-site.md) for details. CI runs the same build on every pull request (the **Docs build** job), so a broken link or invalid page fails the check.
 
 ## Tests
 
@@ -187,7 +183,7 @@ Output is generated in `tools/docusaurus/build`.
 uv run python manage.py test
 ```
 
-Pull requests and pushes to `main` / `develop` run [`.github/workflows/ci.yml`](.github/workflows/ci.yml): Django tests, lockfile check, dependency audit (`pip-audit`), secret scan (gitleaks), markdown link check (lychee), and a Docker image build.
+Pull requests and pushes to `main` / `develop` run [`.github/workflows/ci.yml`](.github/workflows/ci.yml): Django tests, lockfile check, dependency audit (`pip-audit`), secret scan (gitleaks), markdown link check (lychee), a docs build against [shellui/shellui](https://github.com/shellui/shellui), and a Docker image build.
 
 For a gitleaks false positive, add an inline `# gitleaks:allow` comment on the flagged line; `.gitleaksignore` is only for fingerprints of commits already in history.
 
@@ -265,7 +261,11 @@ Runtime env vars:
 - `GUNICORN_WORKERS` (default `4`)
 - `GUNICORN_THREADS` (default `4`)
 - `GET /health/live` — DB-free liveness probe (configure load balancers to use this instead of `/`)
-- `GUNICORN_TIMEOUT` (default `60`)
+- `GUNICORN_TIMEOUT` (default `60`; restarts a frozen worker process only, it does not stop a request stuck in a `gthread` worker)
+- `GUNICORN_GRACEFUL_TIMEOUT` (default `30`), `GUNICORN_KEEP_ALIVE` (default `75`), `GUNICORN_MAX_REQUESTS` (default `1000`), `GUNICORN_MAX_REQUESTS_JITTER` (default `200`)
+- `EMAIL_TIMEOUT` (default `10` seconds for SMTP)
+- `POSTGRES_STATEMENT_TIMEOUT` (default `15` seconds) and `POSTGRES_LOCK_TIMEOUT` (default `5` seconds); `0` turns one off
+- `LOG_LEVEL` (default `INFO`) and `SLOW_REQUEST_THRESHOLD_SECONDS` (default `2`; `0` turns it off)
 - `SENTRY_DSN` (optional; enable Sentry error reporting — leave empty in local dev)
 - `SENTRY_ENVIRONMENT` (optional; default `development` when `DEBUG=true`, else `production`)
 - `SENTRY_RELEASE` (optional; default `project.version` from `pyproject.toml`)

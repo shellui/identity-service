@@ -10,6 +10,3 @@ __pycache__/
 .env
 staticfiles/
 docs/
-tools/docusaurus/node_modules/
-tools/docusaurus/.docusaurus/
-tools/docusaurus/build/

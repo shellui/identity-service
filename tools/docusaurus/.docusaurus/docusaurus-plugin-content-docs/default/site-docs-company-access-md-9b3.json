@@ -1,0 +1,23 @@
+{
+  "id": "company-access",
+  "title": "Company access control (join modes)",
+  "description": "Companies control how new OAuth users gain access after a successful provider login.",
+  "source": "@site/../../docs/company-access.md",
+  "sourceDirName": ".",
+  "slug": "/company-access",
+  "permalink": "/company-access",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "frontMatter": {},
+  "sidebar": "tutorialSidebar",
+  "previous": {
+    "title": "OAuth login",
+    "permalink": "/oauth-login"
+  },
+  "next": {
+    "title": "JWKS",
+    "permalink": "/jwks"
+  }
+}

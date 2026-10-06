@@ -1,0 +1,14 @@
+{
+  "id": "RELEASES",
+  "title": "Releases and Docker Hub",
+  "description": "Canonical guide: PUBLISH.md at the repository root.",
+  "source": "@site/../../docs/RELEASES.md",
+  "sourceDirName": ".",
+  "slug": "/RELEASES",
+  "permalink": "/RELEASES",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "frontMatter": {}
+}
