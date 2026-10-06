@@ -159,12 +159,54 @@ class DockerEntrypointTests(SimpleTestCase):
         self.assertEqual(result.returncode, 1, result.stderr)
         self.assertIn('celery TERM', self.calls())
 
-    def test_web_without_redis_warns_and_runs_gunicorn_only(self):
-        result = self.run_entrypoint('web', STUB_GUNICORN_EXIT='0')
+    def assert_refused_without_redis(self, result):
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn(
+            'ERROR: REDIS_URL is required when DEBUG is false (example: redis://redis:6379/0)',
+            result.stderr,
+        )
+        # Exits before migrations, checks and any server process.
+        self.assertEqual(self.calls(), [])
+
+    def test_web_in_production_without_redis_refuses_to_start(self):
+        # DEBUG unset means false, like settings.py and the image default.
+        self.assert_refused_without_redis(self.run_entrypoint('web', STUB_GUNICORN_EXIT='0'))
+
+    def test_web_with_debug_false_without_redis_refuses_to_start(self):
+        self.assert_refused_without_redis(self.run_entrypoint(DEBUG='false', STUB_GUNICORN_EXIT='0'))
+
+    def test_blank_redis_url_counts_as_unset(self):
+        self.assert_refused_without_redis(
+            self.run_entrypoint(DEBUG='false', REDIS_URL='  ', STUB_GUNICORN_EXIT='0')
+        )
+
+    def test_scheduler_disabled_still_requires_redis_in_production(self):
+        result = self.run_entrypoint(DEBUG='false', SCHEDULER_ENABLED='false', STUB_GUNICORN_EXIT='0')
+        self.assert_refused_without_redis(result)
+
+    def test_celery_broker_url_does_not_replace_redis_url_in_production(self):
+        result = self.run_entrypoint(
+            DEBUG='false', CELERY_BROKER_URL='redis://broker:6379/1', STUB_GUNICORN_EXIT='0'
+        )
+        self.assert_refused_without_redis(result)
+
+    def test_web_in_debug_without_redis_warns_and_runs_gunicorn_only(self):
+        result = self.run_entrypoint('web', DEBUG='True', STUB_GUNICORN_EXIT='0')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('WARNING: REDIS_URL is not set', result.stderr)
+        self.assertNotIn('ERROR', result.stderr)
+        self.assertIn('python manage.py check --deploy', self.calls())
         self.assertTrue(self.started('gunicorn'))
         self.assertFalse(self.started('celery'))
+
+    def test_web_in_production_with_redis_starts(self):
+        result = self.run_entrypoint(
+            DEBUG='false', REDIS_URL='redis://redis:6379/0', STUB_GUNICORN_EXIT='0'
+        )
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertNotIn('REDIS_URL is required', result.stderr)
+        self.assertTrue(self.started('gunicorn'))
+        self.assertTrue(self.started('celery'))
 
     def test_scheduler_disabled(self):
         result = self.run_entrypoint(
@@ -174,8 +216,9 @@ class DockerEntrypointTests(SimpleTestCase):
         self.assertIn('SCHEDULER_ENABLED=false', result.stderr)
         self.assertFalse(self.started('celery'))
 
-    def test_celery_broker_url_alone_starts_the_scheduler(self):
+    def test_celery_broker_url_alone_starts_the_scheduler_in_debug(self):
         result = self.run_entrypoint(
+            DEBUG='true',
             CELERY_BROKER_URL='redis://broker:6379/1',
             CELERY_WORKER_CONCURRENCY='4',
             STUB_CELERY_EXIT='0',
@@ -190,13 +233,18 @@ class DockerEntrypointTests(SimpleTestCase):
         self.assertFalse(self.started('gunicorn'))
         self.assertFalse(self.started('python'), 'worker mode leaves migrations to the web container')
 
-    def test_worker_mode_without_redis_fails(self):
-        result = self.run_entrypoint('worker')
+    def test_worker_mode_in_production_without_redis_refuses_to_start(self):
+        self.assert_refused_without_redis(self.run_entrypoint('worker', STUB_CELERY_EXIT='0'))
+
+    def test_worker_mode_in_debug_without_broker_fails(self):
+        result = self.run_entrypoint('worker', DEBUG='true')
         self.assertEqual(result.returncode, 1)
         self.assertIn('worker mode needs REDIS_URL', result.stderr)
         self.assertFalse(self.started('celery'))
 
     def test_other_command_runs_as_given(self):
+        # Not gated on REDIS_URL, so an operator can still run check --deploy or
+        # createsuperuser in a misconfigured production container.
         result = self.run_entrypoint('python', 'manage.py', 'purge_expired_data', '--dry-run')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.started('python'), ['python manage.py purge_expired_data --dry-run'])

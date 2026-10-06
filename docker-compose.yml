@@ -26,9 +26,11 @@ services:
       CSRF_TRUSTED_ORIGINS: "${CSRF_TRUSTED_ORIGINS:-}"
       POSTGRES_DATABASE_URL: "${POSTGRES_DATABASE_URL:-}"
       # Shared cache and broker for the scheduled jobs (Celery worker + beat in this container).
+      # Required when DEBUG=false: the container refuses to start without it.
       REDIS_URL: "${REDIS_URL:-redis://redis:6379/0}"
       CELERY_BROKER_URL: "${CELERY_BROKER_URL:-}"
-      # Set false when the identity-worker service below runs the jobs instead.
+      # Set false when the identity-worker service below runs the jobs instead (REDIS_URL is
+      # still required: the cache uses it).
       SCHEDULER_ENABLED: "${SCHEDULER_ENABLED:-true}"
       CELERY_WORKER_CONCURRENCY: "${CELERY_WORKER_CONCURRENCY:-2}"
       SQLITE_PATH: "/app/data/db.sqlite3"
@@ -72,6 +74,7 @@ services:
   #   environment:
   #     SECRET_KEY: "${SECRET_KEY}"
   #     DEBUG: "${DEBUG:-true}"
+  #     # Required when DEBUG=false, like on identity-service.
   #     REDIS_URL: "${REDIS_URL:-redis://redis:6379/0}"
   #     SQLITE_PATH: "/app/data/db.sqlite3"
   #   volumes:

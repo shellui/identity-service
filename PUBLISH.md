@@ -165,7 +165,7 @@ docker run -d \
   shellui/identity-service:0.7.0
 ```
 
-With `REDIS_URL` set, the container also runs the scheduled jobs (`retry_webhooks` every minute, `purge_expired_data` every hour) in a Celery worker next to gunicorn. There is no cron to set up. See [docs/scheduled-jobs.md](docs/scheduled-jobs.md) for a dedicated worker container (`worker` command) or `SCHEDULER_ENABLED=false`.
+`REDIS_URL` is required: with `DEBUG=false` (the image default) the container logs `REDIS_URL is required when DEBUG is false (example: redis://redis:6379/0)` and exits with status 1 when it is missing. The container also runs the scheduled jobs (`retry_webhooks` every minute, `purge_expired_data` every hour) in a Celery worker next to gunicorn. There is no cron to set up. See [docs/scheduled-jobs.md](docs/scheduled-jobs.md) for a dedicated worker container (`worker` command) or `SCHEDULER_ENABLED=false`.
 
 The entrypoint runs migrations on start, then starts **Gunicorn** (`config.wsgi:application`) as user `appuser`, not ASGI or uvicorn. Env vars `GUNICORN_WORKERS`, `GUNICORN_THREADS`, `GUNICORN_TIMEOUT`, `GUNICORN_GRACEFUL_TIMEOUT`, `GUNICORN_KEEP_ALIVE`, `GUNICORN_MAX_REQUESTS` and `GUNICORN_MAX_REQUESTS_JITTER` are passed through. The worker class is **`gthread`** (threaded sync workers). Access and error logs go to stdout, with the request duration and request id on each access log line.
 
@@ -206,6 +206,7 @@ Full OAuth login (fragment vs code delivery) cannot be verified without a config
 | `JWT_PRIVATE_KEY`      | Required when `DEBUG=false`; RS256 JWT signing. See [docs/jwks.md](docs/jwks.md). |
 | `ALLOWED_HOSTS`        | Comma-separated hostnames, no scheme.                                             |
 | `CSRF_TRUSTED_ORIGINS` | Full URLs with scheme when using browser flows behind HTTPS.                      |
+| `REDIS_URL`            | Required when `DEBUG=false`, also with `SCHEDULER_ENABLED=false`; the container refuses to start without it. Shared cache (rate limits, logout denylist, OAuth and SAML state) and broker for the scheduled jobs. Example: `redis://redis:6379/0`. |
 
 ### Optional runtime env vars
 
@@ -217,7 +218,6 @@ Full OAuth login (fragment vs code delivery) cannot be verified without a config
 | `CORS_ALLOWED_ORIGINS`       | Used when `CORS_ALLOW_ALL_ORIGINS=false`; Shellui / admin front-end origins.                   |
 | `CORS_ALLOW_CREDENTIALS`     | Default `false`; must stay `false` when allow-all is enabled.                                  |
 | `POSTGRES_DATABASE_URL`      | Use Postgres instead of SQLite.                                                                |
-| `REDIS_URL`                  | Shared Redis cache and broker for the scheduled jobs. Example: `redis://redis:6379/0`. Without it, LocMem is per-worker and the scheduled jobs do not run. |
 | `SCHEDULER_ENABLED`          | Default `true`: the container runs the scheduled jobs next to gunicorn. Set `false` with a dedicated `worker` container or external cron. See [docs/scheduled-jobs.md](docs/scheduled-jobs.md). |
 | `SENTRY_DSN`                 | Sentry error reporting.                                                                        |
 | `SENTRY_ENVIRONMENT`         | e.g. `staging`, `production`.                                                                  |
@@ -234,17 +234,20 @@ With Postgres:
 -e POSTGRES_DATABASE_URL='postgres://user:pass@host:5432/dbname'
 ```
 
-### Redis (Coolify / multi-worker Gunicorn)
+### Redis (required in production)
 
-When `GUNICORN_WORKERS` is greater than 1 (Docker default), auth rate limits and the logout access-token denylist rely on Django cache. In-process LocMem is **not** shared between workers. Redis is also the broker for the scheduled jobs (`retry_webhooks`, `purge_expired_data`), which the container runs on its own: no Coolify Scheduled Tasks to add.
+Since 0.7.0, a production container (`DEBUG=false`) refuses to start without `REDIS_URL`: the entrypoint logs `REDIS_URL is required when DEBUG is false (example: redis://redis:6379/0)` and exits with status 1, before migrations. Auth rate limits, the logout access-token denylist, OAuth PKCE state and SAML replay protection rely on Django cache, and in-process LocMem is **not** shared between Gunicorn workers or containers. Redis is also the broker for the scheduled jobs (`retry_webhooks`, `purge_expired_data`), which the container runs on its own: no Coolify Scheduled Tasks to add.
 
 1. Add a **Redis** service in Coolify (or run Redis on the VPS).
 2. On the identity-service container, set **`REDIS_URL`** to the Redis connection URL, for example:
    - Same Coolify project, internal hostname: `redis://redis:6379/0`
    - Managed Redis with password: `redis://:password@host:6379/0`
-3. Redeploy identity-service. `manage.py check --deploy` warns (`authapi.W002`) if production still uses LocMem with multiple workers.
+3. Set it on every identity-service container (web and `worker`), also with `SCHEDULER_ENABLED=false` or `CELERY_BROKER_URL` set.
+4. Redeploy identity-service. `manage.py check --deploy` reports `authapi.E004` when `REDIS_URL` is missing with `DEBUG=false`.
 
-Local dev and single-worker installs can leave `REDIS_URL` unset, but then the scheduled jobs do not run (the container logs a warning at startup). See [docs/scheduled-jobs.md](docs/scheduled-jobs.md) to run them with cron instead.
+**Upgrading a deployment without Redis:** add the Redis service and `REDIS_URL` before you deploy 0.7.0, otherwise the new container does not start.
+
+Only local development with `DEBUG=true` can leave `REDIS_URL` unset: the container logs a warning, serves the web app and does not run the scheduled jobs. See [docs/scheduled-jobs.md](docs/scheduled-jobs.md).
 
 ## Security notes
 

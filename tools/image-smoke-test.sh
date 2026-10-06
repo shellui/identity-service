@@ -7,7 +7,8 @@
 #   1. web mode serves /health/live and starts the Celery worker with beat
 #   2. docker stop shuts both processes down cleanly (exit status 0)
 #   3. worker mode starts only the worker
-#   4. without REDIS_URL the web app still starts and logs a warning
+#   4. with DEBUG=false and no REDIS_URL the container refuses to start (exit 1, clear error)
+#   5. with DEBUG=true and no REDIS_URL the web app still starts and logs a warning
 set -euo pipefail
 
 IMAGE="${1:?usage: $0 IMAGE}"
@@ -17,12 +18,13 @@ REDIS="identity-redis-${SUFFIX}"
 WEB="identity-web-${SUFFIX}"
 WORKER="identity-worker-${SUFFIX}"
 NOREDIS="identity-noredis-${SUFFIX}"
+NOREDIS_PROD="identity-noredis-prod-${SUFFIX}"
 REDIS_IMAGE="${SMOKE_REDIS_IMAGE:-redis:8-alpine}"
 
 log() { printf '==> %s\n' "$*"; }
 fail() {
   printf 'FAIL: %s\n' "$*" >&2
-  for c in "${WEB}" "${WORKER}" "${NOREDIS}"; do
+  for c in "${WEB}" "${WORKER}" "${NOREDIS_PROD}" "${NOREDIS}"; do
     if docker inspect "${c}" >/dev/null 2>&1; then
       printf '%s\n' "----- logs: ${c}" >&2
       docker logs "${c}" 2>&1 | tail -n 60 >&2 || true
@@ -32,7 +34,7 @@ fail() {
 }
 
 cleanup() {
-  docker rm -f "${WEB}" "${WORKER}" "${NOREDIS}" "${REDIS}" >/dev/null 2>&1 || true
+  docker rm -f "${WEB}" "${WORKER}" "${NOREDIS_PROD}" "${NOREDIS}" "${REDIS}" >/dev/null 2>&1 || true
   docker network rm "${NETWORK}" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
@@ -70,19 +72,19 @@ for pid in filter(str.isdigit, os.listdir("/proc")):
 REDIS_PASSWORD="smoke-redis-pw-$$"
 REDIS_URL_SMOKE="redis://:${REDIS_PASSWORD}@${REDIS}:6379/0"
 
-COMMON_ENV=(
+BASE_ENV=(
   -e SECRET_KEY=smoke-test-only-0123456789abcdefghijklmnopqrstuvwxyz
-  -e DEBUG=true
   -e LOG_LEVEL=INFO
   -e GUNICORN_WORKERS=1
   -e GUNICORN_THREADS=2
 )
+COMMON_ENV=("${BASE_ENV[@]}" -e DEBUG=true)
 
 docker network create "${NETWORK}" >/dev/null
 docker run -d --name "${REDIS}" --network "${NETWORK}" "${REDIS_IMAGE}" \
   redis-server --requirepass "${REDIS_PASSWORD}" >/dev/null
 
-log "1/4 web mode: gunicorn and the scheduler"
+log "1/5 web mode: gunicorn and the scheduler"
 docker run -d --name "${WEB}" --network "${NETWORK}" \
   "${COMMON_ENV[@]}" -e REDIS_URL="${REDIS_URL_SMOKE}" \
   "${IMAGE}" >/dev/null
@@ -108,14 +110,14 @@ if grep -qF "${REDIS_PASSWORD}" <<<"$(docker logs "${WEB}" 2>&1)"; then
   fail 'Redis password printed in the logs'
 fi
 
-log "2/4 docker stop: graceful shutdown"
+log "2/5 docker stop: graceful shutdown"
 docker stop -t 30 "${WEB}" >/dev/null
 status="$(docker inspect -f '{{.State.ExitCode}}' "${WEB}")"
 [ "${status}" = "0" ] || fail "web container exited with ${status} on docker stop"
 grep -q 'entrypoint: stopped' <<<"$(docker logs "${WEB}" 2>&1)" || fail 'entrypoint did not report a clean stop'
 echo 'OK: exit status 0'
 
-log "3/4 worker mode"
+log "3/5 worker mode"
 docker run -d --name "${WORKER}" --network "${NETWORK}" \
   "${COMMON_ENV[@]}" -e REDIS_URL="${REDIS_URL_SMOKE}" \
   "${IMAGE}" worker >/dev/null
@@ -125,7 +127,20 @@ if grep -q gunicorn <<<"$(procs "${WORKER}")"; then
 fi
 echo 'OK: worker ready, no gunicorn'
 
-log "4/4 web mode without REDIS_URL"
+log "4/5 production (DEBUG=false) without REDIS_URL refuses to start"
+# DEBUG=false is the image default; set it explicitly so the step does not depend on it.
+docker run -d --name "${NOREDIS_PROD}" "${BASE_ENV[@]}" -e DEBUG=false "${IMAGE}" >/dev/null
+status="$(timeout 60 docker wait "${NOREDIS_PROD}")" || fail "${NOREDIS_PROD} did not exit within 60s"
+[ "${status}" = "1" ] || fail "expected exit status 1 without REDIS_URL, got ${status}"
+noredis_logs="$(docker logs "${NOREDIS_PROD}" 2>&1)"
+grep -qF 'REDIS_URL is required when DEBUG is false (example: redis://redis:6379/0)' <<<"${noredis_logs}" \
+  || fail 'missing REDIS_URL required error'
+if grep -qE 'Listening at:|Running migrations|Starting gunicorn' <<<"${noredis_logs}"; then
+  fail 'migrations or gunicorn ran without REDIS_URL'
+fi
+echo 'OK: exit status 1, error logged, nothing started'
+
+log "5/5 DEBUG=true without REDIS_URL: web only"
 docker run -d --name "${NOREDIS}" "${COMMON_ENV[@]}" "${IMAGE}" >/dev/null
 wait_for_log "${NOREDIS}" 'Listening at: http://0.0.0.0:8000' 90
 grep -q 'WARNING: REDIS_URL is not set' <<<"$(docker logs "${NOREDIS}" 2>&1)" || fail 'missing REDIS_URL warning'

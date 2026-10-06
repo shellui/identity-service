@@ -33,7 +33,7 @@ Company **webhook rules** in Django admin map catalog events (`identity.scim.use
 
 Every event, and every sign-in, is also stored in the **event log** (`GET /api/v1/events`) for the company data retention (default 7 days, Django admin only). See **[docs/event-log.md](docs/event-log.md)**.
 
-**Scheduled jobs:** the Docker image runs `purge_expired_data` every hour and `retry_webhooks` every minute (Celery worker and beat, Redis broker). Set `REDIS_URL` and there is nothing else to set up. See **[docs/scheduled-jobs.md](docs/scheduled-jobs.md)**.
+**Scheduled jobs:** the Docker image runs `purge_expired_data` every hour and `retry_webhooks` every minute (Celery worker and beat, Redis broker). Set `REDIS_URL` (required in production) and there is nothing else to set up. See **[docs/scheduled-jobs.md](docs/scheduled-jobs.md)**.
 
 **Try locally:** set `EMAIL_BACKEND=config.email_backends.ConsoleEmailBackend` (default when `DEBUG=true`), create an Action rule for `identity.scim.user.provisioned`, then provision a user via SCIM.
 
@@ -236,6 +236,8 @@ docker run --rm -p 8000:8000 \
   shellui/identity-service:local
 ```
 
+The image defaults to `DEBUG=false`, which needs the production settings below, including `REDIS_URL`: without Redis the container refuses to start. To try it locally without Redis, pass `-e DEBUG=true`, or use `docker compose up`, which starts Redis.
+
 API CORS allows all origins by default (Bearer JWT auth). For lock-down installs set `CORS_ALLOW_ALL_ORIGINS=false` and `CORS_ALLOWED_ORIGINS=…`.
 
 The container runs migrations automatically, stores SQLite at `/app/data/db.sqlite3`, then starts with Gunicorn on `0.0.0.0:8000`. Production images run `collectstatic` at build time; [WhiteNoise](https://whitenoise.readthedocs.io/) serves `/admin/` and other collected static files from the app process (no separate static server required).
@@ -257,7 +259,7 @@ Runtime env vars:
 - `CORS_ALLOW_CREDENTIALS` (default `false`; must stay `false` with allow-all)
 - `CORS_ALLOWED_ORIGIN_REGEXES` (optional; used only when `CORS_ALLOW_ALL_ORIGINS=false`)
 - `POSTGRES_DATABASE_URL` (optional; when set, Postgres is used instead of SQLite)
-- `REDIS_URL` (optional; when set, Django uses Redis for shared cache — auth rate limits, logout access-token denylist, last-seen throttling). Unset uses in-process LocMem (single Gunicorn worker or local dev only; with multiple workers each process has its own cache)
+- `REDIS_URL` (required when `DEBUG=false`; shared cache for auth rate limits, logout access-token denylist, OAuth PKCE state, SAML replay protection and last-seen throttling, and the scheduled jobs broker). Without it a production container logs `REDIS_URL is required when DEBUG is false` and exits with status 1, also with `SCHEDULER_ENABLED=false`. With `DEBUG=true` it is optional: unset uses in-process LocMem and the scheduled jobs do not run
 - `GUNICORN_WORKERS` (default `4`)
 - `GUNICORN_THREADS` (default `4`)
 - `GET /health/live` — DB-free liveness probe (configure load balancers to use this instead of `/`)

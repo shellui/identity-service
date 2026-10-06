@@ -75,7 +75,9 @@ jobs:
           uv run python manage.py generate_jwt_keys --shell > /tmp/jwt_keys.sh
           # shellcheck disable=SC1091
           source /tmp/jwt_keys.sh
+          # REDIS_URL is required when DEBUG=false (authapi.E004). The check does not connect.
           DEBUG=false \
+          REDIS_URL=redis://redis:6379/0 \
           JWT_ISSUER=https://auth.example.com \
           JWT_AUDIENCE=shellui \
           CORS_ALLOW_ALL_ORIGINS=false \
@@ -239,6 +241,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # Web server, Celery worker with beat, graceful stop, worker mode, no-Redis fallback.
+      # Web server, Celery worker with beat, graceful stop, worker mode, refused start
+      # without Redis in production, no-Redis fallback with DEBUG=true.
       - name: Image smoke test
         run: ./tools/image-smoke-test.sh shellui/identity-service:ci

@@ -137,13 +137,21 @@ The entrypoint also sets `--worker-tmp-dir /dev/shm` (heartbeat file in memory, 
 
 ---
 
-## Shared cache (Redis, v0.6.0+)
+## Shared cache (Redis)
 
 | Variable | Default | Purpose |
 | -------- | ------- | ------- |
-| `REDIS_URL` | unset | Django Redis cache backend for auth rate limits, logout access-token denylist, and last-seen throttling. Also the broker for the [scheduled jobs](#scheduled-jobs) |
+| `REDIS_URL` | unset | **Required when `DEBUG=false`** (since v0.7.0). Django Redis cache backend for auth rate limits, logout access-token denylist, OAuth PKCE state, SAML request ids and replay protection, and last-seen throttling. Also the broker for the [scheduled jobs](#scheduled-jobs) |
 
-When unset, Django uses in-process **LocMem** (fine for local dev or a single Gunicorn worker). With **`GUNICORN_WORKERS` > 1**, set `REDIS_URL` so limits and denylists are shared across workers. `manage.py check --deploy` emits **`authapi.W002`** when production uses LocMem with multiple workers.
+**Production (`DEBUG=false`, the Docker image default) refuses to start without `REDIS_URL`.** In `web` and `worker` mode the container entrypoint logs this error and exits with status 1, before migrations:
+
+```text
+entrypoint: ERROR: REDIS_URL is required when DEBUG is false (example: redis://redis:6379/0).
+```
+
+`manage.py check --deploy` reports the same problem as **`authapi.E004`** (the entrypoint runs this check before gunicorn starts). Redis is required also with `SCHEDULER_ENABLED=false` or with `CELERY_BROKER_URL` set, because the cache, OAuth and SAML state need it too. Other container commands (for example `python manage.py createsuperuser`) and the test suite are not blocked.
+
+With `DEBUG=true` (local development), `REDIS_URL` stays optional: Django uses in-process **LocMem**, the container logs a warning and runs the web app without the scheduled jobs.
 
 Examples:
 
@@ -166,7 +174,7 @@ The Docker image runs `retry_webhooks` every minute and `purge_expired_data` eve
 | `CELERY_BROKER_URL` | `REDIS_URL` | Broker for the jobs, when it must differ from `REDIS_URL` |
 | `CELERY_WORKER_CONCURRENCY` | `2` | Worker threads. 2 lets an hourly purge and a webhook retry run at the same time |
 
-Without `REDIS_URL` (or `CELERY_BROKER_URL`), the container logs a warning at startup, does not start the worker, and serves the web app as before.
+With `DEBUG=false`, the container does not start without `REDIS_URL` (see [Shared cache](#shared-cache-redis)). With `DEBUG=true` and no `REDIS_URL` (or `CELERY_BROKER_URL`), it logs a warning at startup, does not start the worker, and serves the web app.
 
 The container command selects what runs: `web` (default: migrations, gunicorn and the worker), `worker` (only the worker and beat, no migrations) or any other command, run as `appuser`.
 

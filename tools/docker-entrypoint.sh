@@ -6,6 +6,14 @@
 #   worker  only the scheduler; for a dedicated worker container from the same image
 #   other   run the given command as appuser, for example: python manage.py shell
 #
+# Production (DEBUG false, the image default) requires REDIS_URL in web and worker modes:
+# without it the entrypoint logs an error and exits 1 before migrations. Redis backs the
+# shared cache (rate limits, logout denylist, OAuth PKCE state, SAML replay protection)
+# and the scheduled jobs, so it is required even with SCHEDULER_ENABLED=false. The same
+# rule is the authapi.E004 deploy check, run below by `check --deploy`.
+# With DEBUG=true (local development), Redis stays optional: without it the web app runs
+# alone and logs a warning.
+#
 # The scheduler needs REDIS_URL (or CELERY_BROKER_URL). Set SCHEDULER_ENABLED=false to
 # keep it out of the web container. See docs/scheduled-jobs.md.
 #
@@ -33,15 +41,32 @@ AS_APP=(
   env HOME="/home/${APP_USER}" USER="${APP_USER}"
 )
 
+# Same truthy values as config/settings.py (surrounding whitespace ignored).
 is_true() {
-  case "$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')" in
+  case "$(printf '%s' "${1:-}" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')" in
     1 | true | yes | on) return 0 ;;
     *) return 1 ;;
   esac
 }
 
+# Set and not only whitespace (settings strips it).
+is_set() {
+  [ -n "$(printf '%s' "${1:-}" | tr -d '[:space:]')" ]
+}
+
 broker_configured() {
-  [ -n "${CELERY_BROKER_URL:-}${REDIS_URL:-}" ]
+  is_set "${CELERY_BROKER_URL:-}" || is_set "${REDIS_URL:-}"
+}
+
+# DEBUG defaults to false, like config/settings.py (the image sets DEBUG=false).
+require_redis_in_production() {
+  if is_true "${DEBUG:-false}" || is_set "${REDIS_URL:-}"; then
+    return 0
+  fi
+  log "ERROR: REDIS_URL is required when DEBUG is false (example: redis://redis:6379/0)."
+  log "ERROR: Redis backs the shared cache, OAuth and SAML state and the scheduled jobs, so it is required also with SCHEDULER_ENABLED=false or CELERY_BROKER_URL set."
+  log "ERROR: Add a Redis service and set REDIS_URL, or set DEBUG=true for local development only. See docs/configuration.md."
+  exit 1
 }
 
 prepare_data_dir() {
@@ -156,6 +181,7 @@ supervise() {
 
 case "${MODE}" in
   web)
+    require_redis_in_production
     prepare_data_dir
     "${AS_APP[@]}" python manage.py migrate --noinput
     "${AS_APP[@]}" python manage.py check --deploy
@@ -165,8 +191,9 @@ case "${MODE}" in
     if ! is_true "${SCHEDULER_ENABLED:-true}"; then
       log "SCHEDULER_ENABLED=false: scheduled jobs are not started in this container."
     elif ! broker_configured; then
-      log "WARNING: REDIS_URL is not set, so scheduled jobs (retry_webhooks, purge_expired_data) are not running."
-      log "WARNING: Set REDIS_URL to run them in this container. See docs/scheduled-jobs.md."
+      # Only reachable with DEBUG=true: production already exited above.
+      log "WARNING: REDIS_URL is not set (DEBUG=true), so scheduled jobs (retry_webhooks, purge_expired_data) are not running."
+      log "WARNING: Set REDIS_URL to run them in this container. It is required when DEBUG is false. See docs/scheduled-jobs.md."
     else
       start_scheduler=true
     fi
@@ -184,6 +211,7 @@ case "${MODE}" in
     supervise
     ;;
   worker)
+    require_redis_in_production
     if ! broker_configured; then
       log "ERROR: worker mode needs REDIS_URL (or CELERY_BROKER_URL)."
       exit 1

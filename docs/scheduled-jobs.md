@@ -1,6 +1,6 @@
 # Scheduled jobs
 
-identity-service runs two maintenance jobs on a schedule. The Docker image runs them for you: with `REDIS_URL` set, there is nothing to set up.
+identity-service runs two maintenance jobs on a schedule. The Docker image runs them for you: with `REDIS_URL` set (required in production), there is nothing to set up.
 
 | Job | Schedule | What happens if it never runs |
 | --- | -------- | ----------------------------- |
@@ -24,9 +24,9 @@ The container entrypoint watches both processes. A `SIGTERM` (for example `docke
 
 | Variable | Default | Purpose |
 | -------- | ------- | ------- |
-| `REDIS_URL` | unset | Redis for the shared cache and the job broker. Without it the jobs do not run and the container logs a warning at startup; the web app still starts |
-| `CELERY_BROKER_URL` | `REDIS_URL` | Use a different Redis for the jobs |
-| `SCHEDULER_ENABLED` | `true` | `false` keeps the worker out of this container. Use it with a dedicated worker container or your own cron |
+| `REDIS_URL` | unset | Redis for the shared cache and the job broker. **Required when `DEBUG=false`:** without it the container logs `REDIS_URL is required when DEBUG is false` and exits with status 1, also with `SCHEDULER_ENABLED=false`. With `DEBUG=true` the jobs do not run, the container logs a warning and the web app still starts |
+| `CELERY_BROKER_URL` | `REDIS_URL` | Use a different Redis for the jobs. Does not replace `REDIS_URL`, which the cache needs |
+| `SCHEDULER_ENABLED` | `true` | `false` keeps the worker out of this container. Use it with a dedicated worker container or your own cron. `REDIS_URL` is still required in production |
 | `CELERY_WORKER_CONCURRENCY` | `2` | Threads in the worker. 2 lets a purge and a retry run at the same time |
 
 The worker uses the same settings as the web app: `LOG_LEVEL` and stdout logging, Sentry (task errors are reported when `SENTRY_DSN` is set), and `POSTGRES_STATEMENT_TIMEOUT` / `POSTGRES_LOCK_TIMEOUT`.
@@ -50,7 +50,7 @@ The image takes a mode as its command:
 | Command | Starts |
 | ------- | ------ |
 | `web` (default) | migrations, then gunicorn and the worker (unless `SCHEDULER_ENABLED=false`) |
-| `worker` | only the worker with beat. No migrations, no web server. Needs `REDIS_URL` |
+| `worker` | only the worker with beat. No migrations, no web server. Needs `REDIS_URL` (`CELERY_BROKER_URL` alone is enough only with `DEBUG=true`) |
 | anything else | runs that command as `appuser`, for example `python manage.py createsuperuser` |
 
 Docker Compose example with the same image and environment:
@@ -145,7 +145,7 @@ Keep `--max-seconds` (default 50) under 60 so a run finishes before the next one
 
 ## Run the commands yourself
 
-Only needed with `SCHEDULER_ENABLED=false` or without Redis. Run the commands with the **same image, environment variables and database** as the web service.
+Only needed with `SCHEDULER_ENABLED=false`, or with `DEBUG=true` and no Redis. Run the commands with the **same image, environment variables and database** as the web service.
 
 ```text
 17 * * * * cd /app && python manage.py purge_expired_data --max-seconds 300

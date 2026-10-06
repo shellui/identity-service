@@ -35,9 +35,9 @@ Live site: [https://docs.shellui.com/identity](https://docs.shellui.com/identity
 1. Copy [`.env.example`](https://github.com/shellui/identity-service/blob/develop/.env.example) and set `SECRET_KEY`, JWT keys, `JWT_ISSUER`, and `JWT_AUDIENCE` for production.
 2. Point load balancers at **`GET /health/live`**.
 3. Register IdP callbacks at `{identity-host}/api/v1/oauth/callback` and configure company redirect allowlists — [OAuth login](oauth-login.md).
-4. Set **`REDIS_URL`**: it shares the cache across workers and runs the scheduled jobs. See [Configuration](configuration.md).
+4. Set **`REDIS_URL`** (required when `DEBUG=false`, the container does not start without it): it shares the cache across workers and runs the scheduled jobs. See [Configuration](configuration.md#shared-cache-redis).
 5. For SCIM, run migrations and create a company SCIM token — [SCIM](scim.md).
-6. Scheduled jobs (`purge_expired_data`, `retry_webhooks`) run inside the container once `REDIS_URL` is set. Nothing to set up: [Scheduled jobs](scheduled-jobs.md).
+6. Scheduled jobs (`purge_expired_data`, `retry_webhooks`) run inside the container with `REDIS_URL`. Nothing to set up: [Scheduled jobs](scheduled-jobs.md).
 
 ---
 

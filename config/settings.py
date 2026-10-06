@@ -133,7 +133,7 @@ def _caches_config(redis_url: str) -> dict:
     Shared cache for auth rate limits, access-token denylist, and activity throttles.
 
     When ``REDIS_URL`` is set, use Django's Redis backend (requires the ``redis`` package).
-    Otherwise use in-process LocMem (fine for single-process dev; not shared across Gunicorn workers).
+    Otherwise use in-process LocMem (DEBUG=true only: not shared across Gunicorn workers).
     """
     if redis_url:
         return {
@@ -541,7 +541,9 @@ SECURE_HSTS_PRELOAD = _env_bool('SECURE_HSTS_PRELOAD', False)
 SESSION_COOKIE_SECURE = _env_bool('SESSION_COOKIE_SECURE', not DEBUG)
 CSRF_COOKIE_SECURE = _env_bool('CSRF_COOKIE_SECURE', not DEBUG)
 
-# Cache-backed auth rate limits (see apps/authapi/throttling.py).
+# Cache-backed auth rate limits (see apps/authapi/throttling.py), logout denylist, OAuth
+# PKCE state and SAML replay protection. Required when DEBUG=false: the deploy check
+# authapi.E004 and the Docker entrypoint refuse to start without it.
 REDIS_URL = os.getenv('REDIS_URL', '').strip()
 CACHES = _caches_config(REDIS_URL)
 AUTH_RATE_LIMIT_ENABLED = _env_bool('AUTH_RATE_LIMIT_ENABLED', True)

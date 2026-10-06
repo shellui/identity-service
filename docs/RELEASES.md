@@ -24,8 +24,8 @@ Operator-facing changes on the **0.7.0** line (see `CHANGELOG.md`):
 
 - **OAuth** — session-code delivery, redirect allowlist, company OAuth clients ([oauth-login.md](oauth-login.md)).
 - **Configuration** — consolidated env reference ([configuration.md](configuration.md)).
-- **Redis** — optional `REDIS_URL` shared cache for multi-worker Gunicorn (#26 on `develop`).
-- **Scheduled jobs**: with `REDIS_URL` set, the container runs `retry_webhooks` and `purge_expired_data` itself (Celery worker and beat). Remove the Coolify Scheduled Tasks or cron entries, or set `SCHEDULER_ENABLED=false` to keep them ([scheduled-jobs.md](scheduled-jobs.md)).
+- **Redis is required in production (breaking)**: with `DEBUG=false`, the container refuses to start without `REDIS_URL` (shared cache, OAuth and SAML state, scheduled jobs broker), also with `SCHEDULER_ENABLED=false`. Add Redis before you upgrade ([configuration.md](configuration.md#shared-cache-redis)).
+- **Scheduled jobs**: the container runs `retry_webhooks` and `purge_expired_data` itself (Celery worker and beat). Remove the Coolify Scheduled Tasks or cron entries, or set `SCHEDULER_ENABLED=false` to keep them ([scheduled-jobs.md](scheduled-jobs.md)).
 - **SCIM** — enterprise user/group provisioning ([scim.md](scim.md)); enabled by default after deploy/migrations (per-company bearer token).
 - **Docs site**: these docs are part of [docs.shellui.com/identity](https://docs.shellui.com/identity), built by [shellui/shellui](https://github.com/shellui/shellui) from `docs/`.
 
