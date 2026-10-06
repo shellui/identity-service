@@ -226,7 +226,7 @@ Full OAuth login (fragment vs code delivery) cannot be verified without a config
 | `TRUSTED_PROXY_IPS`          | Comma-separated proxy IPs/CIDRs. When `REMOTE_ADDR` matches, client IP for rate limits and audit is the rightmost untrusted hop in `X-Forwarded-For`. Set this for Coolify, Traefik, or nginx ingress so clients cannot spoof the leftmost XFF entry. |
 | `SELF_SERVICE_ACCOUNT_DELETE_MAX_IAT_AGE` | Default `5m`. Session access JWT `iat` window for `DELETE /api/v1/user`. |
 
-OAuth credentials are configured **per company** in the database (Django admin or `/api/v1/admin/oauth-social-apps`), not via container environment variables.
+OAuth credentials are configured **per company** in the database (Shellui admin, Django admin, or `POST /api/v1/oauth-social-apps`), not via container environment variables.
 
 With Postgres:
 

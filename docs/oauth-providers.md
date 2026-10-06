@@ -1,148 +1,241 @@
+---
+description: The sign-in providers identity-service supports, the settings each one needs, and when each one links accounts by email.
+---
+
 # OAuth providers
 
-identity-service ships a catalog of django-allauth social providers for Shellui admin setup.
-See [OAuth login](oauth-login.md) for the full authorize flow.
+identity-service supports 16 sign-in providers: 15 OAuth 2.0 and OpenID Connect providers, plus SAML 2.0. Each company creates its own app at the provider, then adds the credentials in Shellui admin under **OAuth setup**. Shellui admin offers exactly the providers on this page. For the sign-in flow itself, see [OAuth login](oauth-login.md).
 
-Catalog version **2** (django-allauth **65.19.5**).
+## Register the callback URL
 
-> This page is generated from `apps/authapi/provider_catalog.json`. Run `uv run python tools/render_oauth_providers_doc.py` after catalog changes.
-
-## IdP callback URL (Shellui flow)
-
-Register **one** authorization callback URL on each IdP application. Point it at **identity-service**, not your Shellui shell. Do not add a query string.
+Every provider app uses the same callback URL, on identity-service. Register it with no query string:
 
 | Environment | Callback URL |
-| ----------- | ------------ |
+| --- | --- |
 | Local | `http://localhost:8000/api/v1/oauth/callback` |
-| Production | `https://<identity-host>/api/v1/oauth/callback` |
+| Production | `https://auth.example.com/api/v1/oauth/callback` |
 
-django-allauth's default pattern is `/accounts/<provider>/login/callback/` when you mount stock allauth URLs. identity-service does **not** expose that path for the Shellui authorize flow (`GET /api/v1/authorize` → `GET /api/v1/oauth/callback`). If an allauth provider page lists a different callback path, treat it as documentation for vanilla allauth only. Shellui always uses the table above.
+Replace `auth.example.com` with your identity-service host. Do not register your shell's `/login/callback` URL at the provider: identity-service redirects there after sign-in. django-allauth docs mention `/accounts/<provider>/login/callback/`, a path identity-service does not serve.
 
-## Popular
+## Social and developer accounts
 
-| | Provider | Catalog id | Protocol | Developer console | allauth docs | Extra settings | Shellui supported |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/apple.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#000000'}} /> Apple | `apple` | OAuth2 | App registration: `https://developer.apple.com/account/resources/identifiers/list`<br />App settings: `https://developer.apple.com/account/resources/authkeys/list` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/apple.html) | Team or login host (`key`) (required), Sign in with Apple private key (.p8) (`certificate_key`) (required (secret)) | Yes |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/auth0.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#EB5424'}} /> Auth0 | `auth0` | OAuth2 | App registration: `https://manage.auth0.com/#/clients` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/auth0.html) | Auth0 domain URL (`AUTH0_URL`) (required) | Yes |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/bitbucket.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#0052CC'}} /> Bitbucket | `bitbucket` | OAuth2 | App registration (template: `username`, `yourusername`): `https://bitbucket.org/account/user/{{yourusername}}/oauth-consumers/new` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/bitbucket.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/discord.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#5865F2'}} /> Discord | `discord` | OAuth2 | App registration: `https://discordapp.com/developers/applications/me` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/discord.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/facebook.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#0866FF'}} /> Facebook | `facebook` | OAuth2 | App registration: `https://developers.facebook.com/apps` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/facebook.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/github.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#181717'}} /> GitHub | `github` | OAuth2 | App settings: `https://github.com/settings/applications/new` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/github.html) | - | Yes |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/gitlab.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#FC6D26'}} /> GitLab | `gitlab` | OAuth2 | - | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/gitlab.html) | GitLab base URL (`gitlab_url`) (optional) | Yes |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/google.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#4285F4'}} /> Google | `google` | OAuth2 | Developer console: `https://console.developers.google.com/` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/google.html) | - | Yes |
-| 🔑 LinkedIn | `linkedin` | OpenID Connect | App registration: `https://www.linkedin.com/secure/developer` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/linkedin.html) | - | Yes |
-| 🔑 Microsoft | `microsoft` | OAuth2 | Developer console: `https://portal.azure.com/#blade/Microsoft_AAD_RegisteredApps/ApplicationsListBlade` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/microsoft.html) | Tenant ID (`tenant`) (optional) | Yes |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/okta.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#007DC1'}} /> Okta | `okta` | OAuth2 | - | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/okta.html) | Okta org URL (`OKTA_BASE_URL`) (required) | Yes |
-| 🔑 Slack | `slack` | OAuth2 | App registration: `https://api.slack.com/apps/new` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/slack.html) | - | Yes |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/x.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#000000'}} /> X/Twitter (OAuth 2) | `twitter_oauth2` | OAuth2 | App registration: `https://developer.x.com/en/portal/dashboard`<br />App settings (template: `app-id`, `project-id`): `https://developer.x.com/en/portal/projects/{project-id}/apps/{app-id}/keys` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/twitter_oauth2.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
+People sign in with an account they already have at a public provider. Use these for products open to anyone.
 
-## Generic protocols
+| Provider | Catalog ID | Protocol | Company settings | Links by email |
+| --- | --- | --- | --- | --- |
+| <span role="img" aria-label="Apple" style={{display:'inline-block',width:18,height:18,verticalAlign:'middle',flexShrink:0,background:'currentColor',WebkitMask:'url(https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/apple.svg) center / contain no-repeat',mask:'url(https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/apple.svg) center / contain no-repeat'}} /> [Apple](#apple) | `apple` | OAuth2 | Client ID, secret, `key`, `certificate_key` | When the provider marks the email verified |
+| <span role="img" aria-label="GitHub" style={{display:'inline-block',width:18,height:18,verticalAlign:'middle',flexShrink:0,background:'currentColor',WebkitMask:'url(https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/github.svg) center / contain no-repeat',mask:'url(https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/github.svg) center / contain no-repeat'}} /> [GitHub](#github) | `github` | OAuth2 | Client ID and secret | Verified primary email |
+| <span role="img" aria-label="GitLab" style={{display:'inline-block',width:18,height:18,verticalAlign:'middle',flexShrink:0,background:'#FC6D26',WebkitMask:'url(https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/gitlab.svg) center / contain no-repeat',mask:'url(https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/gitlab.svg) center / contain no-repeat'}} /> [GitLab](#gitlab) | `gitlab` | OAuth2 | Client ID, secret, `gitlab_url` (optional) | When the provider marks the email verified |
+| <span role="img" aria-label="Google" style={{display:'inline-block',width:18,height:18,verticalAlign:'middle',flexShrink:0,background:'#4285F4',WebkitMask:'url(https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/google.svg) center / contain no-repeat',mask:'url(https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/google.svg) center / contain no-repeat'}} /> [Google](#google) | `google` | OAuth2 | Client ID and secret | Verified email in the ID token |
+| <span role="img" aria-label="Line" style={{display:'inline-block',width:18,height:18,verticalAlign:'middle',flexShrink:0,background:'#00C300',WebkitMask:'url(https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/line.svg) center / contain no-repeat',mask:'url(https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/line.svg) center / contain no-repeat'}} /> [Line](#line) | `line` | OAuth2 | Client ID and secret | When the provider marks the email verified |
+| <span aria-hidden="true" style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:18,height:18,verticalAlign:'middle',flexShrink:0,borderRadius:'50%',background:'var(--ifm-color-emphasis-300)',fontSize:11,fontWeight:700}}>L</span> [LinkedIn](#linkedin) | `linkedin` | OpenID Connect | Client ID and secret | Verified email in the ID token |
+| <span aria-hidden="true" style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:18,height:18,verticalAlign:'middle',flexShrink:0,borderRadius:'50%',background:'var(--ifm-color-emphasis-300)',fontSize:11,fontWeight:700}}>M</span> [Microsoft](#microsoft) | `microsoft` | OAuth2 | Client ID, secret, `tenant` (optional) | Tenant check |
+| <span role="img" aria-label="Reddit" style={{display:'inline-block',width:18,height:18,verticalAlign:'middle',flexShrink:0,background:'#FF4500',WebkitMask:'url(https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/reddit.svg) center / contain no-repeat',mask:'url(https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/reddit.svg) center / contain no-repeat'}} /> [Reddit](#reddit) | `reddit` | OAuth2 | Client ID and secret | When the provider marks the email verified |
+| <span role="img" aria-label="Shopify" style={{display:'inline-block',width:18,height:18,verticalAlign:'middle',flexShrink:0,background:'#7AB55C',WebkitMask:'url(https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/shopify.svg) center / contain no-repeat',mask:'url(https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/shopify.svg) center / contain no-repeat'}} /> [Shopify](#shopify) | `shopify` | OAuth2 | Client ID and secret | When the provider marks the email verified |
+| <span aria-hidden="true" style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:18,height:18,verticalAlign:'middle',flexShrink:0,borderRadius:'50%',background:'var(--ifm-color-emphasis-300)',fontSize:11,fontWeight:700}}>S</span> [Slack](#slack) | `slack` | OAuth2 | Client ID and secret | When the provider marks the email verified |
+| <span role="img" aria-label="Twitch" style={{display:'inline-block',width:18,height:18,verticalAlign:'middle',flexShrink:0,background:'#9146FF',WebkitMask:'url(https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/twitch.svg) center / contain no-repeat',mask:'url(https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/twitch.svg) center / contain no-repeat'}} /> [Twitch](#twitch) | `twitch` | OAuth2 | Client ID and secret | Email from Twitch |
 
-| | Provider | Catalog id | Protocol | Developer console | allauth docs | Extra settings | Shellui supported |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| 🔑 OAuth 2.0 | `oauth2` | OAuth2 | - | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/oauth2.html) | - | No. Generic OAuth 2.0 requires custom endpoints; not wired in this release. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/openid.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#F78C40'}} /> OpenID | `openid` | other | - | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/openid.html) | - | No. Protocol other is not supported by the identity-hosted OAuth callback yet. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/openid.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#F78C40'}} /> OpenID Connect | `openid_connect` | OpenID Connect | - | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/openid_connect.html) | OpenID Connect issuer URL (`server_url`) (required) | Yes |
-| 🔑 SAML | `saml` | SAML | - | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/saml.html) | idp_entity_id (`idp_entity_id`) (required), sso_url (`sso_url`) (optional), metadata_url (`metadata_url`) (optional), x509cert (`x509cert`) (optional), trusted_for_verified_domains (`trusted_for_verified_domains`) (optional), allow_idp_initiated_sso (`allow_idp_initiated_sso`) (optional) | Yes |
+## Company identity providers
 
-## All others
+These providers are run by the company itself, for example its Okta org or Keycloak realm. Use them for workforce single sign-on (SSO). identity-service never links these sign-ins to an existing user by email.
 
-| | Provider | Catalog id | Protocol | Developer console | allauth docs | Extra settings | Shellui supported |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| 🔑 23andMe | `23andme` | OAuth2 | App registration: `https://api.23andme.com/dev/` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/23andme.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/500px.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#222222'}} /> 500px | `500px` | OAuth1 | App settings: `https://500px.com/settings/applications` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/500px.html) | - | No. Protocol OAuth1 is not supported by the identity-hosted OAuth callback yet. |
-| 🔑 AgaveAPI | `agave` | OAuth2 | App registration: `https://public.agaveapi.co/create_account`<br />App registration: `https://bitbucket.org/agaveapi/cli/overview` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/agave.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| 🔑 Amazon | `amazon` | OAuth2 | App registration: `http://login.amazon.com/manageApps` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/amazon.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| 🔑 Amazon Cognito | `amazon_cognito` | OAuth2 | App registration: `https://console.aws.amazon.com/cognito/` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/amazon_cognito.html) | Cognito domain URL (`DOMAIN`) (required) | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/atlassian.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#0052CC'}} /> Atlassian | `atlassian` | OAuth2 | Developer console: `https://developer.atlassian.com/console/myapps/` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/atlassian.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/authelia.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#113155'}} /> Authelia | `authelia` | OpenID Connect | - | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/authelia.html) | Provider ID (`provider_id`) (required), OpenID Connect issuer URL (`server_url`) (required) | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| 🔑 Authentiq | `authentiq` | OAuth2 | App registration: `https://dashboard.authentiq.com/` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/authentiq.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/baidu.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#2932E1'}} /> Baidu | `baidu` | OAuth2 | - | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/baidu.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/basecamp.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#1D2D35'}} /> Basecamp | `basecamp` | OAuth2 | App registration: `https://integrate.37signals.com/` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/basecamp.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/battledotnet.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#4381C3'}} /> Battle.net | `battlenet` | OAuth2 | App registration: `https://develop.battle.net/access/clients/create` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/battlenet.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/box.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#0061D5'}} /> Box | `box` | OAuth2 | App registration: `https://app.box.com/developers/services/edit/` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/box.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| 🔑 CERN | `cern` | OpenID Connect | App registration: `https://application-portal.web.cern.ch/` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/cern.html) | Provider ID (`provider_id`) (required), OpenID Connect issuer URL (`server_url`) (required) | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| 🔑 CILogon | `cilogon` | OAuth2 | App registration: `https://cilogon.org/oauth2/register` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/cilogon.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| 🔑 Clever | `clever` | OAuth2 | - | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/clever.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| 🔑 Dataporten | `dataporten` | OAuth2 | Documentation: `https://docs.dataporten.no/docs/gettingstarted/` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/dataporten.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| 🔑 daum | `daum` | OAuth2 | App registration: `https://developers.daum.net/console` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/daum.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/digitalocean.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#0080FF'}} /> DigitalOcean | `digitalocean` | OAuth2 | App settings: `https://cloud.digitalocean.com/settings/applications` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/digitalocean.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| 🔑 DingTalk | `dingtalk` | OAuth2 | - | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/dingtalk.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/discogs.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#333333'}} /> Discogs (OAuth 1a) | `discogs` | OAuth1 | App settings: `https://www.discogs.com/settings/developers` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/discogs.html) | - | No. Protocol OAuth1 is not supported by the identity-hosted OAuth callback yet. |
-| 🔑 Doximity | `doximity` | OAuth2 | App registration: `https://www.doximity.com/developers/api_signup` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/doximity.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/draugiemdotlv.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#FF6600'}} /> Draugiem | `draugiem` | other | App registration: `https://www.draugiem.lv/applications/dev/create/?type=4` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/draugiem.html) | - | No. Protocol other is not supported by the identity-hosted OAuth callback yet. |
-| 🔑 Drip | `drip` | OAuth2 | App registration: `https://www.getdrip.com/user/applications` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/drip.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/dropbox.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#0061FF'}} /> Dropbox | `dropbox` | OAuth2 | App registration: `https://www.dropbox.com/developers/apps/` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/dropbox.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| 🔑 Dwolla | `dwolla` | OAuth2 | App registration: `https://dashboard-uat.dwolla.com/applications` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/dwolla.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| 🔑 Edmodo | `edmodo` | OAuth2 | - | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/edmodo.html) | - | No. Provider service is no longer available. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/edx.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#02262B'}} /> Edx | `edx` | OAuth2 | - | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/edx.html) | EDX_URL (`EDX_URL`) (required) | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| 🔑 Eve Online | `eveonline` | OAuth2 | App registration: `https://developers.eveonline.com/applications/create` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/eveonline.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| 🔑 Eventbrite | `eventbrite` | OAuth2 | App registration: `https://www.eventbrite.com/myaccount/apps/` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/eventbrite.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/evernote.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#00A82D'}} /> Evernote | `evernote` | OAuth1 | Documentation: `https://dev.evernote.com/doc/articles/authentication.php` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/evernote.html) | - | No. Protocol OAuth1 is not supported by the identity-hosted OAuth callback yet. |
-| 🔑 Exist | `exist` | OAuth2 | App registration: `https://exist.io/account/apps/` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/exist.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| 🔑 Feishu | `feishu` | OAuth2 | App registration: `https://open.feishu.cn/app` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/feishu.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/figma.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#F24E1E'}} /> Figma | `figma` | OAuth2 | App registration: `https://www.figma.com/developers/apps` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/figma.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/firefox.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#FF7139'}} /> Firefox Accounts | `fxa` | OAuth2 | - | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/fxa.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/flickr.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#0063DC'}} /> Flickr | `flickr` | OAuth1 | App registration: `https://www.flickr.com/services/apps/create/` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/flickr.html) | - | No. Protocol OAuth1 is not supported by the identity-hosted OAuth callback yet. |
-| 🔑 Frontier | `frontier` | OAuth2 | Developer console: `https://user.frontierstore.net/` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/frontier.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/gitea.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#609926'}} /> Gitea | `gitea` | OAuth2 | App settings: `https://gitea.com/user/settings/applications` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/gitea.html) | Gitea URL (`GITEA_URL`) (required) | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| 🔑 Globus | `globus` | OAuth2 | App registration: `https://developers.globus.org/` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/globus.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/gumroad.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#FF90E8'}} /> Gumroad | `gumroad` | OAuth2 | App registration: `https://help.gumroad.com/article/280-create-application-api` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/gumroad.html) | Gumroad base URL (`GUMROAD_URL`) (optional) | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/hubspot.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#FF7A59'}} /> Hubspot | `hubspot` | OAuth2 | Documentation: `https://developers.hubspot.com/docs/api/creating-an-app` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/hubspot.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/instagram.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#FF0069'}} /> Instagram | `instagram` | OAuth2 | App registration: `https://www.instagram.com/developer/clients/manage/` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/instagram.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/jupyter.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#F37626'}} /> JupyterHub | `jupyterhub` | OAuth2 | Documentation: `https://jupyterhub.readthedocs.io/en/stable/api/services.auth.html` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/jupyterhub.html) | API URL (`API_URL`) (required) | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/kakao.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#FFCD00'}} /> Kakao | `kakao` | OAuth2 | App registration: `https://developers.kakao.com/apps` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/kakao.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/keycloak.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#4D4D4D'}} /> Keycloak | `keycloak` | OpenID Connect | - | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/keycloak.html) | Provider ID (`provider_id`) (required), OpenID Connect issuer URL (`server_url`) (required) | Yes |
-| 🔑 Klaviyo | `klaviyo` | OAuth2 | App registration: `https://www.klaviyo.com/manage-apps` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/klaviyo.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| 🔑 LemonLDAP::NG | `lemonldap` | OAuth2 | - | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/lemonldap.html) | LemonLDAP base URL (`LEMONLDAP_URL`) (required) | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/lichess.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#000000'}} /> Lichess | `lichess` | OAuth2 | - | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/lichess.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/line.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#00C300'}} /> Line | `line` | OAuth2 | App registration: `https://developers.line.biz/console/` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/line.html) | - | Yes |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/mailchimp.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#FFE01B'}} /> MailChimp (OAuth 2) | `mailchimp` | OAuth2 | Developer console: `https://login.mailchimp.com/`<br />App registration: `https://usX.admin.mailchimp.com/account/oauth2/` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/mailchimp.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| 🔑 Mailcow | `mailcow` | OAuth2 | Documentation: `https://docs.mailcow.email/third_party/nextcloud/third_party-nextcloud/` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/mailcow.html) | SERVER (`SERVER`) (required) | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| 🔑 MediaWiki | `mediawiki` | OAuth2 | App registration: `https://meta.wikimedia.org/wiki/Special:OAuthConsumerRegistration/propose` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/mediawiki.html) | REST_API (`REST_API`) (required) | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/miro.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#050038'}} /> Miro | `miro` | OAuth2 | App settings: `https://miro.com/app/settings/user-profile/apps` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/miro.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/naver.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#03C75A'}} /> Naver | `naver` | OAuth2 | App registration: `https://developers.naver.com/appinfo` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/naver.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| 🔑 NetIQ/Microfocus AccessManager (NAM) | `netiq` | OAuth2 | - | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/netiq.html) | NetIQ Access Manager URL (`NETIQ_URL`) (required) | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/nextcloud.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#0082C9'}} /> NextCloud | `nextcloud` | OAuth2 | App settings (template: `host`): `https://nextcloud.example.org/settings/admin/security` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/nextcloud.html) | Server URL (`server`) (required) | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/notion.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#000000'}} /> Notion | `notion` | OAuth2 | App registration: `https://www.notion.so/my-integrations` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/notion.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/odnoklassniki.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#EE8208'}} /> Odnoklassniki | `odnoklassniki` | OAuth2 | App registration: `http://apiok.ru/wiki/pages/viewpage.action?pageId=42476486` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/odnoklassniki.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/openstreetmap.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#7EBC6F'}} /> OpenStreetMap | `openstreetmap` | OAuth1 | App registration: `https://www.openstreetmap.org/oauth2/applications` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/openstreetmap.html) | - | No. Legacy provider; use the replacement listed in the catalog. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/orcid.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#A6CE39'}} /> ORCID | `orcid` | OAuth2 | - | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/orcid.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/patreon.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#000000'}} /> Patreon | `patreon` | OAuth2 | App registration: `https://www.patreon.com/portal/registration/register-clients` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/patreon.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/paypal.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#002991'}} /> Paypal | `paypal` | OAuth2 | App registration: `https://developer.paypal.com/webapps/developer/applications/myapps` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/paypal.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/pinterest.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#BD081C'}} /> Pinterest | `pinterest` | OAuth2 | - | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/pinterest.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| 🔑 Pocket | `pocket` | OAuth1 | App registration: `https://getpocket.com/developer/apps/` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/pocket.html) | - | No. Protocol OAuth1 is not supported by the identity-hosted OAuth callback yet. |
-| 🔑 Questrade | `questrade` | OAuth2 | Documentation: `https://www.questrade.com/api/documentation/getting-started`<br />App registration: `https://apphub.questrade.com/UI/UserApps.aspx` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/questrade.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/quickbooks.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#2CA01C'}} /> QuickBooks | `quickbooks` | OAuth2 | App registration: `https://developers.intuit.com/v2/ui#/app/startcreate` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/quickbooks.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/reddit.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#FF4500'}} /> Reddit | `reddit` | OAuth2 | App registration: `https://www.reddit.com/prefs/apps/` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/reddit.html) | - | Yes |
-| 🔑 Salesforce | `salesforce` | OAuth2 | - | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/salesforce.html) | Team or login host (`key`) (required) | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| 🔑 ShareFile | `sharefile` | OAuth2 | - | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/sharefile.html) | API URL (`API_URL`) (required) | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/shopify.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#7AB55C'}} /> Shopify | `shopify` | OAuth2 | - | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/shopify.html) | - | Yes |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/snapchat.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#FFFC00'}} /> Snapchat | `snapchat` | OAuth2 | App registration: `https://kit.snapchat.com/manage/` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/snapchat.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/soundcloud.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#FF5500'}} /> SoundCloud | `soundcloud` | OAuth2 | App registration: `http://soundcloud.com/you/apps/new` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/soundcloud.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/stackexchange.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#1E5397'}} /> Stack Exchange | `stackexchange` | OAuth2 | App registration: `http://stackapps.com/apps/oauth/register` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/stackexchange.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/steam.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#000000'}} /> Steam | `steam` | other | Developer console: `https://steamcommunity.com/dev/apikey` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/steam.html) | - | No. Protocol other is not supported by the identity-hosted OAuth callback yet. |
-| 🔑 Stocktwits | `stocktwits` | OAuth2 | App registration: `https://api.stocktwits.com/developers/apps/new` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/stocktwits.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/strava.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#FC4C02'}} /> Strava | `strava` | OAuth2 | App settings: `https://strava.com/settings/api` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/strava.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/stripe.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#635BFF'}} /> Stripe | `stripe` | OAuth2 | App settings: `https://dashboard.stripe.com/account/applications/settings`<br />Developer console: `https://dashboard.stripe.com/account/apikeys` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/stripe.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/telegram.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#26A5E4'}} /> Telegram | `telegram` | other | - | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/telegram.html) | - | No. Protocol other is not supported by the identity-hosted OAuth callback yet. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/tiktok.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#000000'}} /> TikTok | `tiktok` | OAuth2 | Developer console: `https://developers.tiktok.com/`<br />Developer console: `https://developers.tiktok.com/application/unreleased-app-integration` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/tiktok.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| 🔑 TrainingPeaks | `trainingpeaks` | OAuth2 | Developer console: `https://api.trainingpeaks.com/request-access` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/trainingpeaks.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/trello.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#0052CC'}} /> Trello | `trello` | OAuth1 | App registration: `https://trello.com/app-key` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/trello.html) | - | No. Protocol OAuth1 is not supported by the identity-hosted OAuth callback yet. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/tumblr.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#36465D'}} /> Tumblr (OAuth 2) | `tumblr_oauth2` | OAuth2 | App registration: `https://www.tumblr.com/oauth/register`<br />App settings: `https://www.tumblr.com/oauth/apps` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/tumblr_oauth2.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/twitch.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#9146FF'}} /> Twitch | `twitch` | OAuth2 | App registration: `https://dev.twitch.tv/console` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/twitch.html) | - | Yes |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/untappd.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#FFC000'}} /> Untappd | `untappd` | OAuth2 | App registration: `https://untappd.com/api/register?register=new`<br />Developer console: `https://untappd.com/api/dashboard` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/untappd.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/vimeo.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#1AB7EA'}} /> Vimeo | `vimeo` | OAuth1 | App registration: `https://developer.vimeo.com/apps` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/vimeo.html) | - | No. Legacy provider; use the replacement listed in the catalog. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/vimeo.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#1AB7EA'}} /> Vimeo (OAuth 2) | `vimeo_oauth2` | OAuth2 | App registration: `https://developer.vimeo.com/apps` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/vimeo_oauth2.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/vk.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#0077FF'}} /> VK | `vk` | OAuth2 | App registration: `https://vk.com/editapp?act=create` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/vk.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| 🔑 Wahoo | `wahoo` | OAuth2 | App registration: `https://developers.wahooligan.com/applications/new` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/wahoo.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/sinaweibo.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#E6162D'}} /> Weibo | `weibo` | OAuth2 | App registration: `http://open.weibo.com/apps` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/weibo.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/wechat.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#07C160'}} /> Weixin | `weixin` | OAuth2 | - | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/weixin.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| 🔑 Windows Live | `windowslive` | OAuth2 | App registration: `https://apps.dev.microsoft.com/#/appList` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/windowslive.html) | - | No. Legacy provider; use the replacement listed in the catalog. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/x.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#000000'}} /> X/Twitter (OAuth 1) | `twitter` | OAuth1 | App registration: `https://developer.x.com/en/portal/apps/new`<br />App settings (template: `yourappid`): `https://developer.x.com/en/portal/apps/{{yourappid}}/keys` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/twitter.html) | - | No. Legacy provider; use the replacement listed in the catalog. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/xing.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#006567'}} /> Xing | `xing` | OAuth1 | App registration: `https://dev.xing.com/applications` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/xing.html) | - | No. Protocol OAuth1 is not supported by the identity-hosted OAuth callback yet. |
-| 🔑 Yahoo | `yahoo` | OAuth2 | App registration: `https://developer.yahoo.com/apps/create/` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/yahoo.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| 🔑 Yandex | `yandex` | OAuth2 | App registration: `https://oauth.yandex.com/client/new` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/yandex.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| 🔑 YNAB | `ynab` | OAuth2 | App settings: `https://app.youneedabudget.com/settings/developer` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/ynab.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/zoho.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#E42527'}} /> Zoho | `zoho` | OAuth2 | App registration: `https://api-console.zoho.com/add` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/zoho.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
-| <img src="https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/zoom.svg" width="20" height="20" alt="" style={{verticalAlign:'middle',background:'#0B5CFF'}} /> Zoom | `zoom` | OAuth2 | App registration: `https://marketplace.zoom.us/develop/create` | [allauth docs](https://docs.allauth.org/en/latest/socialaccount/providers/zoom.html) | - | No. Not supported in this release; additional providers ship in follow-up PRs. |
+| Provider | Catalog ID | Protocol | Company settings | Links by email |
+| --- | --- | --- | --- | --- |
+| <span role="img" aria-label="Auth0" style={{display:'inline-block',width:18,height:18,verticalAlign:'middle',flexShrink:0,background:'#EB5424',WebkitMask:'url(https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/auth0.svg) center / contain no-repeat',mask:'url(https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/auth0.svg) center / contain no-repeat'}} /> [Auth0](#auth0) | `auth0` | OAuth2 | Client ID, secret, `AUTH0_URL` | Never |
+| <span role="img" aria-label="Keycloak" style={{display:'inline-block',width:18,height:18,verticalAlign:'middle',flexShrink:0,background:'currentColor',WebkitMask:'url(https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/keycloak.svg) center / contain no-repeat',mask:'url(https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/keycloak.svg) center / contain no-repeat'}} /> [Keycloak](#keycloak) | `keycloak` | OpenID Connect | Client ID, secret, `provider_id`, `server_url` | Never |
+| <span role="img" aria-label="Okta" style={{display:'inline-block',width:18,height:18,verticalAlign:'middle',flexShrink:0,background:'#007DC1',WebkitMask:'url(https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/okta.svg) center / contain no-repeat',mask:'url(https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/okta.svg) center / contain no-repeat'}} /> [Okta](#okta) | `okta` | OAuth2 | Client ID, secret, `OKTA_BASE_URL` | Never |
+| <span role="img" aria-label="OpenID Connect" style={{display:'inline-block',width:18,height:18,verticalAlign:'middle',flexShrink:0,background:'#F78C40',WebkitMask:'url(https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/openid.svg) center / contain no-repeat',mask:'url(https://cdn.jsdelivr.net/npm/simple-icons@16.33.0/icons/openid.svg) center / contain no-repeat'}} /> [OpenID Connect](#openid-connect) | `openid_connect` | OpenID Connect | Client ID, secret, `server_url` | Never |
+| <span aria-hidden="true" style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:18,height:18,verticalAlign:'middle',flexShrink:0,borderRadius:'50%',background:'var(--ifm-color-emphasis-300)',fontSize:11,fontWeight:700}}>S</span> [SAML](#saml) | `saml` | SAML | `idp_entity_id`, see [SAML](saml.md) | Trusted domains only |
+
+## How email linking works
+
+The first time someone signs in with a provider, identity-service looks for an existing user with the same provider account. When there is none, it can attach the sign-in to an existing user with the same email, but only when the provider proves the email belongs to that person. The **Links by email** column shows the proof each provider needs. Without it, identity-service matches by provider account ID only and never takes over another user by email.
+
+## Provider setup
+
+Each section lists where to create the app, the extra settings Shellui admin asks for, and provider-specific behavior.
+
+### Apple
+
+Follow the django-allauth Apple setup: the client ID is your Services ID and the client secret is the Key ID of your Sign in with Apple key.
+
+Paste the `.p8` file content in `certificate_key`. Shellui admin never shows it again.
+
+Apple posts the callback as a form (`form_post`). identity-service handles that on the same callback URL.
+
+- **Catalog ID**: `apple`
+- **Create the app**:
+  - App registration: `https://developer.apple.com/account/resources/identifiers/list`
+  - App settings: `https://developer.apple.com/account/resources/authkeys/list`
+- **Settings**: `key` (Apple Team ID, required), `certificate_key` (Sign in with Apple private key (.p8), required, secret)
+- **Email linking**: Links by email when the profile has `email_verified: true`. Otherwise the account is matched by provider account ID only.
+- **Apps per company**: one
+- **Reference**: [django-allauth Apple docs](https://docs.allauth.org/en/latest/socialaccount/providers/apple.html)
+
+### Auth0
+
+Set `AUTH0_URL` to your tenant domain, for example `https://your_tenant.eu.auth0.com`.
+
+- **Catalog ID**: `auth0`
+- **Create the app**: `https://manage.auth0.com/#/clients`
+- **Settings**: `AUTH0_URL` (Auth0 domain URL, required)
+- **Email linking**: Never links by email. The company controls this identity provider, so its email claims are not proof of ownership. Accounts are matched by provider account ID, scoped to the issuer.
+- **Apps per company**: one
+- **Reference**: [django-allauth Auth0 docs](https://docs.allauth.org/en/latest/socialaccount/providers/auth0.html)
+
+### GitHub
+
+Create an OAuth app and paste the callback URL as the **Authorization callback URL**.
+
+- **Catalog ID**: `github`
+- **Create the app**: `https://github.com/settings/applications/new`
+- **Email linking**: identity-service reads `/user/emails` and links by email only when the primary address is verified. Without a verified primary email, sign-in stops with an error.
+- **Apps per company**: one
+- **Reference**: [django-allauth GitHub docs](https://docs.allauth.org/en/latest/socialaccount/providers/github.html)
+
+### GitLab
+
+Leave `gitlab_url` empty for gitlab.com. For a self-hosted GitLab, set its base URL.
+
+A self-hosted GitLab counts as a company identity provider: it never links by email, and account IDs are prefixed with the GitLab base URL.
+
+- **Catalog ID**: `gitlab`
+- **Settings**: `gitlab_url` (GitLab base URL, optional)
+- **Email linking**: Links by email when the profile has `email_verified: true`. Otherwise the account is matched by provider account ID only.
+- **Apps per company**: one
+- **Reference**: [django-allauth GitLab docs](https://docs.allauth.org/en/latest/socialaccount/providers/gitlab.html)
+
+### Google
+
+Google skips the identity-service account confirmation page by default, because Google already shows its own account picker. Change this with `OAUTH_SKIP_CONFIRM_PROVIDERS`, see [OAuth login](oauth-login.md#skip-the-confirmation-page).
+
+- **Catalog ID**: `google`
+- **Create the app**: `https://console.developers.google.com/`
+- **Email linking**: Links by email when the ID token has `email_verified: true` and the same email as the userinfo response.
+- **Apps per company**: one
+- **Reference**: [django-allauth Google docs](https://docs.allauth.org/en/latest/socialaccount/providers/google.html)
+
+### Keycloak
+
+Set `server_url` to the realm issuer, for example `https://keycloak.example.com/realms/acme`. identity-service loads the OpenID Connect discovery document from it.
+
+- **Catalog ID**: `keycloak`
+- **Settings**: `provider_id` (Provider ID, required), `server_url` (OpenID Connect issuer URL, required)
+- **Email linking**: Never links by email. The company controls this identity provider, so its email claims are not proof of ownership. Accounts are matched by provider account ID, scoped to the issuer.
+- **Apps per company**: several, one per identity provider
+- **Reference**: [django-allauth Keycloak docs](https://docs.allauth.org/en/latest/socialaccount/providers/keycloak.html)
+
+### Line
+
+- **Catalog ID**: `line`
+- **Create the app**: `https://developers.line.biz/console/`
+- **Email linking**: Links by email when the profile has `email_verified: true`. Otherwise the account is matched by provider account ID only.
+- **Apps per company**: one
+- **Reference**: [django-allauth Line docs](https://docs.allauth.org/en/latest/socialaccount/providers/line.html)
+
+### LinkedIn
+
+Enable **Sign In with LinkedIn using OpenID Connect** on the app. The LinkedIn endpoints are fixed in identity-service, so there is nothing else to set.
+
+- **Catalog ID**: `linkedin`
+- **Create the app**: `https://www.linkedin.com/secure/developer`
+- **Email linking**: Links by email when the verified ID token has `email_verified: true` and the same email as userinfo. Otherwise the account is matched by provider account ID only.
+- **Apps per company**: several, one per identity provider
+- **Reference**: [django-allauth LinkedIn docs](https://docs.allauth.org/en/latest/socialaccount/providers/linkedin.html)
+
+### Microsoft
+
+Register the app in Microsoft Entra ID. Set `tenant` to your directory (GUID or domain) to accept only your organization, or leave it empty for any Microsoft account.
+
+- **Catalog ID**: `microsoft`
+- **Create the app**: `https://portal.azure.com/#blade/Microsoft_AAD_RegisteredApps/ApplicationsListBlade`
+- **Settings**: `tenant` (Tenant ID, optional)
+- **Email linking**: With a dedicated `tenant` (GUID or domain), the ID token `tid` must match it. With `common` or no tenant, the ID token must carry `xms_edov: true`. Otherwise sign-in stops with an error, so a personal account cannot claim a work email.
+- **Apps per company**: one
+- **Reference**: [django-allauth Microsoft docs](https://docs.allauth.org/en/latest/socialaccount/providers/microsoft.html)
+
+### Okta
+
+Set `OKTA_BASE_URL` to your Okta org URL, for example `https://acme.okta.com`.
+
+- **Catalog ID**: `okta`
+- **Settings**: `OKTA_BASE_URL` (Okta org URL, required)
+- **Email linking**: Never links by email. The company controls this identity provider, so its email claims are not proof of ownership. Accounts are matched by provider account ID, scoped to the issuer.
+- **Apps per company**: one
+- **Reference**: [django-allauth Okta docs](https://docs.allauth.org/en/latest/socialaccount/providers/okta.html)
+
+### OpenID Connect
+
+Use this entry for any standards-compliant OpenID Connect provider. Set `server_url` to the issuer URL or to its `/.well-known/openid-configuration` URL.
+
+identity-service checks that the discovery document `issuer` matches, and verifies ID tokens against the provider keys.
+
+- **Catalog ID**: `openid_connect`
+- **Settings**: `server_url` (OpenID Connect issuer URL, required)
+- **Email linking**: Never links by email. The company controls this identity provider, so its email claims are not proof of ownership. Accounts are matched by provider account ID, scoped to the issuer.
+- **Apps per company**: several, one per identity provider
+- **Reference**: [django-allauth OpenID Connect docs](https://docs.allauth.org/en/latest/socialaccount/providers/openid_connect.html)
+
+### Reddit
+
+- **Catalog ID**: `reddit`
+- **Create the app**: `https://www.reddit.com/prefs/apps/`
+- **Email linking**: Links by email when the profile has `email_verified: true`. Otherwise the account is matched by provider account ID only.
+- **Apps per company**: one
+- **Reference**: [django-allauth Reddit docs](https://docs.allauth.org/en/latest/socialaccount/providers/reddit.html)
+
+### SAML
+
+SAML has its own setup and endpoints. Follow [SAML single sign-on](saml.md).
+
+- **Catalog ID**: `saml`
+- **Email linking**: Matched by SAML NameID only. Email linking needs `trusted_for_verified_domains` and a verified company domain, see [SAML email linking](saml.md#email-linking).
+- **Apps per company**: several, one per identity provider
+- **Reference**: [django-allauth SAML docs](https://docs.allauth.org/en/latest/socialaccount/providers/saml.html)
+
+### Shopify
+
+Sign-in needs the store domain. Add it to the authorize request: `GET /api/v1/authorize?provider=shopify&shop=your_store.myshopify.com&…`.
+
+- **Catalog ID**: `shopify`
+- **Email linking**: Links by email when the profile has `email_verified: true`. Otherwise the account is matched by provider account ID only.
+- **Apps per company**: one
+- **Reference**: [django-allauth Shopify docs](https://docs.allauth.org/en/latest/socialaccount/providers/shopify.html)
+
+### Slack
+
+Create the app at api.slack.com and add the callback URL under **OAuth & Permissions**.
+
+- **Catalog ID**: `slack`
+- **Create the app**: `https://api.slack.com/apps/new`
+- **Email linking**: Links by email when the profile has `email_verified: true`. Otherwise the account is matched by provider account ID only.
+- **Apps per company**: one
+- **Reference**: [django-allauth Slack docs](https://docs.allauth.org/en/latest/socialaccount/providers/slack.html)
+
+### Twitch
+
+identity-service requests one scope, `user:read:email`. Authorize and token calls go to `id.twitch.tv` and the profile call to `https://api.twitch.tv/helix/users`. These hosts are fixed: a company URL or scope setting returns `oauth_setting_not_allowed`.
+
+When the Helix user `id` is missing, or the profile request fails, sign-in stops with `token_exchange_failed`. No account is created.
+
+Twitch runs without PKCE. Sign-in relies on the signed OAuth state and the client secret.
+
+- **Catalog ID**: `twitch`
+- **Create the app**: `https://dev.twitch.tv/console`
+- **Email linking**: Twitch returns `email` only for verified addresses, so its presence is the check. When Twitch omits it, sign-in stops with `oauth_identity_failed`.
+- **Apps per company**: one
+- **Reference**: [django-allauth Twitch docs](https://docs.allauth.org/en/latest/socialaccount/providers/twitch.html)
+
+## Providers that are not available
+
+django-allauth ships 98 more provider modules. They stay in `GET /api/v1/oauth-provider-catalog` with `supported: false` and an `unsupported_reason`, but Shellui admin hides them and `POST /api/v1/oauth-social-apps` refuses them with **400**. A provider becomes available once identity-service has an adapter for it, covered by a hand-written sign-in test.
+
+## Update this page
+
+This page is generated from `apps/authapi/provider_catalog.json` (catalog version 2, django-allauth 65.19.5). After a catalog change, regenerate it:
+
+```bash
+uv run python tools/render_oauth_providers_doc.py
+```
+
+CI fails when this page does not match the catalog. Edit provider notes in `tools/render_oauth_providers_doc.py`, not here.

@@ -1,12 +1,14 @@
+---
+description: The identity-service event log - which account, sign-in, and provisioning events are recorded, how long they are kept, and the API to read them.
+---
+
 # Event log
 
-identity-service records every catalog event in one table, `EventLog`, whether or not a webhook rule exists for it. The Shellui admin panel shows it under **Identity > Log events** and on each user profile.
-
----
+identity-service records every catalog event and every sign-in in one table, `EventLog`, whether or not a webhook rule exists for it. Shellui admin shows it under **Identity > Log events** and on each user profile. Events are kept for the company's retention period, 7 days by default.
 
 ## What is recorded
 
-- Every [webhook catalog event](actions.md#event-catalog-identity) when it fires: account created or deleted, invitations, SCIM provisioning, group changes, SCIM tokens, magic link requests, SCIM conflicts.
+- Every [webhook catalog event](actions.md#event-catalog-identity) when it fires: account created or deleted, invitations, SCIM provisioning, group changes, SCIM tokens, magic link requests, and SCIM conflicts
 - Sign-ins, as two log-only event types:
 
 | Event type | When |
@@ -45,18 +47,18 @@ The table has two indexes, `(company, created_at)` and `(user, created_at)`. The
 
 Each company has a **data retention** in days (`Company.data_retention_days`, default **7**). Only Shellui operators can change it, in Django admin under **Companies > Data retention**. Company owners see the value in the admin panel.
 
-The [`purge_expired_data`](scheduled-jobs.md#purge_expired_data) scheduled job deletes events older than the retention, together with finished webhook deliveries and SCIM provisioning events. It runs every hour inside the container when `REDIS_URL` is set.
+The [`purge_expired_data`](scheduled-jobs.md#purge_expired_data) scheduled job deletes events older than the retention, together with finished webhook deliveries, email-service event posts, SCIM provisioning events, and scheduled job runs. It runs every hour inside the container when `REDIS_URL` is set.
 
 If events older than retention + 1 day are still stored, the job is not running. The admin panel dashboard, the **Log events** page, and the Django admin company page then show an error. See [Stale events warning](scheduled-jobs.md#stale-events-warning).
 
-## Admin REST API
+## Admin API
 
-Same authentication as other Shellui admin endpoints: Bearer JWT (or PAT) plus `company_id`. Callers must be Django staff or a company owner.
+Staff and company owners read the log with an access token or a personal access token, plus `company_id`, like the other admin endpoints.
 
 | Method | Path | Purpose |
 | ------ | ---- | ------- |
 | `GET` | `/api/v1/events` | Event log, newest first, paginated |
-| `GET` | `/api/v1/events/<id>` | One event |
+| `GET` | `/api/v1/events/{id}` | One event |
 | `GET` | `/api/v1/events/types` | Event types with `label`, `description` and `webhook` (false for sign-ins). Platform events are not listed |
 | `GET` | `/api/v1/events/retention` | `data_retention_days`, `oldest_event_at`, `stale_events` |
 
@@ -101,22 +103,22 @@ Scheduled jobs are platform maintenance, not company activity, so their runs are
 | `identity.scheduled_job.succeeded` | A `retry_webhooks` or `purge_expired_data` run finished without error |
 | `identity.scheduled_job.failed` | A run failed |
 
-`data` holds `run_id`, `job`, `trigger` (`celery` or `command`), `duration_ms`, `counts` and `host`, plus `error_key` and `error_class` on failure. The run itself, with the sanitized error message, is at `GET /api/v1/scheduled-jobs/runs/<run_id>`. See [Scheduled jobs monitoring](scheduled-jobs.md#monitoring).
+`data` holds `run_id`, `job`, `trigger` (`celery` or `command`), `duration_ms`, `counts` and `host`, plus `error_key` and `error_class` on failure. The run itself, with the sanitized error message, is at `GET /api/v1/scheduled-jobs/runs/{run_id}`. See [Scheduled jobs monitoring](scheduled-jobs.md#monitoring).
 
 These events never reach company owners or other companies:
 
 - `GET /api/v1/events` lists the company in the token only, so it never returns them
-- `GET /api/v1/events?scope=platform` and `GET /api/v1/events/<id>?scope=platform` return them to staff. Other callers get `403`
+- `GET /api/v1/events?scope=platform` and `GET /api/v1/events/{id}?scope=platform` return them to staff. Other callers get `403`
 - `GET /api/v1/events/types` does not list them
 - they cannot trigger webhook rules and are never forwarded to email-service
 
 They expire after the default retention of 7 days, like the runs.
 
-### Deprecated: `/api/v1/login-events`
+## Deprecated: `/api/v1/login-events`
 
-`GET /api/v1/login-events` and `GET /api/v1/login-events/<id>` still answer with the former login audit shape (`outcome`, `provider`, `client_country`, …), reading sign-in rows from the event log. Use `GET /api/v1/events?event_type=identity.auth.login.succeeded,identity.auth.login.failed` instead.
+`GET /api/v1/login-events` and `GET /api/v1/login-events/{id}` still answer with the former login audit shape (`outcome`, `provider`, `client_country`, …), reading sign-in rows from the event log. Use `GET /api/v1/events?event_type=identity.auth.login.succeeded,identity.auth.login.failed` instead.
 
-## Related docs
+## Related
 
-- [Scheduled jobs](scheduled-jobs.md)
-- [Shellui webhooks](actions.md)
+- [Scheduled jobs](scheduled-jobs.md): the purge job
+- [Webhooks](actions.md): the event catalog

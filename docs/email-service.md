@@ -1,28 +1,37 @@
-# Send mail with email-service
+---
+description: How identity-service sends magic links, invitations, and staff notices through Shellui email-service, falls back to SMTP, and forwards events for company email rules.
+---
 
-identity-service sends sign-in and invitation mail through Shellui email-service when `EMAIL_SERVICE_API_KEY` is set. It also forwards every other webhook event so a company email rule can send its own message. With no key, SMTP (or the console backend when `DEBUG=true`) stays in place and no event rows are written.
+# Email delivery
+
+identity-service sends sign-in and invitation mail through Shellui email-service when `EMAIL_SERVICE_API_KEY` is set. It also forwards every other webhook event, so a company email rule can send its own message. With no key, SMTP (or the console backend when `DEBUG=true`) sends the mail and no event rows are written.
+
+There are two paths:
+
+- **Direct send**: magic links, staff notices, and invitations, sent right away while the user waits
+- **Event forwarding**: every other catalog event, posted after the database commit and retried in the background
 
 ## Direct send
 
-Magic links and invitations call `POST /api/v1/send`. identity-service does not set `lane`. The template key selects the auth lane.
+Magic links, staff notices, and invitations call `POST /api/v1/send`. identity-service does not set `lane`. The template key selects the auth lane.
 
 | Message | Template | TTL |
 | ------- | -------- | --- |
 | Magic link | `identity.auth.magic_link.requested` | 120s |
-| Staff notice (sent instead of a magic link to a staff account, no link or token) | `identity.auth.magic_link.staff_blocked` | 300s |
+| Staff notice, sent instead of a magic link to a staff account (no link or token) | `identity.auth.magic_link.staff_blocked` | 300s |
 | Invitation | `identity.user.invited` | 300s |
 
 `identity.auth.magic_link.staff_blocked` uses Shellui's own copy in email-service. Companies cannot edit it, add rules on it, or receive it through `POST /api/v1/events`. Variables: `company_name` and `sign_in_url` (the origin of the request's `redirect_to`, omitted for a loopback callback). See [Staff accounts](magic-link.md#staff-accounts).
 
 The idempotency key is stable for that magic-link row or that invitation. Retries send the same key and the same JSON body. The key does not contain the magic-link token, and identity-service does not log the token or the API key.
 
-The magic-link email is always sent by identity-service. A webhook rule for `identity.auth.magic_link.requested` is a notification only: its payload never contains the sign-in link or the token. A webhook rule for `identity.user.invited` still replaces the invitation send: its payload carries `invitation_url` (an app URL, not a credential), and your endpoint delivers the message. See [webhooks](actions.md).
+identity-service always sends the magic link email itself. A webhook rule for `identity.auth.magic_link.requested` is a notification only: its payload never contains the sign-in link or the token. A webhook rule for `identity.user.invited` still replaces the invitation email: its payload carries `invitation_url` (an app URL, not a credential), and your endpoint delivers the message. See [Webhooks](actions.md).
 
 These two events are not also posted to `POST /api/v1/events`. The catalog enables them by default, so a second post would send a second message. `/send` still goes out when a company turns the email rule off.
 
 ## When SMTP is used
 
-identity-service uses SMTP in two cases:
+identity-service uses SMTP in these cases:
 
 - `EMAIL_SERVICE_API_KEY` is unset
 - email-service cannot be reached after the caller retry policy (connection errors, redirects, and HTTP 5xx)
@@ -63,7 +72,7 @@ The body includes:
 - `payload`, including `company_name` and the template fields identity already has
 - `recipients` hints (`email`, and `user_id` when the event has one)
 - `language` when the payload language is `en` or `fr`
-- `idempotency_key` of the form `identity-event-<event log id>`
+- `idempotency_key` of the form `identity-event-{event_log_id}`
 
 When the event payload has an email, that address is the hint. Otherwise identity-service sends the company owners. If the company has no owner email, it sends Django staff addresses. A payload with no address and no owner or staff email is not posted.
 
@@ -71,7 +80,7 @@ SCIM token events map the webhook field `name` to the template field `token_name
 
 Delivery uses the same outbox and `retry_webhooks` scheduled job as Shellui webhooks. Each try is one POST. A 2xx response is finished, including `skipped_reason` (`rule_disabled` or `no_recipients`). `400`, `401`, `403`, `405`, `410`, `413`, and `422` are not retried. `404`, `408`, `409`, `425`, `429`, any other 4xx, 5xx, timeouts, and connection errors are retried with the same idempotency key: 30 seconds times 2^(attempt-1), capped at 1 hour, 8 attempts. `429` and `503` honor `Retry-After`, still capped at 1 hour. The request that emitted the event does not wait for this HTTP call.
 
-Each row keeps `last_trigger` (`dispatch` or `automatic_retry`) and, for retries, `last_scheduled_job_run_id`. Posts made during a scheduled job carry `X-Request-ID: sjr-<run id>`, so email-service logs show which run sent them. See [Scheduled jobs monitoring](scheduled-jobs.md#from-a-run-to-its-webhooks-and-emails).
+Each row keeps `last_trigger` (`dispatch` or `automatic_retry`) and, for retries, `last_scheduled_job_run_id`. Posts made during a scheduled job carry `X-Request-ID: sjr-{run_id}`, so email-service logs show which run sent them. See [Scheduled jobs monitoring](scheduled-jobs.md#from-a-run-to-its-webhooks-and-emails).
 
 Unset `EMAIL_SERVICE_API_KEY` and identity-service does not insert these rows.
 
@@ -95,5 +104,5 @@ Local SMTP settings (`EMAIL_HOST`, `DEFAULT_FROM_EMAIL`) still apply to the fall
 
 - [Magic link](magic-link.md)
 - [Company access](company-access.md)
-- [Action triggers](actions.md)
+- [Webhooks](actions.md)
 - [Scheduled jobs](scheduled-jobs.md)

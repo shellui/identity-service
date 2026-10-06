@@ -2,99 +2,59 @@
 // Sidebar for docs.shellui.com/identity. The central site in shellui/shellui
 // (tools/docusaurus) loads this file. Doc ids are file names in this folder.
 
+/**
+ * @param {string} label
+ * @param {Array<string | {type: 'doc', id: string, label: string}>} items
+ */
+const category = (label, items) => ({
+  type: /** @type {const} */ ('category'),
+  label,
+  collapsible: true,
+  collapsed: false,
+  items,
+});
+
+/**
+ * @param {string} id
+ * @param {string} label
+ */
+const doc = (id, label) => ({type: /** @type {const} */ ('doc'), id, label});
+
 /** @type {import('@docusaurus/plugin-content-docs').SidebarsConfig} */
 const sidebars = {
   tutorialSidebar: [
-    {
-      type: 'doc',
-      id: 'index',
-      label: 'Introduction',
-    },
-    {
-      type: 'doc',
-      id: 'oauth-login',
-      label: 'OAuth',
-    },
-    {
-      type: 'doc',
-      id: 'magic-link',
-      label: 'Magic link',
-    },
-    {
-      type: 'doc',
-      id: 'email-service',
-      label: 'Email',
-    },
-    {
-      type: 'doc',
-      id: 'oauth-providers',
-      label: 'OAuth providers',
-    },
-    {
-      type: 'doc',
-      id: 'saml',
-      label: 'SAML',
-    },
-    {
-      type: 'doc',
-      id: 'scim',
-      label: 'SCIM',
-    },
-    {
-      type: 'doc',
-      id: 'saml',
-      label: 'SAML',
-    },
-    {
-      type: 'doc',
-      id: 'actions',
-      label: 'Action triggers',
-    },
-    {
-      type: 'doc',
-      id: 'n8n',
-      label: 'n8n',
-    },
-    {
-      type: 'doc',
-      id: 'event-log',
-      label: 'Event log',
-    },
-    {
-      type: 'doc',
-      id: 'configuration',
-      label: 'Configuration',
-    },
-    {
-      type: 'doc',
-      id: 'scheduled-jobs',
-      label: 'Scheduled jobs',
-    },
-    {
-      type: 'doc',
-      id: 'company-access',
-      label: 'Company access',
-    },
-    {
-      type: 'doc',
-      id: 'jwks',
-      label: 'JWKS',
-    },
-    {
-      type: 'doc',
-      id: 'security-hardening',
-      label: 'Security',
-    },
-    {
-      type: 'doc',
-      id: 'metrics',
-      label: 'Metrics',
-    },
-    {
-      type: 'doc',
-      id: 'RELEASES',
-      label: 'Releases',
-    },
+    doc('index', 'Overview'),
+    category('Get started', [
+      doc('getting-started', 'Run identity-service'),
+      doc('configuration', 'Configuration'),
+    ]),
+    category('Sign-in', [
+      doc('oauth-login', 'OAuth login'),
+      doc('oauth-providers', 'OAuth providers'),
+      doc('magic-link', 'Magic link'),
+      doc('saml', 'SAML single sign-on'),
+    ]),
+    category('Companies and users', [
+      doc('company-access', 'Company access'),
+      doc('scim', 'SCIM provisioning'),
+      doc('account-deletion', 'Account deletion'),
+    ]),
+    category('Tokens', [
+      doc('jwks', 'JWT and JWKS'),
+      doc('metrics', 'Metrics and access tokens'),
+    ]),
+    category('Events and email', [
+      doc('actions', 'Webhooks'),
+      doc('n8n', 'n8n'),
+      doc('event-log', 'Event log'),
+      doc('email-service', 'Email delivery'),
+    ]),
+    category('Operations', [
+      doc('scheduled-jobs', 'Scheduled jobs'),
+      doc('security-hardening', 'Security hardening'),
+      doc('upgrading', 'Upgrade notes'),
+      doc('RELEASES', 'Releases'),
+    ]),
   ],
 };
 

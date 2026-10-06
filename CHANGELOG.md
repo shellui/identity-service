@@ -71,6 +71,9 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 ### 📚 Documentation
 
 - [docs/oauth-providers.md](docs/oauth-providers.md) is generated from the provider catalog, with a CI drift check.
+- **Docs restructure:** a new overview page with provider logos and feature cards, a [getting started](docs/getting-started.md) guide, and a sidebar grouped by task. New pages for [account deletion](docs/account-deletion.md) and [upgrade notes](docs/upgrading.md), which move out of the OAuth login page. Every page now opens with a summary, and the pages were checked against the code.
+- **Provider list matches Shellui admin:** [docs/oauth-providers.md](docs/oauth-providers.md) now lists only the 16 providers you can configure (15 OAuth and OpenID Connect, plus SAML), split into social and company identity providers, with setup steps and the email linking rule for each. The 98 catalog entries that are not available are summarized instead of listed. The homepage logo strip is generated from the same catalog.
+- **Doc fixes:** account deletion checks `auth_time`, so the user must sign in again (a token refresh is not enough). Personal access tokens default to 30 days, not 90. The OAuth app endpoint is `/api/v1/oauth-social-apps`, not `/api/v1/admin/oauth-social-apps`. The release smoke test and the published image example now set `REDIS_URL`, `JWT_ISSUER`, and `JWT_AUDIENCE`.
 
 ### 🗑 Removed
 

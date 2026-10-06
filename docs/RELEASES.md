@@ -1,57 +1,49 @@
+---
+description: How maintainers cut an identity-service release, smoke test the image, and publish it to Docker Hub.
+---
+
 # Releases and Docker Hub
 
-> **Canonical guide:** [PUBLISH.md](https://github.com/shellui/identity-service/blob/main/PUBLISH.md) at the repository root.
-
-This document describes how to cut a release of `identity-service` and publish the container image to [Docker Hub](https://hub.docker.com/) as `shellui/identity-service`.
-
-For day-to-day local runs, see the **Docker (local run)** section in the repository README.
+This page is for maintainers: how to cut an identity-service release and publish the `shellui/identity-service` image to [Docker Hub](https://hub.docker.com/). The canonical guide is [PUBLISH.md](https://github.com/shellui/identity-service/blob/main/PUBLISH.md) at the repository root. Operators upgrading a deployment should read the [Upgrade notes](upgrading.md) instead.
 
 ## Image overview
 
-| Item             | Value                                                     |
-| ---------------- | --------------------------------------------------------- |
-| Registry         | Docker Hub                                                |
-| Repository       | `shellui/identity-service`                                |
-| Recommended tags | `0.7.0`, `0.7`, `latest` (see [Tagging](#tagging))        |
-| Listen port      | `8000`                                                    |
-| Data volume      | `/app/data` (SQLite default path: `/app/data/db.sqlite3`) |
+| Item | Value |
+| --- | --- |
+| Registry | Docker Hub |
+| Repository | `shellui/identity-service` |
+| Recommended tags | `0.7.0`, `0.7`, `latest` (see [Tagging](#tagging)) |
+| Listen port | `8000` |
+| Data volume | `/app/data` (SQLite default path: `/app/data/db.sqlite3`) |
 
-The image contains application code and collected static files only. Secrets and runtime configuration are supplied via environment variables at container start (see `.env.example` in the repository root).
+The image contains the application code and collected static files only. Secrets and configuration come from environment variables at container start (see [Configuration](configuration.md)).
 
-## v0.7.0 release notes
+## 0.7.0 at a glance
 
-Operator-facing changes on the **0.7.0** line (see `CHANGELOG.md`):
-
-- **OAuth** — session-code delivery, redirect allowlist, company OAuth clients ([oauth-login.md](oauth-login.md)).
-- **Configuration** — consolidated env reference ([configuration.md](configuration.md)).
-- **Redis is required in production (breaking)**: with `DEBUG=false`, the container refuses to start without `REDIS_URL` (shared cache, OAuth and SAML state, scheduled jobs broker), also with `SCHEDULER_ENABLED=false`. Add Redis before you upgrade ([configuration.md](configuration.md#shared-cache-redis)).
-- **Scheduled jobs**: the container runs `retry_webhooks` and `purge_expired_data` itself (Celery worker and beat). Remove the Coolify Scheduled Tasks or cron entries, or set `SCHEDULER_ENABLED=false` to keep them ([scheduled-jobs.md](scheduled-jobs.md)).
-- **SCIM** — enterprise user/group provisioning ([scim.md](scim.md)); enabled by default after deploy/migrations (per-company bearer token).
-- **Docs site**: these docs are part of [docs.shellui.com/identity](https://docs.shellui.com/identity), built by [shellui/shellui](https://github.com/shellui/shellui) from `docs/`.
+0.7.0 has breaking changes: Redis is required in production, and magic link webhooks no longer carry the link. It also runs the scheduled jobs inside the container, and deprecates `/api/v1/login-events`. The steps are in [Upgrade to 0.7.0](upgrading.md#upgrade-to-070), and the full list in `CHANGELOG.md`.
 
 ## Pre-release checklist
 
-Run the automated checklist (same script as PRs to `main`):
+Run the automated checklist, the same script as pull requests to `main`:
 
 ```bash
 ./tools/pre-release-check.sh
 ```
 
-See [PUBLISH.md](https://github.com/shellui/identity-service/blob/main/PUBLISH.md) for options and the manual breakdown. Summary:
+See [PUBLISH.md](https://github.com/shellui/identity-service/blob/main/PUBLISH.md) for options and the manual breakdown. In short:
 
 ### 1. Version alignment
 
-Ensure these match the release version (e.g. `0.7.0`):
+These must match the release version (for example `0.7.0`):
 
-- `version` in `pyproject.toml` (OpenAPI / API metadata via `config.settings.VERSION`)
-- `CHANGELOG.md` entry with date
-- CI + pre-release workflows green on the release commit
-- Git tag `v0.7.0` (optional but recommended; not enforced by the script)
-- Docs at [docs.shellui.com/identity](https://docs.shellui.com/identity) are built and published by [shellui/shellui](https://github.com/shellui/shellui), not by a tag in this repository. CI here only checks that `docs/` builds (the **Docs build** job in `.github/workflows/ci.yml`)
+- `version` in `pyproject.toml` (also the OpenAPI version, through `config.settings.VERSION`)
+- the `CHANGELOG.md` entry, with its date
+- green CI and pre-release workflows on the release commit
+- the Git tag `v0.7.0` (recommended, not checked by the script)
+
+The docs at [docs.shellui.com/identity](https://docs.shellui.com/identity) are built and published by [shellui/shellui](https://github.com/shellui/shellui), not by a tag in this repository. CI here only checks that `docs/` builds (the **Docs build** job in `.github/workflows/ci.yml`).
 
 ### 2. No secrets in the build context
-
-Confirm locally:
 
 ```bash
 # .env must not be tracked or copied into the image
@@ -61,54 +53,46 @@ docker run --rm --entrypoint sh shellui/identity-service:release-check \
   -c 'test ! -f /app/.env && echo "OK: .env not in image"'
 ```
 
-`.dockerignore` excludes `.env`, `*.sqlite3`, `.git`, and local tooling artifacts. Only `.env.example` is included (placeholders only).
+`.dockerignore` excludes `.env`, `*.sqlite3`, `.git`, and local tooling files. Only `.env.example` is included, with placeholder values.
 
-### 3. Runtime requirements documented
+### 3. Smoke test the image
 
-Operators must set at minimum:
-
-- `SECRET_KEY` — required; app refuses to start without it (Django sessions/CSRF)
-- `JWT_PRIVATE_KEY` — required when `DEBUG=false`; RS256 JWT signing (see [docs/jwks.md](jwks.md))
-- `ALLOWED_HOSTS` — hostnames for production (comma-separated, no scheme)
-- `CSRF_TRUSTED_ORIGINS` — full URLs with scheme when using browser-based flows behind HTTPS
-
-Optional but typical for production:
-
-- `JWT_ISSUER`, `JWT_AUDIENCE` — required when `DEBUG=false`
-- `JWT_ACCEPT_HS256_LEGACY` — default `false` in production with RS256
-- `CORS_ALLOW_ALL_ORIGINS` — default `true` (permissive API CORS). Set `false` + `CORS_ALLOWED_ORIGINS` only for lock-down installs
-- `POSTGRES_DATABASE_URL` — use Postgres instead of SQLite
-- `SENTRY_DSN` — Sentry project DSN for error reporting (see README observability section)
-- `SENTRY_ENVIRONMENT` — Sentry environment tag (e.g. `staging`, `production`)
-- OAuth client id/secret per company (via Django admin or `/api/v1/admin/oauth-social-apps`)
-
-### 4. Smoke test the image
+The script starts the image in production mode (`DEBUG=false`) next to a Redis container. To do it by hand:
 
 ```bash
-export SECRET_KEY="$(uv run python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())")"
-export JWT_PRIVATE_KEY="$(uv run python manage.py generate_jwt_keys 2>/dev/null | awk -F'\"' '/JWT_PRIVATE_KEY=/ {print $2}')"
-# Or set JWT_PRIVATE_KEY from output of: uv run python manage.py generate_jwt_keys
+eval "$(uv run python manage.py generate_jwt_keys --shell)"
+export SECRET_KEY="$(python3 -c 'import secrets; print(secrets.token_urlsafe(50))')"
 
 docker build -t shellui/identity-service:0.7.0 .
+docker network create identity-smoke
+docker run --rm -d --name identity-smoke-redis --network identity-smoke redis:8-alpine
 
-docker run --rm -d --name identity-release-smoke -p 18000:8000 \
+docker run --rm -d --name identity-release-smoke --network identity-smoke -p 18000:8000 \
   -e SECRET_KEY \
   -e JWT_PRIVATE_KEY \
+  -e JWT_ISSUER=https://auth.local \
+  -e JWT_AUDIENCE=shellui \
+  -e REDIS_URL=redis://identity-smoke-redis:6379/0 \
+  -e SECURE_SSL_REDIRECT=false \
   -e ALLOWED_HOSTS=localhost,127.0.0.1 \
   shellui/identity-service:0.7.0
 
-# Expect HTTP response (400 with company_id is fine — proves Gunicorn + Django are up)
+# 400 (missing company_id) proves gunicorn and Django are up
 curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:18000/api/v1/settings
 
-# JWKS should return at least one RSA key
-curl -s http://127.0.0.1:18000/.well-known/jwks.json | python -c "import sys,json; d=json.load(sys.stdin); assert len(d.get('keys',[]))>=1"
+# JWKS must return at least one RSA key
+curl -s http://127.0.0.1:18000/.well-known/jwks.json \
+  | python3 -c "import sys,json; assert len(json.load(sys.stdin).get('keys',[]))>=1"
 
-docker stop identity-release-smoke
+docker rm -f identity-release-smoke identity-smoke-redis
+docker network rm identity-smoke
 ```
 
-### 5. Multi-architecture (recommended for Docker Hub)
+`SECURE_SSL_REDIRECT=false` is only there so `curl` can use plain HTTP. Keep it on in real deployments.
 
-If you build on Apple Silicon, the default image may be `linux/arm64` only. Most cloud VMs expect `linux/amd64`. Publish both with buildx:
+### 4. Multi-architecture build
+
+On Apple Silicon, the default image is `linux/arm64` only, and most cloud VMs expect `linux/amd64`. Publish both with buildx:
 
 ```bash
 docker buildx create --use --name multi 2>/dev/null || docker buildx use multi
@@ -119,64 +103,21 @@ docker buildx build \
   --push .
 ```
 
-For a quick single-platform push from your machine:
-
-```bash
-docker build -t shellui/identity-service:0.7.0 .
-docker push shellui/identity-service:0.7.0
-```
-
 ## Tagging
 
-For semver release `0.7.0`, typical Docker Hub tags:
+For release `0.7.0`, publish these tags:
 
-| Tag      | Purpose                                  |
-| -------- | ---------------------------------------- |
-| `0.7.0`  | Exact release (pin in production)        |
-| `0.7`    | Latest patch in 0.7 line                 |
-| `latest` | Newest published release (use with care) |
-
-Example:
-
-```bash
-VERSION=0.7.0
-IMAGE=shellui/identity-service
-
-docker tag "${IMAGE}:${VERSION}" "${IMAGE}:0.7"
-docker tag "${IMAGE}:${VERSION}" "${IMAGE}:latest"
-
-docker push "${IMAGE}:${VERSION}"
-docker push "${IMAGE}:0.7"
-docker push "${IMAGE}:latest"
-```
+| Tag | Purpose |
+| --- | --- |
+| `0.7.0` | Exact release, pin it in production |
+| `0.7` | Latest patch of the 0.7 line |
+| `latest` | Newest release, use with care |
 
 ## Publish to Docker Hub
 
-### Prerequisites
+You need push access to the `shellui` organization on Docker Hub, `docker login`, and a clean Git tree at the release commit. There is no GitHub Actions workflow for the Docker publish yet: releases are manual.
 
-1. Docker Hub account with push access to the `shellui` organization (or your namespace).
-2. Docker CLI logged in:
-
-```bash
-docker login
-```
-
-3. Clean git tree at the commit you intend to release (tag optional).
-
-### Build and push (single platform)
-
-From the repository root:
-
-```bash
-VERSION=0.7.0
-IMAGE=shellui/identity-service
-
-docker build -t "${IMAGE}:${VERSION}" .
-
-docker push "${IMAGE}:${VERSION}"
-```
-
-### Build and push (amd64 + arm64)
+From the repository root, build and push all tags for both platforms:
 
 ```bash
 VERSION=0.7.0
@@ -188,77 +129,62 @@ docker buildx build \
   -t "${IMAGE}:0.7" \
   -t "${IMAGE}:latest" \
   --push .
-```
 
-### Git tag (recommended)
-
-```bash
 git tag -a "v${VERSION}" -m "Release ${VERSION}"
 git push origin "v${VERSION}"
 ```
 
-There is no GitHub Actions workflow for Docker publish yet; releases are manual.
+For a single-platform push from your machine, use `docker build` and `docker push "${IMAGE}:${VERSION}"`, then `docker tag` and push the other tags.
 
 ## Run the published image
 
-Minimal example:
+The production checklist is in [Run identity-service](getting-started.md#deploy-to-production). A minimal production run looks like this:
 
 ```bash
-docker volume create identity-service-data
-
 docker run -d \
   --name identity-service \
   -p 8000:8000 \
   -v identity-service-data:/app/data \
-  -e SECRET_KEY='replace-with-generated-key' \
-  -e JWT_PRIVATE_KEY='replace-with-pem-from-generate_jwt_keys' \
+  -e SECRET_KEY='your_secret_key_here' \
+  -e JWT_PRIVATE_KEY='your_pem_private_key_here' \
+  -e JWT_ISSUER='https://auth.example.com' \
+  -e JWT_AUDIENCE='shellui' \
+  -e REDIS_URL='redis://redis:6379/0' \
   -e ALLOWED_HOSTS='auth.example.com' \
-  -e CSRF_TRUSTED_ORIGINS='https://auth.example.com,https://app.example.com' \
+  -e CSRF_TRUSTED_ORIGINS='https://auth.example.com' \
+  -e POSTGRES_DATABASE_URL='postgres://user:password@db:5432/identity' \
   shellui/identity-service:0.7.0
 ```
 
-With Postgres:
-
-```bash
--e POSTGRES_DATABASE_URL='postgres://user:pass@host:5432/dbname'
-```
-
-OAuth credentials are configured per company in the database (Django admin or `/api/v1/admin/oauth-social-apps`), not via container environment variables.
-
-The entrypoint runs migrations on start, then starts Gunicorn as user `appuser`.
+OAuth credentials are stored per company in the database (Shellui admin, `POST /api/v1/oauth-social-apps`, or Django admin), not in environment variables. The entrypoint runs migrations on start, then starts gunicorn and the scheduled jobs as user `appuser`.
 
 ## Security notes
 
-| Topic                     | Status                                                                                                                              |
-| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `.env` in image           | Excluded via `.dockerignore` — verified absent in image                                                                             |
-| Runtime `JWT_PRIVATE_KEY` | Must be provided in production; never baked into image                                                                              |
-| JWKS endpoint             | `/.well-known/jwks.json` exposes public keys only                                                                                   |
-| Build-time `SECRET_KEY`   | Used only for `collectstatic` during `docker build`; appears in build history as `build-only-not-for-runtime` — not used at runtime |
-| `.env.example`            | Included; contains placeholder values only                                                                                          |
-| SQLite / DB files         | Excluded from image; use volume or Postgres                                                                                         |
-| Process user              | Gunicorn runs as `appuser`; entrypoint may run brief setup as root                                                                  |
-| `DEBUG`                   | Defaults to `false` in Dockerfile and compose                                                                                       |
+| Topic | Status |
+| --- | --- |
+| `.env` in the image | Excluded by `.dockerignore`, and checked by the pre-release script |
+| `JWT_PRIVATE_KEY` | Provided at runtime, never baked into the image |
+| JWKS endpoint | `/.well-known/jwks.json` exposes public keys only |
+| Build-time `SECRET_KEY` | Used only for `collectstatic` during `docker build`. It shows in the build history as `build-only-not-for-runtime` and is not used at runtime |
+| SQLite and database files | Excluded from the image. Use a volume or PostgreSQL |
+| Process user | gunicorn and the worker run as `appuser`. The entrypoint may run brief setup as root |
+| `DEBUG` | `false` in the Dockerfile. `docker-compose.yml` sets `true` for local runs |
 
-Do not commit `.env` or real OAuth secrets to git. Do not pass secrets as Docker build args unless you accept they may appear in image history.
+Do not commit `.env` or real OAuth secrets. Do not pass secrets as Docker build arguments: they can appear in the image history.
 
-## First release (0.1.0) — known limitations
+## Known limitations
 
-Acceptable for an initial image; improve in later releases if needed:
-
-- No `HEALTHCHECK` in the Dockerfile
+- No `HEALTHCHECK` in the Dockerfile. Point your orchestrator at `GET /health/live`
 - No automated Docker Hub publish in CI
-- SQLite on a volume is fine for single-node trials; production should prefer `POSTGRES_DATABASE_URL`
-- API version string in OpenAPI is `project.version` from `pyproject.toml` (exposed as `config.settings.VERSION`) — keep it in sync with the Docker tag
-- Reverse proxy TLS termination: set `CSRF_TRUSTED_ORIGINS` and rely on `SECURE_PROXY_SSL_HEADER` when behind HTTPS
+- SQLite on a volume is fine for a single-node trial. Use `POSTGRES_DATABASE_URL` in production
+- Behind a TLS-terminating proxy, set `CSRF_TRUSTED_ORIGINS`; the app relies on `SECURE_PROXY_SSL_HEADER`
 
 ## Rollback
 
-Pull and run a previous digest or tag:
+Pull and run a previous tag or digest:
 
 ```bash
-docker pull shellui/identity-service:0.2.0
-# or pin by digest from Docker Hub
+docker pull shellui/identity-service:0.6.0
 ```
 
-Data in `identity-service-data` (or Postgres) is independent of the image tag; test migrations when downgrading.
+Data in the `identity-service-data` volume or PostgreSQL does not depend on the image tag. Migrations do not run backwards on their own, so test a downgrade before you rely on it.

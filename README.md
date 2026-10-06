@@ -2,7 +2,7 @@
 
 `identity-service` is a Django backend that provides authentication endpoints compatible with Shellui (`backend.type = "shellui"`).
 
-It supports OAuth login for **15** django-allauth OAuth2/OIDC providers on the identity-hosted adapter plus SAML 2.0 SSO, with a **114**-entry catalog for admin setup ([docs/oauth-providers.md](docs/oauth-providers.md)). It issues JWT tokens, exposes Supabase-like auth routes under `/api/v1/*`, and returns user metadata that Shellui can use (including avatar URL).
+It supports OAuth login for **15** django-allauth OAuth2/OIDC providers on the identity-hosted adapter plus SAML 2.0 SSO, configured per company in Shellui admin ([docs/oauth-providers.md](docs/oauth-providers.md)). It issues JWT tokens, exposes Supabase-like auth routes under `/api/v1/*`, and returns user metadata that Shellui can use (including avatar URL).
 
 ## Features
 
@@ -60,7 +60,7 @@ Every event, and every sign-in, is also stored in the **event log** (`GET /api/v
 - `GET /api/v1/user` return authenticated user profile + metadata
 - `PUT /api/v1/user` update user metadata
 - `PATCH /api/v1/user` set the display name (`{"name": "Ada Lovelace"}`); sign-ins never overwrite a name once set
-- `DELETE /api/v1/user` self-service account deletion (`{"confirm": true}`; emits `identity.user.deleted` per company — see [docs/oauth-login.md](docs/oauth-login.md))
+- `DELETE /api/v1/user` self-service account deletion (`{"confirm": true}`; emits `identity.user.deleted` per company; see [docs/account-deletion.md](docs/account-deletion.md))
 
 ## Staff admin endpoints
 
@@ -96,12 +96,7 @@ uv run python manage.py createsuperuser
 
 Dependencies live in `pyproject.toml` and are locked in `uv.lock`. Add a package with `uv add <name>`; refresh the lock with `uv lock`.
 
-Configure OAuth credentials per company (Django admin → Company → OAuth clients, or `POST /api/v1/admin/oauth-social-apps`):
-
-```bash
-# After starting the service, create a company and add GitHub/Google/Microsoft client id + secret
-# for that company via the admin API or Django admin UI.
-```
+Configure OAuth credentials per company in Shellui admin **OAuth setup**, with `POST /api/v1/oauth-social-apps`, or in Django admin (Company → OAuth clients). The supported providers and their setup are listed in [docs/oauth-providers.md](docs/oauth-providers.md).
 
 ## JWT private key (RS256)
 
@@ -143,7 +138,7 @@ backend: {
 
 ## OAuth provider apps
 
-Register a **single** Authorization callback URL on each IdP app pointing at **identity-service** — not the shell. Stock demos use GitHub, Google, and Microsoft; other providers follow the same callback pattern once enabled ([docs/oauth-providers.md](docs/oauth-providers.md)). No query string:
+Register a **single** Authorization callback URL on each IdP app pointing at **identity-service** — not the shell. Every supported provider uses the same callback ([docs/oauth-providers.md](docs/oauth-providers.md)). No query string:
 
 | Environment | Callback URL |
 |-------------|--------------|
@@ -154,7 +149,7 @@ Homepage / application URL may still be the shell (e.g. `http://localhost:4000`)
 
 Also allowlist each shell **origin** for the company (e.g. `http://localhost:4000`, `https://app.example.com`) via Django admin → Company OAuth redirects, Shellui admin OAuth setup, or `POST /api/v1/oauth-redirects`. Loopback (`127.0.0.1` / `localhost`) is allowed when `DEBUG=true` or `OAUTH_ALLOW_LOOPBACK_REDIRECTS=true` (local CLI / dev).
 
-Full flow, allowlist rules, hosting sync, and upgrade steps (including **0.4.1**): [docs/oauth-login.md](docs/oauth-login.md).
+Full flow, allowlist rules, and hosting sync: [docs/oauth-login.md](docs/oauth-login.md). Upgrade steps for each release: [docs/upgrading.md](docs/upgrading.md).
 
 Production auth abuse controls, HTTPS defaults, Postgres SSL, and trusted-proxy IP handling: [docs/security-hardening.md](docs/security-hardening.md).
 

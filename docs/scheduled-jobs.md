@@ -1,3 +1,7 @@
+---
+description: The two maintenance jobs identity-service runs on a schedule - webhook retries and data purge - how the container runs them, and how to run them yourself.
+---
+
 # Scheduled jobs
 
 identity-service runs two maintenance jobs on a schedule. The Docker image runs them for you: with `REDIS_URL` set (required in production), there is nothing to set up.
@@ -8,8 +12,6 @@ identity-service runs two maintenance jobs on a schedule. The Docker image runs 
 | `retry_webhooks` | Every minute | Failed [webhook](actions.md) deliveries and email-service event posts are never retried. First attempts still go out right after each event |
 
 Both jobs are safe to run when there is nothing to do: they finish after one or two indexed queries.
-
----
 
 ## How it works
 
@@ -75,8 +77,6 @@ The web container runs migrations; the worker only needs the same database. With
 
 Set `SCHEDULER_ENABLED=false` and run the management commands from any scheduler, with the same image, environment variables and database as the web service. Examples are in [Run the commands yourself](#run-the-commands-yourself).
 
----
-
 ## `purge_expired_data`
 
 Deletes rows older than each company's **data retention** (`Company.data_retention_days`, default **7 days**, set in Django admin only):
@@ -129,11 +129,9 @@ Check that the container has `REDIS_URL` set and that its logs show `purge_expir
 - PostgreSQL: autovacuum reclaims deleted rows for reuse. You do not need `VACUUM FULL` in normal operation.
 - SQLite: freed pages are reused but the file does not shrink. Run `VACUUM` manually if you need the disk space back after lowering a retention.
 
----
-
 ## `retry_webhooks`
 
-Retries webhook deliveries whose first attempt failed, with exponential backoff (details in [actions.md](actions.md#delivery-retries-and-scheduling)). The same job retries email-service event posts. See [Email](email-service.md).
+Retries webhook deliveries whose first attempt failed, with exponential backoff (details in [actions.md](actions.md#delivery-retries-and-scheduling)). The same job retries email-service event posts. See [Email delivery](email-service.md).
 
 ```bash
 python manage.py retry_webhooks
@@ -141,8 +139,6 @@ python manage.py retry_webhooks --batch-size 50 --max-seconds 50 --concurrency 4
 ```
 
 Keep `--max-seconds` (default 50) under 60 so a run finishes before the next one starts. Overlapping runs are still safe: rows are claimed with skip-locked leases.
-
----
 
 ## Run the commands yourself
 
@@ -195,8 +191,6 @@ spec:
 ```
 
 Use the same pattern with `schedule: "* * * * *"` and `["python", "manage.py", "retry_webhooks"]` for webhook retries. On Kubernetes you can also run a `worker` Deployment instead of CronJobs.
-
----
 
 ## Monitoring
 
@@ -251,15 +245,15 @@ Two more signals cover the scheduler itself:
 - `redis_reachable`: identity-service answers a `PING` on the broker (`null` without a broker)
 - beat heartbeat: each time beat publishes a job, it stores the time in Redis (`identity-service:scheduler:beat:heartbeat`). `beat_stale` is true when the scheduler is enabled and beat published nothing for 3 minutes. A fresh heartbeat with an overdue job means the worker is stuck or down
 
-### Admin REST API (staff only)
+### Admin API (staff only)
 
 The endpoints use the same Bearer JWT or personal access token as other admin endpoints. They need Django `is_staff`: other callers get `403`, including company owners, and calls without a token get `401`. No `company_id` is needed. Responses contain keys and enums only (`health`, `status`, `error_key`, count names), which the admin panel translates.
 
 | Method | Path | Purpose |
 | ------ | ---- | ------- |
 | `GET` | `/api/v1/scheduled-jobs` | `scheduler_enabled`, `redis_reachable`, `beat_last_seen_at`, `beat_stale`, and per job: `health`, `overdue`, `last_run`, `last_success_at`, `last_failure_at`, `last_skipped_at`, `last_duration_ms`, `last_counts`, `next_expected_at`, `last_24h`, `skipped_locked_total` |
-| `GET` | `/api/v1/scheduled-jobs/<job>/runs?limit=20&status=failed` | Recent runs, newest first. `limit` 1 to 100, `status` optional |
-| `GET` | `/api/v1/scheduled-jobs/runs/<id>` | One run with the webhook delivery attempts and email-service event posts it made |
+| `GET` | `/api/v1/scheduled-jobs/{job}/runs?limit=20&status=failed` | Recent runs, newest first. `limit` 1 to 100, `status` optional |
+| `GET` | `/api/v1/scheduled-jobs/runs/{id}` | One run with the webhook delivery attempts and email-service event posts it made |
 | `GET` | `/api/v1/events?scope=platform` | The platform events of the runs (see [Event log](event-log.md#platform-events-staff-only)) |
 
 Example job entry:
@@ -288,12 +282,12 @@ Every webhook delivery attempt stores a `trigger` and, for retries, the run that
 
 Staff can go both ways:
 
-- run to deliveries: `GET /api/v1/scheduled-jobs/runs/<id>` lists the attempts of every company, and `GET /api/v1/actions/deliveries?scheduled_job_run_id=<id>` filters the delivery log of the token company
-- delivery to run: each attempt in `GET /api/v1/actions/deliveries/<uuid>` has `scheduled_job_run_id`
+- run to deliveries: `GET /api/v1/scheduled-jobs/runs/{id}` lists the attempts of every company, and `GET /api/v1/actions/deliveries?scheduled_job_run_id={id}` filters the delivery log of the token company
+- delivery to run: each attempt in `GET /api/v1/actions/deliveries/{id}` has `scheduled_job_run_id`
 
 Company owners see `trigger` on their own delivery attempts, so they know a retry was automatic, but never `scheduled_job_run_id` or any run detail. Filtering by `scheduled_job_run_id` as an owner returns `403`.
 
-Email-service event posts store `last_trigger` and `last_scheduled_job_run_id` for their latest attempt, so the run that delivered an email keeps the link. While a job runs, identity-service sends `X-Request-ID: sjr-<run id>` to email-service, and every identity log line of the run ends with `[req=sjr-<run id>]`, so you can search both services' logs for one run. Magic-link and invitation emails are sent on the request path (email-service or SMTP), never by a scheduled job.
+Email-service event posts store `last_trigger` and `last_scheduled_job_run_id` for their latest attempt, so the run that delivered an email keeps the link. While a job runs, identity-service sends `X-Request-ID: sjr-{run_id}` to email-service, and every identity log line of the run ends with `[req=sjr-{run_id}]`, so you can search both services' logs for one run. Magic-link and invitation emails are sent on the request path (email-service or SMTP), never by a scheduled job.
 
 ### Failed runs
 
@@ -358,10 +352,8 @@ The overdue alert covers a stopped beat, a stuck worker and a missing cron line 
 - The commands exit with status 1 on errors, so any external scheduler that alerts on failed jobs covers them
 - For `purge_expired_data`, the stale-events warning is a second safety net that needs no setup
 
----
-
-## Related docs
+## Related
 
 - [Event log](event-log.md)
-- [Shellui webhooks](actions.md)
-- [Configuration](configuration.md)
+- [Webhooks](actions.md)
+- [Configuration](configuration.md#scheduled-jobs)

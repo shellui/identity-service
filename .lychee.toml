@@ -33,6 +33,9 @@ exclude = [
   # Service pages on docs.shellui.com go live when shellui/shellui deploys the
   # central docs site. Until then the Docs build job in ci.yml builds these pages.
   '^https://docs\.shellui\.com/(identity|storage|hosting|email)(/|$)',
+  # Provider icons in generated docs, used as CSS masks inside JSX style objects.
+  # The URLs are version-pinned; the parser can pick up trailing CSS tokens.
+  '^https://cdn\.jsdelivr\.net/npm/simple-icons@',
 ]
 
 exclude_path = [

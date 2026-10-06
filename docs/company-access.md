@@ -1,56 +1,89 @@
-# Company access control (join modes)
+---
+description: Control who can join a Shellui company after sign-in - public, email domain, or invitation-only access, member approval, and invitations.
+---
 
-Companies control how new OAuth users gain access after a successful provider login.
+# Company access
 
-Access is **per company** via `CompanyMembership.is_enabled`. The same Django user may be enabled in one company and disabled in another. Global `User.is_active` is not used for company join policies.
+Each company decides who gets in after a successful sign-in: anyone, people with an allowed email domain, or invited people only. The rule applies to every sign-in method (OAuth, SAML, and magic link). People who are not allowed in get a disabled membership and no tokens, until an owner enables them.
+
+Access is per company, stored in `CompanyMembership.is_enabled`. The same user can be enabled in one company and disabled in another. The global `User.is_active` flag is not used by these rules.
 
 ## Access modes
 
-| Mode | Value | Behavior |
-|------|--------|----------|
-| **Public** (default) | `public` | Any successful login joins the company with access enabled and receives tokens. |
-| **Domain** | `domain` | Emails whose domain is listed in `allowed_email_domains` join enabled. Other domains create a disabled membership, block tokens, and email company owners. |
-| **Invitation only** | `invite` | Invited emails get access on first sign-in (see [Invitations](#invitations)). Others are created as disabled members; tokens are blocked until an owner/staff enables membership for that company. Owners are emailed on first join. |
+| Mode | Value | Who gets access on first sign-in | Everyone else |
+| --- | --- | --- | --- |
+| Public (default) | `public` | Everyone | |
+| Domain | `domain` | Emails whose domain is in `allowed_email_domains` | Disabled membership, `access_denied`, owners are emailed |
+| Invitation only | `invite` | People with a pending [invitation](#invitations) | Disabled membership, `access_pending`, owners are emailed |
 
-Configure via:
+Set the mode in any of these places:
 
-- **Django admin → Companies → Company** — join mode, allowed domains, Members inline (`is_enabled`)
-- **Django admin → Company memberships** — list/edit per-company enable flags
-- `PATCH /api/v1/companies/<id>/` with `access_mode` and optional `allowed_email_domains` (company owners only)
-- Shellui admin **Organization** panel
+- Shellui admin, **Organization** panel
+- `PATCH /api/v1/companies/{id}/` with `access_mode` and, for domain mode, `allowed_email_domains` (company owners)
+- Django admin, **Companies**: mode, allowed domains, and members
 
-## Enable / disable (per company)
+## Enable or disable a member
 
-Staff and company owners can set `is_active` on `PUT /api/v1/users/<id>` for the **current JWT company**. That field updates `CompanyMembership.is_enabled` for that company only (it does not change Django `User.is_active`). Enabling a previously disabled membership emails the user.
+Staff and company owners enable or disable a member with `is_active` on `PUT /api/v1/users/{id}`, for the company of their token. This changes the membership in that company only, never the global account. Enabling a disabled member emails them.
+
+[SCIM provisioning](scim.md) sets the same flag through the `active` attribute.
 
 ## Invitations
 
-Staff and company owners can invite someone with `POST /api/v1/invitations` (admin panel: **Invite user** on the Users page, or in Company access when **Invitation only** is selected). Body: `email`, `language` (`en` or `fr`), and optional `app_url`.
+Staff and company owners invite someone with `POST /api/v1/invitations`, or with **Invite user** on the Users page of Shellui admin:
 
-- A pending `CompanyInvitation` is stored; **no user account is created**. Returns **409** `already_member` when someone with this email already has access, or `already_invited` when an invitation is pending.
-- The invitation email is sent in `language` and links to `app_url`. It holds no sign-in credential. With `EMAIL_SERVICE_API_KEY` set, identity-service calls email-service `POST /api/v1/send` (`identity.user.invited`). Otherwise it uses `apps/authapi/templates/authapi/invitation/`. If both paths fail, the API returns **503** `email_unavailable` and does not store the invitation. See [email-service.md](email-service.md).
-- `app_url` must match the company OAuth redirect allowlist (**400** `invalid_app_url` otherwise). The admin panel sends the shell origin. With the key unset and no `app_url`, the SMTP message has no link. With the key set, a missing `app_url` still goes through `/send`, and `invitation_url` is the identity public base (`JWT_ISSUER`).
-- Only `identity.user.invited` is emitted. When the company has an enabled webhook rule for it, identity-service skips its own email (same as magic link). The payload has no `user_id`, so it never reveals whether the email has an account in another company.
-- Rate limit: `AUTH_RATE_LIMIT_INVITATION` (default 30 per 5 minutes) per company.
+```json
+{
+  "email": "ada@acme.com",
+  "language": "fr",
+  "app_url": "https://app.example.com"
+}
+```
 
-**Accepting.** The first sign-in to the company with that email accepts the invitation and enables access, whatever the access mode, and approves a pending access request. The email must be proven: magic link, SAML, or an OAuth provider that reports it as verified. The account is created at that moment if needed (`identity.user.created` with the real sign-in `source`), and a user with no other company gets `language` as their UI language.
+identity-service stores a pending invitation and emails it. It does not create an account yet.
 
-**Listing and revoking.** `GET /api/v1/invitations` returns pending invitations, plus revoked ones that still block sign-in (the admin panel shows them on the Users page). `POST /api/v1/invitations/<id>/revoke` revokes a pending invitation (**409** `invitation_not_pending` otherwise) and emits `identity.user.invitation_revoked`. `DELETE /api/v1/invitations/<id>` removes a revoked invitation from the database, together with older revoked invitations for that email (**409** `invitation_not_revoked` for other statuses). Deleting lifts the sign-in block: the email is treated as never invited.
+- **`language`**: `en` or `fr`, the language of the email
+- **`app_url`**: the link in the email. It must pass the company [redirect allowlist](oauth-login.md#redirect-allowlist), otherwise the request returns **400** `invalid_app_url`. Shellui admin sends the shell origin
+- **409** `already_member`: someone with this email already has access. **409** `already_invited`: an invitation is pending
+- **503** `email_unavailable`: neither email-service nor SMTP could send the email. The invitation is not stored, so you can retry
+- Rate limit: `AUTH_RATE_LIMIT_INVITATION`, 30 per 5 minutes per company
 
-**Revoked invitations block sign-in.** While the latest invitation for an email is revoked and nobody with that email has enabled access, sign-in to that company is refused with `invitation_revoked`, in every access mode. Magic link requests get the usual generic reply but no email, and OAuth/SAML stop before creating an account. Sending a new invitation, or deleting the revoked one, lifts the block.
+The email holds no sign-in credential, only the app link. It goes through email-service when `EMAIL_SERVICE_API_KEY` is set, otherwise through SMTP. When the company has an enabled webhook rule on `identity.user.invited`, identity-service does not send the email and your endpoint delivers it. The payload has no `user_id`, so it never reveals whether the person has an account elsewhere. See [Email delivery](email-service.md).
 
-## OAuth error codes
+### Accept an invitation
 
-When access is blocked for the requested company, OAuth responses include `error_code`:
+The first sign-in to the company with the invited email accepts the invitation and enables access, in every access mode. It also approves a pending access request. The email must be proven: magic link, SAML, or an OAuth provider that reports it as verified.
 
-- `access_pending` — invitation-only or disabled membership waiting for approval
-- `access_denied` — domain mode with a non-matching email
-- `invitation_revoked` — the latest invitation for this email was revoked (shown as a regular sign-in error with the backend message)
+The account is created at that moment if needed, which emits `identity.user.created` with the real sign-in `source`. A user with no other company gets the invitation `language` as their UI language.
 
-Shellui shows a pending-review screen for these codes (query params `shellui_oauth_error` / `shellui_oauth_error_code`, or JSON on `/api/v1/oauth/exchange`).
+### List and revoke invitations
 
-SCIM provisioning sets `CompanyMembership.is_enabled` via the `active` attribute — see [SCIM](scim.md) when enterprise provisioning is enabled.
+| Method | Path | Notes |
+| --- | --- | --- |
+| `GET` | `/api/v1/invitations` | Pending invitations, plus revoked ones that still block sign-in |
+| `POST` | `/api/v1/invitations/{id}/revoke` | Revokes a pending invitation and emits `identity.user.invitation_revoked`. **409** `invitation_not_pending` otherwise |
+| `DELETE` | `/api/v1/invitations/{id}` | Removes a revoked invitation, and older revoked ones for that email. **409** `invitation_not_revoked` otherwise |
 
-## Email
+A revoked invitation blocks sign-in. While the latest invitation for an email is revoked and nobody with that email has access, sign-in to the company fails with `invitation_revoked`, in every access mode. Magic link requests get the usual generic reply but no email, and OAuth and SAML stop before creating an account. A new invitation, or deleting the revoked one, lifts the block.
 
-Notifications use Django's email backend. Locally, messages print to the console by default (`EMAIL_BACKEND`). Set `EMAIL_HOST`, `DEFAULT_FROM_EMAIL`, and related env vars for SMTP in production.
+## Error codes
+
+When access is blocked, the sign-in response includes an `error_code`:
+
+| Code | Meaning |
+| --- | --- |
+| `access_pending` | Invitation-only company, or a disabled membership waiting for approval |
+| `access_denied` | Domain mode, and the email domain is not allowed |
+| `invitation_revoked` | The latest invitation for this email was revoked |
+
+After OAuth, the shell receives them as `shellui_oauth_error` and `shellui_oauth_error_code` query parameters, or in the JSON of `/api/v1/oauth/exchange`. Shellui shows a pending review screen for `access_pending` and `access_denied`, and a regular sign-in error for `invitation_revoked`.
+
+## Owner notifications
+
+Emails to owners and members (access requests, membership enabled) use Django's email backend. Locally, they print to the console. In production, set `EMAIL_HOST` and `DEFAULT_FROM_EMAIL`, see [Configuration](configuration.md#email).
+
+## Related
+
+- [OAuth login](oauth-login.md): the sign-in flow
+- [SCIM provisioning](scim.md): manage memberships from an IdP
+- [Webhooks](actions.md): `identity.user.created`, `identity.user.invited`, and other events
