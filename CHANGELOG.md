@@ -106,7 +106,7 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 ### 📚 Documentation
 
-- Docs site moved to [identity.docs.shellui.com](https://identity.docs.shellui.com) with Shellui styling.
+- Docs site moved to `identity.docs.shellui.com` with Shellui styling (since replaced by [docs.shellui.com/identity](https://docs.shellui.com/identity)).
 - New guides for [SCIM](docs/scim.md), [magic link](docs/magic-link.md), [actions](docs/actions.md), [n8n](docs/n8n.md), and [OAuth providers](docs/oauth-providers.md). Refreshed [configuration](docs/configuration.md) and publish guides.
 
 ### 🔒 Security

@@ -209,3 +209,6 @@ __marimo__/
 
 # Node (Tailwind CSS build)
 node_modules/
+
+# Docusaurus generated files (docs are built in shellui/shellui, never here)
+.docusaurus/

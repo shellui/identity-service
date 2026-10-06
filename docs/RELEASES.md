@@ -46,8 +46,6 @@ Ensure these match the release version (e.g. `0.7.0`):
 - `CHANGELOG.md` entry with date
 - CI + pre-release workflows green on the release commit
 - Git tag `v0.7.0` (optional but recommended; not enforced by the script)
-- # Docs at [identity.docs.shellui.com](https://identity.docs.shellui.com) deploy from release tags via GitHub Pages (see `.github/workflows/deploy-docs.yml`)
-- Git tag `v0.6.0` (optional but recommended; not enforced by the script)
 - Docs at [docs.shellui.com/identity](https://docs.shellui.com/identity) are built and published by [shellui/shellui](https://github.com/shellui/shellui), not by a tag in this repository. CI here only checks that `docs/` builds (the **Docs build** job in `.github/workflows/ci.yml`)
 
 ### 2. No secrets in the build context

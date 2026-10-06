@@ -175,7 +175,7 @@ pnpm install
 DOCS_SERVICES=identity pnpm docs:start
 ```
 
-See [Build the docs site](https://github.com/shellui/shellui/blob/develop/docs/docs-site.md) for details. CI runs the same build on every pull request (the **Docs build** job), so a broken link or invalid page fails the check.
+See [Build the docs site](https://github.com/shellui/shellui/blob/main/docs/docs-site.md) for details. CI runs the same build on every pull request (the **Docs build** job), so a broken link or invalid page fails the check.
 
 ## Tests
 

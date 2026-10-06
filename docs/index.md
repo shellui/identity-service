@@ -51,4 +51,4 @@ pnpm install
 DOCS_SERVICES=identity pnpm docs:start
 ```
 
-The site picks up `../identity-service/docs` and reloads as you edit. See [Build the docs site](https://github.com/shellui/shellui/blob/develop/docs/docs-site.md) for the other options.
+The site picks up `../identity-service/docs` and reloads as you edit. See [Build the docs site](https://github.com/shellui/shellui/blob/main/docs/docs-site.md) for the other options.
