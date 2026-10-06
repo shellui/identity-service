@@ -21,7 +21,7 @@ Usage: ./tools/pre-release-check.sh [options]
 Automates the PUBLISH.md pre-release checklist:
   1. Version alignment (pyproject.toml ↔ CHANGELOG dated entry)
   2. No secrets in git / Docker build context
-  3. Image smoke test (settings + JWKS RSA key)
+  3. Image smoke test (settings + JWKS RSA key, scheduled jobs worker)
 
 Options:
   --skip-docker     Skip Docker build and smoke test
@@ -158,8 +158,12 @@ docker run --rm --entrypoint sh "${IMAGE_TAG}" \
 # ---------------------------------------------------------------------------
 log "3/3 Image smoke test (host port ${HOST_PORT})"
 
+NETWORK_NAME="${CONTAINER_NAME}-net"
+REDIS_CONTAINER_NAME="${CONTAINER_NAME}-redis"
+
 cleanup() {
-  docker rm -f "${CONTAINER_NAME}" >/dev/null 2>&1 || true
+  docker rm -f "${CONTAINER_NAME}" "${REDIS_CONTAINER_NAME}" >/dev/null 2>&1 || true
+  docker network rm "${NETWORK_NAME}" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
@@ -176,10 +180,17 @@ export JWT_AUDIENCE="${JWT_AUDIENCE:-shellui}"
 export CORS_ALLOW_ALL_ORIGINS=false
 export CORS_ALLOWED_ORIGINS="${CORS_ALLOWED_ORIGINS:-http://localhost:4000}"
 export SECURE_SSL_REDIRECT="${SECURE_SSL_REDIRECT:-false}"
+# Production requires Redis (the container refuses to start without REDIS_URL).
+export REDIS_URL="redis://${REDIS_CONTAINER_NAME}:6379/0"
 
-docker run --rm -d --name "${CONTAINER_NAME}" -p "${HOST_PORT}:8000" \
+docker network create "${NETWORK_NAME}" >/dev/null
+docker run --rm -d --name "${REDIS_CONTAINER_NAME}" --network "${NETWORK_NAME}" \
+  "${PRE_RELEASE_REDIS_IMAGE:-redis:8-alpine}" >/dev/null
+
+docker run --rm -d --name "${CONTAINER_NAME}" --network "${NETWORK_NAME}" -p "${HOST_PORT}:8000" \
   -e SECRET_KEY \
   -e DEBUG \
+  -e REDIS_URL \
   -e JWT_PRIVATE_KEY \
   -e JWT_PUBLIC_KEY \
   -e JWT_KEY_ID \
@@ -214,5 +225,8 @@ assert keys[0].get("kty") == "RSA", f"expected RSA key, got {keys[0]!r}"
 kid = keys[0].get("kid") or "?"
 print(f"OK: JWKS has {len(keys)} RSA key(s), kid={kid[:16]}…")
 '
+
+log 'Scheduled jobs worker smoke test'
+"$(dirname "$0")/image-smoke-test.sh" "${IMAGE_TAG}"
 
 log "Pre-release check passed for ${VERSION}"

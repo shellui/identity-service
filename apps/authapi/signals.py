@@ -1,18 +1,22 @@
 """
-Record LoginEvent rows for Django admin username/password sign-in (contrib.admin login form).
+Record sign-in events for Django admin username/password sign-in (contrib.admin login form).
 
 Uses auth signals so we do not fork or wrap AdminSite. Scoped to requests whose path is the
 admin login URL (success and failure).
+
+Also deletes unused magic-link tokens of an account saved as staff or superuser (for
+example in Django admin): staff never sign in with a magic link.
 """
 
 from __future__ import annotations
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.signals import user_logged_in, user_login_failed
+from django.db.models.signals import post_save
 from django.dispatch import receiver
 
-from .login_audit import record_login_event
-from .models import LoginEvent
+from .login_audit import LoginOutcome, record_login_event
+from .magic_link import delete_unused_magic_link_tokens_for_user, is_staff_account
 from .user_activity import touch_user_last_seen
 
 User = get_user_model()
@@ -46,7 +50,7 @@ def login_event_on_admin_session_login(sender, request, user, **kwargs):
         return
     record_login_event(
         request=request,
-        outcome=LoginEvent.OUTCOME_SUCCESS,
+        outcome=LoginOutcome.SUCCESS,
         provider=PROVIDER_DJANGO_ADMIN,
         user=user,
     )
@@ -60,8 +64,16 @@ def login_event_on_admin_session_login_failed(sender, credentials, request, **kw
     candidate = _user_from_failed_credentials(credentials if isinstance(credentials, dict) else None)
     record_login_event(
         request=request,
-        outcome=LoginEvent.OUTCOME_FAILURE,
+        outcome=LoginOutcome.FAILURE,
         provider=PROVIDER_DJANGO_ADMIN,
         user=candidate,
         failure_reason='Invalid credentials',
     )
+
+
+@receiver(post_save, sender=User, dispatch_uid='authapi_staff_magic_link_tokens')
+def delete_magic_link_tokens_of_staff(sender, instance, raw=False, **kwargs):
+    """A token issued before the account became staff must not sign it in."""
+    if raw or not is_staff_account(instance):
+        return
+    delete_unused_magic_link_tokens_for_user(instance)

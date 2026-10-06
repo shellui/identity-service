@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from apps.actions.models import ActionRule
-from apps.actions.registry import is_registered_event
+from apps.actions.registry import is_webhook_event
 
 
 class ActionRuleWriteSerializer(serializers.Serializer):
@@ -16,7 +16,7 @@ class ActionRuleWriteSerializer(serializers.Serializer):
     allow_private_urls = serializers.BooleanField(required=False)
 
     def validate_event_type(self, value):
-        if value and not is_registered_event(value):
+        if value and not is_webhook_event(value):
             raise serializers.ValidationError('Unknown event type.')
         return value
 
@@ -26,7 +26,7 @@ class ActionRuleCreateSerializer(ActionRuleWriteSerializer):
     event_type = serializers.CharField(max_length=128)
 
     def validate_event_type(self, value):
-        if not is_registered_event(value):
+        if not is_webhook_event(value):
             raise serializers.ValidationError('Unknown event type.')
         return value
 

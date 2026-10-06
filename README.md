@@ -2,12 +2,13 @@
 
 `identity-service` is a Django backend that provides authentication endpoints compatible with Shellui (`backend.type = "shellui"`).
 
-It supports OAuth login (stock: GitHub, Google, Microsoft; additional IdPs via django-allauth — see [docs/oauth-providers.md](docs/oauth-providers.md)), issues JWT tokens, exposes Supabase-like auth routes under `/api/v1/*`, and returns user metadata that Shellui can use (including avatar URL).
+It supports OAuth login for **15** django-allauth OAuth2/OIDC providers on the identity-hosted adapter plus SAML 2.0 SSO, configured per company in Shellui admin ([docs/oauth-providers.md](docs/oauth-providers.md)). It issues JWT tokens, exposes Supabase-like auth routes under `/api/v1/*`, and returns user metadata that Shellui can use (including avatar URL).
 
 ## Features
 
 - Shellui-compatible auth API at `/api/v1/*`
-- OAuth login via django-allauth (stock wired: GitHub, Google, Microsoft; full provider catalog — [docs/oauth-providers.md](docs/oauth-providers.md); flow — [docs/oauth-login.md](docs/oauth-login.md))
+- OAuth login via django-allauth (15 supported OAuth2/OIDC providers — [docs/oauth-providers.md](docs/oauth-providers.md); flow — [docs/oauth-login.md](docs/oauth-login.md))
+- SAML 2.0 SSO with multiple IdPs per company (see [docs/saml.md](docs/saml.md))
 - Company join modes: **public**, **domain** allow-list, or **invitation-only** (see [docs/company-access.md](docs/company-access.md))
 - JWT access + refresh token issuance (RS256 with JWKS when `JWT_PRIVATE_KEY` is set)
 - Token refresh endpoint (`grant_type=refresh_token`)
@@ -28,9 +29,13 @@ Each company turns SCIM on by creating a **Company SCIM token** in Shellui admin
 
 ## Shellui webhooks (domain events)
 
-Company **webhook rules** in Django admin map catalog events (`identity.scim.user.provisioned`, `identity.user.created`, group changes, SCIM conflicts, …) to **signed HTTPS endpoints** (n8n-friendly). Delivery uses a DB outbox and `transaction.on_commit` with `manage.py retry_webhooks` for retries. See **[docs/actions.md](docs/actions.md)** and **[docs/n8n.md](docs/n8n.md)**.
+Company **webhook rules** in Django admin map catalog events (`identity.scim.user.provisioned`, `identity.user.created`, group changes, SCIM conflicts, …) to **signed HTTPS endpoints** (n8n-friendly). Delivery uses a DB outbox and `transaction.on_commit`, with retries every minute by the built-in scheduler. See **[docs/actions.md](docs/actions.md)** and **[docs/n8n.md](docs/n8n.md)**.
 
-**Try locally:** set `EMAIL_BACKEND=django.core.mail.backends.console.EmailBackend`, create an Action rule for `identity.scim.user.provisioned`, then provision a user via SCIM.
+Every event, and every sign-in, is also stored in the **event log** (`GET /api/v1/events`) for the company data retention (default 7 days, Django admin only). See **[docs/event-log.md](docs/event-log.md)**.
+
+**Scheduled jobs:** the Docker image runs `purge_expired_data` every hour and `retry_webhooks` every minute (Celery worker and beat, Redis broker). Set `REDIS_URL` (required in production) and there is nothing else to set up. See **[docs/scheduled-jobs.md](docs/scheduled-jobs.md)**.
+
+**Try locally:** set `EMAIL_BACKEND=config.email_backends.ConsoleEmailBackend` (default when `DEBUG=true`), create an Action rule for `identity.scim.user.provisioned`, then provision a user via SCIM.
 
 ## Project Structure
 
@@ -54,7 +59,8 @@ Company **webhook rules** in Django admin map catalog events (`identity.scim.use
 - `POST /api/v1/logout` logout endpoint (revokes refresh session and denylists access token)
 - `GET /api/v1/user` return authenticated user profile + metadata
 - `PUT /api/v1/user` update user metadata
-- `DELETE /api/v1/user` self-service account deletion (`{"confirm": true}`; emits `identity.user.deleted` per company — see [docs/oauth-login.md](docs/oauth-login.md))
+- `PATCH /api/v1/user` set the display name (`{"name": "Ada Lovelace"}`); sign-ins never overwrite a name once set
+- `DELETE /api/v1/user` self-service account deletion (`{"confirm": true}`; emits `identity.user.deleted` per company; see [docs/account-deletion.md](docs/account-deletion.md))
 
 ## Staff admin endpoints
 
@@ -62,8 +68,11 @@ These routes require a valid JWT whose user has `is_staff=true` (`user_metadata.
 
 - `GET /api/v1/users?q=&page=&page_size=` — paginated user list (`page_size` capped at 100)
 - `GET /api/v1/users/<id>` — single user (Django fields + `user_metadata` cache)
-- `PUT /api/v1/users/<id>` — JSON body may include `first_name`, `last_name`, `is_staff` (staff only), `is_active` (staff or company owner; **per-company** membership enable), and optional `data` object to merge into cached metadata (same idea as `PUT /api/v1/user`). You cannot remove your own staff flag or disable your own company access via this API. Enabling a previously disabled membership emails the user.
-- `PATCH /api/v1/companies/<id>/` — company owners may update `name`, `owner_ids`, `access_mode` (`public` \| `domain` \| `invite`), and `allowed_email_domains`.
+- `PUT /api/v1/users/<id>`: JSON body may include `first_name`, `last_name`, `is_active` (staff or company owner; **per-company** membership enable), and optional `data` object to merge into cached metadata (same idea as `PUT /api/v1/user`). `is_staff` and `is_superuser` are read-only in every REST API: only Django admin may change them, and a body with either field gets **400** `admin_only_field`. You cannot disable your own company access via this API. Enabling a previously disabled membership emails the user.
+- `POST /api/v1/invitations`: invites `email` to the current company (staff or company owner). Stores a pending invitation (no account yet) and sends an invitation email in `language` (`en`, `fr`) linking to `app_url`, or emits `identity.user.invited` instead when a webhook rule exists. The first sign-in with that email accepts it. `GET /api/v1/invitations` lists open invitations; `POST /api/v1/invitations/<id>/revoke` revokes one, which blocks sign-in for that email; `DELETE /api/v1/invitations/<id>` deletes a revoked one for good, which lifts the block. See [docs/company-access.md](docs/company-access.md#invitations).
+- `DELETE /api/v1/users/<id>`: removes the user and their data from the current company (staff or company owner). The account is deleted only when this was their last company. Emits `identity.user.deleted` with `source=admin`. Refuses to delete yourself (400), a staff user unless you are staff (403), or a company's only owner (409 `last_company_owner`).
+- `PATCH /api/v1/companies/<id>/` — company owners may update `name`, `owner_ids`, `access_mode` (`public` \| `domain` \| `invite`), and `allowed_email_domains`. `data_retention_days` is read-only (Django admin).
+- `GET /api/v1/events`, `GET /api/v1/events/<id>`, `GET /api/v1/events/types`, `GET /api/v1/events/retention`: event log and retention status (staff or company owner). See [docs/event-log.md](docs/event-log.md).
 
 ## Quick Start
 
@@ -87,12 +96,7 @@ uv run python manage.py createsuperuser
 
 Dependencies live in `pyproject.toml` and are locked in `uv.lock`. Add a package with `uv add <name>`; refresh the lock with `uv lock`.
 
-Configure OAuth credentials per company (Django admin → Company → OAuth clients, or `POST /api/v1/admin/oauth-social-apps`):
-
-```bash
-# After starting the service, create a company and add GitHub/Google/Microsoft client id + secret
-# for that company via the admin API or Django admin UI.
-```
+Configure OAuth credentials per company in Shellui admin **OAuth setup**, with `POST /api/v1/oauth-social-apps`, or in Django admin (Company → OAuth clients). The supported providers and their setup are listed in [docs/oauth-providers.md](docs/oauth-providers.md).
 
 ## JWT private key (RS256)
 
@@ -134,7 +138,7 @@ backend: {
 
 ## OAuth provider apps
 
-Register a **single** Authorization callback URL on each IdP app pointing at **identity-service** — not the shell. Stock demos use GitHub, Google, and Microsoft; other providers follow the same callback pattern once enabled ([docs/oauth-providers.md](docs/oauth-providers.md)). No query string:
+Register a **single** Authorization callback URL on each IdP app pointing at **identity-service** — not the shell. Every supported provider uses the same callback ([docs/oauth-providers.md](docs/oauth-providers.md)). No query string:
 
 | Environment | Callback URL |
 |-------------|--------------|
@@ -145,7 +149,7 @@ Homepage / application URL may still be the shell (e.g. `http://localhost:4000`)
 
 Also allowlist each shell **origin** for the company (e.g. `http://localhost:4000`, `https://app.example.com`) via Django admin → Company OAuth redirects, Shellui admin OAuth setup, or `POST /api/v1/oauth-redirects`. Loopback (`127.0.0.1` / `localhost`) is allowed when `DEBUG=true` or `OAUTH_ALLOW_LOOPBACK_REDIRECTS=true` (local CLI / dev).
 
-Full flow, allowlist rules, hosting sync, and upgrade steps (including **0.4.1**): [docs/oauth-login.md](docs/oauth-login.md).
+Full flow, allowlist rules, and hosting sync: [docs/oauth-login.md](docs/oauth-login.md). Upgrade steps for each release: [docs/upgrading.md](docs/upgrading.md).
 
 Production auth abuse controls, HTTPS defaults, Postgres SSL, and trusted-proxy IP handling: [docs/security-hardening.md](docs/security-hardening.md).
 
@@ -154,23 +158,19 @@ Production auth abuse controls, HTTPS defaults, Postgres SSL, and trusted-proxy 
 - `/api/v1/settings` only enables providers configured for the requested company; OAuth client details require an authenticated company member.
 - Avatar URL from provider userinfo is included in JWT metadata (`user_metadata.avatar_url`) for Shellui profile display.
 
-## Documentation (Docusaurus)
+## Documentation
 
-Project docs live in `docs/` and are built with Docusaurus in `tools/docusaurus/` (Shellui-branded chrome aligned with [shellui/shellui](https://github.com/shellui/shellui)). Published at [https://identity.docs.shellui.com](https://identity.docs.shellui.com) on release tags.
+Project docs live in `docs/`, with the sidebar in `docs/sidebars.js`. They are published at [https://docs.shellui.com/identity](https://docs.shellui.com/identity) by [shellui/shellui](https://github.com/shellui/shellui), which builds the docs of every Shellui service into one site. This repository no longer builds or deploys its own docs site.
 
-Preview locally:
-
-```bash
-cd tools/docusaurus && npm install && npm start
-```
-
-Production build:
+Preview locally with live reload: clone `shellui` next to this repository, then run:
 
 ```bash
-./tools/generate-docs.sh
+cd ../shellui
+pnpm install
+DOCS_SERVICES=identity pnpm docs:start
 ```
 
-Output is generated in `tools/docusaurus/build`.
+See [Build the docs site](https://github.com/shellui/shellui/blob/main/docs/docs-site.md) for details. CI runs the same build on every pull request (the **Docs build** job), so a broken link or invalid page fails the check.
 
 ## Tests
 
@@ -178,7 +178,9 @@ Output is generated in `tools/docusaurus/build`.
 uv run python manage.py test
 ```
 
-Pull requests and pushes to `main` / `develop` run [`.github/workflows/ci.yml`](.github/workflows/ci.yml): Django tests, lockfile check, dependency audit (`pip-audit`), secret scan (gitleaks), markdown link check (lychee), and a Docker image build.
+Pull requests and pushes to `main` / `develop` run [`.github/workflows/ci.yml`](.github/workflows/ci.yml): Django tests, lockfile check, dependency audit (`pip-audit`), secret scan (gitleaks), markdown link check (lychee), a docs build against [shellui/shellui](https://github.com/shellui/shellui), and a Docker image build.
+
+For a gitleaks false positive, add an inline `# gitleaks:allow` comment on the flagged line; `.gitleaksignore` is only for fingerprints of commits already in history.
 
 Pull requests **to `main`** also run the pre-release checklist ([`.github/workflows/pre-release.yml`](.github/workflows/pre-release.yml)) — same checks as:
 
@@ -188,7 +190,7 @@ Pull requests **to `main`** also run the pre-release checklist ([`.github/workfl
 
 ## Releases (Docker Hub)
 
-Current release: `0.6.0` (`shellui/identity-service:0.6.0`).
+Current release: `0.7.0` (`shellui/identity-service:0.7.0`).
 
 See [PUBLISH.md](PUBLISH.md) for the pre-release checklist (automated via `./tools/pre-release-check.sh`), tagging conventions, and steps to build, push, and deploy `shellui/identity-service` on Docker Hub.
 
@@ -229,6 +231,8 @@ docker run --rm -p 8000:8000 \
   shellui/identity-service:local
 ```
 
+The image defaults to `DEBUG=false`, which needs the production settings below, including `REDIS_URL`: without Redis the container refuses to start. To try it locally without Redis, pass `-e DEBUG=true`, or use `docker compose up`, which starts Redis.
+
 API CORS allows all origins by default (Bearer JWT auth). For lock-down installs set `CORS_ALLOW_ALL_ORIGINS=false` and `CORS_ALLOWED_ORIGINS=…`.
 
 The container runs migrations automatically, stores SQLite at `/app/data/db.sqlite3`, then starts with Gunicorn on `0.0.0.0:8000`. Production images run `collectstatic` at build time; [WhiteNoise](https://whitenoise.readthedocs.io/) serves `/admin/` and other collected static files from the app process (no separate static server required).
@@ -250,15 +254,21 @@ Runtime env vars:
 - `CORS_ALLOW_CREDENTIALS` (default `false`; must stay `false` with allow-all)
 - `CORS_ALLOWED_ORIGIN_REGEXES` (optional; used only when `CORS_ALLOW_ALL_ORIGINS=false`)
 - `POSTGRES_DATABASE_URL` (optional; when set, Postgres is used instead of SQLite)
-- `REDIS_URL` (optional; when set, Django uses Redis for shared cache — auth rate limits, logout access-token denylist, last-seen throttling). Unset uses in-process LocMem (single Gunicorn worker or local dev only; with multiple workers each process has its own cache)
+- `REDIS_URL` (required when `DEBUG=false`; shared cache for auth rate limits, logout access-token denylist, OAuth PKCE state, SAML replay protection and last-seen throttling, and the scheduled jobs broker). Without it a production container logs `REDIS_URL is required when DEBUG is false` and exits with status 1, also with `SCHEDULER_ENABLED=false`. With `DEBUG=true` it is optional: unset uses in-process LocMem and the scheduled jobs do not run
 - `GUNICORN_WORKERS` (default `4`)
 - `GUNICORN_THREADS` (default `4`)
 - `GET /health/live` — DB-free liveness probe (configure load balancers to use this instead of `/`)
-- `GUNICORN_TIMEOUT` (default `60`)
+- `GUNICORN_TIMEOUT` (default `60`; restarts a frozen worker process only, it does not stop a request stuck in a `gthread` worker)
+- `GUNICORN_GRACEFUL_TIMEOUT` (default `30`), `GUNICORN_KEEP_ALIVE` (default `75`), `GUNICORN_MAX_REQUESTS` (default `1000`), `GUNICORN_MAX_REQUESTS_JITTER` (default `200`)
+- `EMAIL_TIMEOUT` (default `10` seconds for SMTP)
+- `POSTGRES_STATEMENT_TIMEOUT` (default `15` seconds) and `POSTGRES_LOCK_TIMEOUT` (default `5` seconds); `0` turns one off
+- `LOG_LEVEL` (default `INFO`) and `SLOW_REQUEST_THRESHOLD_SECONDS` (default `2`; `0` turns it off)
 - `SENTRY_DSN` (optional; enable Sentry error reporting — leave empty in local dev)
 - `SENTRY_ENVIRONMENT` (optional; default `development` when `DEBUG=true`, else `production`)
 - `SENTRY_RELEASE` (optional; default `project.version` from `pyproject.toml`)
 - `SENTRY_TRACES_SAMPLE_RATE` (optional; default `0` — errors only; set e.g. `0.1` for performance traces)
+- `EMAIL_SERVICE_URL` (optional; production default `https://email.shellui.com`. Local: `http://localhost:8003`. From Docker: `http://host.docker.internal:8003`)
+- `EMAIL_SERVICE_API_KEY` (optional; `esk_` service key. Unset keeps SMTP / the console backend. See [docs/email-service.md](docs/email-service.md))
 
 ## Observability (Sentry)
 

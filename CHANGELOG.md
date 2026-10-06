@@ -21,6 +21,80 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
 -->
 
+## [0.7.0] - 2026-10-06
+
+### 🐛 Bug Fixes
+
+- **No more endless sign-in requests from a slow mail server:** SMTP now gives up after `EMAIL_TIMEOUT` seconds (default 10). Before, Django waited with no limit, so a company access email sent during an OAuth callback could hold the sign-in request forever.
+- **Postgres deadlines:** queries are cancelled after `POSTGRES_STATEMENT_TIMEOUT` seconds (default 15) and lock waits after `POSTGRES_LOCK_TIMEOUT` seconds (default 5). Set either to `0` to turn it off. They are not applied to `migrate` and have no effect on SQLite.
+
+### 🛠 Improvements
+
+- **Logs you can see in production:** gunicorn now writes access and error logs to stdout, and each access line ends with the request duration and request id. Django errors and warnings (500s, `DisallowedHost`, CSRF failures) are printed to stdout also when `DEBUG=false`. App log level is set with `LOG_LEVEL`.
+- **Request id:** every response carries an `X-Request-ID` header (taken from the incoming request when present, otherwise generated), and every log line includes it as `[req=<id>]`, like the other Shellui services.
+- **Slow request warning:** requests slower than `SLOW_REQUEST_THRESHOLD_SECONDS` (default 2) are logged as a warning with method, path, status and duration.
+- **Graceful shutdown:** the entrypoint drops privileges with `setpriv` instead of `runuser`. `runuser` killed gunicorn 2 seconds after `docker stop`, which cut `GUNICORN_GRACEFUL_TIMEOUT` short. The entrypoint now passes `SIGTERM` to gunicorn and the worker, and exits when either one exits, so Docker or Coolify restarts the container.
+- **Gunicorn:** heartbeat file in `/dev/shm`, workers recycled after `GUNICORN_MAX_REQUESTS` (default 1000) plus up to `GUNICORN_MAX_REQUESTS_JITTER` (default 200) requests, `GUNICORN_GRACEFUL_TIMEOUT` (default 30) and `GUNICORN_KEEP_ALIVE` (default 75).
+
+### 📚 Documentation
+
+- **Docs move to docs.shellui.com/identity:** [shellui/shellui](https://github.com/shellui/shellui) now builds and publishes these docs. This repository no longer deploys a docs site on tags: `deploy-docs.yml`, `tools/docusaurus/` and `tools/generate-docs.sh` are removed, and the sidebar moved to `docs/sidebars.js` (now with n8n and SAML). CI gains a **Docs build** job that builds `docs/` with the shellui docs site and fails on broken links.
+- `GUNICORN_TIMEOUT` does not kill a worker whose `gthread` threads are stuck. The docs now say so and list the app timeouts that do bound a request.
+
+### ✨ Feature
+
+- **Scheduled jobs run inside the container:** the Docker image now starts a Celery worker with an embedded beat next to gunicorn. It runs `retry_webhooks` every minute and `purge_expired_data` every hour (at most 5 minutes per run), with Redis (`REDIS_URL`) as the broker. Self-hosted installs no longer need cron or Coolify Scheduled Tasks. A Redis lock skips a run when another container already runs the same job, so replicas are safe. New variables: `SCHEDULER_ENABLED` (default `true`), `CELERY_BROKER_URL` (defaults to `REDIS_URL`) and `CELERY_WORKER_CONCURRENCY` (default `2`). With `DEBUG=true` and no `REDIS_URL`, the container logs a warning and starts the web app only (in production Redis is required, see Changed). The management commands still work for external cron. See [docs/scheduled-jobs.md](docs/scheduled-jobs.md).
+- **Scheduled job monitoring:** every `retry_webhooks` and `purge_expired_data` run is recorded, whether the in-container beat (`trigger=celery`) or your own cron (`trigger=command`) started it: status, duration, items processed (deliveries attempted, succeeded, failed, given up; rows purged per type) and a sanitized error. Runs are kept 7 days. Staff get `GET /api/v1/scheduled-jobs` (health per job: `healthy`, `overdue`, `failing`, `disabled`, plus `scheduler_enabled`, `redis_reachable` and a beat heartbeat), `GET /api/v1/scheduled-jobs/<job>/runs` and `GET /api/v1/scheduled-jobs/runs/<id>`; company owners get 403. `GET /api/v1/metrics/all` adds `shellui_auth_scheduled_job_*` metrics (runs, items, last success, last duration, overdue). Each run writes a staff-only platform event (`identity.scheduled_job.succeeded` or `.failed`, `GET /api/v1/events?scope=platform`) that webhook and email rules cannot subscribe to. Webhook delivery attempts now carry `trigger` (`dispatch` or `automatic_retry`) and, for staff, the `scheduled_job_run_id` that made them; email-service event posts keep the run of their last attempt and receive `X-Request-ID: sjr-<run id>`. A failed run logs at ERROR with `[req=sjr-<run id>]`, goes to Sentry when configured, and makes the command exit with status 1. See [docs/scheduled-jobs.md](docs/scheduled-jobs.md#monitoring).
+- **Container modes:** the image command selects what runs: `web` (default), `worker` (only the scheduled jobs, for a dedicated container) or any other command, run as `appuser`.
+- **Email-service delivery:** magic-link and invitation emails go through Shellui email-service when `EMAIL_SERVICE_API_KEY` is set, with SMTP as fallback, and catalog events are forwarded through the webhook outbox. See [docs/email-service.md](docs/email-service.md).
+- **Event log and data retention:** all catalog events and sign-ins are stored in one event log (`GET /api/v1/events`), purged per company `data_retention_days` by `manage.py purge_expired_data`. See [docs/event-log.md](docs/event-log.md) and [docs/scheduled-jobs.md](docs/scheduled-jobs.md).
+- **Invitations:** staff and company owners can invite, list, revoke, and delete email invitations (`/api/v1/invitations`), with `identity.user.invited` and `identity.user.invitation_revoked` webhooks. See [docs/company-access.md](docs/company-access.md#invitations).
+- **Broadcast audience:** `GET /api/v1/users/audience` lists company members for email broadcasts, filtered by groups, roles, access, join date, and last seen.
+- **User management:** staff and company owners can remove a user from their company (`DELETE /api/v1/users/<id>`), and users can edit their display name (`PATCH /api/v1/user`).
+- **Magic link:** `POST /api/v1/magic-link/request` accepts a `language`, and the `identity.auth.magic_link.requested` webhook notifies you of each request. See [docs/magic-link.md](docs/magic-link.md).
+- **SAML 2.0 SSO:** multiple SAML IdPs per company, with SP metadata, ACS, login, and optional SLO under `/api/v1/saml/<organization_slug>/`. See [docs/saml.md](docs/saml.md).
+- **More OAuth providers:** Twitch, LinkedIn, Slack, generic OpenID Connect, Keycloak, Okta, and Auth0 (**15** supported providers plus SAML), with a provider catalog API (`GET /api/v1/oauth-provider-catalog`) and django-allauth 65.19.5. See [docs/oauth-providers.md](docs/oauth-providers.md).
+
+### 🚨 Changed
+
+- **Breaking: Redis is required in production.** With `DEBUG=false` (the Docker image default), the container now refuses to start without `REDIS_URL`: in `web` and `worker` mode the entrypoint logs `REDIS_URL is required when DEBUG is false (example: redis://redis:6379/0)` and exits with status 1, before migrations. This applies also with `SCHEDULER_ENABLED=false` or `CELERY_BROKER_URL` set, because Redis backs the shared cache (auth rate limits, logout access-token denylist, OAuth PKCE state, SAML replay protection) as well as the scheduled jobs. Before, the container only logged a warning and ran with a per-process cache. **Deployments without Redis must add a Redis service and set `REDIS_URL` before upgrading.** `manage.py check --deploy` reports the same problem as the new error `authapi.E004`, which replaces the `authapi.W002` warning. With `DEBUG=true` (local development) Redis stays optional. Other container commands (for example `python manage.py createsuperuser`) are not blocked. See [docs/configuration.md](docs/configuration.md#shared-cache-redis).
+- **Account deletion:** self-service deletion only leaves the token company when the user belongs to others, accounts are deleted only once no company link remains, and a company's last owner cannot be removed (`last_company_owner`, `company_owner_required`).
+- **No sign-in lock-out:** the Admin API refuses (`login_method_required`) to disable a company's last sign-in method.
+- **Magic link:** the verify page signs in without a confirmation click, and new users get a username from their email.
+- **Names on sign-in:** OAuth and SAML sign-ins never overwrite an existing user name.
+- **OAuth provider catalog v2:** structured `console_url` entries and a language-neutral settings schema; `supported` now follows strict adapter test coverage.
+
+### ⚠️ Deprecated
+
+- `GET /api/v1/login-events` now reads from the event log; use `GET /api/v1/events?event_type=identity.auth.login.succeeded,identity.auth.login.failed` instead.
+
+### 📚 Documentation
+
+- [docs/oauth-providers.md](docs/oauth-providers.md) is generated from the provider catalog, with a CI drift check.
+- **Docs restructure:** a new overview page with provider logos and feature cards, a [getting started](docs/getting-started.md) guide, and a sidebar grouped by task. New pages for [account deletion](docs/account-deletion.md) and [upgrade notes](docs/upgrading.md), which move out of the OAuth login page. Every page now opens with a summary, and the pages were checked against the code.
+- **Provider list matches Shellui admin:** [docs/oauth-providers.md](docs/oauth-providers.md) now lists only the 16 providers you can configure (15 OAuth and OpenID Connect, plus SAML), split into social and company identity providers, with setup steps and the email linking rule for each. The 98 catalog entries that are not available are summarized instead of listed. The homepage logo strip is generated from the same catalog.
+- **Doc fixes:** account deletion checks `auth_time`, so the user must sign in again (a token refresh is not enough). Personal access tokens default to 30 days, not 90. The OAuth app endpoint is `/api/v1/oauth-social-apps`, not `/api/v1/admin/oauth-social-apps`. The release smoke test and the published image example now set `REDIS_URL`, `JWT_ISSUER`, and `JWT_AUDIENCE`.
+
+### 🗑 Removed
+
+- The `LoginEvent` model: migration `actions.0005` copies the last 7 days of sign-ins into the event log, and old `/login-events/<id>` links no longer resolve.
+
+### 🐛 Bug Fixes
+
+- **Group events:** group changes made through the admin API and Django admin now emit `identity.group.*` events, so webhooks fire for them.
+
+### 🔒 Security
+
+- **Magic-link webhooks no longer carry the sign-in link (breaking change):** the `identity.auth.magic_link.requested` webhook payload no longer contains `magic_link_url`, the token, or anything else that can be used to sign in, and identity always sends the sign-in email itself, even when the company has a webhook rule for this event. Before, anyone who could read the webhook or its delivery records (for example a company owner) could sign in as the user who owns that email. Migration `actions.0007` removes links already stored in webhook delivery records. If you used the webhook link to deliver magic links yourself (for example from n8n), that no longer works: identity sends the email and the webhook is a notification only.
+- **No magic links for staff accounts:** staff (`is_staff`) and superuser accounts can no longer sign in with a magic link. A company that sends mail through its own provider (Resend or SMTP) can read every sign-in link in that provider's dashboard or logs, so a link for a staff member signing in to that company let the company sign in as that staff member. A request for a staff address creates no token and sends a short notice instead (built-in email-service template `identity.auth.magic_link.staff_blocked`, or the EN and FR SMTP templates): magic links are off for staff accounts, sign in with your usual sign-in method, and a link to the sign-in page, with no token. The API answer and the `identity.auth.magic_link.requested` webhook are the same as for any other address, so neither reveals staff accounts. Verify refuses a token that belongs to a staff account with **403** `magic_link_staff_disabled` (the browser page explains it in English or French), saving an account as staff deletes its unused tokens, and migration `authapi.0017` deletes unused tokens of existing staff accounts. Password sign-in to Django admin and OAuth, OIDC and SAML sign-in are unchanged. See [Staff accounts](docs/magic-link.md#staff-accounts).
+- **Company metrics show only that company:** `GET /api/v1/metrics` returned the whole process registry to company owners: process and Python runtime metrics, platform-wide user counts (`shellui_auth_users_*`, `shellui_auth_*_active_users`, as of the last global scrape), `shellui_auth_successful_logins_total` for every company and provider, and the `shellui_auth_company_*` gauges of every other company that process had served. It now builds the response per request with only the token's company series (same metric names and labels, so dashboards keep working). Staff calling it get the same company view. Everything else stays on `GET /api/v1/metrics/all` (staff or `access_global_metrics` token). See [Metrics](docs/metrics.md).
+- **No sign-in secrets in logs:** the gunicorn access log records the path without the query string and no longer records the Referer, so magic-link tokens, OAuth codes, `confirm_token` and `setup_token` stay out of the logs. The token refresh log line keeps only the Referer path, and Sentry events drop query strings, request bodies, the Referer and secret-named local variables.
+- **Staff flags only in Django admin:** `is_staff` and `is_superuser` can only be changed in Django admin. `PUT /api/v1/users/<id>` no longer accepts `is_staff` and returns **400** `admin_only_field` when the body contains `is_staff` or `is_superuser`.
+- **SAML:** signed assertions only, single-use `InResponseTo` and assertion IDs, company-scoped IdPs, and no email auto-linking outside trusted verified domains.
+- **OAuth identity:** id_tokens are verified (Google, Apple, OpenID Connect, Okta, Auth0), account ids are scoped by issuer or host, and company IdPs never auto-link by email.
+- **OAuth transport:** pinned provider hosts, SSRF-safe HTTP and discovery, server-side PKCE, atomic state consumption, and redacted secrets in API responses.
+- **Account id migrations:** `0014` (OpenID Connect) and `0015` (GitLab) rekey existing social accounts; run `manage.py scope_gitlab_social_uids` if `0015` reports ambiguous rows.
+
 ## [0.6.0] - 2026-09-29
 
 ### ✨ Feature
@@ -45,7 +119,7 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 ### 📚 Documentation
 
-- Docs site moved to [identity.docs.shellui.com](https://identity.docs.shellui.com) with Shellui styling.
+- Docs site moved to `identity.docs.shellui.com` with Shellui styling (since replaced by [docs.shellui.com/identity](https://docs.shellui.com/identity)).
 - New guides for [SCIM](docs/scim.md), [magic link](docs/magic-link.md), [actions](docs/actions.md), [n8n](docs/n8n.md), and [OAuth providers](docs/oauth-providers.md). Refreshed [configuration](docs/configuration.md) and publish guides.
 
 ### 🔒 Security

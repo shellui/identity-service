@@ -37,11 +37,11 @@ Manual equivalents (if you are not using the script):
 
 ### 1. Version alignment
 
-Ensure these match the release version (e.g. `0.6.0`):
+Ensure these match the release version (e.g. `0.7.0`):
 
 - `version` in `pyproject.toml` (OpenAPI / API metadata via `config.settings.VERSION`)
 - `CHANGELOG.md` entry with date
-- Git tag `v0.6.0` (optional but recommended; not enforced by the script)
+- Git tag `v0.7.0` (optional but recommended; not enforced by the script)
 - CI green on the release commit (`.github/workflows/ci.yml` + pre-release workflow)
 
 ### 2. No secrets in the build context
@@ -65,7 +65,7 @@ Covered by `./tools/pre-release-check.sh`. Manual form:
 export SECRET_KEY="$(uv run python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())")"
 eval "$(uv run python manage.py generate_jwt_keys --shell)"
 
-VERSION=0.6.0
+VERSION=0.7.0
 docker build -t "shellui/identity-service:${VERSION}" .
 
 docker run --rm -d --name identity-release-smoke -p 18000:8000 \
@@ -95,12 +95,12 @@ docker login
 
 ### Tagging
 
-For semver release `0.6.0`, typical Docker Hub tags:
+For semver release `0.7.0`, typical Docker Hub tags:
 
 | Tag      | Purpose                                  |
 | -------- | ---------------------------------------- |
-| `0.6.0`  | Exact release (pin in production)        |
-| `0.6`    | Latest patch in the 0.6 line             |
+| `0.7.0`  | Exact release (pin in production)        |
+| `0.7`    | Latest patch in the 0.7 line             |
 | `latest` | Newest published release (use with care) |
 
 ### Option A — single platform (fastest, not recommended, see option B)
@@ -108,16 +108,16 @@ For semver release `0.6.0`, typical Docker Hub tags:
 From the repository root:
 
 ```bash
-VERSION=0.6.0
+VERSION=0.7.0
 IMAGE=shellui/identity-service
 
 docker build -t "${IMAGE}:${VERSION}" .
 docker push "${IMAGE}:${VERSION}"
 
 # Optional extra tags
-docker tag "${IMAGE}:${VERSION}" "${IMAGE}:0.6"
+docker tag "${IMAGE}:${VERSION}" "${IMAGE}:0.7"
 docker tag "${IMAGE}:${VERSION}" "${IMAGE}:latest"
-docker push "${IMAGE}:0.6"
+docker push "${IMAGE}:0.7"
 docker push "${IMAGE}:latest"
 ```
 
@@ -126,7 +126,7 @@ docker push "${IMAGE}:latest"
 If you build on Apple Silicon, a plain `docker build` may produce `linux/arm64` only. Most cloud VMs expect `linux/amd64`. Publish both with buildx:
 
 ```bash
-VERSION=0.6.0
+VERSION=0.7.0
 IMAGE=shellui/identity-service
 
 docker buildx create --use --name multi 2>/dev/null || docker buildx use multi
@@ -141,7 +141,7 @@ docker buildx build \
 ### Git tag (recommended)
 
 ```bash
-VERSION=0.6.0
+VERSION=0.7.0
 git tag -a "v${VERSION}" -m "Release ${VERSION}"
 git push origin "v${VERSION}"
 ```
@@ -161,10 +161,15 @@ docker run -d \
   -e JWT_PRIVATE_KEY='replace-with-pem-from-generate_jwt_keys' \
   -e ALLOWED_HOSTS='auth.example.com' \
   -e CSRF_TRUSTED_ORIGINS='https://auth.example.com,https://app.example.com' \
-  shellui/identity-service:0.6.0
+  -e REDIS_URL='redis://redis:6379/0' \
+  shellui/identity-service:0.7.0
 ```
 
-The entrypoint runs migrations on start, then starts **Gunicorn** (`config.wsgi:application`) as user `appuser` — not ASGI/uvicorn. Env vars `GUNICORN_WORKERS`, `GUNICORN_THREADS`, and `GUNICORN_TIMEOUT` are passed through; worker class is **`gthread`** (threaded sync workers).
+`REDIS_URL` is required: with `DEBUG=false` (the image default) the container logs `REDIS_URL is required when DEBUG is false (example: redis://redis:6379/0)` and exits with status 1 when it is missing. The container also runs the scheduled jobs (`retry_webhooks` every minute, `purge_expired_data` every hour) in a Celery worker next to gunicorn. There is no cron to set up. See [docs/scheduled-jobs.md](docs/scheduled-jobs.md) for a dedicated worker container (`worker` command) or `SCHEDULER_ENABLED=false`.
+
+The entrypoint runs migrations on start, then starts **Gunicorn** (`config.wsgi:application`) as user `appuser`, not ASGI or uvicorn. Env vars `GUNICORN_WORKERS`, `GUNICORN_THREADS`, `GUNICORN_TIMEOUT`, `GUNICORN_GRACEFUL_TIMEOUT`, `GUNICORN_KEEP_ALIVE`, `GUNICORN_MAX_REQUESTS` and `GUNICORN_MAX_REQUESTS_JITTER` are passed through. The worker class is **`gthread`** (threaded sync workers). Access and error logs go to stdout, with the request duration and request id on each access log line.
+
+**`GUNICORN_TIMEOUT` does not kill stuck `gthread` workers.** A worker keeps sending heartbeats while one of its threads is blocked, so gunicorn does not restart it. Per-request deadlines come from `EMAIL_TIMEOUT`, `POSTGRES_STATEMENT_TIMEOUT`, `POSTGRES_LOCK_TIMEOUT`, the OAuth HTTP timeouts, and a response timeout on the reverse proxy. See [docs/configuration.md](docs/configuration.md#gunicorn-docker-entrypoint).
 
 **Concurrency:** with defaults after this release, up to `workers × threads` requests run at once (e.g. `4 × 4 = 16`). With `GUNICORN_WORKERS=2` and `GUNICORN_THREADS=2` you only get **four** concurrent handlers. OAuth callbacks and token refresh perform several DB writes and up to ~20s outbound HTTP each; when all handlers are busy, **even `GET /` queues** (session middleware + DB) until the client or reverse proxy times out — intermittent “hang then works again”.
 
@@ -174,7 +179,7 @@ The entrypoint runs migrations on start, then starts **Gunicorn** (`config.wsgi:
 
 ### Post-deploy production config check
 
-After deploying a release (e.g. `0.6.0`), run the smoke script against the live HTTPS URL:
+After deploying a release (e.g. `0.7.0`), run the smoke script against the live HTTPS URL:
 
 ```bash
 ./tools/prod-config-check.sh https://id.shellui.com
@@ -201,6 +206,7 @@ Full OAuth login (fragment vs code delivery) cannot be verified without a config
 | `JWT_PRIVATE_KEY`      | Required when `DEBUG=false`; RS256 JWT signing. See [docs/jwks.md](docs/jwks.md). |
 | `ALLOWED_HOSTS`        | Comma-separated hostnames, no scheme.                                             |
 | `CSRF_TRUSTED_ORIGINS` | Full URLs with scheme when using browser flows behind HTTPS.                      |
+| `REDIS_URL`            | Required when `DEBUG=false`, also with `SCHEDULER_ENABLED=false`; the container refuses to start without it. Shared cache (rate limits, logout denylist, OAuth and SAML state) and broker for the scheduled jobs. Example: `redis://redis:6379/0`. |
 
 ### Optional runtime env vars
 
@@ -212,7 +218,7 @@ Full OAuth login (fragment vs code delivery) cannot be verified without a config
 | `CORS_ALLOWED_ORIGINS`       | Used when `CORS_ALLOW_ALL_ORIGINS=false`; Shellui / admin front-end origins.                   |
 | `CORS_ALLOW_CREDENTIALS`     | Default `false`; must stay `false` when allow-all is enabled.                                  |
 | `POSTGRES_DATABASE_URL`      | Use Postgres instead of SQLite.                                                                |
-| `REDIS_URL`                  | Shared Redis cache (recommended when `GUNICORN_WORKERS` > 1). Example: `redis://redis:6379/0`. Without it, LocMem is per-worker. |
+| `SCHEDULER_ENABLED`          | Default `true`: the container runs the scheduled jobs next to gunicorn. Set `false` with a dedicated `worker` container or external cron. See [docs/scheduled-jobs.md](docs/scheduled-jobs.md). |
 | `SENTRY_DSN`                 | Sentry error reporting.                                                                        |
 | `SENTRY_ENVIRONMENT`         | e.g. `staging`, `production`.                                                                  |
 | `JWT_ACCESS_TOKEN_LIFETIME`  | Default `5m`.                                                                                  |
@@ -220,7 +226,7 @@ Full OAuth login (fragment vs code delivery) cannot be verified without a config
 | `TRUSTED_PROXY_IPS`          | Comma-separated proxy IPs/CIDRs. When `REMOTE_ADDR` matches, client IP for rate limits and audit is the rightmost untrusted hop in `X-Forwarded-For`. Set this for Coolify, Traefik, or nginx ingress so clients cannot spoof the leftmost XFF entry. |
 | `SELF_SERVICE_ACCOUNT_DELETE_MAX_IAT_AGE` | Default `5m`. Session access JWT `iat` window for `DELETE /api/v1/user`. |
 
-OAuth credentials are configured **per company** in the database (Django admin or `/api/v1/admin/oauth-social-apps`), not via container environment variables.
+OAuth credentials are configured **per company** in the database (Shellui admin, Django admin, or `POST /api/v1/oauth-social-apps`), not via container environment variables.
 
 With Postgres:
 
@@ -228,17 +234,20 @@ With Postgres:
 -e POSTGRES_DATABASE_URL='postgres://user:pass@host:5432/dbname'
 ```
 
-### Redis (Coolify / multi-worker Gunicorn)
+### Redis (required in production)
 
-When `GUNICORN_WORKERS` is greater than 1 (Docker default), auth rate limits and the logout access-token denylist rely on Django cache. In-process LocMem is **not** shared between workers.
+Since 0.7.0, a production container (`DEBUG=false`) refuses to start without `REDIS_URL`: the entrypoint logs `REDIS_URL is required when DEBUG is false (example: redis://redis:6379/0)` and exits with status 1, before migrations. Auth rate limits, the logout access-token denylist, OAuth PKCE state and SAML replay protection rely on Django cache, and in-process LocMem is **not** shared between Gunicorn workers or containers. Redis is also the broker for the scheduled jobs (`retry_webhooks`, `purge_expired_data`), which the container runs on its own: no Coolify Scheduled Tasks to add.
 
 1. Add a **Redis** service in Coolify (or run Redis on the VPS).
 2. On the identity-service container, set **`REDIS_URL`** to the Redis connection URL, for example:
    - Same Coolify project, internal hostname: `redis://redis:6379/0`
    - Managed Redis with password: `redis://:password@host:6379/0`
-3. Redeploy identity-service. `manage.py check --deploy` warns (`authapi.W002`) if production still uses LocMem with multiple workers.
+3. Set it on every identity-service container (web and `worker`), also with `SCHEDULER_ENABLED=false` or `CELERY_BROKER_URL` set.
+4. Redeploy identity-service. `manage.py check --deploy` reports `authapi.E004` when `REDIS_URL` is missing with `DEBUG=false`.
 
-Local dev and single-worker installs can leave `REDIS_URL` unset.
+**Upgrading a deployment without Redis:** add the Redis service and `REDIS_URL` before you deploy 0.7.0, otherwise the new container does not start.
+
+Only local development with `DEBUG=true` can leave `REDIS_URL` unset: the container logs a warning, serves the web app and does not run the scheduled jobs. See [docs/scheduled-jobs.md](docs/scheduled-jobs.md).
 
 ## Security notes
 

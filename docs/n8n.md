@@ -1,8 +1,10 @@
-# Using Shellui webhooks with n8n
-
-Shellui identity-service (and sibling hosting-service and storage-service) can POST signed JSON to an n8n **Webhook** node when domain events fire. This page shows a production-ready n8n setup, signature verification, and how retries behave when a workflow is inactive.
-
 ---
+description: Receive identity-service webhooks in an n8n workflow, verify their signature, and understand retries when the workflow is inactive.
+---
+
+# n8n
+
+identity-service, like hosting-service and storage-service, can POST signed JSON to an n8n **Webhook** node when an event fires. This page covers the n8n setup, signature verification, and how retries behave while a workflow is inactive.
 
 ## Before you start
 
@@ -10,21 +12,17 @@ You need a Shellui company with at least one **webhook rule** in the Shellui adm
 
 Identity uses a **5s** HTTP timeout by default (`ACTIONS_WEBHOOK_TIMEOUT_SECONDS`). In n8n, set the Webhook node **Respond** to **Immediately** so the workflow returns before long-running steps.
 
----
-
 ## Create the Webhook node
 
 1. Add a **Webhook** node to your workflow.
 2. Set **HTTP Method** to **POST**.
 3. Copy the **Production URL** into your Shellui webhook rule (stable while the workflow stays active).
-4. For first-time wiring, open **Listen for test event** and use **Send test event** in Shellui admin (`POST /api/v1/actions/rules/<id>/send-test`). n8n shows **404** when nothing is listening; that is retryable once the workflow is active.
+4. For first-time wiring, open **Listen for test event** and use **Send test event** in Shellui admin (`POST /api/v1/actions/rules/{id}/send-test`). n8n shows **404** when nothing is listening; that is retryable once the workflow is active.
 5. **Activate** the workflow before you rely on production traffic.
 
 Optional **Authorization**: paste a static header value into the Shellui rule (for example `Bearer your_n8n_static_token`) and configure n8n **Header Auth** or **Basic Auth** on the Webhook node to match.
 
 Enable **Raw Body** (or equivalent) in n8n so signature verification reads the exact bytes Shellui signed, not a re-parsed JSON object.
-
----
 
 ## Verify the signature in n8n (Code node)
 
@@ -82,8 +80,6 @@ Shellui serializes JSON with compact separators and UTF-8 (`ensure_ascii=false`)
 
 Reference script (same algorithm): [docs/examples/verify-shellui-webhook.mjs](examples/verify-shellui-webhook.mjs).
 
----
-
 ## Node.js verifier (outside n8n)
 
 ```javascript
@@ -119,8 +115,6 @@ export function verifyShelluiWebhook({
 }
 ```
 
----
-
 ## Signing secrets (`whsec_`)
 
 New secrets can use Standard Webhooks form: `whsec_` plus base64 key material. Identity accepts:
@@ -130,7 +124,7 @@ New secrets can use Standard Webhooks form: `whsec_` plus base64 key material. I
 
 Existing rules keep working with plain secrets. No database migration is required when you rotate to `whsec_`.
 
-When you create a webhook rule through the Shellui admin API, the **201** response is the same shape as rule GET plus top-level `secret` (auto-generated when you omit `secret`, or echoing the value you sent). Store it in n8n (credential or environment variable). Rotate with `POST /api/v1/actions/rules/<id>/rotate-secret`: the **200** body matches GET plus a new top-level `secret`. List, GET, and PATCH rule calls never include top-level `secret`.
+When you create a webhook rule through the Shellui admin API, the **201** response is the same shape as rule GET plus top-level `secret` (auto-generated when you omit `secret`, or echoing the value you sent). Store it in n8n (credential or environment variable). Rotate with `POST /api/v1/actions/rules/{id}/rotate-secret`: the **200** body matches GET plus a new top-level `secret`. List, GET, and PATCH rule calls never include top-level `secret`.
 
 You can also generate a secret in Python (Django shell):
 
@@ -138,8 +132,6 @@ You can also generate a secret in Python (Django shell):
 from apps.actions.webhook_signing import generate_webhook_signing_secret
 generate_webhook_signing_secret()
 ```
-
----
 
 ## Retry behavior (n8n-specific)
 
@@ -152,11 +144,9 @@ generate_webhook_signing_secret()
 | 400, 401, 403, 405, 410, 413, 422 | Dead (fix config, then requeue) |
 | Timeouts, connection errors | Retry |
 
-Cron on identity: `python manage.py retry_webhooks` (see [actions.md](actions.md)).
+identity-service retries every minute with its built-in `retry_webhooks` job (see [Scheduled jobs](scheduled-jobs.md)).
 
-Re-queue dead rows from the delivery log in Shellui admin or `POST /api/v1/actions/deliveries/<uuid>/requeue`.
-
----
+Re-queue dead rows from the delivery log in Shellui admin or `POST /api/v1/actions/deliveries/{id}/requeue`.
 
 ## Self-hosted n8n on a private network
 
@@ -166,8 +156,6 @@ Cloud identity cannot reach `http://n8n:5678/...` unless you allow it:
 - Per rule (superuser): `allow_private_urls` on the webhook rule
 
 Use this only for Docker/Coolify networks you control.
-
----
 
 ## Example envelopes
 
@@ -189,6 +177,27 @@ Use this only for Docker/Coolify networks you control.
   }
 }
 ```
+
+### `identity.user.invited`
+
+```json
+{
+  "id": "880e8400-e29b-41d4-a716-446655440003",
+  "type": "identity.user.invited",
+  "time": "2026-09-24T13:30:30+00:00",
+  "company": { "id": 1, "slug": "acme", "name": "Acme" },
+  "data": {
+    "invitation_id": 7,
+    "email": "ada@acme.com",
+    "language": "fr",
+    "invited_by": "grace@acme.com",
+    "invitation_url": "https://app.acme.com/",
+    "source": "invitation"
+  }
+}
+```
+
+While this rule is enabled, identity-service does not send its own invitation email, so your workflow must notify the user. `invitation_url` only opens the app; the user still signs in normally, and the account is created on that first sign-in (`identity.user.created`). `identity.user.invitation_revoked` has the same payload plus `revoked_by`.
 
 ### `identity.scim.user.provisioned`
 
@@ -228,11 +237,9 @@ Use this only for Docker/Coolify networks you control.
 }
 ```
 
-No sign-in URL or token appears in webhook JSON.
+This event is a notification. Identity-service always sends the sign-in email itself, and the payload never contains the sign-in link or the token, so a workflow cannot deliver or use the link. Use it for alerts or analytics, for example to count sign-in requests per company.
 
----
+## Related
 
-## Related docs
-
-- [Action triggers (webhooks)](actions.md)
-- [Configuration](configuration.md)
+- [Webhooks](actions.md): event catalog, signing, and the admin API
+- [Configuration](configuration.md#webhooks): webhook variables

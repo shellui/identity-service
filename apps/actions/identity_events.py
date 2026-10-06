@@ -19,6 +19,19 @@ _USER = (
     ),
 )
 
+_INVITATION = (
+    EventFieldDoc('invitation_id', 'Invitation primary key', 7),
+    EventFieldDoc('email', 'Invited email (lowercase)', 'ada@acme.com'),
+    EventFieldDoc('language', 'Invitation email language (en, fr)', 'fr'),
+    EventFieldDoc('invited_by', 'Email of the admin who sent the invitation', 'grace@acme.com'),
+    EventFieldDoc(
+        'invitation_url',
+        'App URL the invitation links to (not a sign-in credential); null when not provided',
+        'https://app.acme.com/',
+    ),
+    EventFieldDoc('source', 'Always invitation', 'invitation'),
+)
+
 _ACCOUNT_USER = _USER + (
     EventFieldDoc('oauth_provider', 'OAuth provider id when source=oauth', 'github'),
 )
@@ -47,6 +60,32 @@ register_event(
         label='User account created',
         description='A new Django user row was created (OAuth first sign-in or admin), scoped to the company in context.',
         payload_fields=_ACCOUNT_USER,
+    )
+)
+
+register_event(
+    DomainEventType(
+        id='identity.user.invited',
+        label='User invited',
+        description=(
+            'A company owner or staff member invited someone by email. No account is created yet: '
+            'the invitee gets access on their first sign-in with that email. When the company has an '
+            'enabled webhook rule for this event, identity-service skips its own invitation email.'
+        ),
+        payload_fields=_INVITATION,
+    )
+)
+
+register_event(
+    DomainEventType(
+        id='identity.user.invitation_revoked',
+        label='User invitation revoked',
+        description=(
+            'A company owner or staff member revoked a pending invitation. Sign-in with that email is '
+            'refused for this company until a new invitation is sent.'
+        ),
+        payload_fields=_INVITATION
+        + (EventFieldDoc('revoked_by', 'Email of the admin who revoked the invitation', 'grace@acme.com'),),
     )
 )
 
@@ -151,13 +190,51 @@ register_event(
         label='Magic link requested',
         description=(
             'A user requested a passwordless email sign-in link for this company. '
-            'Webhook payloads include request_id and expires_at but omit the sign-in secret and URL.'
+            'Notification only: the payload has request_id and expires_at but never the sign-in '
+            'link or token. Identity always sends the sign-in email itself.'
         ),
         payload_fields=_USER
         + (
             EventFieldDoc('request_id', 'Magic link request UUID', '00000000-0000-0000-0000-000000000001'),
             EventFieldDoc('expires_at', 'ISO8601 expiry for the link', '2026-09-25T10:00:00+00:00'),
         ),
+        # Never sent or stored. Kept here so a future caller cannot leak them by mistake.
+        sensitive_fields=('magic_link_url', 'token', 'raw_token'),
+    )
+)
+
+_LOGIN = (
+    EventFieldDoc('provider', 'Sign-in method (github, google, saml, magic_link, django_admin, …)', 'github'),
+    EventFieldDoc('is_staff_at_event', 'Present and true when the user was Django staff', True),
+    EventFieldDoc('ip_hash', 'Salted SHA-256 of the client IP (raw IP is never stored)', 'b5bb9d80…'),
+    EventFieldDoc('user_agent', 'User-Agent, truncated to 512 characters', 'Mozilla/5.0 …'),
+    EventFieldDoc('client_timezone', 'IANA timezone sent by the client', 'Europe/Paris'),
+    EventFieldDoc('client_device_id_hash', 'Salted SHA-256 of the optional client device id', '7d865e95…'),
+    EventFieldDoc('client_country', 'GeoIP country when configured', 'FR'),
+    EventFieldDoc('client_city', 'GeoIP city when configured', 'Paris'),
+)
+
+register_event(
+    DomainEventType(
+        id='identity.auth.login.succeeded',
+        label='Sign-in succeeded',
+        description='A user signed in (OAuth, SAML, magic link, or Django admin). Event log only.',
+        payload_fields=_LOGIN,
+        webhook=False,
+    )
+)
+
+register_event(
+    DomainEventType(
+        id='identity.auth.login.failed',
+        label='Sign-in failed',
+        description=(
+            'A sign-in attempt was refused. The user is linked when it could be resolved. '
+            'Event log only: anonymous traffic can trigger it, so it is never sent to webhooks.'
+        ),
+        payload_fields=_LOGIN
+        + (EventFieldDoc('failure_reason', 'Why the sign-in was refused', 'Company access is disabled.'),),
+        webhook=False,
     )
 )
 
@@ -174,5 +251,46 @@ register_event(
             EventFieldDoc('http_status', 'HTTP status recorded', 409),
             EventFieldDoc('channel', 'Provisioning channel', 'scim'),
         ),
+    )
+)
+
+# Platform events: one per finished scheduled job run. No company, staff only, never sent
+# to webhooks or email-service. See docs/scheduled-jobs.md#monitoring.
+_SCHEDULED_JOB = (
+    EventFieldDoc('run_id', 'ScheduledJobRun id', 1234),
+    EventFieldDoc('job', 'Job name: retry_webhooks or purge_expired_data', 'retry_webhooks'),
+    EventFieldDoc('trigger', 'celery (in-container beat) or command (external scheduler)', 'celery'),
+    EventFieldDoc('duration_ms', 'Run duration in milliseconds', 412),
+    EventFieldDoc(
+        'counts',
+        'Items processed, per kind',
+        {'webhook_deliveries_attempted': 3, 'webhook_deliveries_succeeded': 3},
+    ),
+    EventFieldDoc('host', 'Host name and process id that ran the job', 'identity-7f9c:41'),
+)
+
+register_event(
+    DomainEventType(
+        id='identity.scheduled_job.succeeded',
+        label='Scheduled job succeeded',
+        description='A scheduled job run finished without error. Platform event, staff only.',
+        payload_fields=_SCHEDULED_JOB,
+        webhook=False,
+        staff_only=True,
+    )
+)
+
+register_event(
+    DomainEventType(
+        id='identity.scheduled_job.failed',
+        label='Scheduled job failed',
+        description='A scheduled job run raised an error. Platform event, staff only.',
+        payload_fields=_SCHEDULED_JOB
+        + (
+            EventFieldDoc('error_key', 'Stable error key (database_error, redis_error, …)', 'database_error'),
+            EventFieldDoc('error_class', 'Exception class name', 'OperationalError'),
+        ),
+        webhook=False,
+        staff_only=True,
     )
 )

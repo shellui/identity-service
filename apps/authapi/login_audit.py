@@ -17,15 +17,28 @@ from typing import TYPE_CHECKING
 
 from django.conf import settings
 
+from apps.actions.event_log import record_event
+from apps.actions.models import EventLog
+from apps.actions.registry import get_event_type
+
 if TYPE_CHECKING:
     from apps.companies.models import Company
     from django.contrib.auth.base_user import AbstractBaseUser
     from django.http import HttpRequest
 
-from .models import LoginEvent
-
 _IP_HASH_SALT = 'login_audit.ip'
 _DEVICE_HASH_SALT = 'login_audit.device'
+
+
+class LoginOutcome:
+    SUCCESS = 'success'
+    FAILURE = 'failure'
+
+
+LOGIN_EVENT_TYPES = {
+    LoginOutcome.SUCCESS: 'identity.auth.login.succeeded',
+    LoginOutcome.FAILURE: 'identity.auth.login.failed',
+}
 
 
 def _parse_ip_hop(hop: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
@@ -250,7 +263,8 @@ def record_login_event(
     client_device_id: str | None = None,
     client_country: str | None = None,
     client_city: str | None = None,
-) -> LoginEvent:
+) -> EventLog:
+    """Record a sign-in attempt (``outcome`` is ``LoginOutcome.SUCCESS`` or ``FAILURE``) in the event log."""
     ip = get_client_ip(request)
     ua = truncate_user_agent(request.META.get('HTTP_USER_AGENT'))
     tz = normalize_client_timezone(client_timezone) or normalize_client_timezone(
@@ -266,19 +280,21 @@ def record_login_event(
     )
     city = _sanitize_geo_field(geo_city if client_city is None else client_city, 128)
 
-    return LoginEvent.objects.create(
-        user=user if user is not None else None,
-        company=company if company is not None else None,
-        outcome=outcome,
-        provider=str(provider).lower()[:32] if provider else 'unknown',
-        failure_reason=sanitize_failure_reason(failure_reason),
-        is_staff_at_event=is_staff,
-        ip_hash=hash_ip(ip),
-        user_agent=ua,
-        client_timezone=tz,
-        client_device_id_hash=device_hash or '',
-        client_country=country,
-        client_city=city,
+    return record_event(
+        get_event_type(LOGIN_EVENT_TYPES[outcome]),
+        company,
+        {
+            'provider': str(provider).lower()[:32] if provider else 'unknown',
+            'failure_reason': sanitize_failure_reason(failure_reason),
+            'is_staff_at_event': is_staff,
+            'ip_hash': hash_ip(ip),
+            'user_agent': ua,
+            'client_timezone': tz,
+            'client_device_id_hash': device_hash,
+            'client_country': country,
+            'client_city': city,
+        },
+        user=user,
     )
 
 

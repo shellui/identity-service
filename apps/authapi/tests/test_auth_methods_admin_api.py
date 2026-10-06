@@ -38,7 +38,10 @@ class AuthMethodsAdminApiTests(TestCase):
             client_id='cid',
             secret='sec',
         )
-        CompanyOAuthClient.objects.create(company=self.company, social_app=app, is_active=True)
+        self.github_app = app
+        self.github_client = CompanyOAuthClient.objects.create(
+            company=self.company, social_app=app, is_active=True
+        )
 
     def _url(self, path: str, company=None) -> str:
         cid = (company or self.company).id
@@ -114,6 +117,53 @@ class AuthMethodsAdminApiTests(TestCase):
         )
         self.assertEqual(enabled.status_code, 200)
         self.assertTrue(enabled.data['magic_link_effective'])
+
+    def test_new_company_has_magic_link_enabled(self):
+        company = Company.objects.create(name='Fresh Co', slug='fresh-co')
+        self.assertTrue(company.enable_magic_link)
+        settings_resp = self.client.get(f'/api/v1/settings?company_id={company.id}')
+        self.assertIn('magic_link', settings_resp.data['methods'])
+
+    def test_cannot_disable_magic_link_without_other_provider(self):
+        self.github_client.delete()
+        self._as_owner()
+
+        response = self.client.patch(
+            self._url('/api/v1/auth-methods'),
+            {'enable_magic_link': False},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data['error_code'], 'login_method_required')
+        self.company.refresh_from_db()
+        self.assertTrue(self.company.enable_magic_link)
+
+    def test_cannot_remove_last_provider_when_magic_link_disabled(self):
+        self.company.enable_magic_link = False
+        self.company.save(update_fields=['enable_magic_link'])
+        self._as_owner()
+
+        deactivate = self.client.put(
+            self._url(f'/api/v1/oauth-clients/{self.github_client.pk}'),
+            {'is_active': False},
+            format='json',
+        )
+        delete_client = self.client.delete(self._url(f'/api/v1/oauth-clients/{self.github_client.pk}'))
+        delete_app = self.client.delete(self._url(f'/api/v1/oauth-social-apps/{self.github_app.pk}'))
+
+        for response in (deactivate, delete_client, delete_app):
+            self.assertEqual(response.status_code, 400, response.data)
+            self.assertEqual(response.data['error_code'], 'login_method_required')
+        self.github_client.refresh_from_db()
+        self.assertTrue(self.github_client.is_active)
+
+    def test_can_remove_provider_while_magic_link_enabled(self):
+        self._as_owner()
+
+        response = self.client.delete(self._url(f'/api/v1/oauth-clients/{self.github_client.pk}'))
+
+        self.assertEqual(response.status_code, 204)
 
     @override_settings(MAGIC_LINK_ENABLED=False)
     def test_get_reflects_global_kill_switch(self):

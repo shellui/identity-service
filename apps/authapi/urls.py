@@ -1,15 +1,41 @@
 from django.urls import include, path
 
+from apps.actions.event_log_views import (
+    ShellUIAdminEventDetailView,
+    ShellUIAdminEventListView,
+    ShellUIAdminEventRetentionView,
+    ShellUIAdminEventTypesView,
+    ShellUIAdminLoginEventDetailView,
+    ShellUIAdminLoginEventListView,
+)
+from apps.actions.scheduled_job_views import (
+    ScheduledJobRunDetailView,
+    ScheduledJobRunsView,
+    ScheduledJobsView,
+)
+
+from .audience_views import ShellUIAdminUserAudienceView
+from .invitation_views import (
+    ShellUIAdminInvitationDetailView,
+    ShellUIAdminInvitationRevokeView,
+    ShellUIAdminInvitationView,
+)
 from .magic_link_views import ShellUIMagicLinkRequestView, ShellUIMagicLinkVerifyView
+from .saml.views import (
+    ShellUISAMLACSView,
+    ShellUISAMLFinishACSView,
+    ShellUISAMLLoginView,
+    ShellUISAMLMetadataView,
+    ShellUISAMLSLSView,
+)
 from .views import (
     ShellUIAdminGroupDetailView,
     ShellUIAdminGroupListView,
-    ShellUIAdminLoginEventDetailView,
-    ShellUIAdminLoginEventListView,
     ShellUIAdminOAuthClientDetailView,
     ShellUIAdminOAuthClientListView,
     ShellUIAdminOAuthRedirectDetailView,
     ShellUIAdminOAuthRedirectListView,
+    ShellUIAdminOAuthProviderCatalogView,
     ShellUIAdminOAuthSocialAppDetailView,
     ShellUIAdminOAuthSocialAppListView,
     ShellUIHostingOAuthRedirectSyncView,
@@ -52,6 +78,11 @@ urlpatterns = [
     path('groups', ShellUIAdminGroupListView.as_view(), name='shellui-admin-groups'),
     path('groups/<int:pk>', ShellUIAdminGroupDetailView.as_view(), name='shellui-admin-group-detail'),
     path('users', ShellUIAdminUserListView.as_view(), name='shellui-admin-users'),
+    path('users/audience', ShellUIAdminUserAudienceView.as_view(), name='shellui-admin-users-audience'),
+    path('events', ShellUIAdminEventListView.as_view(), name='shellui-admin-events'),
+    path('events/types', ShellUIAdminEventTypesView.as_view(), name='shellui-admin-event-types'),
+    path('events/retention', ShellUIAdminEventRetentionView.as_view(), name='shellui-admin-event-retention'),
+    path('events/<int:pk>', ShellUIAdminEventDetailView.as_view(), name='shellui-admin-event-detail'),
     path('login-events', ShellUIAdminLoginEventListView.as_view(), name='shellui-admin-login-events'),
     path('login-events/<int:pk>', ShellUIAdminLoginEventDetailView.as_view(), name='shellui-admin-login-event-detail'),
     path('oauth-clients', ShellUIAdminOAuthClientListView.as_view(), name='shellui-admin-oauth-clients'),
@@ -66,6 +97,11 @@ urlpatterns = [
         'hosting-oauth-redirects',
         ShellUIHostingOAuthRedirectSyncView.as_view(),
         name='shellui-hosting-oauth-redirects',
+    ),
+    path(
+        'oauth-provider-catalog',
+        ShellUIAdminOAuthProviderCatalogView.as_view(),
+        name='shellui-admin-oauth-provider-catalog',
     ),
     path('oauth-social-apps', ShellUIAdminOAuthSocialAppListView.as_view(), name='shellui-admin-oauth-social-apps'),
     path('oauth-social-apps/<int:pk>', ShellUIAdminOAuthSocialAppDetailView.as_view(), name='shellui-admin-oauth-social-app-detail'),
@@ -82,6 +118,17 @@ urlpatterns = [
         name='shellui-personal-access-tokens',
     ),
     path('actions/', include('apps.actions.urls')),
+    path('scheduled-jobs', ScheduledJobsView.as_view(), name='shellui-admin-scheduled-jobs'),
+    path(
+        'scheduled-jobs/runs/<int:pk>',
+        ScheduledJobRunDetailView.as_view(),
+        name='shellui-admin-scheduled-job-run-detail',
+    ),
+    path(
+        'scheduled-jobs/<str:job>/runs',
+        ScheduledJobRunsView.as_view(),
+        name='shellui-admin-scheduled-job-runs',
+    ),
     path('auth-methods', ShellUIAdminAuthMethodsView.as_view(), name='shellui-admin-auth-methods'),
     path('scim', ShellUIAdminScimStatusView.as_view(), name='shellui-admin-scim-status'),
     path(
@@ -91,7 +138,43 @@ urlpatterns = [
     ),
     path('scim/tokens', ShellUIAdminScimTokenListCreateView.as_view(), name='shellui-admin-scim-tokens'),
     path('users/<int:pk>', ShellUIAdminUserDetailView.as_view(), name='shellui-admin-user-detail'),
+    path('invitations', ShellUIAdminInvitationView.as_view(), name='shellui-admin-invitations'),
+    path(
+        'invitations/<int:pk>',
+        ShellUIAdminInvitationDetailView.as_view(),
+        name='shellui-admin-invitation-detail',
+    ),
+    path(
+        'invitations/<int:pk>/revoke',
+        ShellUIAdminInvitationRevokeView.as_view(),
+        name='shellui-admin-invitation-revoke',
+    ),
     path('preferences', ShellUIPreferenceView.as_view(), name='shellui-preferences'),
     path('providers/<str:provider>/authorize/', SocialAuthorizeView.as_view(), name='social-authorize'),
     path('providers/<str:provider>/login/', SocialLoginView.as_view(), name='social-login'),
+    path(
+        'saml/<str:organization_slug>/metadata/',
+        ShellUISAMLMetadataView.as_view(),
+        name='shellui-saml-metadata',
+    ),
+    path(
+        'saml/<str:organization_slug>/acs/',
+        ShellUISAMLACSView.as_view(),
+        name='shellui-saml-acs',
+    ),
+    path(
+        'saml/<str:organization_slug>/acs/finish/',
+        ShellUISAMLFinishACSView.as_view(),
+        name='shellui-saml-finish-acs',
+    ),
+    path(
+        'saml/<str:organization_slug>/login/',
+        ShellUISAMLLoginView.as_view(),
+        name='shellui-saml-login',
+    ),
+    path(
+        'saml/<str:organization_slug>/sls/',
+        ShellUISAMLSLSView.as_view(),
+        name='shellui-saml-sls',
+    ),
 ]

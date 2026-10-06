@@ -1,0 +1,8 @@
+<!DOCTYPE html>
+<html lang="en">
+<body style="font-family: system-ui, sans-serif; line-height: 1.5; color: #111;">
+  <h1>No sign-in link for staff accounts</h1>
+  <p>Someone asked for a sign-in link for this address on {{ company_name }}. For security, staff accounts can't sign in with an email link. Sign in with your usual sign-in method instead. If you didn't ask for this, you can ignore this email.</p>
+  {% if sign_in_url %}<p><a href="{{ sign_in_url }}">Go to sign-in</a></p>{% endif %}
+</body>
+</html>

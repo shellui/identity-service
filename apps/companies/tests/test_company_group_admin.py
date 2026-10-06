@@ -3,7 +3,7 @@ from django.contrib.auth import get_user_model
 from django.test import Client, RequestFactory, TestCase
 from django.urls import reverse
 
-from apps.actions.models import ActionOutbox, ActionRule
+from apps.actions.models import ActionOutbox, ActionRule, EventLog
 from apps.companies.admin import CompanyGroupAdmin, CompanyGroupAdminForm
 from apps.companies.models import Company, CompanyGroup
 
@@ -121,3 +121,35 @@ class CompanyGroupAdminTests(TestCase):
             response = self.client.post(url, {'post': 'yes'})
         self.assertEqual(response.status_code, 302, response.content)
         self.assertEqual(ActionOutbox.objects.filter(event_type='identity.group.deleted').count(), 1)
+
+    def test_admin_member_edit_logs_membership_changed(self):
+        ada = User.objects.create_user(username='ada', email='ada@acme.com', password='x')
+        group = CompanyGroup.objects.create(company=self.company, display_name='Eng')
+        url = reverse('admin:companies_companygroup_change', args=[group.pk])
+        response = self.client.post(
+            url,
+            {'company': self.company.pk, 'display_name': 'Eng', 'members': [ada.pk]},
+        )
+        self.assertEqual(response.status_code, 302, response.content)
+        row = EventLog.objects.get(event_type='identity.group.membership_changed')
+        self.assertEqual(row.user_id, ada.pk)
+        self.assertEqual(row.data['change'], 'members_added')
+
+        self.client.post(url, {'company': self.company.pk, 'display_name': 'Eng'})
+        self.assertEqual(
+            list(
+                EventLog.objects.filter(event_type='identity.group.membership_changed')
+                .order_by('pk')
+                .values_list('data__change', flat=True)
+            ),
+            ['members_added', 'members_removed'],
+        )
+
+    def test_admin_bulk_delete_logs_group_deleted(self):
+        groups = [CompanyGroup.objects.create(company=self.company, display_name=n) for n in ('A', 'B')]
+        response = self.client.post(
+            reverse('admin:companies_companygroup_changelist'),
+            {'action': 'delete_selected', '_selected_action': [g.pk for g in groups], 'post': 'yes'},
+        )
+        self.assertEqual(response.status_code, 302, response.content)
+        self.assertEqual(EventLog.objects.filter(event_type='identity.group.deleted').count(), 2)

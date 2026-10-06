@@ -1,15 +1,18 @@
-# Action triggers (domain events → webhooks)
-
-Company owners (and Django staff) can react when identity events happen (SCIM access changes, account create/delete, group changes, SCIM conflicts, token lifecycle) using **webhook Action rules** in the **Shellui admin API** or **Django admin**. Each rule maps a **catalog event type** (for example `identity.scim.user.provisioned`) to an HTTPS **webhook** endpoint.
-
-Shellui identity stays the source of truth for domain events. Automation (n8n, Make, custom workers) consumes **outbound webhooks** on your URLs.
-
 ---
+description: Send signed webhooks from identity-service when users are created, invited, deleted, or provisioned, with retries and a delivery log.
+---
+
+# Webhooks
+
+identity-service can POST a signed JSON event to your URL when something happens in a company: a user is created, invited, or deleted, SCIM provisions someone, a group changes. Company owners and staff create **webhook rules** in Shellui admin, the admin API, or Django admin. Each rule maps one catalog event type (for example `identity.user.created`) to an HTTPS endpoint, such as an [n8n](n8n.md) workflow. Delivery is at-least-once, retried with backoff for up to 8 attempts.
 
 ## How it works
 
 ```text
 Business code calls emit_event(type, company, payload)
+        │
+        ▼
+Record the event in the event log (always, rule or not)
         │
         ▼
 Match enabled webhook ActionRule rows for that company + event type
@@ -21,16 +24,16 @@ Insert ActionOutbox row(s) in the same DB transaction
 transaction.on_commit → best-effort delivery (timeout-bounded HTTP, off the request thread)
         │
         ▼
-DeliveryAttempt audit log; retries via manage.py retry_webhooks
+DeliveryAttempt audit log; retries by the retry_webhooks scheduled job
 ```
 
-- **No Celery / Redis required** for actions — the outbox lives in Postgres (or SQLite locally).
+- The outbox lives in Postgres (or SQLite locally). Retries run every minute on the built-in scheduler, which uses Redis (`REDIS_URL`). See [Scheduled jobs](scheduled-jobs.md).
 - **SCIM and API paths never block** on slow external HTTP: delivery runs only after commit, with short webhook timeouts (default 5s).
 - Delivery is **at-least-once**; dedupe on the envelope `id` (same value as the `webhook-id` header).
 
-Magic-link sign-in emails are **not** Action rules. Identity sends them directly when a user requests a link (see [magic-link.md](magic-link.md)).
+Every event is also stored in the [event log](event-log.md), shown in the admin panel under **Log events** and kept for the company data retention.
 
----
+Magic link sign-in emails are not sent through webhook rules. identity-service always sends them itself, see [Magic link](magic-link.md).
 
 ## Event catalog (`identity.*`)
 
@@ -38,9 +41,11 @@ Magic-link sign-in emails are **not** Action rules. Identity sends them directly
 | ---------- | ------------- | ----- |
 | `identity.scim.user.provisioned` | SCIM user create or re-enable (`active: true`) | Company **access** only; not account creation |
 | `identity.scim.user.deprovisioned` | SCIM deprovision / `active: false` | Disables membership; user row remains |
-| `identity.user.created` | First OAuth sign-in creates a User, or Django admin adds a user with company membership | **Company-scoped** |
-| `identity.user.deleted` | Django admin or `DELETE /api/v1/user` (self-service) deletes a User | One emit **per company membership** before delete |
-| `identity.user.updated` | — | Registered; **`emit_by_default=false`** |
+| `identity.user.created` | First OAuth, SAML or magic link sign-in creates a User (including an invitee's first sign-in), or Django admin adds a user with company membership | **Company-scoped** |
+| `identity.user.invited` | `POST /api/v1/invitations` (admin panel **Invite user**) | No account exists yet: payload has `invitation_id`, `email`, `language` (invitation language), `invited_by`, `invitation_url` (app URL, not a credential), no `user_id`. While an enabled rule exists, identity-service skips its own invitation email |
+| `identity.user.invitation_revoked` | `POST /api/v1/invitations/{id}/revoke` | Same payload plus `revoked_by`. Sign-in with that email is refused until a new invitation |
+| `identity.user.deleted` | Django admin deletes a User, `DELETE /api/v1/users/{id}` (admin panel), or `DELETE /api/v1/user` (self-service) | Admin panel and self-service deletes emit for the current company only and keep accounts linked to other companies; Django admin emits **once per membership** before deleting the account |
+| `identity.user.updated` | Not emitted | Registered with `emit_by_default=false` |
 | `identity.group.created` | SCIM or Django admin group create | |
 | `identity.group.updated` | Display name / external id change | |
 | `identity.group.deleted` | Group removed | |
@@ -48,7 +53,9 @@ Magic-link sign-in emails are **not** Action rules. Identity sends them directly
 | `identity.scim.token.created` | Admin REST or Django admin token create | No secret in payload |
 | `identity.scim.token.revoked` | Token revoke | |
 | `identity.scim.provisioning_conflict` | SCIM 409 / displayName collision | Ties to `ScimProvisioningEvent` |
-| `identity.auth.magic_link.requested` | User requested a passwordless email sign-in link | Payload has `request_id`, `email`, `expires_at` (no secret or sign-in URL) |
+| `identity.auth.magic_link.requested` | User requested a passwordless email sign-in link | Notification only. Payload has `request_id`, `email`, `expires_at`, `source` and `language`, but never the sign-in link or token. Identity-service always sends the sign-in email itself, whether or not a rule exists |
+
+Sign-ins are recorded in the [event log](event-log.md) as `identity.auth.login.succeeded` and `identity.auth.login.failed`. They are log-only and cannot be used in webhook rules.
 
 ### Envelope shape (webhooks)
 
@@ -73,15 +80,9 @@ CloudEvents-inspired JSON:
 
 Payloads never include secrets, bearer tokens, or password hashes.
 
----
+## Create a rule
 
-## Configuring rules
-
-### Django admin
-
-1. Run migrations (`apps.actions` is in `INSTALLED_APPS`).
-2. Open **Action rules** in Django admin.
-3. Create a rule: company, **event type**, webhook URL, signing secret, optional Authorization header.
+Create rules in Shellui admin, with the [admin API](#admin-api), or in Django admin under **Action rules**. A rule has a company, an event type, a webhook URL, a signing secret, and an optional `Authorization` header.
 
 ### Webhook config (stored JSON)
 
@@ -93,9 +94,7 @@ Payloads never include secrets, bearer tokens, or password hashes.
 }
 ```
 
-**Private / localhost webhooks:** Per-rule `allow_private_urls` is **not** available to regular staff — only a **superuser** can enable it in Django admin, or operators set deployment-wide `ACTIONS_WEBHOOK_ALLOW_PRIVATE=true`.
-
----
+**Private and localhost webhooks:** regular staff cannot turn on `allow_private_urls` for a rule. Only a superuser can, in Django admin, or operators set `ACTIONS_WEBHOOK_ALLOW_PRIVATE=true` for the whole deployment.
 
 ## Webhook signing (Standard Webhooks style)
 
@@ -118,15 +117,13 @@ JSON body: compact separators, keys sorted, UTF-8 (`ensure_ascii=false`). Verify
 
 Step-by-step n8n setup: [Using Shellui webhooks with n8n](n8n.md).
 
-Reject requests with timestamps too far from clock skew if you enforce replay protection.
+For replay protection, reject requests whose `webhook-timestamp` is more than a few minutes away from your clock (the examples use 5 minutes).
 
 ### SSRF protections
 
 Before delivery, identity **resolves the webhook hostname once**, rejects private/link-local/reserved targets (unless private URLs are explicitly allowed), and opens the TCP connection to that resolved address while sending the original hostname in the `Host` header and TLS SNI.
 
----
-
-## Delivery, retries, and cron
+## Delivery, retries, and scheduling
 
 - After commit, identity attempts delivery once in a background thread (**5s** default timeout via `ACTIONS_WEBHOOK_TIMEOUT_SECONDS`; errors never fail the user request).
 - Failed deliveries schedule `next_attempt_at` with exponential backoff: **30s * 2^(attempt-1)**, capped at **1 hour**, unless **429** or **503** returns **Retry-After** (then the larger of backoff and Retry-After applies, still capped at 1 hour).
@@ -142,21 +139,17 @@ Before delivery, identity **resolves the webhook hostname once**, rejects privat
 | SSRF block (private URL not allowed) | No (dead) |
 | Disabled/deleted rule | No (dead) |
 
-Each attempt is logged in **Delivery attempts** (HTTP status, error excerpt, duration).
+Each attempt is logged in **Delivery attempts** (HTTP status, error excerpt, duration) with a `trigger`: `dispatch` for the first try right after the event, `automatic_retry` for a try made by the `retry_webhooks` job. Django staff also see the `scheduled_job_run_id` of the run that made it. See [Scheduled jobs monitoring](scheduled-jobs.md#from-a-run-to-its-webhooks-and-emails).
 
-Retry pending rows with:
+The Docker image retries pending rows every minute with the `retry_webhooks` job, so there is nothing to schedule when `REDIS_URL` is set. To run it from your own scheduler instead, set `SCHEDULER_ENABLED=false` and run every minute:
 
 ```bash
 python manage.py retry_webhooks --batch-size 50 --max-seconds 50 --concurrency 4
 ```
 
-Cron example (every minute):
+Keep `--max-seconds` below 60 so overlapping runs stay safe (skip-locked claims + lease).
 
-```text
-* * * * * cd /app && python manage.py retry_webhooks >> /var/log/retry_webhooks.log 2>&1
-```
-
-On **Coolify**, add a **Scheduled Task** on the same identity-service image with that command and a 1-minute interval. Keep `--max-seconds` below 60 so overlapping runs stay safe (skip-locked claims + lease).
+Finished deliveries (`delivered`, `dead`) are deleted after the company data retention by `purge_expired_data`. See [Scheduled jobs](scheduled-jobs.md) for both jobs.
 
 Flags:
 
@@ -165,27 +158,25 @@ Flags:
 - `--concurrency` (default 4)
 - `--dry-run` (claim only, no HTTP)
 
-Re-queue a **dead** row from Django admin or `POST /api/v1/actions/deliveries/<uuid>/requeue`.
+Re-queue a **dead** row from Django admin or `POST /api/v1/actions/deliveries/{id}/requeue`.
 
----
+## Admin API
 
-## Company admin REST API (`/api/v1/actions/`)
-
-Same authentication as other Shellui admin endpoints: Bearer JWT (or PAT) plus `company_id` query parameter. Callers must be **Django staff** or a **company owner** for that company.
+Staff and company owners call these endpoints with an access token or a personal access token, plus the `company_id` query parameter, like the other admin endpoints.
 
 | Method | Path | Purpose |
 | ------ | ---- | ------- |
 | `GET` | `/api/v1/actions/events` | Event catalog with `payload_fields` and `sample_envelope` |
 | `GET` | `/api/v1/actions/rules` | List webhook rules (secrets redacted) |
 | `POST` | `/api/v1/actions/rules` | Create a webhook rule |
-| `GET` | `/api/v1/actions/rules/<id>` | Rule detail |
-| `PATCH` | `/api/v1/actions/rules/<id>` | Update fields or config |
-| `DELETE` | `/api/v1/actions/rules/<id>` | Delete a rule |
-| `POST` | `/api/v1/actions/rules/<id>/send-test` | POST a sample envelope to the rule URL (no outbox row) |
-| `POST` | `/api/v1/actions/rules/<id>/rotate-secret` | Generate a new `whsec_` signing secret (returned once) |
-| `GET` | `/api/v1/actions/deliveries` | Paginated delivery log |
-| `GET` | `/api/v1/actions/deliveries/<uuid>` | Delivery detail with `envelope` and `attempts` |
-| `POST` | `/api/v1/actions/deliveries/<uuid>/requeue` | Re-queue a row |
+| `GET` | `/api/v1/actions/rules/{id}` | Rule detail |
+| `PATCH` | `/api/v1/actions/rules/{id}` | Update fields or config |
+| `DELETE` | `/api/v1/actions/rules/{id}` | Delete a rule |
+| `POST` | `/api/v1/actions/rules/{id}/send-test` | POST a sample envelope to the rule URL (no outbox row) |
+| `POST` | `/api/v1/actions/rules/{id}/rotate-secret` | Generate a new `whsec_` signing secret (returned once) |
+| `GET` | `/api/v1/actions/deliveries` | Paginated delivery log. Staff can filter by `scheduled_job_run_id` |
+| `GET` | `/api/v1/actions/deliveries/{id}` | Delivery detail with `envelope` and `attempts` |
+| `POST` | `/api/v1/actions/deliveries/{id}/requeue` | Re-queue a row |
 
 ### Example: create a webhook rule
 
@@ -200,7 +191,7 @@ POST /api/v1/actions/rules?company_id=1
 }
 ```
 
-Example **201** body (same fields as GET `/rules/<id>`, plus `secret`):
+Example **201** body (same fields as GET `/rules/{id}`, plus `secret`):
 
 ```json
 {
@@ -252,22 +243,19 @@ POST /api/v1/actions/rules/1/rotate-secret?company_id=1
 
 List, detail, and update responses never include top-level `secret`. Webhook `config` includes `has_secret`, optional `secret_hint` (last four characters), and `authorization_header_set` instead of plaintext values.
 
-**Removed (admin UI):** email rule fields, email template endpoints, and `email_context_fields` on the events catalog. Magic-link email is always sent by identity on request (not configurable via Actions).
-
----
+Email rules, email template endpoints, and `email_context_fields` on the events catalog were removed. Company emails for catalog events go through email-service instead, see [Email delivery](email-service.md). An enabled webhook rule on `identity.user.invited` still replaces the built-in invitation email; a rule on `identity.auth.magic_link.requested` does not.
 
 ## Adding a new event type (developers)
 
-1. Register the type in `apps/actions/identity_events.py`.
+1. Register the type in `apps/actions/identity_events.py`. List payload keys that are live credentials in `sensitive_fields` so they are never written to the event log, and set `webhook=False` for log-only events.
 2. Call `emit_event(...)` or `emit_event_if_rules(...)` from the business path inside a transaction when appropriate.
 3. Document the payload in this file and add tests under `apps/actions/tests/`.
 
-To copy this pattern to **storage-service** or **hosting-service**, reuse the self-contained modules under `apps/actions/` (`emit.py`, `delivery.py`, `handlers/webhook.py`, `webhook_signing.py`, `webhook_transport.py`, `ssrf.py`, `management/commands/retry_webhooks.py`, models, and admin API views), register service-specific events, and wire `emit_event` from domain code.
+To copy this pattern to **storage-service** or **hosting-service**, reuse the self-contained modules under `apps/actions/` (`emit.py`, `event_log.py`, `retention.py`, `delivery.py`, `handlers/webhook.py`, `webhook_signing.py`, `webhook_transport.py`, `ssrf.py`, `management/commands/retry_webhooks.py`, `management/commands/purge_expired_data.py`, `tasks.py`, models, and admin API views, plus `config/celery.py` and `config/task_lock.py` for the scheduler), register service-specific events, and wire `emit_event` from domain code.
 
----
+## Related
 
-## Related docs
-
-- [SCIM](scim.md)
-- [Configuration](configuration.md)
-- [Magic link](magic-link.md)
+- [n8n](n8n.md): receive webhooks in an n8n workflow
+- [Event log](event-log.md): every event, with or without a rule
+- [Scheduled jobs](scheduled-jobs.md): the retry job
+- [Configuration](configuration.md#webhooks): webhook variables

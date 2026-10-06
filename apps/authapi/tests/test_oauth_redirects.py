@@ -329,6 +329,7 @@ class OAuthAuthorizeCallbackTests(TestCase):
             name='Google Test',
             client_id='gid',
             secret='gsecret',
+            settings={'catalog_slug': 'google'},
         )
         return CompanyOAuthClient.objects.create(
             company=self.company,
@@ -345,12 +346,12 @@ class OAuthAuthorizeCallbackTests(TestCase):
         return_value={
             'sub': 'google-sub',
             'email': 'google.user@example.com',
-            'name': 'Google User',
             'email_verified': True,
-            'picture': 'https://example.com/g.png',
+            'name': 'Google User',
         },
     )
-    def test_google_callback_skips_confirm_by_default(self, _userinfo, exchange):
+    @override_settings(OAUTH_SKIP_CONFIRM_PROVIDERS=['google'])
+    def test_google_callback_skips_confirm_when_configured(self, _userinfo, exchange):
         google_client = self._google_oauth_client()
         redirect_to = 'https://shell.example.com/login/callback'
         state, _nonce = build_oauth_state(
@@ -400,8 +401,8 @@ class OAuthAuthorizeCallbackTests(TestCase):
         return_value={
             'sub': 'google-sub',
             'email': 'google.user@example.com',
-            'name': 'Google User',
             'email_verified': True,
+            'name': 'Google User',
         },
     )
     def test_empty_skip_list_google_shows_confirm(self, _userinfo, _exchange):
@@ -417,7 +418,7 @@ class OAuthAuthorizeCallbackTests(TestCase):
         self.assertEqual(callback.status_code, 200)
         self.assertIn(b'Confirm your account', callback.content)
 
-    @override_settings(OAUTH_SKIP_CONFIRM_PROVIDERS=['googl'])
+    @override_settings(OAUTH_SKIP_CONFIRM_PROVIDERS=['googel'])
     @patch(
         'apps.authapi.views.exchange_code_for_token',
         return_value=OAuthTokenBundle(access_token='provider-access'),
@@ -427,8 +428,8 @@ class OAuthAuthorizeCallbackTests(TestCase):
         return_value={
             'sub': 'google-sub',
             'email': 'google.user@example.com',
-            'name': 'Google User',
             'email_verified': True,
+            'name': 'Google User',
         },
     )
     def test_typo_in_skip_list_ignored(self, _userinfo, _exchange):
@@ -453,8 +454,8 @@ class OAuthAuthorizeCallbackTests(TestCase):
         return_value={
             'sub': 'google-sub',
             'email': 'google.user@example.com',
-            'name': 'Google User',
             'email_verified': True,
+            'name': 'Google User',
         },
     )
     def test_callback_rejects_missing_oauth_state_cookie(self, _userinfo, _exchange):
@@ -472,6 +473,7 @@ class OAuthAuthorizeCallbackTests(TestCase):
         )
         self.assertEqual(callback.status_code, 400)
 
+    @override_settings(OAUTH_SKIP_CONFIRM_PROVIDERS=[])
     @patch(
         'apps.authapi.views.exchange_code_for_token',
         return_value=OAuthTokenBundle(access_token='provider-access'),
@@ -481,8 +483,8 @@ class OAuthAuthorizeCallbackTests(TestCase):
         return_value={
             'sub': 'google-sub',
             'email': 'google.user@example.com',
-            'name': 'Google User',
             'email_verified': True,
+            'name': 'Google User',
         },
     )
     def test_callback_rejects_reused_oauth_state(self, _userinfo, _exchange):
@@ -495,7 +497,7 @@ class OAuthAuthorizeCallbackTests(TestCase):
             company_oauth_client_id=google_client.id,
         )
         first = self._oauth_callback(state)
-        self.assertEqual(first.status_code, 302)
+        self.assertEqual(first.status_code, 200)
         second = self._oauth_callback(state)
         self.assertEqual(second.status_code, 400)
 

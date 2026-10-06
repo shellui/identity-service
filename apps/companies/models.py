@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.db.models import Q
 from django.utils.text import slugify
@@ -77,11 +78,29 @@ class Company(models.Model):
         blank=True,
         help_text='Lowercase domains without @ (e.g. ["acme.com"]). Used when access mode is Domain.',
     )
+    verified_email_domains = models.JSONField(
+        default=list,
+        blank=True,
+        help_text=(
+            'Domains Shellui operators have confirmed this company owns (Django admin only). '
+            'SAML may link by assertion email only on these domains when the IdP is trusted. '
+            'Company admins cannot set this via the Shellui admin API.'
+        ),
+    )
     enable_magic_link = models.BooleanField(
         default=True,
         help_text=(
             'When true (default for new companies), users can request passwordless email magic links '
             'for this company. Requires deployment MAGIC_LINK_ENABLED.'
+        ),
+    )
+    DEFAULT_DATA_RETENTION_DAYS = 7
+    data_retention_days = models.PositiveSmallIntegerField(
+        default=DEFAULT_DATA_RETENTION_DAYS,
+        validators=[MinValueValidator(1), MaxValueValidator(3650)],
+        help_text=(
+            'Days to keep the event log and finished webhook deliveries before '
+            '"manage.py purge_expired_data" deletes them. Django admin only.'
         ),
     )
 
@@ -212,6 +231,8 @@ class CompanyOAuthClient(models.Model):
         on_delete=models.CASCADE,
         related_name='company_oauth_clients',
     )
+    catalog_slug = models.CharField(max_length=128, blank=True, default='')
+    dedupe_key = models.CharField(max_length=512, null=True, blank=True)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -223,7 +244,28 @@ class CompanyOAuthClient(models.Model):
                 fields=['company', 'social_app'],
                 name='company_oauth_client_unique_social_app_per_company',
             ),
+            models.UniqueConstraint(
+                fields=['company', 'dedupe_key'],
+                name='company_oauth_client_unique_dedupe_per_company',
+            ),
         ]
+
+    def save(self, *args, **kwargs):
+        if self.social_app_id:
+            from django.core.exceptions import ValidationError
+
+            from apps.companies.oauth_client_uniqueness import sync_company_oauth_client_uniqueness_fields
+
+            sync_company_oauth_client_uniqueness_fields(self)
+            if CompanyOAuthClient.objects.filter(social_app_id=self.social_app_id).exclude(pk=self.pk).exists():
+                raise ValidationError('A SocialApp can belong to only one company.')
+            if self.pk:
+                previous_company_id = (
+                    CompanyOAuthClient.objects.filter(pk=self.pk).values_list('company_id', flat=True).first()
+                )
+                if previous_company_id is not None and int(previous_company_id) != int(self.company_id):
+                    raise ValidationError('A SocialApp cannot move to another company.')
+        super().save(*args, **kwargs)
 
     def __str__(self) -> str:
         return f'{self.company_id}:{self.social_app.provider}:{self.social_app.name}'
@@ -269,3 +311,75 @@ class CompanyOAuthRedirect(models.Model):
 
     def __str__(self) -> str:
         return f'{self.company_id}:{self.base_url}'
+
+
+class CompanyInvitation(models.Model):
+    """
+    Email invitation to a company. No user account exists until the invitee signs in.
+
+    The latest invitation per (company, email) decides sign-in: pending is accepted on the first
+    sign-in with that verified email, revoked blocks sign-in until a new invitation is sent.
+    """
+
+    STATUS_PENDING = 'pending'
+    STATUS_ACCEPTED = 'accepted'
+    STATUS_REVOKED = 'revoked'
+    STATUS_CHOICES = [
+        (STATUS_PENDING, 'Pending'),
+        (STATUS_ACCEPTED, 'Accepted'),
+        (STATUS_REVOKED, 'Revoked'),
+    ]
+
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.CASCADE,
+        related_name='invitations',
+    )
+    email = models.EmailField(max_length=254, help_text='Stored lowercase.')
+    language = models.CharField(max_length=8, default='en')
+    app_url = models.CharField(max_length=500, blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    invited_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='+',
+    )
+    accepted_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='+',
+    )
+    revoked_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='+',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    accepted_at = models.DateTimeField(null=True, blank=True)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at', '-id']
+        indexes = [
+            models.Index(fields=['company', 'email'], name='company_invitation_email_idx'),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=['company', 'email'],
+                condition=Q(status='pending'),
+                name='company_invitation_one_pending_per_email',
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f'{self.company_id}:{self.email}:{self.status}'
+
+    def save(self, *args, **kwargs):
+        self.email = (self.email or '').strip().lower()
+        super().save(*args, **kwargs)

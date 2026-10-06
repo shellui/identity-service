@@ -23,6 +23,7 @@ from dotenv import load_dotenv
 from django.core.exceptions import ImproperlyConfigured
 
 from apps.authapi.jwks import read_jwt_env, resolve_jwt_configuration
+from config.allauth_provider_apps import ALLAUTH_SOCIALACCOUNT_PROVIDER_APPS
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -95,12 +96,44 @@ def _env_int(name, default: int) -> int:
         raise ImproperlyConfigured(f'{name} must be an integer. Got: {raw!r}') from exc
 
 
+def _env_positive_float(name, default):
+    value = _env_float(name, default)
+    if value <= 0:
+        raise ImproperlyConfigured(f'{name} must be greater than zero. Got: {value!r}')
+    return value
+
+
+def _env_non_negative_float(name, default):
+    value = _env_float(name, default)
+    if value < 0:
+        raise ImproperlyConfigured(f'{name} must be zero or greater. Got: {value!r}')
+    return value
+
+
+def _postgres_timeout_options(statement_timeout: float, lock_timeout: float) -> str:
+    """
+    Build the libpq ``options`` string that sets server-side query deadlines.
+
+    Values are in seconds. 0 turns a deadline off. Postgres expects milliseconds.
+    """
+    parts = []
+    if statement_timeout > 0:
+        parts.append(f'-c statement_timeout={int(statement_timeout * 1000)}')
+    if lock_timeout > 0:
+        parts.append(f'-c lock_timeout={int(lock_timeout * 1000)}')
+    return ' '.join(parts)
+
+
+def _running_management_command(*names: str) -> bool:
+    return len(sys.argv) > 1 and sys.argv[1] in names
+
+
 def _caches_config(redis_url: str) -> dict:
     """
     Shared cache for auth rate limits, access-token denylist, and activity throttles.
 
     When ``REDIS_URL`` is set, use Django's Redis backend (requires the ``redis`` package).
-    Otherwise use in-process LocMem (fine for single-process dev; not shared across Gunicorn workers).
+    Otherwise use in-process LocMem (DEBUG=true only: not shared across Gunicorn workers).
     """
     if redis_url:
         return {
@@ -114,6 +147,35 @@ def _caches_config(redis_url: str) -> dict:
             'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
             'LOCATION': 'identity-service-auth',
         }
+    }
+
+
+def _celery_broker_url(redis_url: str, override: str) -> str:
+    """Broker for the scheduled jobs: ``CELERY_BROKER_URL`` when set, else ``REDIS_URL``."""
+    return (override or '').strip() or (redis_url or '').strip()
+
+
+def scheduled_jobs_beat_schedule() -> dict:
+    """
+    Celery beat entries for the scheduled jobs.
+
+    ``expires`` drops a message that waited longer than its period (worker down or
+    busy), so a backlog never turns into a burst of runs.
+    """
+    from celery.schedules import crontab
+
+    return {
+        'retry-webhooks': {
+            'task': 'actions.retry_webhooks',
+            'schedule': timedelta(seconds=60),
+            'options': {'expires': 55},
+        },
+        'purge-expired-data': {
+            'task': 'actions.purge_expired_data',
+            # Hourly at minute 17: off the top of the hour, where many jobs start.
+            'schedule': crontab(minute=17),
+            'options': {'expires': 3000},
+        },
     }
 
 
@@ -196,6 +258,15 @@ VERSION = _project_version()
 
 SCIM_ENABLED = _env_bool('SCIM_ENABLED', True)
 
+# Logging: always write to stdout (Docker / Coolify logs), also when DEBUG=false.
+LOG_LEVEL = os.getenv('LOG_LEVEL', '').strip().upper() or ('DEBUG' if DEBUG else 'INFO')
+if LOG_LEVEL not in {'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'}:
+    raise ImproperlyConfigured(
+        f'LOG_LEVEL must be DEBUG, INFO, WARNING, ERROR or CRITICAL. Got: {LOG_LEVEL!r}'
+    )
+# Requests slower than this many seconds are logged as a warning. 0 turns it off.
+SLOW_REQUEST_THRESHOLD_SECONDS = _env_non_negative_float('SLOW_REQUEST_THRESHOLD_SECONDS', 2.0)
+
 # Application definition
 
 INSTALLED_APPS = [
@@ -209,9 +280,7 @@ INSTALLED_APPS = [
     'allauth',
     'allauth.account',
     'allauth.socialaccount',
-    'allauth.socialaccount.providers.github',
-    'allauth.socialaccount.providers.google',
-    'allauth.socialaccount.providers.microsoft',
+    *ALLAUTH_SOCIALACCOUNT_PROVIDER_APPS,
     'corsheaders',
     'rest_framework',
     'drf_spectacular',
@@ -261,6 +330,7 @@ SPECTACULAR_SETTINGS = {
 }
 
 MIDDLEWARE = [
+    'config.request_context.RequestIdMiddleware',
     'apps.authapi.middleware.LivenessMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
@@ -308,11 +378,13 @@ ACCOUNT_EMAIL_VERIFICATION = 'none'
 ACCOUNT_SIGNUP_FIELDS = ['email*', 'password1*', 'password2*']
 ACCOUNT_LOGIN_METHODS = {'email'}
 
+SOCIALACCOUNT_ADAPTER = 'apps.authapi.social_account_adapter.ShellUISocialAccountAdapter'
+
 # Transactional email (company access requests / enable notifications).
 # Local default: print to console. Production: set EMAIL_HOST / EMAIL_BACKEND.
 EMAIL_BACKEND = os.getenv(
     'EMAIL_BACKEND',
-    'django.core.mail.backends.console.EmailBackend' if DEBUG else 'django.core.mail.backends.smtp.EmailBackend',
+    'config.email_backends.ConsoleEmailBackend' if DEBUG else 'django.core.mail.backends.smtp.EmailBackend',
 )
 EMAIL_HOST = os.getenv('EMAIL_HOST', 'localhost')
 EMAIL_PORT = int(os.getenv('EMAIL_PORT', '25') or '25')
@@ -321,8 +393,29 @@ EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
 EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'false').strip().lower() in {'1', 'true', 'yes', 'on'}
 EMAIL_USE_SSL = os.getenv('EMAIL_USE_SSL', 'false').strip().lower() in {'1', 'true', 'yes', 'on'}
 DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@localhost')
+# Seconds before an SMTP connect, read or write gives up. Django's default is no timeout,
+# so an unreachable mail server could hold a login request forever.
+EMAIL_TIMEOUT = _env_positive_float('EMAIL_TIMEOUT', 10.0)
 
-# Action triggers (domain events → webhooks). DB outbox; no Celery required.
+# Shellui email-service. Unset EMAIL_SERVICE_API_KEY keeps the SMTP / console backend.
+EMAIL_SERVICE_URL = (
+    os.getenv('EMAIL_SERVICE_URL', 'https://email.shellui.com').strip() or 'https://email.shellui.com'
+).rstrip('/')
+EMAIL_SERVICE_API_KEY = os.getenv('EMAIL_SERVICE_API_KEY', '').strip()
+EMAIL_SERVICE_TIMEOUT_SECONDS = _env_float('EMAIL_SERVICE_TIMEOUT_SECONDS', 5.0)
+EMAIL_SERVICE_SEND_ATTEMPTS = _env_int('EMAIL_SERVICE_SEND_ATTEMPTS', 3)
+EMAIL_SERVICE_RETRY_MAX_SLEEP_SECONDS = _env_float('EMAIL_SERVICE_RETRY_MAX_SLEEP_SECONDS', 1.0)
+
+# Shellui email-service. Unset EMAIL_SERVICE_API_KEY keeps the SMTP / console backend.
+EMAIL_SERVICE_URL = (
+    os.getenv('EMAIL_SERVICE_URL', 'https://email.shellui.com').strip() or 'https://email.shellui.com'
+).rstrip('/')
+EMAIL_SERVICE_API_KEY = os.getenv('EMAIL_SERVICE_API_KEY', '').strip()
+EMAIL_SERVICE_TIMEOUT_SECONDS = _env_float('EMAIL_SERVICE_TIMEOUT_SECONDS', 5.0)
+EMAIL_SERVICE_SEND_ATTEMPTS = _env_int('EMAIL_SERVICE_SEND_ATTEMPTS', 3)
+EMAIL_SERVICE_RETRY_MAX_SLEEP_SECONDS = _env_float('EMAIL_SERVICE_RETRY_MAX_SLEEP_SECONDS', 1.0)
+
+# Webhooks (domain events to HTTPS endpoints). DB outbox; retries run on the scheduler.
 ACTIONS_WEBHOOK_TIMEOUT_SECONDS = _env_float('ACTIONS_WEBHOOK_TIMEOUT_SECONDS', 5.0)
 ACTIONS_OUTBOX_MAX_ATTEMPTS = _env_int('ACTIONS_OUTBOX_MAX_ATTEMPTS', 8)
 ACTIONS_WEBHOOK_ALLOW_PRIVATE = _env_bool('ACTIONS_WEBHOOK_ALLOW_PRIVATE', False)
@@ -402,6 +495,7 @@ SHELLUI_GEOIP_DATABASE_PATH = os.getenv('SHELLUI_GEOIP_DATABASE_PATH', '')
 # Scopes only — used by django-allauth provider modules and the admin UI.
 SOCIALACCOUNT_PROVIDERS = {
     'github': {'SCOPE': ['read:user', 'user:email']},
+    'twitch': {'SCOPE': ['user:read:email']},
     'google': {'SCOPE': ['openid', 'email', 'profile']},
     'microsoft': {
         'SCOPE': ['openid', 'email', 'profile', 'User.Read'],
@@ -447,7 +541,9 @@ SECURE_HSTS_PRELOAD = _env_bool('SECURE_HSTS_PRELOAD', False)
 SESSION_COOKIE_SECURE = _env_bool('SESSION_COOKIE_SECURE', not DEBUG)
 CSRF_COOKIE_SECURE = _env_bool('CSRF_COOKIE_SECURE', not DEBUG)
 
-# Cache-backed auth rate limits (see apps/authapi/throttling.py).
+# Cache-backed auth rate limits (see apps/authapi/throttling.py), logout denylist, OAuth
+# PKCE state and SAML replay protection. Required when DEBUG=false: the deploy check
+# authapi.E004 and the Docker entrypoint refuse to start without it.
 REDIS_URL = os.getenv('REDIS_URL', '').strip()
 CACHES = _caches_config(REDIS_URL)
 AUTH_RATE_LIMIT_ENABLED = _env_bool('AUTH_RATE_LIMIT_ENABLED', True)
@@ -459,7 +555,29 @@ AUTH_RATE_LIMITS = {
     'admin_login': {'limit': _env_int('AUTH_RATE_LIMIT_ADMIN_LOGIN', 10), 'window': 300},
     'pat': {'limit': _env_int('AUTH_RATE_LIMIT_PAT', 30), 'window': 60},
     'magic_link': {'limit': _env_int('AUTH_RATE_LIMIT_MAGIC_LINK', 10), 'window': 60},
+    'invitation': {'limit': _env_int('AUTH_RATE_LIMIT_INVITATION', 30), 'window': 300},
 }
+
+# Scheduled jobs (Celery worker + beat, started by the Docker entrypoint).
+# See docs/scheduled-jobs.md. The broker is REDIS_URL unless CELERY_BROKER_URL is set.
+# SCHEDULER_ENABLED is read by the entrypoint; it is here so tests and checks see it.
+SCHEDULER_ENABLED = _env_bool('SCHEDULER_ENABLED', True)
+CELERY_BROKER_URL = _celery_broker_url(REDIS_URL, os.getenv('CELERY_BROKER_URL', ''))
+# Own queue and lock prefix, so services sharing one Redis never take each other's tasks.
+CELERY_TASK_DEFAULT_QUEUE = 'identity-service'
+SCHEDULER_LOCK_PREFIX = 'identity-service:scheduler'
+CELERY_TIMEZONE = 'UTC'
+CELERY_ENABLE_UTC = True
+CELERY_TASK_IGNORE_RESULT = True
+CELERY_RESULT_EXPIRES = None
+CELERY_RESULT_BACKEND = None
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+CELERY_WORKER_HIJACK_ROOT_LOGGER = False
+CELERY_WORKER_REDIRECT_STDOUTS = False
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+CELERY_BEAT_SCHEDULE = scheduled_jobs_beat_schedule()
 
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
@@ -469,6 +587,10 @@ POSTGRES_DATABASE_URL = os.getenv('POSTGRES_DATABASE_URL', '').strip()
 if POSTGRES_DATABASE_URL:
     _postgres_ssl_require = _env_bool('POSTGRES_SSL_REQUIRE', not DEBUG)
     _postgres_connect_timeout = _env_int('POSTGRES_CONNECT_TIMEOUT', 10)
+    # Server-side deadlines in seconds (0 turns one off). Not applied to `migrate`, so a
+    # long migration at boot is not cut short.
+    POSTGRES_STATEMENT_TIMEOUT = _env_non_negative_float('POSTGRES_STATEMENT_TIMEOUT', 15.0)
+    POSTGRES_LOCK_TIMEOUT = _env_non_negative_float('POSTGRES_LOCK_TIMEOUT', 5.0)
     DATABASES = {
         'default': dj_database_url.parse(
             POSTGRES_DATABASE_URL,
@@ -479,6 +601,16 @@ if POSTGRES_DATABASE_URL:
     DATABASES['default']['CONN_HEALTH_CHECKS'] = True
     DATABASES['default'].setdefault('OPTIONS', {})
     DATABASES['default']['OPTIONS']['connect_timeout'] = _postgres_connect_timeout
+    if not _running_management_command('migrate'):
+        _postgres_timeouts = _postgres_timeout_options(
+            POSTGRES_STATEMENT_TIMEOUT,
+            POSTGRES_LOCK_TIMEOUT,
+        )
+        if _postgres_timeouts:
+            _existing_options = DATABASES['default']['OPTIONS'].get('options', '').strip()
+            DATABASES['default']['OPTIONS']['options'] = ' '.join(
+                part for part in (_existing_options, _postgres_timeouts) if part
+            )
 else:
     DATABASES = {
         'default': {
@@ -545,7 +677,7 @@ STORAGES = {
     },
 }
 
-# Sentry error reporting (optional — enabled when SENTRY_DSN is set)
+# Sentry error reporting (optional, turned on only when SENTRY_DSN is set)
 SENTRY_DSN = os.getenv('SENTRY_DSN', '').strip()
 SENTRY_ENVIRONMENT = os.getenv('SENTRY_ENVIRONMENT', '').strip() or (
     'development' if DEBUG else 'production'
@@ -571,13 +703,17 @@ from config.scim_settings import SCIM_SERVICE_PROVIDER
 
 if SENTRY_DSN:
     import sentry_sdk
+    from sentry_sdk.integrations.celery import CeleryIntegration
     from sentry_sdk.integrations.django import DjangoIntegration
     from sentry_sdk.integrations.logging import LoggingIntegration
+
+    from config.sentry_scrub import before_breadcrumb, before_send, event_scrubber
 
     sentry_sdk.init(
         dsn=SENTRY_DSN,
         integrations=[
             DjangoIntegration(),
+            CeleryIntegration(),
             LoggingIntegration(
                 level=logging.INFO,
                 event_level=logging.ERROR,
@@ -588,4 +724,89 @@ if SENTRY_DSN:
         traces_sample_rate=SENTRY_TRACES_SAMPLE_RATE,
         send_default_pii=False,
         attach_stacktrace=True,
+        # Strip query strings, request bodies, the Referer and secret-named locals.
+        before_send=before_send,
+        before_breadcrumb=before_breadcrumb,
+        event_scrubber=event_scrubber(),
     )
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'filters': {
+        'request_id': {
+            '()': 'config.request_context.RequestIdFilter',
+        },
+    },
+    'formatters': {
+        'console': {
+            'format': '{asctime} {levelname} [{name}] [req={request_id}] {message}',
+            'style': '{',
+            'datefmt': '%Y-%m-%d %H:%M:%S',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'stream': 'ext://sys.stdout',
+            'formatter': 'console',
+            'filters': ['request_id'],
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': LOG_LEVEL,
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        # 5xx as ERROR and 4xx as WARNING, including when DEBUG=false.
+        'django.request': {
+            'handlers': ['console'],
+            'level': 'WARNING',
+            'propagate': False,
+        },
+        # DisallowedHost, CSRF failures and other security warnings.
+        'django.security': {
+            'handlers': ['console'],
+            'level': 'WARNING',
+            'propagate': False,
+        },
+        'django.server': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'apps': {
+            'handlers': ['console'],
+            'level': LOG_LEVEL,
+            'propagate': False,
+        },
+        'config': {
+            'handlers': ['console'],
+            'level': LOG_LEVEL,
+            'propagate': False,
+        },
+        # Celery's own DEBUG output is internals only, so it stops at INFO.
+        'celery': {
+            'handlers': ['console'],
+            'level': 'INFO' if LOG_LEVEL == 'DEBUG' else LOG_LEVEL,
+            'propagate': False,
+        },
+        # "Task received" and "Task succeeded" lines every minute are noise. Failures
+        # are still logged as errors. LOG_LEVEL=DEBUG shows them.
+        'celery.app.trace': {
+            'handlers': ['console'],
+            'level': 'INFO' if LOG_LEVEL == 'DEBUG' else 'WARNING',
+            'propagate': False,
+        },
+        'celery.worker.strategy': {
+            'handlers': ['console'],
+            'level': 'INFO' if LOG_LEVEL == 'DEBUG' else 'WARNING',
+            'propagate': False,
+        },
+    },
+}

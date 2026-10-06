@@ -54,6 +54,19 @@ jobs:
       - name: Verify lockfile
         run: uv lock --check
 
+      - name: Verify generated OAuth provider artifacts
+        run: |
+          uv run python tools/generate_allauth_provider_apps.py
+          uv run python tools/build_provider_catalog.py
+          uv run python tools/render_oauth_providers_doc.py
+          git diff --exit-code apps/authapi/provider_catalog.json config/allauth_provider_apps.py docs/oauth-providers.md docs/_provider-logos.mdx tools/data/oauth_e2e_covered_slugs.json
+      - name: Verify django-allauth version matches catalog
+        run: |
+          uv run python -c "import importlib.metadata, json; from pathlib import Path; cat=json.loads(Path('apps/authapi/provider_catalog.json').read_text()); assert cat['allauth_version']==importlib.metadata.version('django-allauth')"
+
+      - name: Verify allauth registry matches provider source snapshot
+        run: uv run python tools/verify_allauth_registry_snapshot.py
+
       - name: Django system checks
         run: uv run python manage.py check
 
@@ -62,7 +75,9 @@ jobs:
           uv run python manage.py generate_jwt_keys --shell > /tmp/jwt_keys.sh
           # shellcheck disable=SC1091
           source /tmp/jwt_keys.sh
+          # REDIS_URL is required when DEBUG=false (authapi.E004). The check does not connect.
           DEBUG=false \
+          REDIS_URL=redis://redis:6379/0 \
           JWT_ISSUER=https://auth.example.com \
           JWT_AUDIENCE=shellui \
           CORS_ALLOW_ALL_ORIGINS=false \
@@ -123,8 +138,6 @@ jobs:
           # Brand spelling (Shellui / shellui only)
           if git grep -nIE '\bShellUI\b|\bshellUI\b|\bShellUi\b' -- . \
               ':(exclude).github/workflows/**' \
-              ':(exclude)tools/docusaurus/build' \
-              ':(exclude)tools/docusaurus/node_modules' \
               ':(exclude).venv'; then
             echo '::error::Use Shellui (product) or shellui (packages); avoid Shell-UI camelCase variants'
             exit 1
@@ -160,6 +173,54 @@ jobs:
             docs
           fail: true
 
+  docs:
+    name: Docs build
+    runs-on: ubuntu-latest
+    env:
+      # Branch, tag or commit of shellui/shellui, which builds docs.shellui.com.
+      # Defaults to main (shellui/shellui has no develop branch).
+      # Override with the repository variable SHELLUI_DOCS_REF.
+      SHELLUI_DOCS_REF: ${{ vars.SHELLUI_DOCS_REF || 'main' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          path: identity-service
+
+      # Sibling checkout: the shellui docs fetch script reads ../identity-service/docs.
+      - name: Checkout shellui/shellui
+        uses: actions/checkout@v4
+        with:
+          repository: shellui/shellui
+          ref: ${{ env.SHELLUI_DOCS_REF }}
+          path: shellui
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          package_json_file: shellui/package.json
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: shellui/.nvmrc
+          cache: pnpm
+          cache-dependency-path: shellui/pnpm-lock.yaml
+
+      - name: Install shellui dependencies
+        working-directory: shellui
+        run: pnpm install --frozen-lockfile
+
+      # Builds docs.shellui.com with only the identity docs, read from this checkout.
+      # onBrokenLinks is 'throw', so a broken link or an invalid page fails the job.
+      - name: Build docs (identity only)
+        working-directory: shellui
+        env:
+          DOCS_SOURCE: local
+          DOCS_SERVICES: identity
+          DOCS_SERVICES_DIR: ${{ github.workspace }}
+        run: pnpm docs:build
+
   docker:
     name: Docker build
     runs-on: ubuntu-latest
@@ -175,6 +236,12 @@ jobs:
         with:
           context: .
           push: false
+          load: true
           tags: shellui/identity-service:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # Web server, Celery worker with beat, graceful stop, worker mode, refused start
+      # without Redis in production, no-Redis fallback with DEBUG=true.
+      - name: Image smoke test
+        run: ./tools/image-smoke-test.sh shellui/identity-service:ci

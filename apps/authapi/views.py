@@ -8,8 +8,7 @@ from urllib.parse import urlencode
 from django.conf import settings
 from django.core.cache import cache
 from django.core.exceptions import ObjectDoesNotExist
-from django.http import HttpResponse, HttpResponseRedirect
-from django.utils.dateparse import parse_datetime
+from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
 from django.contrib.auth import get_user_model
 from django.contrib.auth.signals import user_logged_in
 from django.contrib.sites.models import Site
@@ -18,7 +17,7 @@ from django.db.models import Count, Q
 from django.shortcuts import render
 from django.urls import reverse
 from django.utils.decorators import method_decorator
-from django.views.decorators.csrf import csrf_protect
+from django.views.decorators.csrf import csrf_exempt, csrf_protect
 from allauth.socialaccount.models import SocialApp, SocialAccount
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema, extend_schema_view
 from rest_framework import status
@@ -31,13 +30,22 @@ from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from .tokens import ShellUIAccessToken, ShellUIRefreshToken
 
 from . import metrics as auth_metrics
+from config.request_context import url_without_query
 from apps.companies.group_graph import effective_group_display_names_for_user, effective_group_ids_for_user
 from apps.companies.group_display_name import first_display_name_conflict
 from apps.companies.models import Company, CompanyGroup, CompanyOAuthClient, CompanyOAuthRedirect
+from apps.companies.oauth_client_uniqueness import (
+    compute_dedupe_key_for_new_app,
+    find_duplicate_company_oauth_client,
+    find_duplicate_for_social_app,
+)
 from apps.companies.access import (
+    ERROR_INVITATION_REVOKED,
+    MSG_INVITATION_REVOKED,
     JoinDecision,
     apply_company_join,
     is_company_access_enabled,
+    is_login_blocked_by_revoked_invitation,
     notify_user_access_enabled,
     set_company_access,
 )
@@ -48,14 +56,22 @@ from apps.companies.redirect_allowlist import (
     validate_redirect_uri_for_company,
 )
 from .renderers import PrometheusTextRenderer
-from .login_audit import oauth_provider_redirect_uri, record_login_event
+from .login_audit import LoginOutcome, oauth_provider_redirect_uri, record_login_event
 from .oauth_state import (
+    apple_oauth_bridge_cookie_value,
     build_oauth_state,
+    consume_apple_oauth_bridge_payload,
+    consume_apple_form_post_state_once,
+    consume_oauth_pkce_verifier,
     oauth_state_nonce_cookie_value,
     parse_oauth_state,
+    stash_apple_oauth_bridge_payload,
+    stash_oauth_pkce_verifier,
     verify_oauth_state_request,
 )
-from .oauth_user import OAuthProfile, decode_oauth_id_token_claims, extract_oauth_profile, resolve_oauth_user
+from .oauth_allauth import split_pkce_authorize_params
+from .oauth_errors import ShelluiOAuthError
+from .oauth_user import OAuthProfile, extract_oauth_profile, resolve_oauth_user
 from .oauth_confirm import build_oauth_confirm_token, parse_oauth_confirm_token
 from .oauth_session_code import (
     OAUTH_SESSION_CODE_PARAM,
@@ -73,7 +89,7 @@ from .refresh_sessions import (
     validate_refresh_session,
 )
 from .authentication import ShellUIJWTAuthentication
-from .models import LoginEvent, PersonalAccessToken, UserPreference
+from .models import PersonalAccessToken, UserPreference
 from .user_activity import touch_user_last_seen
 from .throttling import rate_limit
 from .oauth import (
@@ -83,8 +99,16 @@ from .oauth import (
     exchange_code_for_token,
     fetch_provider_userinfo,
     get_provider_config,
+    get_social_app_for_client,
     resolve_oauth_client,
     should_skip_oauth_confirm,
+    social_app_catalog_slug,
+)
+from .provider_registry import (
+    get_provider_catalog,
+    resolve_catalog_slug,
+    supported_oauth_provider_slugs,
+    validate_extra_settings,
 )
 from .serializers import (
     ProviderAuthorizeSerializer,
@@ -109,6 +133,7 @@ from .serializers import (
     ShellUIAdminAuthMethodsUpdateSerializer,
     ShellUIAdminUserUpdateSerializer,
     ShellUIUserDeleteSerializer,
+    ShellUIUserProfileUpdateSerializer,
     UserPreferenceSerializer,
 )
 from apps.scim.models import CompanyScimToken, ScimProvisioningEvent
@@ -120,20 +145,57 @@ from apps.scim.provisioning_events import (
     record_group_display_name_conflict,
 )
 from apps.scim.tokens import generate_scim_token
+from apps.actions.scim_hooks import (
+    emit_group_created,
+    emit_group_deleted,
+    emit_group_membership_changed,
+    emit_group_updated,
+)
 from apps.actions.user_hooks import emit_oauth_user_created_if_new
-from .account_lifecycle import delete_user_account
-from .self_service_delete import check_self_service_account_delete_allowed
+from .account_lifecycle import delete_user_for_company
+from .self_service_delete import (
+    LAST_COMPANY_OWNER,
+    check_self_service_account_delete_allowed,
+    sole_owner_companies,
+)
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
 logger = logging.getLogger(__name__)
 
 # Client-supplied user_metadata merges cannot set these; they are derived from Django / company state.
-_SHELLUI_JWT_PRIVILEGED_METADATA_KEYS = frozenset({'is_staff', 'is_company_owner', 'groups'})
+_SHELLUI_JWT_PRIVILEGED_METADATA_KEYS = frozenset({'is_staff', 'is_superuser', 'is_company_owner', 'groups'})
+
+# Only Django admin may change these. No REST API writes them.
+ADMIN_ONLY_USER_FIELDS = ('is_staff', 'is_superuser')
+
+
+def admin_only_user_fields_response(data) -> Response | None:
+    """400 ``admin_only_field`` when a REST body tries to set ``is_staff`` or ``is_superuser``."""
+    if not hasattr(data, 'keys'):
+        return None
+    present = [name for name in ADMIN_ONLY_USER_FIELDS if name in data]
+    if not present:
+        return None
+    return Response(
+        {
+            'error': f'{" and ".join(present)} can only be changed in Django admin.',
+            'error_code': 'admin_only_field',
+            'fields': present,
+        },
+        status=status.HTTP_400_BAD_REQUEST,
+    )
 
 
 def _is_user_company_owner(user: User, company: Company) -> bool:
     return company.owners.filter(pk=user.pk).exists()
+
+
+def _apply_display_name(user: User, user_metadata: dict) -> None:
+    """The Django user row is the source of truth for the name, not cached metadata."""
+    display_name = user.get_full_name() or user.get_username()
+    user_metadata['name'] = display_name
+    user_metadata['full_name'] = display_name
 
 
 def _notify_user_logged_in_for_oauth(request, user: User) -> None:
@@ -191,6 +253,146 @@ def _admin_user_group_rows(user: User, company: Company) -> list[dict]:
     )
 
 
+def _oauth_id_token_invalid_response(
+    *,
+    request,
+    provider: str,
+    company: Company,
+    client_tz: str = '',
+    client_dev: str | None = None,
+    redirect_to_raw: str | None = None,
+) -> Response:
+    detail = 'OAuth identity token could not be verified.'
+    record_login_event(
+        request=request,
+        outcome=LoginOutcome.FAILURE,
+        provider=provider,
+        user=None,
+        company=company,
+        failure_reason='oauth_id_token_invalid',
+        client_timezone=client_tz,
+        client_device_id=client_dev,
+    )
+    bounced = _shellui_oauth_bounce_or_json(
+        request,
+        message=detail,
+        error_code='oauth_id_token_invalid',
+        redirect_to_raw=redirect_to_raw,
+    )
+    if isinstance(bounced, HttpResponseRedirect):
+        return bounced
+    return Response({'detail': detail, 'error_code': 'oauth_id_token_invalid'}, status=status.HTTP_400_BAD_REQUEST)
+
+
+def _oauth_provider_error_response(
+    *,
+    request,
+    exc: ShelluiOAuthError,
+    provider: str,
+    company: Company,
+    client_tz: str = '',
+    client_dev: str | None = None,
+    redirect_to_raw: str | None = None,
+):
+    record_login_event(
+        request=request,
+        outcome=LoginOutcome.FAILURE,
+        provider=provider,
+        user=None,
+        company=company,
+        failure_reason=exc.code,
+        client_timezone=client_tz,
+        client_device_id=client_dev,
+    )
+    return _shellui_oauth_bounce_or_json(
+        request,
+        message=exc.message,
+        status_code=exc.status_code,
+        error_code=exc.code,
+        redirect_to_raw=redirect_to_raw,
+    )
+
+
+_SUBJECT_BOUND_ALLAUTH_IDS = frozenset({'openid_connect', 'okta', 'auth0', 'google'})
+
+
+def _openid_connect_scope_includes_openid(social_app) -> bool:
+    """True when the OpenID Connect app's effective scope includes ``openid``."""
+    from allauth.socialaccount.providers import registry
+    from django.http import HttpRequest
+
+    request = HttpRequest()
+    provider = registry.get_class('openid_connect')(request, app=social_app)
+    scope = provider.get_scope()
+    return any(str(part).strip() == 'openid' for part in scope)
+
+
+def _missing_id_token_is_fatal(entry, social_app) -> bool:
+    """Okta and Auth0 always require an id_token. OIDC does when scope includes openid."""
+    if entry is None:
+        return False
+    if entry.allauth_id in {'okta', 'auth0'}:
+        return True
+    if entry.allauth_id != 'openid_connect':
+        return False
+    return _openid_connect_scope_includes_openid(social_app)
+
+
+def _login_id_token_claims(
+    *,
+    provider: str,
+    token_bundle: OAuthTokenBundle,
+    company_id: int,
+    company_oauth_client_id: int | None,
+) -> dict | None:
+    """Claims from one Shellui verification. None means the login must be rejected.
+
+    A missing id_token raises ``oauth_id_token_missing`` for Okta, Auth0, and for
+    OpenID Connect apps whose scope includes ``openid``. Other providers keep the
+    previous allow-empty behavior.
+    """
+    resolved = resolve_oauth_client(
+        provider,
+        company_id=company_id,
+        company_oauth_client_id=company_oauth_client_id,
+    )
+    from apps.authapi.oauth_errors import OAuthIdTokenError
+    from apps.authapi.oauth_id_token import verified_login_id_token_claims
+    from apps.authapi.oauth_idp_policy import requires_verified_id_token_for_login
+
+    entry = resolved.catalog_entry
+    raw = (token_bundle.id_token or '').strip()
+    social_app = get_social_app_for_client(resolved)
+    if not raw:
+        if _missing_id_token_is_fatal(entry, social_app):
+            raise OAuthIdTokenError(
+                'The identity provider did not return an id_token.',
+                code='oauth_id_token_missing',
+            )
+        return {}
+    if not requires_verified_id_token_for_login(entry):
+        return {}
+    claims = verified_login_id_token_claims(
+        entry=entry,
+        social_app=social_app,
+        id_token_raw=raw,
+        userinfo={},
+    )
+    return claims or None
+
+
+def _oauth_subject_mismatch(entry, userinfo: dict, id_claims: dict) -> bool:
+    if entry is None or entry.allauth_id not in _SUBJECT_BOUND_ALLAUTH_IDS or not id_claims:
+        return False
+    claim_sub = id_claims.get('sub')
+    if not isinstance(claim_sub, str) or not claim_sub.strip():
+        return False
+    info_sub = userinfo.get('sub') if isinstance(userinfo, dict) else None
+    if not isinstance(info_sub, str) or not info_sub.strip():
+        return True
+    return info_sub.strip() != claim_sub.strip()
+
+
 def _resolve_oauth_login_user(
     *,
     provider: str,
@@ -198,26 +400,61 @@ def _resolve_oauth_login_user(
     userinfo: dict,
     token_bundle: OAuthTokenBundle,
     company_oauth_client_id: int | None,
-) -> tuple[User | None, bool, OAuthProfile | None, str | None]:
+    id_token_claims: dict | None = None,
+) -> tuple[User | None, bool, OAuthProfile | None, str | None, str | None]:
     resolved = resolve_oauth_client(
         provider,
         company_id=company.id,
         company_oauth_client_id=company_oauth_client_id,
     )
-    id_claims = decode_oauth_id_token_claims(token_bundle.id_token)
+    social_app = get_social_app_for_client(resolved)
+    from apps.authapi.oauth_id_token import verified_login_id_token_claims
+    from apps.authapi.oauth_idp_policy import requires_verified_id_token_for_login
+
+    if id_token_claims is None:
+        id_claims = verified_login_id_token_claims(
+            entry=resolved.catalog_entry,
+            social_app=social_app,
+            id_token_raw=token_bundle.id_token,
+            userinfo=userinfo,
+        )
+        if (
+            token_bundle.id_token
+            and requires_verified_id_token_for_login(resolved.catalog_entry)
+            and not id_claims
+        ):
+            return None, False, None, 'OAuth identity token could not be verified.', 'oauth_id_token_invalid'
+    else:
+        id_claims = id_token_claims
+    if _oauth_subject_mismatch(resolved.catalog_entry, userinfo, id_claims):
+        return (
+            None,
+            False,
+            None,
+            'OAuth userinfo subject does not match the identity token.',
+            'oauth_subject_mismatch',
+        )
     profile, perror = extract_oauth_profile(
         provider,
         userinfo,
         token_bundle.access_token,
         tenant=resolved.tenant,
         id_token_claims=id_claims,
+        catalog_entry=resolved.catalog_entry,
+        social_app=social_app,
     )
     if perror or profile is None:
-        return None, False, None, perror or 'Invalid provider profile.'
-    user, created, uerror = resolve_oauth_user(provider=provider, profile=profile)
+        return None, False, None, perror or 'Invalid provider profile.', 'oauth_identity_failed'
+    if is_login_blocked_by_revoked_invitation(company, profile.email):
+        return None, False, profile, MSG_INVITATION_REVOKED, ERROR_INVITATION_REVOKED
+    user, created, uerror, uerror_code = resolve_oauth_user(
+        provider=provider,
+        profile=profile,
+        catalog_entry=resolved.catalog_entry,
+    )
     if uerror or user is None:
-        return None, False, profile, uerror
-    return user, created, profile, None
+        return None, False, profile, uerror, uerror_code
+    return user, created, profile, None, None
 
 
 def _normalize_avatar_url(value: object) -> str | None:
@@ -318,13 +555,34 @@ def _parse_company_oauth_client_id(value: str | None) -> int | None:
 
 
 def _company_oauth_clients(company: Company) -> list[CompanyOAuthClient]:
-    return list(
+    rows = list(
         CompanyOAuthClient.objects.filter(company=company, is_active=True)
         .exclude(social_app__client_id='')
-        .exclude(social_app__secret='')
         .select_related('social_app')
         .order_by('social_app__provider', 'social_app__name', 'id')
     )
+    filtered: list[CompanyOAuthClient] = []
+    for row in rows:
+        provider = str(row.social_app.provider).strip().lower()
+        if provider == 'saml':
+            filtered.append(row)
+            continue
+        if str(row.social_app.secret).strip():
+            filtered.append(row)
+    return filtered
+
+
+def _social_app_matches_catalog_entry(social_app: SocialApp, entry) -> bool:
+    if str(social_app.provider).strip().lower() != entry.allauth_id.lower():
+        return False
+    if entry.allauth_id == 'openid_connect':
+        settings_data = social_app.settings if isinstance(getattr(social_app, 'settings', None), dict) else {}
+        catalog_slug = str(settings_data.get('catalog_slug') or '').strip().lower()
+        if catalog_slug and catalog_slug == entry.docs_slug.lower():
+            return True
+        sub = str(getattr(social_app, 'provider_id', '') or '').strip().lower()
+        return sub == entry.social_app_provider_id().lower()
+    return True
 
 
 def _get_company_oauth_client(
@@ -334,29 +592,33 @@ def _get_company_oauth_client(
 ) -> tuple[CompanyOAuthClient | None, str | None]:
     if company_oauth_client_id is None:
         return None, None
+    entry = resolve_catalog_slug(provider)
     row = (
         CompanyOAuthClient.objects.filter(
             pk=company_oauth_client_id,
             company=company,
-            social_app__provider=provider,
             is_active=True,
         )
         .exclude(social_app__client_id='')
-        .exclude(social_app__secret='')
         .select_related('social_app')
         .first()
     )
-    if row:
+    if row and entry and entry.allauth_id != 'saml' and not str(row.social_app.secret).strip():
+        row = None
+    if row and entry and _social_app_matches_catalog_entry(row.social_app, entry):
         return row, None
     return None, 'Requested company_oauth_client_id is not available for this provider.'
 
 
 def _enabled_oauth_providers(company: Company) -> list[str]:
-    return sorted({str(row.social_app.provider).lower() for row in _company_oauth_clients(company)})
+    slugs: set[str] = set()
+    for row in _company_oauth_clients(company):
+        slugs.add(social_app_catalog_slug(row.social_app))
+    return sorted(slugs)
 
 
 def _supported_oauth_providers() -> list[str]:
-    return sorted(SUPPORTED_OAUTH_PROVIDERS)
+    return sorted(supported_oauth_provider_slugs())
 
 
 def _oauth_client_payload(row: CompanyOAuthClient) -> dict:
@@ -365,7 +627,8 @@ def _oauth_client_payload(row: CompanyOAuthClient) -> dict:
         social_app_settings = {}
     return {
         'id': row.id,
-        'provider': row.social_app.provider,
+        'provider': social_app_catalog_slug(row.social_app),
+        'allauth_provider': row.social_app.provider,
         'label': row.social_app.name,
         'client_id': row.social_app.client_id,
         'tenant': str(social_app_settings.get('tenant') or ''),
@@ -376,23 +639,105 @@ def _oauth_client_payload(row: CompanyOAuthClient) -> dict:
     }
 
 
-def _oauth_social_app_payload(company: Company, app: SocialApp) -> dict:
+def _oauth_social_app_payload(company: Company, app: SocialApp, *, request=None) -> dict:
     mapping = (
         CompanyOAuthClient.objects.filter(company=company, social_app=app)
         .order_by('-id')
         .first()
     )
     app_settings = app.settings if isinstance(app.settings, dict) else {}
-    return {
+    payload = {
         'id': app.id,
-        'provider': app.provider,
+        'provider': social_app_catalog_slug(app),
+        'allauth_provider': app.provider,
+        'provider_id': str(getattr(app, 'provider_id', '') or ''),
         'name': app.name,
         'client_id': app.client_id,
         'tenant': str(app_settings.get('tenant') or ''),
+        'extra_settings': _public_extra_settings_for_app(app),
         'is_linked': mapping is not None,
         'mapping_id': mapping.id if mapping is not None else None,
         'mapping_is_active': bool(mapping.is_active) if mapping is not None else False,
     }
+    if str(app.provider).strip().lower() == 'saml' and request is not None:
+        from apps.authapi.saml.utils import sp_public_urls
+
+        payload['saml'] = sp_public_urls(
+            request,
+            str(app.client_id),
+            settings_data=app_settings,
+        )
+    return payload
+
+
+def _identity_oauth_callback_url(request) -> str:
+    return oauth_provider_redirect_uri(request)
+
+
+def _catalog_provider_payload(request, entry, *, include_unsupported: bool) -> dict:
+    return {
+        'docs_slug': entry.docs_slug,
+        'name': entry.name,
+        'tier': entry.tier,
+        'legacy': entry.legacy,
+        'hidden': entry.hidden,
+        'replaced_by': entry.replaced_by,
+        'protocol': entry.protocol,
+        'supported': entry.supported,
+        'unsupported_reason': entry.unsupported_reason,
+        'icon': entry.icon,
+        'docs_url': entry.docs_url,
+        'console_url': entry.console_url,
+        'callback_url': _identity_oauth_callback_url(request),
+        'extra_settings_schema': [
+            {
+                'name': field.name,
+                'type': field.type,
+                'required': field.required,
+                'secret': field.secret,
+            }
+            for field in entry.extra_settings_schema
+        ],
+        'multiple_allowed': entry.multiple_allowed,
+    }
+
+
+def _merge_social_app_settings(
+    entry, validated: dict, *, existing: dict | None = None
+) -> tuple[dict, str | None, str | None]:
+    base = dict(existing or {})
+    tenant = str(validated.get('tenant') or '').strip()
+    if tenant:
+        base['tenant'] = tenant
+    elif 'tenant' in validated:
+        base.pop('tenant', None)
+    extra_input = dict(validated.get('extra_settings') or {})
+    if tenant and 'tenant' not in extra_input:
+        extra_input.setdefault('tenant', tenant)
+    normalized, errors = validate_extra_settings(entry, extra_input, partial=bool(existing))
+    if errors:
+        code = (
+            'oauth_setting_not_allowed'
+            if any('not allowed' in item for item in errors)
+            else 'oauth_extra_settings_invalid'
+        )
+        return base, '; '.join(errors), code
+    for key, value in normalized.items():
+        if key == 'catalog_slug':
+            continue
+        base[key] = value
+    base['catalog_slug'] = entry.docs_slug
+    return base, None, None
+
+
+def _oauth_duplicate_provider_response(existing_social_app_id: int) -> Response:
+    return Response(
+        {
+            'error_code': 'oauth_app_duplicate_provider',
+            'social_app_id': existing_social_app_id,
+        },
+        status=status.HTTP_409_CONFLICT,
+    )
 
 
 def _generated_social_app_name(provider: str, company: Company) -> str:
@@ -511,16 +856,30 @@ def _issue_personal_access_token(
     return row, str(access)
 
 
-def _link_social_account(user: User, provider: str, provider_id: str, userinfo: dict) -> None:
-    # Persist provider payload in DB so one user can have multiple linked auth methods.
+def _link_social_account(user: User, profile: OAuthProfile, userinfo: dict) -> None:
     SocialAccount.objects.update_or_create(
-        provider=provider,
-        uid=provider_id,
+        provider=profile.social_provider,
+        uid=profile.social_uid,
         defaults={
             'user': user,
             'extra_data': userinfo if isinstance(userinfo, dict) else {},
         },
     )
+
+
+def _public_extra_settings_for_app(app: SocialApp) -> dict:
+    entry = resolve_catalog_slug(social_app_catalog_slug(app))
+    app_settings = app.settings if isinstance(app.settings, dict) else {}
+    secret_fields = {field.name for field in entry.extra_settings_schema if field.secret} if entry else set()
+    public: dict = {}
+    for key, value in app_settings.items():
+        if key in {'catalog_slug', 'tenant'}:
+            continue
+        if key in secret_fields:
+            public[f'{key}_set'] = bool(str(value or '').strip())
+        else:
+            public[key] = value
+    return public
 
 
 def _build_callback_redirect(redirect_to: str, payload: dict, provider: str) -> str:
@@ -674,7 +1033,7 @@ def _finalize_shellui_oauth_login(
     auth_metrics.record_successful_login(provider, company_id=company.id)
     record_login_event(
         request=request,
-        outcome=LoginEvent.OUTCOME_SUCCESS,
+        outcome=LoginOutcome.SUCCESS,
         provider=provider,
         user=user,
         company=company,
@@ -749,6 +1108,10 @@ def _render_oauth_confirm_page(
     )
 
 
+_OAUTH_SIGNIN_FAILED_DETAIL = 'OAuth sign-in failed. Try again or contact your administrator.'
+_OAUTH_SIGNIN_FAILED_REASON = 'oauth_signin_failed'
+
+
 def _shellui_oauth_bounce_or_json(
     request,
     *,
@@ -770,7 +1133,7 @@ def _shellui_oauth_bounce_or_json(
     )
     if bounce:
         return HttpResponseRedirect(bounce)
-    return Response({'error': message, 'error_code': error_code}, status=status_code)
+    return JsonResponse({'error': message, 'error_code': error_code}, status=status_code)
 
 
 def _join_denied_response(
@@ -783,7 +1146,7 @@ def _join_denied_response(
     message = decision.message or 'Access denied.'
     if redirect_to:
         return HttpResponseRedirect(append_oauth_error_params(redirect_to, message, code))
-    return Response({'error': message, 'error_code': code}, status=status.HTTP_403_FORBIDDEN)
+    return JsonResponse({'error': message, 'error_code': code}, status=status.HTTP_403_FORBIDDEN)
 
 
 def _authenticate_bearer_user(request):
@@ -1038,6 +1401,35 @@ def _active_scim_token_count(company: Company) -> int:
     return CompanyScimToken.objects.filter(company=company, revoked_at__isnull=True).count()
 
 
+def _login_lockout_response(
+    company: Company,
+    *,
+    enable_magic_link: bool | None = None,
+    removed_client_ids: tuple[int, ...] = (),
+) -> Response | None:
+    """
+    Refuse a change that would leave the company with no sign-in method at all.
+
+    Only the company magic-link flag counts, not the deployment kill switch, which is an
+    operator decision.
+    """
+    magic_on = company.enable_magic_link if enable_magic_link is None else enable_magic_link
+    if magic_on:
+        return None
+    if any(row.pk not in removed_client_ids for row in _company_oauth_clients(company)):
+        return None
+    return Response(
+        {
+            'error': (
+                'Keep at least one sign-in method for this company. '
+                'Enable magic link or another provider first.'
+            ),
+            'error_code': 'login_method_required',
+        },
+        status=status.HTTP_400_BAD_REQUEST,
+    )
+
+
 def _auth_methods_admin_payload(company: Company) -> dict:
     from apps.authapi.magic_link import magic_link_enabled_for_company, magic_link_globally_enabled
 
@@ -1106,26 +1498,6 @@ def _personal_access_token_row(t: PersonalAccessToken, *, include_access_token: 
     return row
 
 
-def _login_event_payload(event: LoginEvent) -> dict:
-    return {
-        'id': event.id,
-        'company_id': event.company_id,
-        'created_at': event.created_at,
-        'user_id': event.user_id,
-        'user_email': event.user.email if event.user_id else None,
-        'outcome': event.outcome,
-        'provider': event.provider,
-        'failure_reason': event.failure_reason or '',
-        'is_staff_at_event': event.is_staff_at_event,
-        'ip_hash': event.ip_hash or '',
-        'user_agent': event.user_agent or '',
-        'client_timezone': event.client_timezone or '',
-        'client_device_id_hash': event.client_device_id_hash or '',
-        'client_country': event.client_country or '',
-        'client_city': event.client_city or '',
-    }
-
-
 def _admin_user_payload(user: User, company: Company) -> dict:
     cache_key = f"shellui:user_metadata:{user.id}"
     user_metadata = cache.get(cache_key) or {
@@ -1186,13 +1558,35 @@ class SocialAuthorizeView(APIView):
         )
         if rerr or not redirect_uri:
             return Response({'error': rerr or 'Invalid redirect_uri.'}, status=status.HTTP_400_BAD_REQUEST)
-        authorize_url = build_authorize_url(
+        state, state_nonce = build_oauth_state(
             provider=provider,
-            redirect_uri=redirect_uri,
+            redirect_to=redirect_uri,
             company_id=company.id,
             company_oauth_client_id=company_oauth_client_id,
         )
-        return Response({'provider': provider, 'authorize_url': authorize_url})
+        try:
+            authorize_url = build_authorize_url(
+                provider=provider,
+                redirect_uri=redirect_uri,
+                state=state,
+                request=request,
+                company_id=company.id,
+                company_oauth_client_id=company_oauth_client_id,
+                oauth_nonce=state_nonce,
+            )
+        except ShelluiOAuthError as exc:
+            return Response({'error': exc.message, 'error_code': exc.code}, status=exc.status_code)
+        response = Response({'provider': provider, 'authorize_url': authorize_url})
+        cookie = oauth_state_nonce_cookie_value(state_nonce)
+        response.set_cookie(
+            cookie['key'],
+            cookie['value'],
+            max_age=cookie['max_age'],
+            httponly=cookie['httponly'],
+            samesite=cookie['samesite'],
+            secure=cookie['secure'],
+        )
+        return response
 
 
 @extend_schema_view(
@@ -1236,26 +1630,45 @@ class SocialLoginView(APIView):
                 provider=provider,
                 code=serializer.validated_data['code'],
                 redirect_uri=redirect_uri,
+                request=request,
                 company_id=company.id,
                 company_oauth_client_id=company_oauth_client_id,
             )
+            id_claims = _login_id_token_claims(
+                provider=provider,
+                token_bundle=token_bundle,
+                company_id=company.id,
+                company_oauth_client_id=company_oauth_client_id,
+            )
+            if id_claims is None:
+                return _oauth_id_token_invalid_response(
+                    request=request,
+                    provider=provider,
+                    company=company,
+                    client_tz=client_tz,
+                    client_dev=client_dev,
+                )
             userinfo = fetch_provider_userinfo(
                 provider,
                 token_bundle.access_token,
+                request=request,
                 company_id=company.id,
                 company_oauth_client_id=company_oauth_client_id,
+                redirect_uri=redirect_uri,
+                id_token=token_bundle.id_token,
             )
-            user, created, profile, resolve_err = _resolve_oauth_login_user(
+            user, created, profile, resolve_err, resolve_code = _resolve_oauth_login_user(
                 provider=provider,
                 company=company,
                 userinfo=userinfo,
                 token_bundle=token_bundle,
                 company_oauth_client_id=company_oauth_client_id,
+                id_token_claims=id_claims,
             )
             if resolve_err or profile is None or user is None:
                 record_login_event(
                     request=request,
-                    outcome=LoginEvent.OUTCOME_FAILURE,
+                    outcome=LoginOutcome.FAILURE,
                     provider=provider,
                     user=None,
                     company=company,
@@ -1263,36 +1676,41 @@ class SocialLoginView(APIView):
                     client_timezone=client_tz,
                     client_device_id=client_dev,
                 )
-                return Response(
-                    {'detail': resolve_err or 'Could not resolve OAuth account.'},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
+                body = {'detail': resolve_err or 'Could not resolve OAuth account.'}
+                if resolve_code:
+                    body['error_code'] = resolve_code
+                return Response(body, status=status.HTTP_400_BAD_REQUEST)
             avatar_url = profile.avatar_url
             email = profile.email
-        except Exception as exc:
+        except ShelluiOAuthError as exc:
+            return _oauth_provider_error_response(
+                request=request,
+                exc=exc,
+                provider=provider,
+                company=company,
+                client_tz=client_tz,
+                client_dev=client_dev,
+            )
+        except Exception:
             record_login_event(
                 request=request,
-                outcome=LoginEvent.OUTCOME_FAILURE,
+                outcome=LoginOutcome.FAILURE,
                 provider=provider,
                 user=None,
                 company=company,
-                failure_reason=str(exc),
+                failure_reason=_OAUTH_SIGNIN_FAILED_REASON,
                 client_timezone=client_tz,
                 client_device_id=client_dev,
             )
             return Response(
-                {'detail': str(exc)},
+                {'detail': _OAUTH_SIGNIN_FAILED_DETAIL, 'error_code': 'token_exchange_failed'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
         emit_oauth_user_created_if_new(company, user, created=created, oauth_provider=provider)
-        join = apply_company_join(company, user, email=email)
-        _link_social_account(
-            user=user,
-            provider=provider,
-            provider_id=profile.provider_id,
-            userinfo=userinfo,
-        )
+        join_email = email if profile.email_verified_for_link else None
+        join = apply_company_join(company, user, email=join_email)
+        _link_social_account(user=user, profile=profile, userinfo=userinfo)
 
         cache.set(
             f"shellui:user_metadata:{user.id}",
@@ -1307,7 +1725,7 @@ class SocialLoginView(APIView):
         if not join.allowed:
             record_login_event(
                 request=request,
-                outcome=LoginEvent.OUTCOME_FAILURE,
+                outcome=LoginOutcome.FAILURE,
                 provider=provider,
                 user=user,
                 company=company,
@@ -1321,7 +1739,7 @@ class SocialLoginView(APIView):
         auth_metrics.record_successful_login(provider, company_id=company.id)
         record_login_event(
             request=request,
-            outcome=LoginEvent.OUTCOME_SUCCESS,
+            outcome=LoginOutcome.SUCCESS,
             provider=provider,
             user=user,
             company=company,
@@ -1524,7 +1942,9 @@ class ShellUIAuthorizeView(APIView):
             company_id=company.id,
             company_oauth_client_id=company_oauth_client_id,
         )
-        if not str(cfg.client_id).strip() or not str(cfg.client_secret).strip():
+        entry_for_cfg = resolve_catalog_slug(provider)
+        needs_secret = entry_for_cfg is None or entry_for_cfg.allauth_id != 'saml'
+        if not str(cfg.client_id).strip() or (needs_secret and not str(cfg.client_secret).strip()):
             return _shellui_oauth_bounce_or_json(
                 request,
                 message=(
@@ -1545,15 +1965,35 @@ class ShellUIAuthorizeView(APIView):
             client_device_id=client_dev,
             token_delivery=token_delivery,
         )
-        # Provider always returns to this service; bounce target is in signed state.
-        authorize_url = build_authorize_url(
-            provider=provider,
-            redirect_uri=oauth_provider_redirect_uri(request),
-            state=state,
+        resolved_oauth = resolve_oauth_client(
+            provider,
             company_id=company.id,
             company_oauth_client_id=company_oauth_client_id,
-            switch_account=switch_account,
         )
+        social_app = get_social_app_for_client(resolved_oauth)
+        pkce_params, pkce_verifier = split_pkce_authorize_params(request, social_app)
+        if pkce_verifier:
+            stash_oauth_pkce_verifier(state_nonce, pkce_verifier)
+        try:
+            authorize_url = build_authorize_url(
+                provider=provider,
+                redirect_uri=oauth_provider_redirect_uri(request),
+                state=state,
+                request=request,
+                company_id=company.id,
+                company_oauth_client_id=company_oauth_client_id,
+                switch_account=switch_account,
+                pkce_params=pkce_params if pkce_verifier else None,
+                oauth_nonce=state_nonce,
+            )
+        except ShelluiOAuthError as exc:
+            return _shellui_oauth_bounce_or_json(
+                request,
+                message=exc.message,
+                status_code=exc.status_code,
+                error_code=exc.code,
+                redirect_to_raw=redirect_to,
+            )
         response = HttpResponseRedirect(authorize_url)
         cookie = oauth_state_nonce_cookie_value(state_nonce)
         response.set_cookie(
@@ -1598,9 +2038,89 @@ class ShellUIAuthorizeView(APIView):
         },
     ),
 )
+@method_decorator(csrf_exempt, name='dispatch')
 @rate_limit('oauth')
 class ShellUIOAuthCallbackView(APIView):
     permission_classes = [AllowAny]
+
+    def post(self, request):
+        """Apple Sign in with form_post: verify POST, bridge via single-use cookie, 303 to GET."""
+        import secrets
+
+        from apps.authapi.oauth_id_token import verify_apple_id_token_for_bridge
+        from apps.authapi.oauth import get_social_app_for_client, resolve_oauth_client
+
+        code = (request.POST.get('code') or '').strip()
+        state_raw = (request.POST.get('state') or '').strip()
+        payload, state_err = parse_oauth_state(state_raw)
+        if state_err or not payload:
+            return _shellui_oauth_bounce_or_json(
+                request,
+                message=state_err or 'Invalid OAuth state.',
+                error_code='invalid_oauth_state',
+                redirect_to_raw=None,
+            )
+        if str(payload.get('provider') or '').strip().lower() != 'apple':
+            return _shellui_oauth_bounce_or_json(
+                request,
+                message='OAuth callback POST is only supported for Apple.',
+                error_code='invalid_oauth_callback_method',
+                redirect_to_raw=payload.get('redirect_to'),
+            )
+        try:
+            resolved = resolve_oauth_client(
+                'apple',
+                company_id=int(payload['company_id']),
+                company_oauth_client_id=payload.get('company_oauth_client_id'),
+            )
+            social_app = get_social_app_for_client(resolved)
+        except Exception:
+            return _shellui_oauth_bounce_or_json(
+                request,
+                message='Apple OAuth client is not configured for this company.',
+                error_code='oauth_client_unavailable',
+                redirect_to_raw=payload.get('redirect_to'),
+            )
+        bridge_payload: dict = {}
+        raw_id_token = (request.POST.get('id_token') or '').strip()
+        if raw_id_token:
+            try:
+                verify_apple_id_token_for_bridge(
+                    request,
+                    social_app=social_app,
+                    id_token=raw_id_token,
+                    expected_nonce=str(payload.get('nonce') or ''),
+                )
+            except Exception:
+                return _shellui_oauth_bounce_or_json(
+                    request,
+                    message=_OAUTH_SIGNIN_FAILED_DETAIL,
+                    error_code='invalid_oauth_state',
+                    redirect_to_raw=payload.get('redirect_to'),
+                )
+            bridge_payload['user'] = (request.POST.get('user') or '').strip()
+        if not consume_apple_form_post_state_once(state_raw):
+            return _shellui_oauth_bounce_or_json(
+                request,
+                message='OAuth state already used.',
+                error_code='invalid_oauth_state',
+                redirect_to_raw=payload.get('redirect_to'),
+            )
+        bridge_token = secrets.token_urlsafe(32)
+        stash_apple_oauth_bridge_payload(bridge_token, bridge_payload)
+        query = urlencode({'code': code, 'state': state_raw})
+        redirect_url = f'{request.build_absolute_uri(request.path)}?{query}'
+        response = HttpResponseRedirect(redirect_url, status=303)
+        cookie = apple_oauth_bridge_cookie_value(bridge_token)
+        response.set_cookie(
+            cookie['key'],
+            cookie['value'],
+            max_age=cookie['max_age'],
+            httponly=cookie['httponly'],
+            samesite=cookie['samesite'],
+            secure=cookie['secure'],
+        )
+        return response
 
     def get(self, request):
         code = request.GET.get('code', '').strip()
@@ -1669,31 +2189,58 @@ class ShellUIOAuthCallbackView(APIView):
                 redirect_to_raw=redirect_to,
             )
         callback_url = oauth_provider_redirect_uri(request)
+        from .oauth_state import OAUTH_APPLE_BRIDGE_COOKIE
+
+        bridge_token = (request.COOKIES.get(OAUTH_APPLE_BRIDGE_COOKIE) or '').strip()
+        apple_post = consume_apple_oauth_bridge_payload(bridge_token) if bridge_token else None
+        if apple_post:
+            request.shellui_apple_oauth_post = apple_post
         try:
             token_bundle = exchange_code_for_token(
                 provider=provider,
                 code=code,
                 redirect_uri=callback_url,
+                request=request,
+                company_id=company.id,
+                company_oauth_client_id=company_oauth_client_id,
+                pkce_code_verifier=consume_oauth_pkce_verifier(state_payload.get('nonce') or ''),
+            )
+            id_claims = _login_id_token_claims(
+                provider=provider,
+                token_bundle=token_bundle,
                 company_id=company.id,
                 company_oauth_client_id=company_oauth_client_id,
             )
+            if id_claims is None:
+                return _oauth_id_token_invalid_response(
+                    request=request,
+                    provider=provider,
+                    company=company,
+                    client_tz=client_tz,
+                    client_dev=client_dev,
+                    redirect_to_raw=redirect_to,
+                )
             userinfo = fetch_provider_userinfo(
                 provider,
                 token_bundle.access_token,
+                request=request,
                 company_id=company.id,
                 company_oauth_client_id=company_oauth_client_id,
+                redirect_uri=callback_url,
+                id_token=token_bundle.id_token,
             )
-            user, created, profile, resolve_err = _resolve_oauth_login_user(
+            user, created, profile, resolve_err, resolve_code = _resolve_oauth_login_user(
                 provider=provider,
                 company=company,
                 userinfo=userinfo,
                 token_bundle=token_bundle,
                 company_oauth_client_id=company_oauth_client_id,
+                id_token_claims=id_claims,
             )
             if resolve_err or profile is None or user is None:
                 record_login_event(
                     request=request,
-                    outcome=LoginEvent.OUTCOME_FAILURE,
+                    outcome=LoginOutcome.FAILURE,
                     provider=provider,
                     user=None,
                     company=company,
@@ -1701,49 +2248,66 @@ class ShellUIOAuthCallbackView(APIView):
                     client_timezone=client_tz,
                     client_device_id=client_dev,
                 )
+                identity_code = resolve_code or 'oauth_identity_failed'
                 bounced = _shellui_oauth_bounce_or_json(
                     request,
                     message=resolve_err or 'Could not resolve OAuth account.',
-                    error_code='oauth_identity_failed',
+                    error_code=identity_code,
                     redirect_to_raw=redirect_to,
                 )
                 if isinstance(bounced, HttpResponseRedirect):
                     return bounced
-                return Response(
-                    {'detail': resolve_err or 'Could not resolve OAuth account.'},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
+                body = {'detail': resolve_err or 'Could not resolve OAuth account.'}
+                if resolve_code:
+                    body['error_code'] = resolve_code
+                return Response(body, status=status.HTTP_400_BAD_REQUEST)
             avatar_url = profile.avatar_url
             email = profile.email
-        except Exception as exc:
+        except ShelluiOAuthError as exc:
+            return _oauth_provider_error_response(
+                request=request,
+                exc=exc,
+                provider=provider,
+                company=company,
+                client_tz=client_tz,
+                client_dev=client_dev,
+                redirect_to_raw=redirect_to,
+            )
+        except Exception:
+            # Stay below ERROR: Sentry events capture frame locals (client secret, code, tokens).
+            logger.warning(
+                'OAuth callback failed for provider %r (company %s)',
+                provider,
+                company.id,
+                exc_info=True,
+            )
             record_login_event(
                 request=request,
-                outcome=LoginEvent.OUTCOME_FAILURE,
+                outcome=LoginOutcome.FAILURE,
                 provider=provider,
                 user=None,
                 company=company,
-                failure_reason=str(exc),
+                failure_reason=_OAUTH_SIGNIN_FAILED_REASON,
                 client_timezone=client_tz,
                 client_device_id=client_dev,
             )
             bounced = _shellui_oauth_bounce_or_json(
                 request,
-                message=str(exc),
+                message=_OAUTH_SIGNIN_FAILED_DETAIL,
                 error_code='token_exchange_failed',
                 redirect_to_raw=redirect_to,
             )
             if isinstance(bounced, HttpResponseRedirect):
                 return bounced
-            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {'detail': _OAUTH_SIGNIN_FAILED_DETAIL, 'error_code': 'token_exchange_failed'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         emit_oauth_user_created_if_new(company, user, created=created, oauth_provider=provider)
-        join = apply_company_join(company, user, email=email)
-        _link_social_account(
-            user=user,
-            provider=provider,
-            provider_id=profile.provider_id,
-            userinfo=userinfo,
-        )
+        join_email = email if profile.email_verified_for_link else None
+        join = apply_company_join(company, user, email=join_email)
+        _link_social_account(user=user, profile=profile, userinfo=userinfo)
 
         cache.set(
             f"shellui:user_metadata:{user.id}",
@@ -1757,7 +2321,7 @@ class ShellUIOAuthCallbackView(APIView):
         if not join.allowed:
             record_login_event(
                 request=request,
-                outcome=LoginEvent.OUTCOME_FAILURE,
+                outcome=LoginOutcome.FAILURE,
                 provider=provider,
                 user=user,
                 company=company,
@@ -1983,26 +2547,45 @@ class ShellUIOAuthExchangeView(APIView):
                 provider=provider,
                 code=code,
                 redirect_uri=redirect_uri,
+                request=request,
                 company_id=company.id,
                 company_oauth_client_id=company_oauth_client_id,
             )
+            id_claims = _login_id_token_claims(
+                provider=provider,
+                token_bundle=token_bundle,
+                company_id=company.id,
+                company_oauth_client_id=company_oauth_client_id,
+            )
+            if id_claims is None:
+                return _oauth_id_token_invalid_response(
+                    request=request,
+                    provider=provider,
+                    company=company,
+                    client_tz=client_tz,
+                    client_dev=client_dev,
+                )
             userinfo = fetch_provider_userinfo(
                 provider,
                 token_bundle.access_token,
+                request=request,
                 company_id=company.id,
                 company_oauth_client_id=company_oauth_client_id,
+                redirect_uri=redirect_uri,
+                id_token=token_bundle.id_token,
             )
-            user, created, profile, resolve_err = _resolve_oauth_login_user(
+            user, created, profile, resolve_err, resolve_code = _resolve_oauth_login_user(
                 provider=provider,
                 company=company,
                 userinfo=userinfo,
                 token_bundle=token_bundle,
                 company_oauth_client_id=company_oauth_client_id,
+                id_token_claims=id_claims,
             )
             if resolve_err or profile is None or user is None:
                 record_login_event(
                     request=request,
-                    outcome=LoginEvent.OUTCOME_FAILURE,
+                    outcome=LoginOutcome.FAILURE,
                     provider=provider,
                     user=None,
                     company=company,
@@ -2010,33 +2593,41 @@ class ShellUIOAuthExchangeView(APIView):
                     client_timezone=client_tz,
                     client_device_id=client_dev,
                 )
-                return Response(
-                    {'detail': resolve_err or 'Could not resolve OAuth account.'},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
+                body = {'detail': resolve_err or 'Could not resolve OAuth account.'}
+                if resolve_code:
+                    body['error_code'] = resolve_code
+                return Response(body, status=status.HTTP_400_BAD_REQUEST)
             avatar_url = profile.avatar_url
             email = profile.email
-        except Exception as exc:
+        except ShelluiOAuthError as exc:
+            return _oauth_provider_error_response(
+                request=request,
+                exc=exc,
+                provider=provider,
+                company=company,
+                client_tz=client_tz,
+                client_dev=client_dev,
+            )
+        except Exception:
             record_login_event(
                 request=request,
-                outcome=LoginEvent.OUTCOME_FAILURE,
+                outcome=LoginOutcome.FAILURE,
                 provider=provider,
                 user=None,
                 company=company,
-                failure_reason=str(exc),
+                failure_reason=_OAUTH_SIGNIN_FAILED_REASON,
                 client_timezone=client_tz,
                 client_device_id=client_dev,
             )
-            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {'detail': _OAUTH_SIGNIN_FAILED_DETAIL, 'error_code': 'token_exchange_failed'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         emit_oauth_user_created_if_new(company, user, created=created, oauth_provider=provider)
-        join = apply_company_join(company, user, email=email)
-        _link_social_account(
-            user=user,
-            provider=provider,
-            provider_id=profile.provider_id,
-            userinfo=userinfo,
-        )
+        join_email = email if profile.email_verified_for_link else None
+        join = apply_company_join(company, user, email=join_email)
+        _link_social_account(user=user, profile=profile, userinfo=userinfo)
 
         cache.set(
             f"shellui:user_metadata:{user.id}",
@@ -2050,7 +2641,7 @@ class ShellUIOAuthExchangeView(APIView):
         if not join.allowed:
             record_login_event(
                 request=request,
-                outcome=LoginEvent.OUTCOME_FAILURE,
+                outcome=LoginOutcome.FAILURE,
                 provider=provider,
                 user=user,
                 company=company,
@@ -2064,7 +2655,7 @@ class ShellUIOAuthExchangeView(APIView):
         auth_metrics.record_successful_login(provider, company_id=company.id)
         record_login_event(
             request=request,
-            outcome=LoginEvent.OUTCOME_SUCCESS,
+            outcome=LoginOutcome.SUCCESS,
             provider=provider,
             user=user,
             company=company,
@@ -2109,7 +2700,8 @@ class ShellUITokenView(APIView):
         logger.info(
             'token refresh request origin=%s referer=%s ua=%s',
             request.headers.get('Origin') or '-',
-            request.headers.get('Referer') or '-',
+            # Path only: the Referer query can carry shellui_auth_code or other one-time secrets.
+            url_without_query(request.headers.get('Referer')) or '-',
             (request.headers.get('User-Agent') or '-')[:120],
         )
         grant_type = request.GET.get('grant_type') or request.data.get('grant_type')
@@ -2250,17 +2842,36 @@ class ShellUILogoutView(APIView):
             401: OpenApiResponse(description='Missing or invalid bearer token'),
         },
     ),
+    patch=extend_schema(
+        tags=['auth-profile'],
+        summary='Update current user display name',
+        description=(
+            'Set the display name from JSON `{"name": "Ada Lovelace"}`. Stored as `first_name` '
+            '(first word) and `last_name` (the rest), so `user_metadata.name` in new tokens and '
+            '`GET /api/v1/user` reflects it. OAuth, SAML, and magic link sign-ins never overwrite '
+            'a name once set; SCIM provisioning and admin user updates can.'
+        ),
+        request=ShellUIUserProfileUpdateSerializer,
+        responses={
+            200: OpenApiResponse(description='Updated user payload'),
+            400: OpenApiResponse(description='Missing, blank, or too long name'),
+            401: OpenApiResponse(description='Missing or invalid bearer token'),
+        },
+    ),
     delete=extend_schema(
         tags=['auth-profile'],
         summary='Delete current user account (self-service)',
         description=(
-            'Permanently delete the authenticated user account (GDPR/RGPD erasure support). '
-            'Requires JSON body `{"confirm": true}`. Session access JWT only (not personal access '
-            'tokens); the access token must be recently issued (`iat` within '
-            '`SELF_SERVICE_ACCOUNT_DELETE_MAX_IAT_AGE`, default 5m). When the user belongs to '
-            'more than one company, returns 409 until other memberships are removed. Emits '
-            '`identity.user.deleted` once per company membership with `source: self`. Revokes '
-            'refresh sessions and personal access tokens.'
+            'Permanently delete the authenticated user account for the token company '
+            '(GDPR/RGPD erasure support). Requires JSON body `{"confirm": true}`. Session access '
+            'JWT only (not personal access tokens); the access token must be recently issued '
+            '(`auth_time` within `SELF_SERVICE_ACCOUNT_DELETE_MAX_IAT_AGE`, default 5m). '
+            'When the user is still linked to another company (membership, ownership or group), '
+            'only this company membership and its company-scoped data (sessions, tokens, groups, '
+            'ownership, company OAuth links) are removed and the account stays for the other '
+            'companies. Otherwise the user row is deleted. Emits `identity.user.deleted` for this '
+            'company with `source: self`. Refused with 409 `last_company_owner` when the user is '
+            'the only owner of this company; ownership of other companies never blocks the delete.'
         ),
         request=ShellUIUserDeleteSerializer,
         responses={
@@ -2268,7 +2879,7 @@ class ShellUILogoutView(APIView):
             400: OpenApiResponse(description='Missing or false confirm flag'),
             401: OpenApiResponse(description='Missing or invalid bearer token'),
             403: OpenApiResponse(description='PAT or stale access token'),
-            409: OpenApiResponse(description='User belongs to more than one company'),
+            409: OpenApiResponse(description='User is the only owner of an affected company'),
         },
     ),
 )
@@ -2291,6 +2902,7 @@ class ShellUIUserView(APIView):
             'avatar_url': None,
             'is_staff': bool(user.is_staff),
         }
+        _apply_display_name(user, user_metadata)
         user_metadata['is_staff'] = bool(user.is_staff)
         user_metadata['is_company_owner'] = _is_user_company_owner(user, company)
         user_metadata['shelluiPreferences'] = _user_preferences_payload(user)
@@ -2305,6 +2917,27 @@ class ShellUIUserView(APIView):
                 'user_metadata': user_metadata,
             }
         )
+
+    def patch(self, request):
+        user = _authenticate_bearer_user(request)
+        if not user:
+            return Response({'error': 'Unauthorized'}, status=status.HTTP_401_UNAUTHORIZED)
+        _company, company_err = _required_company_from_request(request, user=user)
+        if company_err:
+            return company_err
+        serializer = ShellUIUserProfileUpdateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        first, _, last = serializer.validated_data['name'].partition(' ')
+        user.first_name = first
+        user.last_name = last
+        user.save(update_fields=['first_name', 'last_name'])
+        cache_key = f'shellui:user_metadata:{user.id}'
+        cached = cache.get(cache_key)
+        if isinstance(cached, dict):
+            _apply_display_name(user, cached)
+            cache.set(cache_key, cached, timeout=60 * 60 * 24 * 30)
+        return self.get(request)
 
     def put(self, request):
         user = _authenticate_bearer_user(request)
@@ -2345,6 +2978,7 @@ class ShellUIUserView(APIView):
         merged['groups'] = _user_group_names(user, company)
         merged.pop('last_seen_at', None)
         merged['last_seen_at'] = _last_seen_at_for_user(user)
+        _apply_display_name(user, merged)
         merged['is_staff'] = bool(user.is_staff)
         merged['is_company_owner'] = _is_user_company_owner(user, company)
         _enrich_user_metadata_avatar(user, merged)
@@ -2362,7 +2996,7 @@ class ShellUIUserView(APIView):
         user = _authenticate_bearer_user(request)
         if not user:
             return Response({'error': 'Unauthorized'}, status=status.HTTP_401_UNAUTHORIZED)
-        _company, company_err = _required_company_from_request(request, user=user)
+        company, company_err = _required_company_from_request(request, user=user)
         if company_err:
             return company_err
 
@@ -2375,7 +3009,7 @@ class ShellUIUserView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        blocked = check_self_service_account_delete_allowed(request, user)
+        blocked = check_self_service_account_delete_allowed(request, user, company)
         if blocked is not None:
             return blocked
 
@@ -2394,7 +3028,7 @@ class ShellUIUserView(APIView):
             except Exception:
                 pass
 
-        delete_user_account(user, source='self')
+        delete_user_for_company(user, company, source='self')
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -2555,12 +3189,30 @@ class ShellUIAdminUserListView(APIView):
         summary='Update user (staff or company owner)',
         description=(
             'Update Django user fields and/or merge `data` into cached user_metadata (same shape as '
-            'PUT /api/v1/user). Staff may change is_staff. Staff and company owners may change '
-            'is_active (enables/disables access for this company only), first_name, last_name, '
-            'group_ids (within this company), and `data`. Enabling a previously disabled membership '
-            'emails the user.'
+            'PUT /api/v1/user). Staff and company owners may change is_active (enables/disables '
+            'access for this company only), first_name, last_name, group_ids (within this company), '
+            'and `data`. Enabling a previously disabled membership emails the user. `is_staff` and '
+            '`is_superuser` are read-only: only Django admin may change them, and a body that '
+            'contains either field is refused with 400 `admin_only_field`.'
         ),
         request=ShellUIAdminUserUpdateSerializer,
+    ),
+    delete=extend_schema(
+        tags=['directory-users'],
+        summary='Delete user from this company (staff or company owner)',
+        description=(
+            'Removes the user and their data from the requested company. The account itself is '
+            'deleted only when this is their last company. Emits `identity.user.deleted` with '
+            '`source=admin`. Refuses to delete yourself (400), a staff user unless the caller is '
+            'staff (403), or the only owner of a company (409 `last_company_owner`).'
+        ),
+        responses={
+            204: OpenApiResponse(description='User removed from the company'),
+            400: OpenApiResponse(description='Caller tried to delete themselves'),
+            403: OpenApiResponse(description='Not staff or owner, or owner targeting a staff user'),
+            404: OpenApiResponse(description='User is not a member of this company'),
+            409: OpenApiResponse(description='User is the only owner of an affected company'),
+        },
     ),
 )
 class ShellUIAdminUserDetailView(APIView):
@@ -2586,22 +3238,15 @@ class ShellUIAdminUserDetailView(APIView):
         except User.DoesNotExist:
             return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
 
+        admin_only = admin_only_user_fields_response(request.data)
+        if admin_only is not None:
+            return admin_only
+
         serializer = ShellUIAdminUserUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         validated = serializer.validated_data
 
-        if not actor.is_staff and 'is_staff' in validated:
-            return Response(
-                {'error': 'Only staff may change is_staff.'},
-                status=status.HTTP_403_FORBIDDEN,
-            )
-
         if target.pk == actor.pk:
-            if validated.get('is_staff') is False:
-                return Response(
-                    {'error': 'You cannot remove your own staff status.'},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
             if validated.get('is_active') is False:
                 return Response(
                     {'error': 'You cannot disable your own company access.'},
@@ -2616,9 +3261,6 @@ class ShellUIAdminUserDetailView(APIView):
         if 'last_name' in validated:
             target.last_name = validated['last_name']
             update_fields.append('last_name')
-        if 'is_staff' in validated:
-            target.is_staff = validated['is_staff']
-            update_fields.append('is_staff')
         if update_fields:
             target.save(update_fields=list(dict.fromkeys(update_fields)))
 
@@ -2656,11 +3298,14 @@ class ShellUIAdminUserDetailView(APIView):
                     {'error': f'Unknown manual group ids for this company: {missing_ids}.'},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
+            current_ids = set(target.company_groups.filter(pk__in=existing_manual_ids).values_list('pk', flat=True))
             for g in manual_groups:
-                if g.id in requested_ids:
+                if g.id in requested_ids and g.id not in current_ids:
                     g.members.add(target)
-                else:
+                    emit_group_membership_changed(company, g, change='members_added', user_ids=[target.pk])
+                elif g.id not in requested_ids and g.id in current_ids:
                     g.members.remove(target)
+                    emit_group_membership_changed(company, g, change='members_removed', user_ids=[target.pk])
 
         data = validated.get('data')
         if isinstance(data, dict):
@@ -2692,6 +3337,40 @@ class ShellUIAdminUserDetailView(APIView):
                 merged['shelluiPreferences'] = _user_preferences_payload(target)
 
         return Response(_admin_user_payload(target, company))
+
+    def delete(self, request, pk):
+        actor, company, err = _require_staff_or_company_owner(request)
+        if err:
+            return err
+        try:
+            target = User.objects.get(pk=pk, companies=company)
+        except User.DoesNotExist:
+            return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        if target.pk == actor.pk:
+            return Response(
+                {'error': 'You cannot delete yourself here. Delete your account from Settings.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if target.is_staff and not actor.is_staff:
+            return Response(
+                {'error': 'Only staff may delete a staff user.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        orphaned = sole_owner_companies(target, company)
+        if orphaned:
+            names = ', '.join(c.name for c in orphaned)
+            return Response(
+                {
+                    'error': f'This user is the only owner of {names}. Add another owner first.',
+                    'error_code': LAST_COMPANY_OWNER,
+                    'companies': [{'id': c.pk, 'name': c.name} for c in orphaned],
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        delete_user_for_company(target, company, source='admin')
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 def _admin_group_row(g: CompanyGroup) -> dict:
@@ -2812,6 +3491,7 @@ class ShellUIAdminGroupListView(APIView):
             if retry:
                 return retry
             raise
+        emit_group_created(company, g)
         return Response(_admin_group_row(g), status=status.HTTP_201_CREATED)
 
 
@@ -2874,6 +3554,7 @@ class ShellUIAdminGroupDetailView(APIView):
         )
         if conflict:
             return conflict
+        renamed = g.display_name != display_name
         g.display_name = display_name
         try:
             g.save(update_fields=['display_name'])
@@ -2887,6 +3568,8 @@ class ShellUIAdminGroupDetailView(APIView):
             if retry:
                 return retry
             raise
+        if renamed:
+            emit_group_updated(company, g, changed_fields=['display_name'])
         g = CompanyGroup.objects.filter(company=company).annotate(user_count=Count('members', distinct=True)).get(pk=g.pk)
         return Response(_admin_group_row(g))
 
@@ -2904,6 +3587,7 @@ class ShellUIAdminGroupDetailView(APIView):
         blocked = _forbid_scim_group_admin_mutation(g)
         if blocked:
             return blocked
+        emit_group_deleted(company, g)
         g.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -2948,9 +3632,21 @@ class ShellUIAdminOAuthClientListView(APIView):
             social_app = SocialApp.objects.get(pk=validated['social_app_id'])
         except SocialApp.DoesNotExist:
             return Response({'error': 'SocialApp not found.'}, status=status.HTTP_400_BAD_REQUEST)
-        if str(social_app.provider).strip().lower() not in enabled:
+        if social_app_catalog_slug(social_app) not in enabled:
             return Response(
                 {'error': f"Provider '{social_app.provider}' is not supported."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if CompanyOAuthClient.objects.filter(social_app=social_app).exists():
+            return Response(
+                {'error': 'This SocialApp is already mapped. Create a new OAuth key instead.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        app_settings = social_app.settings if isinstance(social_app.settings, dict) else {}
+        owner_company_id = app_settings.get('created_by_company_id')
+        if owner_company_id is None or int(owner_company_id) != int(company.id):
+            return Response(
+                {'error': 'This SocialApp cannot be attached to your company.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         if not str(social_app.client_id).strip() or not str(social_app.secret).strip():
@@ -2965,11 +3661,76 @@ class ShellUIAdminOAuthClientListView(APIView):
                 is_active=bool(validated.get('is_active', True)),
             )
         except IntegrityError:
+            duplicate = find_duplicate_for_social_app(company.id, social_app)
+            if duplicate is not None:
+                return _oauth_duplicate_provider_response(duplicate.social_app_id)
             return Response(
                 {'error': 'This SocialApp is already mapped for this company.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         return Response(_oauth_client_payload(row), status=status.HTTP_201_CREATED)
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=['oauth-social-apps'],
+        summary='OAuth provider catalog for admin setup (staff or company owner)',
+        description=(
+            'Lists django-allauth providers with setup metadata and extra settings schema. '
+            'Use top-level `callback_url` and each provider\'s `callback_url` when registering IdP '
+            'redirect URIs in Shellui admin. These URLs are the identity-hosted '
+            '`/api/v1/oauth/callback` endpoint for this request host. Do not use allauth\'s default '
+            '`/accounts/.../login/callback/` paths from provider docs. '
+            'Each `console_url` entry is `{kind, url, form}` with optional `placeholders` when '
+            '`form` is `template`. Translate `kind` using `console_link_kinds` '
+            '(app_registration, developer_console, app_settings, docs, other). '
+            'Translate extra settings by field `name` (no English labels in the catalog).'
+        ),
+        parameters=[
+            OpenApiParameter(
+                name='include_legacy',
+                type=bool,
+                location=OpenApiParameter.QUERY,
+                required=False,
+                description='When true, include legacy providers replaced by newer modules.',
+            ),
+        ],
+    ),
+)
+class ShellUIAdminOAuthProviderCatalogView(APIView):
+    permission_classes = [ShellUIPermission]
+    serializer_class = ShellUIOpenAPISerializer
+
+    def get(self, request):
+        _actor, company, err = _require_staff_or_company_owner(request)
+        if err:
+            return err
+        include_legacy = str(request.GET.get('include_legacy', '')).strip().lower() in {
+            '1',
+            'true',
+            'yes',
+            'on',
+        }
+        catalog = get_provider_catalog()
+        providers = []
+        for entry in catalog.providers:
+            if entry.hidden:
+                continue
+            if entry.legacy and not include_legacy:
+                continue
+            providers.append(_catalog_provider_payload(request, entry, include_unsupported=include_legacy))
+        from apps.authapi.oauth_catalog_meta import CONSOLE_LINK_FORMS, CONSOLE_LINK_KINDS
+
+        return Response(
+            {
+                'catalog_version': catalog.catalog_version,
+                'allauth_version': catalog.allauth_version,
+                'console_link_kinds': list(CONSOLE_LINK_KINDS),
+                'console_link_forms': list(CONSOLE_LINK_FORMS),
+                'callback_url': _identity_oauth_callback_url(request),
+                'providers': providers,
+            }
+        )
 
 
 @extend_schema_view(
@@ -2996,12 +3757,12 @@ class ShellUIAdminOAuthSocialAppListView(APIView):
         if err:
             return err
         enabled_providers = set(_supported_oauth_providers())
-        apps = SocialApp.objects.all().order_by('provider', 'name', 'id')
-        rows = [
-            _oauth_social_app_payload(company, app)
-            for app in apps
-            if str(app.provider).strip().lower() in enabled_providers
-        ]
+        company_app_ids = CompanyOAuthClient.objects.filter(company=company).values_list(
+            'social_app_id',
+            flat=True,
+        )
+        apps = SocialApp.objects.filter(id__in=company_app_ids).order_by('provider', 'name', 'id')
+        rows = [_oauth_social_app_payload(company, app, request=request) for app in apps]
         return Response(
             {
                 'providers': sorted(enabled_providers),
@@ -3013,30 +3774,77 @@ class ShellUIAdminOAuthSocialAppListView(APIView):
         _actor, company, err = _require_staff_or_company_owner(request)
         if err:
             return err
-        serializer = ShellUIAdminOAuthSocialAppCreateSerializer(data=request.data)
+        incoming = request.data.copy() if hasattr(request.data, 'copy') else dict(request.data)
+        pre_slug = str(incoming.get('docs_slug') or incoming.get('provider') or '').strip().lower()
+        if pre_slug == 'saml':
+            incoming.setdefault('client_id', 'saml-auto')
+            incoming.setdefault('client_secret', '-')
+        serializer = ShellUIAdminOAuthSocialAppCreateSerializer(data=incoming)
         serializer.is_valid(raise_exception=True)
         validated = serializer.validated_data
-        provider = str(validated['provider']).strip().lower()
-        if provider not in set(_supported_oauth_providers()):
+        docs_slug = str(validated['docs_slug']).strip().lower()
+        entry = resolve_catalog_slug(docs_slug)
+        if entry is None or not entry.supported:
             return Response(
-                {'error': f"Provider '{provider}' is not supported."},
+                {'error': f"Provider '{docs_slug}' is not supported."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        if CompanyOAuthClient.objects.filter(company=company, social_app__provider=provider).exists():
-            return Response(
-                {'error': f"Provider '{provider}' is already configured for this company."},
-                status=status.HTTP_400_BAD_REQUEST,
+        if entry.allauth_id == 'saml':
+            from apps.authapi.saml.organization import generate_organization_slug
+            from apps.authapi.saml.settings_merge import merge_saml_social_settings
+
+            social_settings, settings_err = merge_saml_social_settings(
+                entry,
+                validated,
+                company_id=company.id,
             )
-        social_settings = {}
-        tenant = str(validated.get('tenant') or '').strip()
-        if tenant:
-            social_settings = {'tenant': tenant}
+            if settings_err:
+                err_code = settings_err if str(settings_err).startswith('error_code:') else None
+                body = {'error_code': err_code.split(':', 1)[1]} if err_code else {'error': settings_err}
+                return Response(body, status=status.HTTP_400_BAD_REQUEST)
+            from apps.companies.saml_entity_uniqueness import find_cross_company_saml_entity_id_conflict
+
+            idp_block = social_settings.get('idp') if isinstance(social_settings.get('idp'), dict) else {}
+            entity_for_uniq = str(idp_block.get('entity_id') or '').strip()
+            conflict_app = find_cross_company_saml_entity_id_conflict(
+                entity_for_uniq,
+                company_id=company.id,
+            )
+            if conflict_app is not None:
+                return Response({'error_code': 'saml_idp_entity_id_in_use'}, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            social_settings, settings_err, settings_code = _merge_social_app_settings(entry, validated)
+            if settings_err:
+                return Response(
+                    {'error': settings_err, 'error_code': settings_code},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        dedupe_key = compute_dedupe_key_for_new_app(entry, settings=social_settings)
+        duplicate = find_duplicate_company_oauth_client(company.id, dedupe_key=dedupe_key)
+        if duplicate is not None:
+            return _oauth_duplicate_provider_response(duplicate.social_app_id)
+        social_settings['created_by_company_id'] = int(company.id)
+        org_slug = (
+            generate_organization_slug(company_id=company.id)
+            if entry.allauth_id == 'saml'
+            else str(validated['client_id']).strip()
+        )
+        client_secret = (
+            '-'
+            if entry.allauth_id == 'saml'
+            else str(validated['client_secret']).strip()
+        )
         app = SocialApp.objects.create(
-            provider=provider,
-            name=_generated_social_app_name(provider, company),
-            client_id=str(validated['client_id']).strip(),
-            secret=str(validated['client_secret']).strip(),
-            key='',
+            provider=entry.allauth_id,
+            provider_id=entry.social_app_provider_id(),
+            name=_generated_social_app_name(entry.docs_slug, company),
+            client_id=org_slug,
+            secret=client_secret,
+            key=str(
+                validated.get('extra_settings', {}).get('key')
+                or social_settings.get('key')
+                or ''
+            ).strip(),
             settings=social_settings,
         )
         try:
@@ -3044,14 +3852,21 @@ class ShellUIAdminOAuthSocialAppListView(APIView):
             app.sites.add(current_site)
         except Exception:
             pass
-        mapping, _created = CompanyOAuthClient.objects.get_or_create(
-            company=company,
-            social_app=app,
-            defaults={'is_active': True},
-        )
+        try:
+            mapping, _created = CompanyOAuthClient.objects.get_or_create(
+                company=company,
+                social_app=app,
+                defaults={'is_active': True},
+            )
+        except IntegrityError:
+            duplicate = find_duplicate_for_social_app(company.id, app)
+            if duplicate is not None:
+                app.delete()
+                return _oauth_duplicate_provider_response(duplicate.social_app_id)
+            raise
         return Response(
             {
-                'social_app': _oauth_social_app_payload(company, app),
+                'social_app': _oauth_social_app_payload(company, app, request=request),
                 'mapping': _oauth_client_payload(mapping) if mapping else None,
             },
             status=status.HTTP_201_CREATED,
@@ -3095,21 +3910,74 @@ class ShellUIAdminOAuthSocialAppDetailView(APIView):
         serializer.is_valid(raise_exception=True)
         validated = serializer.validated_data
         if 'client_id' in validated:
-            app.client_id = str(validated['client_id']).strip()
+            new_client_id = str(validated['client_id']).strip()
+            if new_client_id and new_client_id != str(app.client_id).strip():
+                if SocialApp.objects.filter(client_id=new_client_id).exclude(pk=app.pk).exists():
+                    return Response(
+                        {'error_code': 'oauth_app_client_id_taken'},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                app.client_id = new_client_id
         if 'client_secret' in validated:
             app.secret = str(validated['client_secret']).strip()
+        entry = resolve_catalog_slug(social_app_catalog_slug(app))
         settings_data = app.settings if isinstance(app.settings, dict) else {}
         settings_data = dict(settings_data)
-        if 'tenant' in validated:
+        if entry is not None and entry.allauth_id == 'saml' and 'extra_settings' in validated:
+            from apps.authapi.saml.settings_merge import merge_saml_social_settings
+
+            merged, settings_err = merge_saml_social_settings(
+                entry,
+                validated,
+                existing=settings_data,
+                company_id=company.id,
+            )
+            if settings_err:
+                err_code = settings_err if str(settings_err).startswith('error_code:') else None
+                body = {'error_code': err_code.split(':', 1)[1]} if err_code else {'error': settings_err}
+                return Response(body, status=status.HTTP_400_BAD_REQUEST)
+            from apps.companies.saml_entity_uniqueness import find_cross_company_saml_entity_id_conflict
+
+            idp_block = merged.get('idp') if isinstance(merged.get('idp'), dict) else {}
+            entity_for_uniq = str(idp_block.get('entity_id') or '').strip()
+            conflict_app = find_cross_company_saml_entity_id_conflict(
+                entity_for_uniq,
+                company_id=company.id,
+                exclude_social_app_id=app.pk,
+            )
+            if conflict_app is not None:
+                return Response({'error_code': 'saml_idp_entity_id_in_use'}, status=status.HTTP_400_BAD_REQUEST)
+            settings_data = merged
+        elif entry is not None and ('tenant' in validated or 'extra_settings' in validated):
+            merged, settings_err, settings_code = _merge_social_app_settings(
+                entry,
+                validated,
+                existing=settings_data,
+            )
+            if settings_err:
+                return Response(
+                    {'error': settings_err, 'error_code': settings_code},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            settings_data = merged
+        elif 'tenant' in validated:
             tenant = str(validated['tenant']).strip()
             if tenant:
                 settings_data['tenant'] = tenant
             else:
                 settings_data.pop('tenant', None)
         app.settings = settings_data
+        duplicate = find_duplicate_for_social_app(
+            company.id,
+            app,
+            exclude_company_oauth_client_id=mapping.id,
+        )
+        if duplicate is not None:
+            return _oauth_duplicate_provider_response(duplicate.social_app_id)
         app.save()
+        mapping.save()
         app.refresh_from_db()
-        return Response(_oauth_social_app_payload(company, app))
+        return Response(_oauth_social_app_payload(company, app, request=request))
 
     def delete(self, request, pk):
         _actor, company, err = _require_staff_or_company_owner(request)
@@ -3131,6 +3999,9 @@ class ShellUIAdminOAuthSocialAppDetailView(APIView):
                 {'error': 'Cannot delete this key because it is mapped to another company.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        blocked = _login_lockout_response(company, removed_client_ids=(mapping.pk,))
+        if blocked:
+            return blocked
         app.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -3182,7 +4053,7 @@ class ShellUIAdminOAuthClientDetailView(APIView):
                 social_app = SocialApp.objects.get(pk=validated['social_app_id'])
             except SocialApp.DoesNotExist:
                 return Response({'error': 'SocialApp not found.'}, status=status.HTTP_400_BAD_REQUEST)
-            if str(social_app.provider).strip().lower() not in enabled:
+            if social_app_catalog_slug(social_app) not in enabled:
                 return Response(
                     {'error': f"Provider '{social_app.provider}' is not supported."},
                     status=status.HTTP_400_BAD_REQUEST,
@@ -3194,6 +4065,10 @@ class ShellUIAdminOAuthClientDetailView(APIView):
                 )
             row.social_app = social_app
         if 'is_active' in validated:
+            if not validated['is_active']:
+                blocked = _login_lockout_response(company, removed_client_ids=(row.pk,))
+                if blocked:
+                    return blocked
             row.is_active = validated['is_active']
         try:
             row.save()
@@ -3213,6 +4088,9 @@ class ShellUIAdminOAuthClientDetailView(APIView):
             row = CompanyOAuthClient.objects.get(pk=pk, company=company)
         except CompanyOAuthClient.DoesNotExist:
             return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        blocked = _login_lockout_response(company, removed_client_ids=(row.pk,))
+        if blocked:
+            return blocked
         row.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -3435,213 +4313,6 @@ class ShellUIHostingOAuthRedirectSyncView(APIView):
             source=CompanyOAuthRedirect.SOURCE_HOSTING,
         ).delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
-
-
-@extend_schema_view(
-    get=extend_schema(
-        tags=['audit-events'],
-        summary='List login audit events (staff or company owner)',
-        description=(
-            'Paginated OAuth sign-in attempts (success and failure). '
-            'Contains privacy-oriented fields (hashed IP, truncated user-agent). '
-        ),
-        operation_id='api_v1_login_events_list',
-        parameters=[
-            OpenApiParameter(
-                name='user_id',
-                type=int,
-                location=OpenApiParameter.QUERY,
-                required=False,
-                description='Filter by Django user id.',
-            ),
-            OpenApiParameter(
-                name='outcome',
-                type=str,
-                location=OpenApiParameter.QUERY,
-                required=False,
-                description='success or failure.',
-            ),
-            OpenApiParameter(
-                name='provider',
-                type=str,
-                location=OpenApiParameter.QUERY,
-                required=False,
-                description='OAuth provider slug (github, google, microsoft).',
-            ),
-            OpenApiParameter(
-                name='is_staff_at_event',
-                type=bool,
-                location=OpenApiParameter.QUERY,
-                required=False,
-                description='Filter rows where the user was staff at login time.',
-            ),
-            OpenApiParameter(
-                name='created_after',
-                type=str,
-                location=OpenApiParameter.QUERY,
-                required=False,
-                description='ISO 8601 datetime (inclusive lower bound).',
-            ),
-            OpenApiParameter(
-                name='created_before',
-                type=str,
-                location=OpenApiParameter.QUERY,
-                required=False,
-                description='ISO 8601 datetime (exclusive upper bound).',
-            ),
-            OpenApiParameter(
-                name='client_country',
-                type=str,
-                location=OpenApiParameter.QUERY,
-                required=False,
-                description='Case-insensitive substring match on GeoIP country (stored value).',
-            ),
-            OpenApiParameter(
-                name='client_city',
-                type=str,
-                location=OpenApiParameter.QUERY,
-                required=False,
-                description='Case-insensitive substring match on GeoIP city.',
-            ),
-            OpenApiParameter(
-                name='client_timezone',
-                type=str,
-                location=OpenApiParameter.QUERY,
-                required=False,
-                description='Case-insensitive substring match on client IANA timezone.',
-            ),
-            OpenApiParameter(
-                name='language',
-                type=str,
-                location=OpenApiParameter.QUERY,
-                required=False,
-                description=(
-                    "Filter rows where the user's saved Shellui preference language matches "
-                    '(e.g. en, fr). Omits anonymous events (no user).'
-                ),
-            ),
-            OpenApiParameter(name='page', type=int, location=OpenApiParameter.QUERY, required=False),
-            OpenApiParameter(name='page_size', type=int, location=OpenApiParameter.QUERY, required=False),
-        ],
-        responses={200: OpenApiResponse(description='Paginated list of login audit events')},
-    ),
-)
-class ShellUIAdminLoginEventListView(APIView):
-    permission_classes = [ShellUIPermission]
-
-    def get(self, request):
-        _actor, company, err = _require_staff_or_company_owner(request)
-        if err:
-            return err
-
-        try:
-            page = max(1, int(request.GET.get('page') or 1))
-            page_size = min(100, max(1, int(request.GET.get('page_size') or 20)))
-        except (TypeError, ValueError):
-            return Response(
-                {'error': 'Invalid page or page_size.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        qs = LoginEvent.objects.filter(company=company).select_related('user').order_by('-created_at', '-id')
-
-        uid = request.GET.get('user_id')
-        if uid is not None and str(uid).strip():
-            try:
-                qs = qs.filter(user_id=int(uid))
-            except (TypeError, ValueError):
-                return Response({'error': 'Invalid user_id.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        outcome = (request.GET.get('outcome') or '').strip().lower()
-        if outcome:
-            if outcome not in (LoginEvent.OUTCOME_SUCCESS, LoginEvent.OUTCOME_FAILURE):
-                return Response({'error': 'Invalid outcome.'}, status=status.HTTP_400_BAD_REQUEST)
-            qs = qs.filter(outcome=outcome)
-
-        prov = (request.GET.get('provider') or '').strip().lower()
-        if prov:
-            qs = qs.filter(provider=prov)
-
-        staff_raw = request.GET.get('is_staff_at_event')
-        if staff_raw is not None and str(staff_raw).strip() != '':
-            s = str(staff_raw).strip().lower()
-            if s in ('1', 'true', 'yes'):
-                qs = qs.filter(is_staff_at_event=True)
-            elif s in ('0', 'false', 'no'):
-                qs = qs.filter(is_staff_at_event=False)
-            else:
-                return Response(
-                    {'error': 'Invalid is_staff_at_event (use true or false).'},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-
-        ca = (request.GET.get('created_after') or '').strip()
-        if ca:
-            dt = parse_datetime(ca)
-            if not dt:
-                return Response({'error': 'Invalid created_after.'}, status=status.HTTP_400_BAD_REQUEST)
-            qs = qs.filter(created_at__gte=dt)
-
-        cb = (request.GET.get('created_before') or '').strip()
-        if cb:
-            dt = parse_datetime(cb)
-            if not dt:
-                return Response({'error': 'Invalid created_before.'}, status=status.HTTP_400_BAD_REQUEST)
-            qs = qs.filter(created_at__lt=dt)
-
-        cc = (request.GET.get('client_country') or '').strip()
-        if cc:
-            qs = qs.filter(client_country__icontains=cc)
-
-        city = (request.GET.get('client_city') or '').strip()
-        if city:
-            qs = qs.filter(client_city__icontains=city)
-
-        ctz = (request.GET.get('client_timezone') or '').strip()
-        if ctz:
-            qs = qs.filter(client_timezone__icontains=ctz)
-
-        lang = (request.GET.get('language') or '').strip().lower()
-        if lang:
-            allowed_lang = {choice[0] for choice in UserPreference.LANGUAGE_CHOICES}
-            if lang not in allowed_lang:
-                return Response({'error': 'Invalid language.'}, status=status.HTTP_400_BAD_REQUEST)
-            qs = qs.filter(user__preference__language=lang)
-
-        total = qs.count()
-        start = (page - 1) * page_size
-        rows = [_login_event_payload(e) for e in qs[start : start + page_size]]
-        return Response(
-            {
-                'count': total,
-                'page': page,
-                'page_size': page_size,
-                'results': rows,
-            }
-        )
-
-
-@extend_schema_view(
-    get=extend_schema(
-        tags=['audit-events'],
-        summary='Retrieve login audit event (staff or company owner)',
-        description='Single login event row.',
-        operation_id='api_v1_login_events_retrieve',
-        responses={200: OpenApiResponse(description='Login audit event')},
-    ),
-)
-class ShellUIAdminLoginEventDetailView(APIView):
-    permission_classes = [ShellUIPermission]
-
-    def get(self, request, pk):
-        _actor, company, err = _require_staff_or_company_owner(request)
-        if err:
-            return err
-        try:
-            event = LoginEvent.objects.select_related('user').get(pk=pk, company=company)
-        except LoginEvent.DoesNotExist:
-            return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
-        return Response(_login_event_payload(event))
 
 
 @extend_schema_view(
@@ -3881,7 +4552,11 @@ class ShellUIAdminAuthMethodsView(APIView):
                 {'error': 'Provide enable_magic_link (boolean).'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        company.enable_magic_link = bool(serializer.validated_data['enable_magic_link'])
+        enable_magic_link = bool(serializer.validated_data['enable_magic_link'])
+        blocked = _login_lockout_response(company, enable_magic_link=enable_magic_link)
+        if blocked:
+            return blocked
+        company.enable_magic_link = enable_magic_link
         company.save(update_fields=['enable_magic_link'])
         return Response(_auth_methods_admin_payload(company))
 
@@ -3898,7 +4573,9 @@ class ShellUIAdminAuthMethodsView(APIView):
         summary='Prometheus metrics (staff or company owner)',
         description=(
             'Prometheus text exposition (openmetrics) for the company in the Bearer token '
-            '(JWT or PAT must include a `company_id` claim). Do not send `company_id` as a query parameter.'
+            '(JWT or PAT must include a `company_id` claim). Do not send `company_id` as a query parameter. '
+            'Only that company\'s `shellui_auth_company_*` gauges and `shellui_auth_successful_logins_total` '
+            'series; no runtime, platform-wide or other-company metrics (use `/api/v1/metrics/all`).'
         ),
         responses={
             200: OpenApiResponse(description='text/plain Prometheus exposition'),

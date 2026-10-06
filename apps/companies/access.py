@@ -10,20 +10,25 @@ from dataclasses import dataclass
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.mail import send_mail
+from django.utils import timezone
 
-from .models import Company, CompanyMembership
+from .models import Company, CompanyInvitation, CompanyMembership
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
 
 ERROR_ACCESS_PENDING = 'access_pending'
 ERROR_ACCESS_DENIED = 'access_denied'
+ERROR_INVITATION_REVOKED = 'invitation_revoked'
 
 MSG_ACCESS_PENDING = (
     'Your account was created and is waiting for an administrator to grant access.'
 )
 MSG_ACCESS_DENIED = (
     'Your email domain is not authorized for this company. An administrator has been notified.'
+)
+MSG_INVITATION_REVOKED = (
+    'Your invitation to this company was revoked. Contact an administrator to be invited again.'
 )
 
 
@@ -138,19 +143,78 @@ def set_company_access(company: Company, user, *, enabled: bool) -> CompanyMembe
     return membership
 
 
+def latest_invitation(company: Company, email: str | None) -> CompanyInvitation | None:
+    address = (email or '').strip().lower()
+    if not address or not getattr(company, 'pk', None):
+        return None
+    return CompanyInvitation.objects.filter(company=company, email=address).order_by('-id').first()
+
+
+def invitation_revoked_decision() -> JoinDecision:
+    return JoinDecision(
+        allowed=False,
+        error_code=ERROR_INVITATION_REVOKED,
+        message=MSG_INVITATION_REVOKED,
+    )
+
+
+def is_login_blocked_by_revoked_invitation(company: Company, email: str | None, user=None) -> bool:
+    """
+    True when the latest invitation for this email was revoked and nobody with this email (nor
+    ``user``) has enabled access. Lets sign-in flows refuse before creating an account.
+    """
+    if user is not None and is_company_access_enabled(company, user):
+        return False
+    invitation = latest_invitation(company, email)
+    if invitation is None or invitation.status != CompanyInvitation.STATUS_REVOKED:
+        return False
+    return not CompanyMembership.objects.filter(
+        company=company,
+        is_enabled=True,
+        user__email__iexact=invitation.email,
+    ).exists()
+
+
+def accept_invitation(invitation: CompanyInvitation, user) -> None:
+    from apps.authapi.models import UserPreference
+
+    company = invitation.company
+    first_company = not CompanyMembership.objects.filter(user=user).exclude(company=company).exists()
+    set_company_access(company, user, enabled=True)
+    invitation.status = CompanyInvitation.STATUS_ACCEPTED
+    invitation.accepted_user = user
+    invitation.accepted_at = timezone.now()
+    invitation.save(update_fields=['status', 'accepted_user', 'accepted_at'])
+    if first_company:
+        UserPreference.objects.get_or_create(user=user, defaults={'language': invitation.language})
+
+
 def apply_company_join(company: Company, user, email: str | None = None) -> JoinDecision:
     """
     Add the user to the company according to access_mode and decide whether tokens may be issued.
 
     Access is per company (CompanyMembership.is_enabled), so disabling one company does not
     affect other companies the same user belongs to.
+
+    A pending invitation is accepted only when ``email`` is passed explicitly: callers pass it
+    when the sign-in method proved the user owns that address. The stored ``user.email`` is not
+    enough to claim an invitation, but a revoked invitation for it still blocks sign-in.
     """
     address = (email or getattr(user, 'email', '') or '').strip()
     membership = get_membership(company, user)
 
+    if membership is not None and membership.is_enabled:
+        return JoinDecision(allowed=True)
+
+    invitation = latest_invitation(company, address)
+    if invitation is not None:
+        if invitation.status == CompanyInvitation.STATUS_REVOKED:
+            return invitation_revoked_decision()
+        if invitation.status == CompanyInvitation.STATUS_PENDING and email:
+            accept_invitation(invitation, user)
+            return JoinDecision(allowed=True, newly_joined=membership is None)
+
     if membership is not None:
-        if membership.is_enabled:
-            return JoinDecision(allowed=True)
         return JoinDecision(
             allowed=False,
             error_code=ERROR_ACCESS_PENDING,

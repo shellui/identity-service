@@ -1,87 +1,80 @@
-# Identity-hosted OAuth login
+---
+description: How identity-service runs OAuth sign-in for a Shellui shell, from the authorize request to the token exchange, and how to configure the redirect allowlist.
+---
 
-For **passwordless email (magic link)** sign-in, see [magic-link.md](magic-link.md). OAuth and magic link can both be enabled per company.
+# OAuth login
 
-identity-service owns the OAuth authorize and callback endpoints. Provider apps register a **fixed** redirect URI on the identity host. The shell or CLI bounce target (`redirect_to`) travels in signed OAuth `state`, not in the provider callback URL.
+identity-service owns the whole OAuth flow. Provider apps call back to one fixed URL on identity-service, which exchanges the code server-side, applies the company rules, and returns tokens to the shell. This page covers that flow, the confirmation page, token delivery, and the redirect allowlist. For passwordless email sign-in, see [Magic link](magic-link.md). A company can enable both.
 
-## Flow
+## How the flow works
 
-1. Shell (or `shellui login`) opens `GET /api/v1/authorize` with `company_id`, `redirect_to`, and optionally `provider`.
-2. Without `provider`, identity shows a **sign-in method picker** (even when only one provider is enabled), then continues.
-3. Identity redirects to the IdP using `redirect_uri={identity}/api/v1/oauth/callback` and a signed `state` that carries `redirect_to` and company context.
-4. The provider returns to `/api/v1/oauth/callback`. Identity exchanges the code server-side.
-5. For most providers, the user sees an **account confirmation** page (confirm, switch provider, or switch account on the same provider). **Google skips this step by default** — Google’s own consent and account picker already cover the same UX, so identity completes login immediately when profile data is sufficient (verified email, no synthetic placeholder address).
-6. After confirmation (or when skipped), identity redirects to `redirect_to?shellui_auth_code=…` (default). The shell `/login/callback` route POSTs the code to `POST /api/v1/oauth/session` with the same `redirect_to` URL and stores the returned JSON tokens.
+The shell (or `shellui login` in the CLI) only talks to identity-service. The shell destination, `redirect_to`, travels in a signed OAuth `state` value, never in the provider callback URL:
 
-### Skip account confirmation (`OAUTH_SKIP_CONFIRM_PROVIDERS`)
+1. The shell opens `GET /api/v1/authorize` with `company_id`, `redirect_to`, and optionally `provider`.
+2. Without `provider`, identity-service shows a sign-in method picker, even when the company has a single method.
+3. identity-service redirects to the provider with `redirect_uri` set to its own `/api/v1/oauth/callback` and a signed `state`.
+4. The provider returns to `/api/v1/oauth/callback`. identity-service exchanges the code server-side.
+5. identity-service shows an account confirmation page. The user can continue, switch provider, or switch account. Some providers skip this step, see [Skip the confirmation page](#skip-the-confirmation-page).
+6. identity-service redirects to `redirect_to?shellui_auth_code=…`. The shell `/login/callback` route posts the code to `POST /api/v1/oauth/session` with the same `redirect_to`, and stores the returned tokens.
 
-| Setting | Default | Behavior |
-| ------- | ------- | -------- |
-| `OAUTH_SKIP_CONFIRM_PROVIDERS` | `google` (when the variable is **unset**) | Comma-separated provider slugs (`github`, `google`, `microsoft`, …) that bypass the confirmation HTML and finalize login like clicking **Continue** |
-| Explicit empty value | — | `OAUTH_SKIP_CONFIRM_PROVIDERS=` requires confirmation for **all** providers |
+Company join rules (`public`, `domain`, `invite`) apply after the provider sign-in succeeds. See [Company access](company-access.md).
 
-Providers not in the list keep the confirmation step. Typos in the list are ignored safely (no match → confirm still shown). If the IdP profile is insufficient (missing email, synthetic `{id}@{provider}.local` placeholder, or `email_verified: false` from OIDC userinfo), identity **falls back** to the confirmation page instead of auto-completing.
+## Register the callback URL
 
-To require confirmation for Google again, set `OAUTH_SKIP_CONFIRM_PROVIDERS=` or omit `google` from the list. To skip for additional IdPs later, add their slugs: `OAUTH_SKIP_CONFIRM_PROVIDERS=google,microsoft`.
-
-**Legacy fragment delivery:** set `token_delivery=fragment` on `/api/v1/authorize` (or `OAUTH_TOKEN_DELIVERY=fragment`) to receive `redirect_to#access_token=…&refresh_token=…` instead. Fragment mode is deprecated and will be removed in a future release.
-
-`POST /api/v1/oauth/exchange` remains for older shells that still receive provider `?code=` on the frontend.
-
-## Provider app registration
-
-Register **one** Authorization callback URL per provider app — the identity callback, with **no query string**:
+Register one callback URL on each provider app, pointing at identity-service, with no query string:
 
 | Environment | Callback URL |
-|-------------|--------------|
+| --- | --- |
 | Local | `http://localhost:8000/api/v1/oauth/callback` |
-| Production | `https://<identity-host>/api/v1/oauth/callback` |
+| Production | `https://auth.example.com/api/v1/oauth/callback` |
 
-Homepage / application URL may still point at the shell (e.g. `http://localhost:4000` or `https://app.example.com`).
+The provider homepage or application URL can still be your shell, for example `https://app.example.com`. Do not register the shell `/login/callback` URL at the provider: only identity-service redirects there. Supported providers and their settings are listed in [OAuth providers](oauth-providers.md).
 
-Do **not** register the shell `/login/callback` URL on the IdP. That path only receives tokens after identity redirects with a fragment.
+## Skip the confirmation page
 
-## Social login providers
+After the callback, identity-service shows a confirmation page so the user can check which account they used. Google skips it by default, because Google already shows its own consent screen and account picker. `OAUTH_SKIP_CONFIRM_PROVIDERS` controls the list:
 
-identity-service uses **[django-allauth](https://docs.allauth.org/en/latest/)** for `SocialApp` storage and provider modules. **Stock releases** wire the identity-hosted OAuth flow (`/api/v1/authorize` → `/api/v1/oauth/callback`) for **GitHub**, **Google**, and **Microsoft** only. Every other provider in the allauth catalog is **available in the library** once you enable its module, satisfy any extra dependencies from the provider page, create per-company `SocialApp` credentials, and extend OAuth wiring in your deploy — see the full checklist and catalog in **[Social login providers (django-allauth)](oauth-providers.md)**.
+| Value | Behavior |
+| --- | --- |
+| Unset | `google` skips the confirmation page |
+| `google,microsoft` | Each listed provider skips it. Use catalog IDs from [OAuth providers](oauth-providers.md) |
+| Empty (`OAUTH_SKIP_CONFIRM_PROVIDERS=`) | Every provider shows it |
 
-Quick reference:
+An unknown ID in the list is ignored. When the profile is not good enough to finish on its own, identity-service shows the confirmation page anyway. That happens when the email is missing, is a `{id}@{provider}.local` placeholder, or comes with `email_verified: false`.
 
-| Tier | Examples | Stock Shellui OAuth wired? |
-| ---- | -------- | -------------------------- |
-| **Primary / common starters** | Google, Microsoft, GitHub, Apple, GitLab, Slack, Okta, Auth0, Keycloak (OIDC), OpenID Connect, SAML, Discord, Facebook, LinkedIn, Amazon Cognito | GitHub, Google, Microsoft only |
-| **Also available** | Full django-allauth **65.14.1** module list (X/Twitter OAuth 1+2, Twitch, Steam, …) | Requires custom enablement |
+## Token delivery
 
-Upstream source of truth: [django-allauth socialaccount providers](https://docs.allauth.org/en/latest/socialaccount/providers/index.html).
+By default, identity-service sends the shell a one-time code, not the tokens. The code is valid for `OAUTH_SESSION_CODE_TTL_SECONDS` (120 seconds by default) and works once:
 
-Configuring a provider does **not** mean Shellui pre-registers IdP clients — operators still create OAuth/SAML apps with each vendor. Listing a provider is not a security certification.
+| Mode | How the shell receives tokens | Status |
+| --- | --- | --- |
+| `code` (default) | `redirect_to?shellui_auth_code=…`, then `POST /api/v1/oauth/session` | Recommended |
+| `fragment` | `redirect_to#access_token=…&refresh_token=…` | Deprecated, will be removed |
+
+Choose the mode per request with `token_delivery=fragment` on `/api/v1/authorize`, or for the whole deployment with `OAUTH_TOKEN_DELIVERY`. `POST /api/v1/oauth/exchange` still serves older shells that receive the provider `?code=` themselves.
 
 ## Redirect allowlist
 
-After OAuth, identity may bounce tokens only to approved targets for that company.
+identity-service only sends codes or tokens to origins the company approved. This stops a crafted `redirect_to` from sending a session to another site:
 
 | Target | Rule |
-|--------|------|
-| Loopback (`127.0.0.1`, `localhost`, `::1`) | Allowed when `DEBUG=true` or `OAUTH_ALLOW_LOOPBACK_REDIRECTS=true` (CLI / local dev) |
+| --- | --- |
+| Loopback (`127.0.0.1`, `localhost`, `::1`) | Allowed when `DEBUG=true` or `OAUTH_ALLOW_LOOPBACK_REDIRECTS=true`, for the CLI and local shells |
 | Other origins | Must match an active `CompanyOAuthRedirect` row for the company |
-| Hosting previews (`{slug}.{HOSTING_APP_DOMAIN}`) | Synced automatically by hosting-service (`source=hosting`) when a site is created/deleted |
-| Empty allowlist | Non-loopback `redirect_to` is **denied** |
+| Hosting previews (`{slug}.{HOSTING_APP_DOMAIN}`) | Added and removed by hosting-service (`source=hosting`) when a site is created or deleted |
+| Empty allowlist | Every non-loopback `redirect_to` is denied |
 
-Store **origins** only (scheme + host + optional port), for example:
+Store origins only: scheme, host, and optional port, for example `http://localhost:4000` or `https://app.example.com`. A path or query on an allowlist entry is ignored.
 
-- `http://localhost:4000`
-- `https://app.example.com`
+### Manage the allowlist
 
-Path and query on the allowlist entry are ignored; matching is by origin (or origin prefix).
+Staff and company owners can edit the allowlist in three places:
 
-Configure via:
+- **Shellui admin**: **OAuth setup**, with manual origins and a separate list of hosting previews
+- **Django admin**: **Company OAuth redirects**
+- **REST API**: `GET`, `POST`, `PATCH`, and `DELETE` on `/api/v1/oauth-redirects?company_id=…`
 
-- **Django admin → Company OAuth redirects**
-- Shellui admin **OAuth setup** (manual origins + separate hosting preview list)
-- `GET` / `POST` / `PATCH` / `DELETE` `/api/v1/oauth-redirects?company_id=…` (staff or company owner)
-- Hosting sync: `PUT` / `DELETE` `/api/v1/hosting-oauth-redirects` with the deployer's identity JWT (staff or company owner; forwarded by hosting-service; company from token)
-
-Example:
+This request adds a production shell origin for company `1`:
 
 ```bash
 curl -s -X POST "https://auth.example.com/api/v1/oauth-redirects?company_id=1" \
@@ -90,93 +83,43 @@ curl -s -X POST "https://auth.example.com/api/v1/oauth-redirects?company_id=1" \
   -d '{"base_url":"https://app.example.com","label":"Production shell"}'
 ```
 
-### CORS vs redirect allowlist
+hosting-service keeps preview origins in sync with `PUT` and `DELETE` on `/api/v1/hosting-oauth-redirects`, using the deployer's identity JWT (staff or company owner). The company comes from the token.
 
-These are different controls:
+### CORS is a separate control
 
-| Concern | Mechanism | Strict? |
-|---------|-----------|---------|
-| **Token delivery** (`redirect_to` after OAuth) | `CompanyOAuthRedirect` allowlist + one-time code exchange | **Yes** — keep allowlist strict; prefer `code` delivery over URL fragments |
-| **Browser API calls** (Bearer JWT to `/api/v1/*`) | Permissive CORS (`CORS_ALLOW_ALL_ORIGINS=true` by default; `CORS_ALLOW_CREDENTIALS=false`) | No — JWT verification and company scoping are the auth boundary (same model as Supabase) |
+CORS decides which browser origins may call the API. The redirect allowlist decides where sessions go after sign-in. Only the allowlist needs to be strict:
 
-Do **not** add every hosting preview slug to `CORS_ALLOWED_ORIGINS`. Preview login still requires the redirect allowlist (auto-synced by hosting-service). Set `CORS_ALLOW_ALL_ORIGINS=false` only for lock-down installs that intentionally restrict API origins.
+| Concern | Mechanism | Strict |
+| --- | --- | --- |
+| Token delivery after OAuth | `CompanyOAuthRedirect` allowlist and one-time code exchange | Yes. Keep the list short and prefer `code` delivery |
+| Browser API calls with a Bearer JWT | `CORS_ALLOW_ALL_ORIGINS=true` by default, with `CORS_ALLOW_CREDENTIALS=false` | No. JWT verification and company scoping protect the API |
 
-## Security hardening
+Do not add hosting preview origins to `CORS_ALLOWED_ORIGINS`. Set `CORS_ALLOW_ALL_ORIGINS=false` only on installs that restrict API origins on purpose, see [Security hardening](security-hardening.md#cors-browser-api-calls).
 
-Rate limits, HTTPS defaults, Postgres SSL, trusted-proxy IP handling, and PAT lifetime are documented in [security-hardening.md](security-hardening.md).
+## Account linking and login CSRF
 
-## Related endpoints
+identity-service first matches a sign-in to an existing user by provider account ID. When there is no match, it links by email only when the provider proves the user owns that email, for example a verified primary email on GitHub or `email_verified` in a Google ID token. Otherwise it returns an error rather than attach the sign-in to another user's account. The rule for each provider is in [How email linking works](oauth-providers.md#how-email-linking-works).
+
+To block login CSRF, `/api/v1/authorize` stores a random nonce in the `shellui_oauth_state_nonce` cookie (HttpOnly, SameSite=Lax). The callback checks that nonce against the signed `state`, and rejects a `state` that was already used.
+
+## Endpoints
 
 | Endpoint | Role |
-|----------|------|
-| `GET /api/v1/authorize` | Start login; optional method picker |
-| `GET /api/v1/oauth/callback` | Provider callback + confirmation UI |
+| --- | --- |
+| `GET /api/v1/authorize` | Start sign-in, with an optional method picker |
+| `GET /api/v1/oauth/callback` | Provider callback and confirmation page |
 | `POST /api/v1/oauth/confirm` | Finish sign-in after confirmation |
-| `POST /api/v1/oauth/session` | Exchange `shellui_auth_code` for JWT JSON (default delivery) |
-| `GET /api/v1/oauth/confirm?action=switch&confirm_token=…` | Restart OAuth with account picker (Google / Microsoft) |
-| `GET`/`POST`/`PATCH`/`DELETE` `/api/v1/oauth-redirects` | Manage allowlist |
-| `PUT`/`DELETE` `/api/v1/hosting-oauth-redirects` | Hosting-service sync (`source=hosting`, owner/staff JWT) |
-| `DELETE /api/v1/user` | Self-service account deletion (authenticated user only) |
+| `GET /api/v1/oauth/confirm?action=switch&confirm_token=…` | Restart OAuth with the account picker (Google, Microsoft) |
+| `POST /api/v1/oauth/session` | Exchange `shellui_auth_code` for tokens |
+| `POST /api/v1/oauth/exchange` | Deprecated code exchange for older shells |
+| `GET`, `POST`, `PATCH`, `DELETE` `/api/v1/oauth-redirects` | Manage the redirect allowlist |
+| `PUT`, `DELETE` `/api/v1/hosting-oauth-redirects` | hosting-service sync (`source=hosting`) |
+| `GET /api/v1/oauth-provider-catalog` | Provider catalog for Shellui admin |
+| `GET`, `POST` `/api/v1/oauth-social-apps` | Company provider apps (client ID, secret, settings) |
 
-Company join rules (`public` / `domain` / `invite`) still apply after a successful provider login — see [company-access.md](company-access.md).
+## Related
 
-## Self-service account deletion (GDPR / RGPD erasure)
-
-Authenticated users may permanently delete **their own** Django user account:
-
-```http
-DELETE /api/v1/user?company_id=<id>
-Authorization: Bearer <access_token>
-Content-Type: application/json
-
-{"confirm": true, "refresh_token": "<optional>"}
-```
-
-| Item | Behavior |
-|------|----------|
-| **Auth** | Session access JWT for the subject only (not personal access tokens). The token `iat` must fall within `SELF_SERVICE_ACCOUNT_DELETE_MAX_IAT_AGE` (default 5 minutes); sign in or refresh if it is older |
-| **Multi-company** | If the user belongs to more than one company, the API returns **409** until other memberships are removed (SCIM deprovision, admin, or equivalent). Self-service delete hard-deletes the global user for every company |
-| **Confirmation** | JSON body must include `"confirm": true` |
-| **Response** | `204 No Content` on success; **403** for PAT or stale token; **409** when multiple company memberships remain |
-| **Sessions** | Revokes all refresh sessions and personal access tokens; optional `refresh_token` in the body is revoked like logout; the current access token is denylisted |
-| **Data removal** | Hard-deletes the `User` row (same as Django admin delete). Cascades remove company memberships, OAuth `SocialAccount` links, preferences, PAT metadata, refresh session rows, and SCIM bridge fields tied to the user |
-| **Action events** | Emits [`identity.user.deleted`](actions.md) **once per company membership** with `data.source: "self"` so Action rules (email, webhooks) can run |
-
-This endpoint supports product workflows for **right-to-erasure** requests. It is not legal advice: operators may still retain data under billing, security, or legal-hold policies (for example anonymized **login audit** rows where the user FK is nulled).
-
-Configure Action rules on `identity.user.deleted` to notify the user (`include_payload_email`) or call automation (n8n webhooks). Admin-initiated deletes use the same event type with `data.source: "admin"`.
-
-## JWT `user_metadata.groups`
-
-Access and refresh tokens (and `GET /api/v1/user`) include `user_metadata.groups`: a sorted list of **effective** company group `display_name` values for the token’s `company_id`. That includes groups where the user is a **direct** member and every **ancestor** group linked via nested SCIM group members (`member_groups` / `parent_groups`), transitively and cycle-safe within the same company.
-
-SCIM **User** resources still expose **direct** group membership only — see [scim.md](scim.md).
-
-## Upgrading
-
-### To session-code token delivery (H-03)
-
-1. Deploy identity-service with migration `0010_refresh_rotation_oauth_session_code`.
-2. Update shells to read `shellui_auth_code` from the login callback query string and call `POST /api/v1/oauth/session` with `{ "auth_code": "…", "redirect_to": "<same callback URL>" }`.
-3. Until shells are updated, pass `token_delivery=fragment` on authorize or set `OAUTH_TOKEN_DELIVERY=fragment` on the identity host.
-
-### Refresh rotation (H-02)
-
-- Logout now revokes the refresh session; clients should discard both tokens locally.
-- Token refresh returns a new refresh token; persist the new value and stop using the old one.
-- All outstanding refresh tokens from before this release stop working after deploy — users must sign in again.
-
-### From shell-hosted callbacks (pre-0.4.0)
-
-If you previously registered `{shell}/login/callback` on GitHub, Google, or Microsoft:
-
-1. Change each provider app’s callback to `{identity}/api/v1/oauth/callback`.
-2. Add every production shell origin to the company redirect allowlist.
-3. Deploy identity-service with migration `0013_companyoauthredirect` (runs automatically on container start).
-4. Prefer a Shellui / admin build that shows the identity callback in OAuth setup.
-
-### To 0.4.1 (hosting sync + permissive CORS)
-
-1. Deploy identity-service so migration `0014_companyoauthredirect_source` runs (adds `source` on `CompanyOAuthRedirect`; existing rows default to `manual`).
-2. Keep `CORS_ALLOW_ALL_ORIGINS=true` unless you intentionally lock down API origins; do **not** enumerate hosting preview slugs in `CORS_ALLOWED_ORIGINS`.
-3. Ensure hosting-service can reach `PUT`/`DELETE /api/v1/hosting-oauth-redirects` with a staff or company-owner identity JWT so preview origins stay on the redirect allowlist.
+- [OAuth providers](oauth-providers.md): supported providers and their settings
+- [Account deletion](account-deletion.md): `DELETE /api/v1/user`
+- [Upgrade notes](upgrading.md): moving from fragment delivery or shell-hosted callbacks
+- [Security hardening](security-hardening.md): rate limits and HTTPS defaults

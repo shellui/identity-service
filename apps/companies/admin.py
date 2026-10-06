@@ -5,10 +5,42 @@ from django.template.response import TemplateResponse
 from django.urls import path, reverse
 from django.utils.html import format_html
 
-from apps.actions.scim_hooks import emit_group_created, emit_group_deleted, emit_group_updated
-from apps.authapi.oauth import SUPPORTED_OAUTH_PROVIDERS
+from apps.actions.retention import retention_status
+from apps.actions.scim_hooks import (
+    emit_group_created,
+    emit_group_deleted,
+    emit_group_membership_changed,
+    emit_group_updated,
+)
+from apps.authapi.provider_registry import supported_oauth_provider_slugs
 from .access import normalize_allowed_domains
 from .models import Company, CompanyGroup, CompanyMembership, CompanyOAuthClient, CompanyOAuthRedirect
+
+
+class VerifiedEmailDomainsField(forms.CharField):
+    """Platform-only SAML domain list; comma-separated in the widget."""
+
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault('required', False)
+        kwargs.setdefault(
+            'widget',
+            forms.TextInput(attrs={'size': 60, 'placeholder': 'acme.com'}),
+        )
+        kwargs.setdefault(
+            'help_text',
+            'Comma-separated domains Shellui has confirmed this company owns. '
+            'Used for SAML email linking when the IdP is trusted. '
+            'Not exposed to company admins in the Shellui API.',
+        )
+        super().__init__(*args, **kwargs)
+
+    def prepare_value(self, value):
+        return ', '.join(normalize_allowed_domains(value))
+
+    def to_python(self, value):
+        if value in self.empty_values:
+            return []
+        return normalize_allowed_domains(value)
 
 
 class AllowedEmailDomainsField(forms.CharField):
@@ -41,6 +73,7 @@ class CompanyAdminForm(forms.ModelForm):
     """Edit allowed_email_domains as a comma-separated list instead of raw JSON."""
 
     allowed_email_domains = AllowedEmailDomainsField(label='Allowed email domains')
+    verified_email_domains = VerifiedEmailDomainsField(label='Verified email domains (SAML)')
 
     class Meta:
         model = Company
@@ -49,7 +82,9 @@ class CompanyAdminForm(forms.ModelForm):
             'slug',
             'access_mode',
             'allowed_email_domains',
+            'verified_email_domains',
             'enable_magic_link',
+            'data_retention_days',
             'owners',
         )
 
@@ -60,6 +95,9 @@ class CompanyAdminForm(forms.ModelForm):
             self.initial['allowed_email_domains'] = normalize_allowed_domains(
                 self.instance.allowed_email_domains
             )
+            self.initial['verified_email_domains'] = normalize_allowed_domains(
+                self.instance.verified_email_domains
+            )
         self.fields['access_mode'].help_text = (
             'Public: anyone who signs in gets access for this company. '
             'Domain: only listed email domains get access; others are blocked and owners emailed. '
@@ -68,6 +106,9 @@ class CompanyAdminForm(forms.ModelForm):
 
     def clean_allowed_email_domains(self):
         return normalize_allowed_domains(self.cleaned_data.get('allowed_email_domains'))
+
+    def clean_verified_email_domains(self):
+        return normalize_allowed_domains(self.cleaned_data.get('verified_email_domains'))
 
     def clean(self):
         cleaned = super().clean()
@@ -115,6 +156,7 @@ class CompanyAdmin(admin.ModelAdmin):
     search_fields = ('name', 'slug')
     filter_horizontal = ('owners',)
     inlines = [CompanyMembershipInline, CompanyOAuthClientInline]
+    readonly_fields = ('retention_status_display',)
     fieldsets = (
         (None, {'fields': ('name', 'slug')}),
         (
@@ -124,6 +166,28 @@ class CompanyAdmin(admin.ModelAdmin):
                 'description': (
                     'Controls how new OAuth users join this company. '
                     'Access is granted per company via membership is_enabled (see Members inline).'
+                ),
+            },
+        ),
+        (
+            'SAML domain verification (platform only)',
+            {
+                'fields': ('verified_email_domains',),
+                'description': (
+                    'Domains confirmed owned by this company. Required for SAML email linking when '
+                    'an IdP has trusted_for_verified_domains. Set here after manual ownership proof; '
+                    'company owners cannot change this through the Shellui admin API.'
+                ),
+            },
+        ),
+        (
+            'Data retention (platform only)',
+            {
+                'fields': ('data_retention_days', 'retention_status_display'),
+                'description': (
+                    'Event log rows, finished webhook deliveries and SCIM provisioning events are deleted '
+                    'after this many days by the purge_expired_data scheduled job. '
+                    'Company owners see the value in the admin panel but cannot change it.'
                 ),
             },
         ),
@@ -162,6 +226,21 @@ class CompanyAdmin(admin.ModelAdmin):
             return text[:45] + '…'
         return text
 
+    @admin.display(description='Retention status')
+    def retention_status_display(self, obj: Company):
+        if not obj.pk:
+            return '-'
+        status = retention_status(obj)
+        if status['stale_events']:
+            return format_html(
+                '<strong style="color:#ba2121">Events older than {} days are still stored (oldest: {}). '
+                'The purge_expired_data job is not running: check REDIS_URL and the container logs '
+                '(see docs/scheduled-jobs.md).</strong>',
+                status['data_retention_days'] + 1,
+                status['oldest_event_at'],
+            )
+        return f"OK. Oldest event: {status['oldest_event_at'] or 'none'}."
+
     @admin.display(description='OAuth clients')
     def oauth_clients_link(self, obj: Company):
         url = reverse('admin:companies_company_oauth_clients', args=[obj.pk])
@@ -169,7 +248,7 @@ class CompanyAdmin(admin.ModelAdmin):
 
     @staticmethod
     def _enabled_providers() -> list[str]:
-        return sorted(SUPPORTED_OAUTH_PROVIDERS)
+        return sorted(supported_oauth_provider_slugs())
 
     def oauth_clients_view(self, request, company_id: int):
         try:
@@ -287,10 +366,35 @@ class CompanyGroupAdmin(admin.ModelAdmin):
             if changed:
                 emit_group_updated(obj.company, obj, changed_fields=changed)
 
+    def save_related(self, request, form, formsets, change):
+        group = form.instance
+        before_users = set(group.members.values_list('pk', flat=True)) if change else set()
+        before_groups = set(group.member_groups.values_list('pk', flat=True)) if change else set()
+        super().save_related(request, form, formsets, change)
+        after_users = set(group.members.values_list('pk', flat=True))
+        after_groups = set(group.member_groups.values_list('pk', flat=True))
+        for change_name, user_ids, group_ids in (
+            ('members_added', after_users - before_users, after_groups - before_groups),
+            ('members_removed', before_users - after_users, before_groups - after_groups),
+        ):
+            if user_ids or group_ids:
+                emit_group_membership_changed(
+                    group.company,
+                    group,
+                    change=change_name,
+                    user_ids=sorted(user_ids),
+                    nested_group_ids=sorted(group_ids),
+                )
+
     def delete_model(self, request, obj):
         company = obj.company
         emit_group_deleted(company, obj)
         super().delete_model(request, obj)
+
+    def delete_queryset(self, request, queryset):
+        for group in queryset.select_related('company'):
+            emit_group_deleted(group.company, group)
+        super().delete_queryset(request, queryset)
 
 
 @admin.register(CompanyOAuthClient)

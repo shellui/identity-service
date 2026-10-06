@@ -2,18 +2,27 @@
 
 from __future__ import annotations
 
-from django.utils import timezone
-
 from apps.actions.emit import emit_event_if_rules
 from apps.actions.identity_payloads import user_event_payload
+from apps.actions.models import ActionOutbox
+from apps.authapi.magic_link import normalize_magic_link_language
 from apps.companies.access import get_membership
 
 
-def emit_magic_link_requested(company, row, *, user=None) -> None:
+def emit_magic_link_requested(
+    company,
+    row,
+    *,
+    user=None,
+    language: str | None = None,
+) -> list[ActionOutbox]:
     """
-    Emit ``identity.auth.magic_link.requested`` without secrets in the webhook payload.
+    Emit ``identity.auth.magic_link.requested`` as a notification.
 
-    The sign-in email is sent directly by authapi; webhooks never include the URL or token.
+    The payload never carries the sign-in URL, the raw token or anything else that can be
+    used to sign in. Identity always sends the sign-in email itself, whether or not the
+    company has a webhook rule for this event.
+    Returns the queued outbox rows; empty when the company has no enabled webhook rule.
     """
     payload = {
         'request_id': str(row.pk),
@@ -29,4 +38,7 @@ def emit_magic_link_requested(company, row, *, user=None) -> None:
     else:
         payload['language'] = 'en'
         payload['region'] = 'UTC'
-    emit_event_if_rules('identity.auth.magic_link.requested', company, payload)
+    requested_lang = normalize_magic_link_language(language)
+    if requested_lang:
+        payload['language'] = requested_lang
+    return emit_event_if_rules('identity.auth.magic_link.requested', company, payload)

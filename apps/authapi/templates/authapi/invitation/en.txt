@@ -1,0 +1,14 @@
+{% autoescape off %}
+Shellui · {{ company_name }}
+
+You're invited to {{ company_name }}
+
+{{ inviter_name }} invited you to join {{ company_name }}.
+{% if app_url %}
+Open {{ company_name }}:
+{{ app_url }}
+{% endif %}
+Sign in with {{ email }} to get started.
+
+If you were not expecting this invitation, you can ignore this email.
+{% endautoescape %}

@@ -1,179 +1,185 @@
+---
+description: Every environment variable of identity-service, grouped by topic, with defaults and what production requires.
+---
+
 # Configuration
 
-Operators configure identity-service with environment variables (see [`.env.example`](https://github.com/shellui/identity-service/blob/main/.env.example) in the repository root). Copy it to `.env` for local runs; pass the same keys to Docker, Coolify, or your orchestrator in production.
+identity-service is configured with environment variables. Copy [`.env.example`](https://github.com/shellui/identity-service/blob/main/.env.example) to `.env` for local runs, and pass the same variables to Docker, Coolify, or your orchestrator in production. Durations accept a bare number of seconds or a suffix: `s`, `m`, `h`, `d` (for example `5m` or `30d`).
 
-Published docs: [https://identity.docs.shellui.com](https://identity.docs.shellui.com) (GitHub Pages `cname` on release tags).
+## Required in production
 
----
-
-## Required in production (`DEBUG=false`)
+With `DEBUG=false` (the Docker image default), identity-service refuses to start without these:
 
 | Variable | Purpose |
-| -------- | ------- |
-| `SECRET_KEY` | Django session and CSRF signing (required always) |
-| `JWT_PRIVATE_KEY` | RS256 JWT signing PEM (`generate_jwt_keys` management command) |
-| `JWT_ISSUER` | `iss` claim on issued JWTs; verifiers should validate |
-| `JWT_AUDIENCE` | `aud` claim on issued JWTs |
-| `ALLOWED_HOSTS` | Comma-separated hostnames (no scheme) |
+| --- | --- |
+| `SECRET_KEY` | Signs Django sessions and CSRF tokens. Required in every mode |
+| `JWT_PRIVATE_KEY` | RS256 private key that signs tokens, see [JWT and JWKS](jwks.md#configure-signing) |
+| `JWT_ISSUER` | `iss` claim, the public identity URL, for example `https://auth.example.com` |
+| `JWT_AUDIENCE` | `aud` claim, for example `shellui` |
+| `REDIS_URL` | Shared cache and job broker, see [Shared cache (Redis)](#shared-cache-redis) |
+| `ALLOWED_HOSTS` | Comma-separated host names, no scheme, for example `auth.example.com` |
 
-Typical browser/OAuth hardening:
+Behind TLS, also set `CSRF_TRUSTED_ORIGINS` to the full HTTPS URL (for example `https://auth.example.com`) so Django admin and the OAuth confirmation page accept form posts.
 
-| Variable | Purpose |
-| -------- | ------- |
-| `CSRF_TRUSTED_ORIGINS` | Full HTTPS URLs for admin and OAuth confirmation pages behind TLS |
-
-Details: [JWKS and JWT verification](jwks.md), [Security hardening](security-hardening.md).
-
----
-
-## JWT and token lifetimes
-
-| Variable | Default / notes |
-| -------- | ---------------- |
-| `JWT_PUBLIC_KEY`, `JWT_KEY_ID` | Optional; derived from private key when omitted |
-| `JWT_PREVIOUS_PUBLIC_KEY`, `JWT_PREVIOUS_KEY_ID` | Optional rotation — previous key stays in JWKS |
-| `JWT_ACCEPT_HS256_LEGACY` | `false` in production with RS256; set `true` only while migrating old HS256 tokens |
-| `JWT_ACCESS_TOKEN_LIFETIME` | `5m` (supports `s`, `m`, `h`, `d` suffixes) |
-| `JWT_REFRESH_TOKEN_LIFETIME` | `7d` |
-| `PERSONAL_ACCESS_TOKEN_LIFETIME` | `30d` (default since v0.5.0) |
-
----
-
-## OAuth token delivery
+## Tokens
 
 | Variable | Default | Purpose |
-| -------- | ------- | ------- |
-| `OAUTH_TOKEN_DELIVERY` | `code` | `code` = one-time `shellui_auth_code` + `POST /api/v1/oauth/session`; `fragment` = legacy URL hash tokens |
-| `OAUTH_SESSION_CODE_TTL_SECONDS` | `120` | Lifetime of the one-time auth code |
-| `OAUTH_ALLOW_LOOPBACK_REDIRECTS` | follows `DEBUG` | Allow `redirect_to` to loopback for CLI/local shells when `true` |
-| `OAUTH_SKIP_CONFIRM_PROVIDERS` | `google` when unset | Provider slugs that skip the identity-hosted account confirmation page after callback (comma-separated; empty env disables skips) |
+| --- | --- | --- |
+| `JWT_ACCESS_TOKEN_LIFETIME` | `5m` | Access token lifetime |
+| `JWT_REFRESH_TOKEN_LIFETIME` | `7d` | Refresh token lifetime |
+| `PERSONAL_ACCESS_TOKEN_LIFETIME` | `30d` | Lifetime of new personal access tokens |
+| `JWT_PUBLIC_KEY`, `JWT_KEY_ID` | derived | Derived from the private key when unset |
+| `JWT_PREVIOUS_PUBLIC_KEY`, `JWT_PREVIOUS_KEY_ID` | empty | Previous key during a rotation, still published in JWKS |
+| `JWT_ACCEPT_HS256_LEGACY` | `false` | Accept HS256 tokens while moving from HS256 to RS256 |
+| `SELF_SERVICE_ACCOUNT_DELETE_MAX_IAT_AGE` | `5m` | Maximum age of `auth_time` for [account deletion](account-deletion.md) |
 
-OAuth **account linking** (Shellui `/api/v1/authorize` callback):
-
-- Match an existing user by **provider user id** (`SocialAccount`) first.
-- Match by **email** only when the provider proves ownership:
-  - **Google:** `email_verified` is true in the userinfo response.
-  - **GitHub:** verified **primary** email from `/user/emails`.
-  - **Microsoft:** `xms_edov` is true in the ID token, or the OAuth client uses a **dedicated tenant** (not `common`). Shellui does not trust `mail` or `userPrincipalName` from the `common` tenant alone.
-- If verification fails, Shellui returns an error and does not attach the sign-in to another user's email.
-
-OAuth **login CSRF:** `/api/v1/authorize` stores a random nonce in the HttpOnly `shellui_oauth_state_nonce` cookie (SameSite=Lax). The callback checks that nonce against signed `state` and rejects reused `state` values.
-
-Flow and allowlist: [OAuth login](oauth-login.md).
-
----
-
-## Magic link (passwordless email)
+## Sign-in
 
 | Variable | Default | Purpose |
-| -------- | ------- | ------- |
-| `MAGIC_LINK_ENABLED` | `true` | Global kill switch for magic-link request/verify endpoints |
-| `MAGIC_LINK_TTL_SECONDS` | `1800` | One-time link lifetime (seconds) |
-| `AUTH_RATE_LIMIT_MAGIC_LINK` | `10` | Requests per minute bucket (per client IP and per email+company) |
+| --- | --- | --- |
+| `OAUTH_TOKEN_DELIVERY` | `code` | `code`: one-time `shellui_auth_code` exchanged with `POST /api/v1/oauth/session`. `fragment`: tokens in the URL fragment (legacy) |
+| `OAUTH_SESSION_CODE_TTL_SECONDS` | `120` | Lifetime of the one-time code |
+| `OAUTH_SKIP_CONFIRM_PROVIDERS` | `google` | Providers that skip the confirmation page, comma-separated. Set it empty to always show the page |
+| `OAUTH_ALLOW_LOOPBACK_REDIRECTS` | same as `DEBUG` | Allow `redirect_to` on `localhost`, `127.0.0.1`, and `::1` |
+| `MAGIC_LINK_ENABLED` | `true` | Turns every magic link endpoint on or off |
+| `MAGIC_LINK_TTL_SECONDS` | `1800` | Magic link lifetime |
+| `MAGIC_LINK_EMAIL_DEFAULT_LANGUAGE` | `en` | Magic link email language when the request and the user have none |
+| `SCIM_ENABLED` | `true` | `false` makes every SCIM URL return **404** (emergency switch) |
 
-Links are built from **`JWT_ISSUER`** (HTTPS when `DEBUG=false`). See [magic-link.md](magic-link.md).
+See [OAuth login](oauth-login.md), [Magic link](magic-link.md), and [SCIM provisioning](scim.md).
 
----
+## Email
 
-## CORS (browser API calls)
-
-| Variable | Default | Purpose |
-| -------- | ------- | ------- |
-| `CORS_ALLOW_ALL_ORIGINS` | `true` | Bearer JWT APIs from arbitrary shell origins (credentials off) |
-| `CORS_ALLOW_CREDENTIALS` | `false` | Must stay `false` with allow-all |
-| `CORS_ALLOWED_ORIGINS` | empty | Lock-down: comma-separated origins when allow-all is `false` |
-| `CORS_ALLOWED_ORIGIN_REGEXES` | empty | Optional regex allow list |
-
-OAuth **redirect** allowlist (`CompanyOAuthRedirect`) is separate and stricter — see [oauth-login.md](oauth-login.md).
-
----
-
-## Database and health
+identity-service sends magic links, invitations, and owner notifications. See [Email delivery](email-service.md) for how email-service and SMTP fit together.
 
 | Variable | Default | Purpose |
-| -------- | ------- | ------- |
-| `POSTGRES_DATABASE_URL` | empty | Postgres DSN; omit for SQLite (`SQLITE_PATH` or `/app/data/db.sqlite3` in Docker) |
-| `POSTGRES_SSL_REQUIRE` | `true` when not `DEBUG` | TLS to Postgres |
-| `POSTGRES_CONNECT_TIMEOUT` | `10` | Seconds; avoids workers stuck on dead TCP |
-| `GET /health/live` | — | **Liveness probe** — no session/DB; use for load balancers (not `/` alone) |
+| --- | --- | --- |
+| `EMAIL_SERVICE_API_KEY` | empty | email-service key (`esk_`). Unset sends everything over SMTP |
+| `EMAIL_SERVICE_URL` | `https://email.shellui.com` | email-service origin. Local: `http://localhost:8003`, or `http://host.docker.internal:8003` from a container |
+| `EMAIL_SERVICE_TIMEOUT_SECONDS` | `5` | Timeout for one HTTP attempt |
+| `EMAIL_SERVICE_SEND_ATTEMPTS` | `3` | Attempts for one direct send |
+| `EMAIL_SERVICE_RETRY_MAX_SLEEP_SECONDS` | `1` | Longest pause between direct send attempts |
+| `EMAIL_BACKEND` | console with `DEBUG=true`, SMTP otherwise | Django email backend |
+| `EMAIL_HOST`, `EMAIL_PORT` | `localhost`, `25` | SMTP server |
+| `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD` | empty | SMTP credentials |
+| `EMAIL_USE_TLS`, `EMAIL_USE_SSL` | `false` | SMTP encryption |
+| `DEFAULT_FROM_EMAIL` | `noreply@localhost` | Sender address for SMTP |
+| `EMAIL_TIMEOUT` | `10` | Seconds before an SMTP connect, read, or write gives up. Without it, a silent mail server could hold a sign-in request forever |
 
-SQLite uses WAL mode on connect for better single-node concurrency (v0.5.1+).
+email-service `EMAIL_AUTH_LINK_HOSTS` must include the host of `JWT_ISSUER`.
 
----
+## Webhooks
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `ACTIONS_WEBHOOK_TIMEOUT_SECONDS` | `5` | Timeout of one webhook POST |
+| `ACTIONS_OUTBOX_MAX_ATTEMPTS` | `8` | Delivery attempts before a delivery fails |
+| `ACTIONS_WEBHOOK_ALLOW_PRIVATE` | `false` | Allow webhooks to private IP addresses |
+| `ACTIONS_WEBHOOK_RETRY_LEASE_SECONDS` | `120` | How long a retry worker holds a delivery |
+| `ACTIONS_WEBHOOK_DISPATCH_WORKERS` | `4` | Threads that send webhooks after the database commit |
+
+See [Webhooks](actions.md).
+
+## Shared cache (Redis)
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `REDIS_URL` | unset | Required with `DEBUG=false` since 0.7.0. Holds rate limits, the logout denylist, OAuth PKCE state, SAML request IDs and replay protection, and last-seen throttling. Also the broker of the [scheduled jobs](#scheduled-jobs) |
+
+With `DEBUG=false`, the container refuses to start without `REDIS_URL`, also with `SCHEDULER_ENABLED=false` or `CELERY_BROKER_URL` set, because the cache and the OAuth and SAML state need it. In `web` and `worker` mode the entrypoint exits with status 1 before migrations:
+
+```text
+entrypoint: ERROR: REDIS_URL is required when DEBUG is false (example: redis://redis:6379/0).
+```
+
+`manage.py check --deploy` reports the same problem as `authapi.E004`. Other container commands, such as `createsuperuser`, and the test suite still run.
+
+With `DEBUG=true`, `REDIS_URL` is optional: Django uses an in-process cache, and the container logs a warning and runs without the scheduled jobs.
+
+```bash
+# Redis next to identity-service in Docker Compose or Coolify
+REDIS_URL=redis://redis:6379/0
+```
+
+[PUBLISH.md](https://github.com/shellui/identity-service/blob/main/PUBLISH.md) describes the Redis setup on Coolify.
+
+## Scheduled jobs
+
+The Docker image runs `retry_webhooks` every minute and `purge_expired_data` every hour, in a Celery worker next to gunicorn. With `REDIS_URL` set, there is nothing else to configure. See [Scheduled jobs](scheduled-jobs.md) for several replicas and external cron.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `SCHEDULER_ENABLED` | `true` | Start the worker in the web container. Set `false` when a `worker` container or your own cron runs the jobs |
+| `CELERY_BROKER_URL` | `REDIS_URL` | A different broker for the jobs |
+| `CELERY_WORKER_CONCURRENCY` | `2` | Worker threads, so the hourly purge and a webhook retry can run together |
+
+The container command picks what runs: `web` (default: migrations, gunicorn, and the worker), `worker` (the worker only, no migrations), or any other command, run as `appuser`.
+
+## Database
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `POSTGRES_DATABASE_URL` | empty | PostgreSQL DSN. Unset uses SQLite |
+| `SQLITE_PATH` | `db.sqlite3`, `/app/data/db.sqlite3` in Docker | SQLite file |
+| `POSTGRES_SSL_REQUIRE` | `true` with `DEBUG=false` | Require TLS to PostgreSQL |
+| `POSTGRES_CONNECT_TIMEOUT` | `10` | Seconds, so workers do not hang on a dead connection |
+| `POSTGRES_STATEMENT_TIMEOUT` | `15` | Seconds before PostgreSQL cancels a query. `0` turns it off. Not applied to `migrate` |
+| `POSTGRES_LOCK_TIMEOUT` | `5` | Seconds before PostgreSQL stops waiting for a lock. `0` turns it off. Not applied to `migrate` |
+
+SQLite runs in WAL mode for better concurrency on a single node. With PostgreSQL, connections that died while idle are replaced before the next request uses them.
+
+For load balancer health checks, use `GET /health/live`. It touches neither the session nor the database.
 
 ## Gunicorn (Docker entrypoint)
 
 | Variable | Default | Purpose |
-| -------- | ------- | ------- |
-| `GUNICORN_WORKERS` | `4` | Sync worker processes |
+| --- | --- | --- |
+| `GUNICORN_WORKERS` | `4` | Worker processes |
 | `GUNICORN_THREADS` | `4` | Threads per worker (`gthread` worker class) |
-| `GUNICORN_TIMEOUT` | `60` | Worker request timeout (OAuth may use long outbound HTTP) |
+| `GUNICORN_TIMEOUT` | `60` | Seconds of silence before gunicorn restarts a frozen worker process. See the note below |
+| `GUNICORN_GRACEFUL_TIMEOUT` | `30` | Seconds a worker gets to finish open requests on restart or shutdown |
+| `GUNICORN_KEEP_ALIVE` | `75` | Seconds an idle keep-alive connection stays open. Keep it above the reverse proxy idle timeout to avoid random 502 errors |
+| `GUNICORN_MAX_REQUESTS` | `1000` | Restart a worker after this many requests. `0` turns it off |
+| `GUNICORN_MAX_REQUESTS_JITTER` | `200` | Random extra requests added to `GUNICORN_MAX_REQUESTS`, so workers do not all restart at once |
 
-Concurrency ≈ `workers × threads`. Under-provisioned pools can queue even simple requests when OAuth holds workers.
+Concurrency is about `workers × threads`. A pool that is too small queues requests while OAuth calls hold threads.
 
----
+:::note GUNICORN_TIMEOUT does not stop a stuck request
+With the `gthread` worker class, a worker keeps sending heartbeats while one of its threads is blocked (on SMTP, the database, or an outbound HTTP call), so gunicorn never kills it. Requests sent to that worker can wait with no response and no log line. Request deadlines come from the app instead: `EMAIL_TIMEOUT`, `POSTGRES_STATEMENT_TIMEOUT`, `POSTGRES_LOCK_TIMEOUT`, and the 20 second OAuth HTTP timeouts. Set a response timeout on the reverse proxy too. `GUNICORN_MAX_REQUESTS` also recycles workers over time.
+:::
 
-## Security, proxies, and rate limits
+The entrypoint sets `--worker-tmp-dir /dev/shm` (the heartbeat file lives in memory) and writes the gunicorn access and error logs to stdout. Each access log line ends with the duration and the request ID, for example `"GET /api/v1/settings HTTP/1.1" 200 512 "Mozilla/5.0" 182ms req=4f2c9a1e`. Lines have the path without the query string and no Referer, because query strings carry magic link tokens, OAuth codes, `confirm_token`, and `setup_token`.
 
-| Variable | Purpose |
-| -------- | ------- |
-| `TRUSTED_PROXY_IPS` | Comma-separated IPs/CIDRs; when `REMOTE_ADDR` matches, client IP is the rightmost untrusted hop in `X-Forwarded-For` (see [security-hardening.md](security-hardening.md)) |
-| `SELF_SERVICE_ACCOUNT_DELETE_MAX_IAT_AGE` | Max age of access JWT `auth_time` (interactive sign-in time) for `DELETE /api/v1/user` (default `5m`; not PATs; refresh preserves `auth_time`) |
-| `AUTH_RATE_LIMIT_ENABLED` | `true` — disable only for debugging |
-| `AUTH_RATE_LIMIT_OAUTH`, `_TOKEN_REFRESH`, `_SETTINGS`, `_ADMIN_LOGIN`, `_PAT` | Per-endpoint limits (see [security-hardening.md](security-hardening.md)) |
-| `SECURE_SSL_REDIRECT`, `SECURE_HSTS_SECONDS`, `SESSION_COOKIE_SECURE`, `CSRF_COOKIE_SECURE` | HTTPS defaults when `DEBUG=false` |
-
----
-
-## Shared cache (Redis, `develop` / v0.6.0+)
+## Security
 
 | Variable | Default | Purpose |
-| -------- | ------- | ------- |
-| `REDIS_URL` | unset | Django Redis cache backend for auth rate limits, logout access-token denylist, and last-seen throttling |
+| --- | --- | --- |
+| `TRUSTED_PROXY_IPS` | empty | Reverse proxies allowed to set `X-Forwarded-For` (IPs or CIDR ranges) |
+| `CORS_ALLOW_ALL_ORIGINS` | `true` | Allow API calls from any shell origin, without credentials |
+| `CORS_ALLOW_CREDENTIALS` | `false` | Must stay `false` while `CORS_ALLOW_ALL_ORIGINS=true` |
+| `CORS_ALLOWED_ORIGINS`, `CORS_ALLOWED_ORIGIN_REGEXES` | empty | Allowed origins when `CORS_ALLOW_ALL_ORIGINS=false` |
+| `AUTH_RATE_LIMIT_ENABLED` | `true` | Turn rate limits off, for debugging only |
+| `AUTH_RATE_LIMIT_*` | see link | One limit per scope: `OAUTH`, `TOKEN_REFRESH`, `SETTINGS`, `MAGIC_LINK`, `INVITATION`, `ADMIN_LOGIN`, `PAT` |
+| `SECURE_SSL_REDIRECT`, `SECURE_HSTS_SECONDS`, `SESSION_COOKIE_SECURE`, `CSRF_COOKIE_SECURE` | on with `DEBUG=false` | HTTPS defaults |
 
-When unset, Django uses in-process **LocMem** (fine for local dev or a single Gunicorn worker). With **`GUNICORN_WORKERS` > 1**, set `REDIS_URL` so limits and denylists are shared across workers. `manage.py check --deploy` emits **`authapi.W002`** when production uses LocMem with multiple workers.
+See [Security hardening](security-hardening.md) for the rate limit defaults, proxies, and CORS.
 
-Examples:
-
-```bash
-# Docker Compose / Coolify internal Redis
-REDIS_URL=redis://redis:6379/0
-```
-
-See [PUBLISH.md](https://github.com/shellui/identity-service/blob/main/PUBLISH.md) for Coolify Redis setup.
-
----
-
-## Enterprise SCIM (`develop` / v0.6.0+)
+## Runtime and observability
 
 | Variable | Default | Purpose |
-| -------- | ------- | ------- |
-| `SCIM_ENABLED` | `true` | When `false`, SCIM routes return **404** (emergency kill switch) |
-
-Documented in [SCIM](scim.md). Available on **`develop`** after migrations.
-
----
-
-## Bootstrap and observability
-
-| Variable | Purpose |
-| -------- | ------- |
-| `DEBUG` | Development mode; never `true` in production |
-| `SETUP_TOKEN` | One-time web superuser bootstrap when `DEBUG=false` (prefer `createsuperuser`) |
-| `IDENTITY_SERVICE_PORT` | Local/docker-compose port hint |
-| `SENTRY_DSN`, `SENTRY_ENVIRONMENT`, `SENTRY_RELEASE`, `SENTRY_TRACES_SAMPLE_RATE` | Optional error reporting |
-| `EMAIL_*`, `DEFAULT_FROM_EMAIL` | SMTP for company access notifications ([company-access.md](company-access.md)) |
-| `ACTIONS_WEBHOOK_TIMEOUT_SECONDS` | Webhook POST timeout (default `5`) — see [actions.md](actions.md) |
-| `ACTIONS_OUTBOX_MAX_ATTEMPTS` | Outbox delivery retries (default `8`) |
-| `ACTIONS_WEBHOOK_ALLOW_PRIVATE` | Allow webhooks to private IPs (default `false`) |
-| `ACTIONS_WEBHOOK_RETRY_LEASE_SECONDS` | Retry worker lease (default `120`) |
-| `ACTIONS_WEBHOOK_DISPATCH_WORKERS` | Post-commit delivery thread pool size (default `4`) |
-| `MAGIC_LINK_EMAIL_DEFAULT_LANGUAGE` | Magic-link email locale fallback (default `en`) |
-
----
+| --- | --- | --- |
+| `DEBUG` | `false` in Docker | Development mode. Never `true` in production |
+| `SETUP_TOKEN` | empty | One-time token for the web form that creates the first superuser with `DEBUG=false`. Prefer `createsuperuser` |
+| `IDENTITY_SERVICE_PORT` | `8000` | Host port in Docker Compose |
+| `LOG_LEVEL` | `INFO`, `DEBUG` with `DEBUG=true` | App log level on stdout. Django errors and warnings (500 errors, `DisallowedHost`, CSRF failures) are always printed |
+| `SLOW_REQUEST_THRESHOLD_SECONDS` | `2` | Log a warning for slower requests. `0` turns it off |
+| `SENTRY_DSN` | empty | Turns on Sentry error reporting. No personal data is sent |
+| `SENTRY_ENVIRONMENT`, `SENTRY_RELEASE` | empty | Sentry tags |
+| `SENTRY_TRACES_SAMPLE_RATE` | `0` | Share of requests traced. `0` reports errors only; `0.1` shows slow requests |
+| `SHELLUI_GEOIP_DATABASE_PATH` | empty | MaxMind GeoLite2 City file (`.mmdb`), adds country and city to sign-in events. Also needs the optional `geoip2` package, which the image does not include |
 
 ## Related
 
-- [Introduction](index.md)
-- [OAuth login](oauth-login.md)
-- [Releases](RELEASES.md)
+- [Run identity-service](getting-started.md): first start and production checklist
+- [Security hardening](security-hardening.md)
+- [Upgrade notes](upgrading.md)

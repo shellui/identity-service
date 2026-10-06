@@ -3,8 +3,6 @@
 from django.conf import settings
 from django.core.checks import Error, Warning, register
 
-from config.settings import _env_int
-
 
 @register()
 def jwt_rs256_required_in_production(app_configs, **kwargs):
@@ -67,25 +65,36 @@ def cors_allow_all_with_credentials_forbidden(app_configs, **kwargs):
     ]
 
 
-@register(deploy=True, tags='security')
-def shared_cache_recommended_for_multi_worker(app_configs, **kwargs):
+REDIS_URL_REQUIRED_MESSAGE = 'REDIS_URL is required when DEBUG is false (example: redis://redis:6379/0).'
+
+
+@register(deploy=True, tags='caches')
+def redis_required_in_production(app_configs, **kwargs):
+    """
+    Production needs Redis: the shared cache (auth rate limits, logout access-token
+    denylist, OAuth state and PKCE, SAML request ids and replay protection) and the
+    scheduled jobs broker. LocMem is per process, so these break across Gunicorn
+    workers and containers.
+
+    A deploy check, so `check --deploy` (run by the Docker entrypoint, and in CI) fails,
+    while tests and other management commands still run. The entrypoint also exits
+    early with the same message before migrations. See tools/docker-entrypoint.sh.
+    """
     if settings.DEBUG:
         return []
-    backend = settings.CACHES.get('default', {}).get('BACKEND', '')
-    if 'locmem' not in backend.lower():
-        return []
-    workers = _env_int('GUNICORN_WORKERS', 4)
-    if workers <= 1:
+    if (getattr(settings, 'REDIS_URL', '') or '').strip():
         return []
     return [
-        Warning(
-            'LocMemCache is not shared across Gunicorn workers — auth rate limits and '
-            'logout access-token denylist are per-worker.',
+        Error(
+            REDIS_URL_REQUIRED_MESSAGE,
             hint=(
-                'Add a Redis service and set REDIS_URL (e.g. redis://redis:6379/0) on the '
-                'identity-service container. LocMem is fine for single-worker or local dev.'
+                'Add a Redis service and set REDIS_URL on every identity-service container '
+                '(web and worker), also with SCHEDULER_ENABLED=false: Redis backs the shared '
+                'cache (rate limits, logout denylist, OAuth PKCE state, SAML replay '
+                'protection) and the scheduled jobs. Use DEBUG=true only for local '
+                'development without Redis.'
             ),
-            id='authapi.W002',
+            id='authapi.E004',
         )
     ]
 

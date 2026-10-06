@@ -1,83 +1,82 @@
-# Security hardening (auth abuse & transport)
+---
+description: Production security controls in identity-service - rate limits, HTTPS, trusted proxies, CORS, redirects, and sensitive account actions.
+---
 
-Production deployments should configure the controls below. Defaults follow `DEBUG=false` unless noted.
+# Security hardening
+
+With `DEBUG=false`, identity-service turns on HTTPS redirects, HSTS, secure cookies, TLS to PostgreSQL, and rate limits. This page lists those defaults, and the few settings you must adapt to your deployment: trusted proxies and, optionally, CORS.
 
 ## Rate limiting
 
-Cache-backed limits apply to abuse-prone endpoints:
+Abuse-prone endpoints are rate limited, with counters in the shared cache (Redis):
 
-| Scope | Default | Endpoints |
-|-------|---------|-----------|
-| `oauth` | 30/min per IP | `/api/v1/authorize`, OAuth callback/confirm/exchange, social provider login |
-| `token_refresh` | 60/min per IP | `POST /api/v1/token?grant_type=refresh_token` |
-| `auth_settings` | 30/min per IP | `GET /api/v1/settings` |
-| `admin_login` | 10 per 5 min per IP | `POST /admin/login/` |
-| `pat` | 30/min per user | `GET/POST /api/v1/personal-access-tokens`, revoke |
+| Scope | Default | Endpoints | Variable |
+| --- | --- | --- | --- |
+| `oauth` | 30 per minute per IP | `/api/v1/authorize`, OAuth callback, confirm, exchange, provider login | `AUTH_RATE_LIMIT_OAUTH` |
+| `token_refresh` | 60 per minute per IP | `POST /api/v1/token?grant_type=refresh_token` | `AUTH_RATE_LIMIT_TOKEN_REFRESH` |
+| `auth_settings` | 30 per minute per IP | `GET /api/v1/settings` | `AUTH_RATE_LIMIT_SETTINGS` |
+| `magic_link` | 10 per minute | `POST /api/v1/magic-link/request`, per IP, per email, and per company | `AUTH_RATE_LIMIT_MAGIC_LINK` |
+| `invitation` | 30 per 5 minutes per company | `POST /api/v1/invitations` | `AUTH_RATE_LIMIT_INVITATION` |
+| `admin_login` | 10 per 5 minutes per IP | `POST /admin/login/` | `AUTH_RATE_LIMIT_ADMIN_LOGIN` |
+| `pat` | 30 per minute per user | `GET` and `POST /api/v1/personal-access-tokens`, revoke | `AUTH_RATE_LIMIT_PAT` |
 
-Tune with `AUTH_RATE_LIMIT_*` env vars or set `AUTH_RATE_LIMIT_ENABLED=false` to disable (not recommended in production).
+`AUTH_RATE_LIMIT_ENABLED=false` turns all limits off. Do not do this in production.
 
-## Loopback OAuth redirects
+## HTTPS and cookies
 
-Loopback targets (`127.0.0.1`, `localhost`, `::1`) are allowed when `DEBUG=true` or `OAUTH_ALLOW_LOOPBACK_REDIRECTS=true`. In production, register real shell origins on the company redirect allowlist instead.
+With `DEBUG=false`, these settings default to on. Each can be overridden with an environment variable of the same name (see `.env.example`):
 
-## Auth settings enumeration
-
-`GET /api/v1/settings` returns only provider slugs and feature flags to anonymous callers. OAuth client IDs and labels are included only for authenticated company members.
-
-## HTTPS, HSTS, and secure cookies
-
-When `DEBUG=false`:
-
-- `SECURE_SSL_REDIRECT=true` — redirect HTTP to HTTPS (disable only behind TLS-terminating proxies that handle redirects)
-- `SECURE_HSTS_SECONDS=31536000` (1 year)
-- `SESSION_COOKIE_SECURE=true`, `CSRF_COOKIE_SECURE=true`
-
-Override any flag via env (see `.env.example`).
-
-## Postgres SSL
-
-When `POSTGRES_DATABASE_URL` is set and `DEBUG=false`, connections use `ssl_require=true` by default. Set `POSTGRES_SSL_REQUIRE=false` only for local Postgres without TLS.
+| Setting | Default in production |
+| --- | --- |
+| `SECURE_SSL_REDIRECT` | `true`: redirects HTTP to HTTPS. Turn it off only behind a TLS proxy that already redirects |
+| `SECURE_HSTS_SECONDS` | `31536000` (one year), with `SECURE_HSTS_INCLUDE_SUBDOMAINS=true` |
+| `SESSION_COOKIE_SECURE`, `CSRF_COOKIE_SECURE` | `true` |
+| `POSTGRES_SSL_REQUIRE` | `true` when `POSTGRES_DATABASE_URL` is set. Turn it off only for a local PostgreSQL without TLS |
 
 ## Trusted proxies and client IP
 
-Login audit and rate limits derive client IP from `REMOTE_ADDR` unless the direct peer is listed in `TRUSTED_PROXY_IPS` (comma-separated IPs or CIDRs). When the peer is trusted, the service walks `X-Forwarded-For` **from the right** (closest to identity-service), skips hops that match `TRUSTED_PROXY_IPS` (including CIDR ranges), and uses the first untrusted address as the client IP. That ignores a client-controlled leftmost spoof entry when Traefik, Coolify, or nginx append the real chain.
+Rate limits and the sign-in [event log](event-log.md) use the client IP. By default it is `REMOTE_ADDR`, so a client cannot fake its IP with an `X-Forwarded-For` header.
 
-Example (nginx on the same host):
+Behind a reverse proxy (Traefik, Coolify, nginx), list the proxy in `TRUSTED_PROXY_IPS` (IPs or CIDR ranges, comma-separated). When the direct peer is trusted, identity-service reads `X-Forwarded-For` from the right, skips trusted hops, and uses the first untrusted address. A fake address added by the client on the left is ignored.
 
 ```bash
+# nginx on the same host
 TRUSTED_PROXY_IPS=127.0.0.1,::1
-```
 
-Example (private load balancer subnet):
-
-```bash
+# private load balancer subnet
 TRUSTED_PROXY_IPS=10.0.0.0/8
 ```
 
-Example (Coolify / Traefik forwarding to Gunicorn): list the Traefik container or ingress subnet in `TRUSTED_PROXY_IPS` so `REMOTE_ADDR` is the proxy while the client IP is taken from the rightmost untrusted `X-Forwarded-For` hop.
-
-Without trusted proxies, clients cannot spoof audit IPs by sending `X-Forwarded-For` directly; the app uses `REMOTE_ADDR` only.
-
-## Self-service account deletion
-
-`DELETE /api/v1/user` hard-deletes the global Django user. Guards:
-
-- Personal access tokens are rejected (**403**).
-- Session access JWTs must have `iat` within `SELF_SERVICE_ACCOUNT_DELETE_MAX_IAT_AGE` (default **5m**). Sign in or refresh the token before deleting.
-- Users with more than one company membership get **409** until other memberships are removed; the endpoint does not remove a single company only.
-
-## Personal access token lifetime
-
-New PATs default to **30 days** (`PERSONAL_ACCESS_TOKEN_LIFETIME=30d`). Existing issued JWTs keep their original expiry until they expire or are revoked; shortening the default does not retroactively shorten active tokens.
+With Coolify or Traefik, list the Traefik container or ingress subnet.
 
 ## CORS (browser API calls)
 
-Shellui customer shells run on unknown domains and call public `/api/v1/*` endpoints from the browser **before** a Bearer token exists. A static `CORS_ALLOWED_ORIGINS` list does not scale for multi-tenant hosting.
+Shellui shells run on many domains, and call public `/api/v1/*` endpoints from the browser before they have a token. A fixed `CORS_ALLOWED_ORIGINS` list cannot follow multi-tenant hosting, so the default is permissive:
 
-**Default (recommended):** `CORS_ALLOW_ALL_ORIGINS=true` with `CORS_ALLOW_CREDENTIALS=false`. API auth is Bearer JWT in the `Authorization` header, not cookies — permissive CORS is intentional (Supabase-style).
+| Setup | Settings |
+| --- | --- |
+| Default (recommended) | `CORS_ALLOW_ALL_ORIGINS=true` with `CORS_ALLOW_CREDENTIALS=false`. The API uses Bearer tokens in the `Authorization` header, not cookies |
+| Locked down | `CORS_ALLOW_ALL_ORIGINS=false`, and first-party origins in `CORS_ALLOWED_ORIGINS` |
+| Refused | `CORS_ALLOW_ALL_ORIGINS=true` with `CORS_ALLOW_CREDENTIALS=true`: startup fails, because any origin could then send credentials |
 
-**Token delivery** after OAuth login is **not** governed by CORS. The `CompanyOAuthRedirect` allowlist remains the strict boundary for `redirect_to` targets and one-time code exchange.
+CORS does not control where tokens go after sign-in. The company [redirect allowlist](oauth-login.md#redirect-allowlist) is the strict boundary for `redirect_to` and the one-time code exchange.
 
-**Lock-down (optional):** set `CORS_ALLOW_ALL_ORIGINS=false` and list first-party origins in `CORS_ALLOWED_ORIGINS`.
+## OAuth redirects
 
-**Blocked:** `CORS_ALLOW_ALL_ORIGINS=true` with `CORS_ALLOW_CREDENTIALS=true` — startup fails because wildcard origins cannot safely carry credentials.
+Loopback redirect targets (`127.0.0.1`, `localhost`, `::1`) are allowed only with `DEBUG=true` or `OAUTH_ALLOW_LOOPBACK_REDIRECTS=true`. In production, add the real shell origins to the company redirect allowlist.
+
+`GET /api/v1/settings` returns only provider slugs and feature flags to anonymous callers. OAuth client IDs and labels are included only for signed-in members of the company.
+
+## Account deletion
+
+`DELETE /api/v1/user` refuses personal access tokens and the last owner of a company, and requires a recent sign-in: the token's `auth_time` must be within `SELF_SERVICE_ACCOUNT_DELETE_MAX_IAT_AGE` (5 minutes by default). A token refresh keeps `auth_time`, so the user must sign in again. See [Account deletion](account-deletion.md).
+
+## Personal access tokens
+
+New PATs last 30 days by default (`PERSONAL_ACCESS_TOKEN_LIFETIME`). Changing the value does not shorten tokens already issued: they keep their expiry until they expire or are revoked. See [Metrics and access tokens](metrics.md).
+
+## Related
+
+- [Configuration](configuration.md): every environment variable
+- [JWT and JWKS](jwks.md): signing keys and verification
+- [SAML single sign-on](saml.md#security): assertion checks

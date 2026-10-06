@@ -1,4 +1,12 @@
-"""Prometheus-style metrics for shellui-auth; exposition is staff JWT–protected admin metrics endpoints."""
+"""Prometheus metrics for shellui-auth.
+
+Two expositions:
+
+- ``GET /api/v1/metrics/all`` (staff or a ``pat_agm`` token): the process-wide default registry
+  (runtime, platform user gauges, logins for every company) plus scheduled job metrics.
+- ``GET /api/v1/metrics`` (company owner or staff, company from the token): a per-request
+  registry holding only that company's series. Nothing process-wide or from another company.
+"""
 
 from __future__ import annotations
 
@@ -8,7 +16,8 @@ from allauth.socialaccount.models import SocialAccount
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 from apps.companies.models import Company, CompanyMembership
-from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, generate_latest
+from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, Counter, Gauge, generate_latest
+from prometheus_client.core import CounterMetricFamily, GaugeMetricFamily
 
 from .models import UserActivity
 
@@ -44,40 +53,16 @@ _successful_logins_total = Counter(
     labelnames=('provider', 'company_id'),
 )
 
-_company_users_total = Gauge(
-    'shellui_auth_company_users_total',
-    'Number of users in a company.',
-    labelnames=('company_id',),
-)
-_company_users_active = Gauge(
-    'shellui_auth_company_users_active',
-    'Number of users with company membership is_enabled=True.',
-    labelnames=('company_id',),
-)
-_company_users_staff = Gauge(
-    'shellui_auth_company_users_staff',
-    'Number of staff users in a company.',
-    labelnames=('company_id',),
-)
-_company_social_accounts_total = Gauge(
-    'shellui_auth_company_social_accounts_total',
-    'Linked social account rows for company users.',
-    labelnames=('company_id',),
-)
-_company_daily_active_users = Gauge(
-    'shellui_auth_company_daily_active_users',
-    'Company users active today.',
-    labelnames=('company_id',),
-)
-_company_weekly_active_users = Gauge(
-    'shellui_auth_company_weekly_active_users',
-    'Company users active this ISO week.',
-    labelnames=('company_id',),
-)
-_company_monthly_active_users = Gauge(
-    'shellui_auth_company_monthly_active_users',
-    'Company users active this month.',
-    labelnames=('company_id',),
+# Company-scoped series: built per request from the database, never stored in the default
+# registry (labelled gauges there kept every scraped company and leaked across tenants).
+_COMPANY_GAUGES: tuple[tuple[str, str], ...] = (
+    ('shellui_auth_company_users_total', 'Number of users in a company.'),
+    ('shellui_auth_company_users_active', 'Number of users with company membership is_enabled=True.'),
+    ('shellui_auth_company_users_staff', 'Number of staff users in a company.'),
+    ('shellui_auth_company_social_accounts_total', 'Linked social account rows for company users.'),
+    ('shellui_auth_company_daily_active_users', 'Company users active today.'),
+    ('shellui_auth_company_weekly_active_users', 'Company users active this ISO week.'),
+    ('shellui_auth_company_monthly_active_users', 'Company users active this month.'),
 )
 
 
@@ -121,31 +106,58 @@ def refresh_db_gauges() -> None:
     _monthly_active_users.set(_monthly_active_users_count())
 
 
-def refresh_company_gauges(company: Company) -> None:
-    company_id = str(company.id)
+def company_gauge_values(company: Company) -> dict[str, int]:
+    """Current value of each ``shellui_auth_company_*`` gauge for one company."""
     users = get_user_model().objects.filter(companies=company).distinct()
     now = timezone.now()
     day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     week_start = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    return {
+        'shellui_auth_company_users_total': users.count(),
+        'shellui_auth_company_users_active': CompanyMembership.objects.filter(
+            company=company, is_enabled=True
+        ).count(),
+        'shellui_auth_company_users_staff': users.filter(is_staff=True).count(),
+        'shellui_auth_company_social_accounts_total': SocialAccount.objects.filter(user__companies=company)
+        .distinct()
+        .count(),
+        'shellui_auth_company_daily_active_users': _count_company_user_activity_since(company, day_start),
+        'shellui_auth_company_weekly_active_users': _count_company_user_activity_since(company, week_start),
+        'shellui_auth_company_monthly_active_users': _count_company_user_activity_since(company, month_start),
+    }
 
-    _company_users_total.labels(company_id=company_id).set(users.count())
-    _company_users_active.labels(company_id=company_id).set(
-        CompanyMembership.objects.filter(company=company, is_enabled=True).count()
-    )
-    _company_users_staff.labels(company_id=company_id).set(users.filter(is_staff=True).count())
-    _company_social_accounts_total.labels(company_id=company_id).set(
-        SocialAccount.objects.filter(user__companies=company).distinct().count()
-    )
-    _company_daily_active_users.labels(company_id=company_id).set(
-        _count_company_user_activity_since(company, day_start)
-    )
-    _company_weekly_active_users.labels(company_id=company_id).set(
-        _count_company_user_activity_since(company, week_start)
-    )
-    _company_monthly_active_users.labels(company_id=company_id).set(
-        _count_company_user_activity_since(company, month_start)
-    )
+
+class CompanyMetricsCollector:
+    """One company's series only: DB gauges plus this process's login counter for that company."""
+
+    def __init__(self, company: Company):
+        self.company = company
+
+    def collect(self):
+        company_id = str(self.company.id)
+        values = company_gauge_values(self.company)
+        for name, documentation in _COMPANY_GAUGES:
+            family = GaugeMetricFamily(name, documentation, labels=('company_id',))
+            family.add_metric((company_id,), values[name])
+            yield family
+
+        logins = CounterMetricFamily(
+            'shellui_auth_successful_logins',
+            _successful_logins_total._documentation,
+            labels=('company_id', 'provider'),
+        )
+        for metric in _successful_logins_total.collect():
+            for sample in metric.samples:
+                if sample.name.endswith('_total') and sample.labels.get('company_id') == company_id:
+                    logins.add_metric((company_id, sample.labels['provider']), sample.value)
+        yield logins
+
+
+def company_metrics_body(company: Company) -> bytes:
+    registry = CollectorRegistry(auto_describe=False)
+    registry.register(CompanyMetricsCollector(company))
+    return generate_latest(registry)
 
 
 def record_successful_login(provider: str, company_id: int) -> None:
@@ -154,16 +166,18 @@ def record_successful_login(provider: str, company_id: int) -> None:
 
 
 def metrics_http_body(company_id: int | None = None) -> bytes:
+    """Global exposition when ``company_id`` is None, else that company's series only."""
     if company_id is None:
         refresh_db_gauges()
-    else:
-        try:
-            company = Company.objects.get(pk=company_id)
-        except Company.DoesNotExist:
-            refresh_db_gauges()
-        else:
-            refresh_company_gauges(company)
-    return generate_latest()
+        # Platform metrics (scheduled jobs) are global only, never in a company scrape.
+        from apps.actions.scheduled_job_metrics import scheduled_jobs_metrics_body
+
+        return generate_latest() + scheduled_jobs_metrics_body()
+    try:
+        company = Company.objects.get(pk=company_id)
+    except Company.DoesNotExist:
+        return b''
+    return company_metrics_body(company)
 
 
 METRICS_CONTENT_TYPE = CONTENT_TYPE_LATEST
