@@ -9,6 +9,7 @@ from apps.actions.event_log_views import (
     ShellUIAdminLoginEventListView,
 )
 
+from .audience_views import ShellUIAdminUserAudienceView
 from .invitation_views import (
     ShellUIAdminInvitationDetailView,
     ShellUIAdminInvitationRevokeView,
@@ -72,6 +73,7 @@ urlpatterns = [
     path('groups', ShellUIAdminGroupListView.as_view(), name='shellui-admin-groups'),
     path('groups/<int:pk>', ShellUIAdminGroupDetailView.as_view(), name='shellui-admin-group-detail'),
     path('users', ShellUIAdminUserListView.as_view(), name='shellui-admin-users'),
+    path('users/audience', ShellUIAdminUserAudienceView.as_view(), name='shellui-admin-users-audience'),
     path('events', ShellUIAdminEventListView.as_view(), name='shellui-admin-events'),
     path('events/types', ShellUIAdminEventTypesView.as_view(), name='shellui-admin-event-types'),
     path('events/retention', ShellUIAdminEventRetentionView.as_view(), name='shellui-admin-event-retention'),

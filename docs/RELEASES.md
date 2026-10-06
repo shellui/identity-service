@@ -12,21 +12,22 @@ For day-to-day local runs, see the **Docker (local run)** section in the reposit
 | ---------------- | --------------------------------------------------------- |
 | Registry         | Docker Hub                                                |
 | Repository       | `shellui/identity-service`                                |
-| Recommended tags | `0.6.0`, `0.6`, `latest` (see [Tagging](#tagging))        |
+| Recommended tags | `0.7.0`, `0.7`, `latest` (see [Tagging](#tagging))        |
 | Listen port      | `8000`                                                    |
 | Data volume      | `/app/data` (SQLite default path: `/app/data/db.sqlite3`) |
 
 The image contains application code and collected static files only. Secrets and runtime configuration are supplied via environment variables at container start (see `.env.example` in the repository root).
 
-## v0.6.0 release notes (`develop`)
+## v0.7.0 release notes
 
-Operator-facing changes on the **0.6.0** line (see `CHANGELOG.md`):
+Operator-facing changes on the **0.7.0** line (see `CHANGELOG.md`):
 
-- **OAuth** — session-code delivery, redirect allowlist, company OAuth clients ([oauth-login.md](oauth-login.md)).
-- **Configuration** — consolidated env reference ([configuration.md](configuration.md)).
-- **Redis** — optional `REDIS_URL` shared cache for multi-worker Gunicorn (#26 on `develop`).
-- **SCIM** — enterprise user/group provisioning ([scim.md](scim.md)); enabled by default after deploy/migrations (per-company bearer token).
-- **Docs site** — Shellui-branded Docusaurus chrome; browse at [identity.docs.shellui.com](https://identity.docs.shellui.com) after tagging.
+- **Email-service** — set `EMAIL_SERVICE_API_KEY` to send magic links and invitations through email-service, with SMTP as fallback ([email-service.md](email-service.md)).
+- **Event log** — every event and sign-in in one table, per-company `data_retention_days`; `GET /api/v1/login-events` is deprecated in favour of `GET /api/v1/events` ([event-log.md](event-log.md)).
+- **Scheduled jobs** — schedule `purge_expired_data` hourly and `retry_webhooks` every minute ([scheduled-jobs.md](scheduled-jobs.md)).
+- **SAML 2.0 SSO** — multiple IdPs per company ([saml.md](saml.md)).
+- **OAuth providers** — 15 supported providers plus SAML, including Twitch, LinkedIn, Slack, OpenID Connect, Keycloak, Okta, and Auth0 ([oauth-providers.md](oauth-providers.md)).
+- **Migrations** — `0014` and `0015` rekey OpenID Connect and GitLab social accounts; run `manage.py scope_gitlab_social_uids` if `0015` reports ambiguous rows.
 
 ## Pre-release checklist
 
@@ -40,12 +41,12 @@ See [PUBLISH.md](https://github.com/shellui/identity-service/blob/main/PUBLISH.m
 
 ### 1. Version alignment
 
-Ensure these match the release version (e.g. `0.6.0`):
+Ensure these match the release version (e.g. `0.7.0`):
 
 - `version` in `pyproject.toml` (OpenAPI / API metadata via `config.settings.VERSION`)
 - `CHANGELOG.md` entry with date
 - CI + pre-release workflows green on the release commit
-- Git tag `v0.6.0` (optional but recommended; not enforced by the script)
+- Git tag `v0.7.0` (optional but recommended; not enforced by the script)
 - Docs at [identity.docs.shellui.com](https://identity.docs.shellui.com) deploy from release tags via GitHub Pages (see `.github/workflows/deploy-docs.yml`)
 
 ### 2. No secrets in the build context
@@ -88,13 +89,13 @@ export SECRET_KEY="$(uv run python -c "from django.core.management.utils import 
 export JWT_PRIVATE_KEY="$(uv run python manage.py generate_jwt_keys 2>/dev/null | awk -F'\"' '/JWT_PRIVATE_KEY=/ {print $2}')"
 # Or set JWT_PRIVATE_KEY from output of: uv run python manage.py generate_jwt_keys
 
-docker build -t shellui/identity-service:0.6.0 .
+docker build -t shellui/identity-service:0.7.0 .
 
 docker run --rm -d --name identity-release-smoke -p 18000:8000 \
   -e SECRET_KEY \
   -e JWT_PRIVATE_KEY \
   -e ALLOWED_HOSTS=localhost,127.0.0.1 \
-  shellui/identity-service:0.6.0
+  shellui/identity-service:0.7.0
 
 # Expect HTTP response (400 with company_id is fine — proves Gunicorn + Django are up)
 curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:18000/api/v1/settings
@@ -114,38 +115,38 @@ docker buildx create --use --name multi 2>/dev/null || docker buildx use multi
 
 docker buildx build \
   --platform linux/amd64,linux/arm64 \
-  -t shellui/identity-service:0.6.0 \
+  -t shellui/identity-service:0.7.0 \
   --push .
 ```
 
 For a quick single-platform push from your machine:
 
 ```bash
-docker build -t shellui/identity-service:0.6.0 .
-docker push shellui/identity-service:0.6.0
+docker build -t shellui/identity-service:0.7.0 .
+docker push shellui/identity-service:0.7.0
 ```
 
 ## Tagging
 
-For semver release `0.6.0`, typical Docker Hub tags:
+For semver release `0.7.0`, typical Docker Hub tags:
 
 | Tag      | Purpose                                  |
 | -------- | ---------------------------------------- |
-| `0.6.0`  | Exact release (pin in production)        |
-| `0.6`    | Latest patch in 0.6 line                 |
+| `0.7.0`  | Exact release (pin in production)        |
+| `0.7`    | Latest patch in 0.7 line                 |
 | `latest` | Newest published release (use with care) |
 
 Example:
 
 ```bash
-VERSION=0.6.0
+VERSION=0.7.0
 IMAGE=shellui/identity-service
 
-docker tag "${IMAGE}:${VERSION}" "${IMAGE}:0.6"
+docker tag "${IMAGE}:${VERSION}" "${IMAGE}:0.7"
 docker tag "${IMAGE}:${VERSION}" "${IMAGE}:latest"
 
 docker push "${IMAGE}:${VERSION}"
-docker push "${IMAGE}:0.6"
+docker push "${IMAGE}:0.7"
 docker push "${IMAGE}:latest"
 ```
 
@@ -167,7 +168,7 @@ docker login
 From the repository root:
 
 ```bash
-VERSION=0.6.0
+VERSION=0.7.0
 IMAGE=shellui/identity-service
 
 docker build -t "${IMAGE}:${VERSION}" .
@@ -178,13 +179,13 @@ docker push "${IMAGE}:${VERSION}"
 ### Build and push (amd64 + arm64)
 
 ```bash
-VERSION=0.6.0
+VERSION=0.7.0
 IMAGE=shellui/identity-service
 
 docker buildx build \
   --platform linux/amd64,linux/arm64 \
   -t "${IMAGE}:${VERSION}" \
-  -t "${IMAGE}:0.6" \
+  -t "${IMAGE}:0.7" \
   -t "${IMAGE}:latest" \
   --push .
 ```
@@ -213,7 +214,7 @@ docker run -d \
   -e JWT_PRIVATE_KEY='replace-with-pem-from-generate_jwt_keys' \
   -e ALLOWED_HOSTS='auth.example.com' \
   -e CSRF_TRUSTED_ORIGINS='https://auth.example.com,https://app.example.com' \
-  shellui/identity-service:0.6.0
+  shellui/identity-service:0.7.0
 ```
 
 With Postgres:

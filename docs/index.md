@@ -2,18 +2,19 @@
 
 Welcome to **Shellui identity-service** — a Django backend that provides Shellui-compatible authentication under `/api/v1/*`.
 
-**Current docs target:** release **v0.6.0** on **`develop`** (Redis shared cache, enterprise SCIM).
+**Current docs target:** release **v0.7.0** (email-service delivery, event log, invitations, SAML SSO).
 
 Live site: [https://identity.docs.shellui.com](https://identity.docs.shellui.com) · Project setup: [README.md](https://github.com/shellui/identity-service/blob/develop/README.md) on GitHub.
 
 ---
 
-## v0.6.0 highlights
+## v0.7.0 highlights
 
 | Area | Summary |
 | ---- | ------- |
 | **[OAuth login](oauth-login.md)** | Identity-hosted authorize/callback, session-code vs legacy fragment delivery, redirect allowlist, company OAuth clients, hosting sync |
-| **[Social login providers](oauth-providers.md)** | django-allauth catalog (primary starters + full list), enablement checklist, IdP callback URLs |
+| **[Social login providers](oauth-providers.md)** | django-allauth catalog with 15 supported OAuth providers (Twitch, LinkedIn, Slack, OpenID Connect, Keycloak, Okta, Auth0, …), IdP callback URLs |
+| **[SAML](saml.md)** | SAML 2.0 SSO with multiple IdPs per company, SP metadata, ACS, and optional SLO |
 | **[SCIM](scim.md)** | Opt-in enterprise provisioning (Users + Groups + nested groups), per-company bearer tokens |
 | **[Shellui webhooks](actions.md)** | Domain events → signed webhooks, DB outbox + `retry_webhooks` |
 | **[Email](email-service.md)** | Magic links and invitations via email-service, SMTP fallback, event forwarding |
@@ -21,7 +22,7 @@ Live site: [https://identity.docs.shellui.com](https://identity.docs.shellui.com
 | **[Scheduled jobs](scheduled-jobs.md)** | `purge_expired_data` (hourly) and `retry_webhooks` (every minute), with Coolify, Compose and Kubernetes examples |
 | **[n8n integration](n8n.md)** | Webhook node setup, signature verification, retries |
 | **[Configuration](configuration.md)** | JWT (`iss`/`aud`, RS256, HS256 legacy), CORS, `REDIS_URL`, Postgres timeouts, Gunicorn, `/health/live`, `SCIM_ENABLED`, `TRUSTED_PROXY_IPS`, token delivery |
-| **[Company access](company-access.md)** | Public, domain, and invitation-only join modes after OAuth |
+| **[Company access](company-access.md)** | Public, domain, and invitation-only join modes after OAuth, plus email invitations |
 | **[JWKS](jwks.md)** | RS256 signing and `/.well-known/jwks.json` |
 | **[Security hardening](security-hardening.md)** | Rate limits, transport defaults, trusted proxies |
 | **[Metrics](metrics.md)** | JWT and personal access token access to `/api/v1/metrics` |

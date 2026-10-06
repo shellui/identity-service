@@ -2,12 +2,13 @@
 
 `identity-service` is a Django backend that provides authentication endpoints compatible with Shellui (`backend.type = "shellui"`).
 
-It supports OAuth login for **97** django-allauth OAuth2/OIDC providers on the identity-hosted adapter, with a **114**-entry catalog for admin setup ([docs/oauth-providers.md](docs/oauth-providers.md)). It issues JWT tokens, exposes Supabase-like auth routes under `/api/v1/*`, and returns user metadata that Shellui can use (including avatar URL).
+It supports OAuth login for **15** django-allauth OAuth2/OIDC providers on the identity-hosted adapter plus SAML 2.0 SSO, with a **114**-entry catalog for admin setup ([docs/oauth-providers.md](docs/oauth-providers.md)). It issues JWT tokens, exposes Supabase-like auth routes under `/api/v1/*`, and returns user metadata that Shellui can use (including avatar URL).
 
 ## Features
 
 - Shellui-compatible auth API at `/api/v1/*`
-- OAuth login via django-allauth (97 supported OAuth2/OIDC providers — [docs/oauth-providers.md](docs/oauth-providers.md); flow — [docs/oauth-login.md](docs/oauth-login.md))
+- OAuth login via django-allauth (15 supported OAuth2/OIDC providers — [docs/oauth-providers.md](docs/oauth-providers.md); flow — [docs/oauth-login.md](docs/oauth-login.md))
+- SAML 2.0 SSO with multiple IdPs per company (see [docs/saml.md](docs/saml.md))
 - Company join modes: **public**, **domain** allow-list, or **invitation-only** (see [docs/company-access.md](docs/company-access.md))
 - JWT access + refresh token issuance (RS256 with JWKS when `JWT_PRIVATE_KEY` is set)
 - Token refresh endpoint (`grant_type=refresh_token`)
@@ -198,7 +199,7 @@ Pull requests **to `main`** also run the pre-release checklist ([`.github/workfl
 
 ## Releases (Docker Hub)
 
-Current release: `0.6.0` (`shellui/identity-service:0.6.0`).
+Current release: `0.7.0` (`shellui/identity-service:0.7.0`).
 
 See [PUBLISH.md](PUBLISH.md) for the pre-release checklist (automated via `./tools/pre-release-check.sh`), tagging conventions, and steps to build, push, and deploy `shellui/identity-service` on Docker Hub.
 

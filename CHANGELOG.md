@@ -21,97 +21,49 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
 -->
 
-## [Unreleased] - 2026-09-29
+## [0.7.0] - 2026-10-06
 
 ### ✨ Feature
 
-- **email-service:** magic-link and invitation mail call Shellui email-service `POST /api/v1/send` when `EMAIL_SERVICE_API_KEY` is set (auth templates, stable idempotency keys, TTL 120s and 300s). An invitation with no `app_url` still uses `/send`; `invitation_url` is the identity public base. SMTP remains the path when the key is unset, and the fallback when email-service cannot be reached after the caller retry policy. If both paths fail, the API returns **503** `email_unavailable`. An auth-lane hard bounce returns **422** `recipient_suppressed`. Those JSON bodies contain `error_code` only. Webhook catalog events other than the two direct-send templates are also posted to `POST /api/v1/events` through the existing outbox, retried by `manage.py retry_webhooks`, and do not block the request. Local `EMAIL_SERVICE_URL` is `http://localhost:8003` (containers use `http://host.docker.internal:8003`). Event posts follow the email-service caller retry table (2xx finished, including `skipped_reason`; permanent `400`/`401`/`403`/`405`/`410`/`413`/`422`; other failures retry on the outbox). Auth-lane `company_rate_limited`, `provider_not_configured`, `platform_sender_not_allowed`, `auth_link_missing`, and `auth_link_host_not_allowed` are returned as those codes and are not sent over SMTP. The host of `JWT_ISSUER` must be in email-service `EMAIL_AUTH_LINK_HOSTS` (`localhost` only while that service has `DEBUG=true`). See [docs/email-service.md](docs/email-service.md).
+- **Email-service delivery:** magic-link and invitation emails go through Shellui email-service when `EMAIL_SERVICE_API_KEY` is set, with SMTP as fallback, and catalog events are forwarded through the webhook outbox. See [docs/email-service.md](docs/email-service.md).
+- **Event log and data retention:** all catalog events and sign-ins are stored in one event log (`GET /api/v1/events`), purged per company `data_retention_days` by `manage.py purge_expired_data`. See [docs/event-log.md](docs/event-log.md) and [docs/scheduled-jobs.md](docs/scheduled-jobs.md).
+- **Invitations:** staff and company owners can invite, list, revoke, and delete email invitations (`/api/v1/invitations`), with `identity.user.invited` and `identity.user.invitation_revoked` webhooks. See [docs/company-access.md](docs/company-access.md#invitations).
+- **Broadcast audience:** `GET /api/v1/users/audience` lists company members for email broadcasts, filtered by groups, roles, access, join date, and last seen.
+- **User management:** staff and company owners can remove a user from their company (`DELETE /api/v1/users/<id>`), and users can edit their display name (`PATCH /api/v1/user`).
+- **Magic link:** webhooks include `magic_link_url` and replace the built-in email when a rule exists, and `POST /api/v1/magic-link/request` accepts a `language`. See [docs/magic-link.md](docs/magic-link.md).
+- **SAML 2.0 SSO:** multiple SAML IdPs per company, with SP metadata, ACS, login, and optional SLO under `/api/v1/saml/<organization_slug>/`. See [docs/saml.md](docs/saml.md).
+- **More OAuth providers:** Twitch, LinkedIn, Slack, generic OpenID Connect, Keycloak, Okta, and Auth0 (**15** supported providers plus SAML), with a provider catalog API (`GET /api/v1/oauth-provider-catalog`) and django-allauth 65.19.5. See [docs/oauth-providers.md](docs/oauth-providers.md).
 
-- **Event log:** every catalog event (accounts, invitations, SCIM, groups, tokens, magic links) is now stored in one `EventLog` table, with or without a webhook rule, next to sign-ins recorded as `identity.auth.login.succeeded` and `identity.auth.login.failed`. Sign-in events are log-only and cannot trigger webhooks. Rows are compact: empty values dropped, user as a column, secrets such as `magic_link_url` never stored, two indexes only. New admin API: `GET /api/v1/events` (filter by `event_type`, `user_id`, `user` email, date range), `GET /api/v1/events/<id>`, `GET /api/v1/events/types`. See [docs/event-log.md](docs/event-log.md).
-- **Data retention:** companies have a `data_retention_days` (default 7), editable in Django admin only and returned read-only by the company API. New `manage.py purge_expired_data` deletes expired event log rows, finished webhook deliveries and SCIM provisioning events in short batches. `GET /api/v1/events/retention` and the Django admin company page report `stale_events` when events are more than one day past retention, which means the job is not scheduled. See [docs/scheduled-jobs.md](docs/scheduled-jobs.md) for recommended schedules (`purge_expired_data` hourly, `retry_webhooks` every minute).
+### 🚨 Changed
 
-- **Invitations:** `POST /api/v1/invitations` lets staff and company owners invite someone by email, in English or French. The invitation stays pending and no account is created until the invitee signs in with that email, which gives them access in any access mode. `GET /api/v1/invitations` lists open invitations and `POST /api/v1/invitations/<id>/revoke` revokes one: sign-in with a revoked email is refused (`invitation_revoked`) until a new invitation is sent. `DELETE /api/v1/invitations/<id>` deletes a revoked invitation for good, which also lifts the block. New webhook events `identity.user.invited` (replaces the email when the company has an enabled rule for it, like magic link) and `identity.user.invitation_revoked`. See [docs/company-access.md](docs/company-access.md#invitations).
-- **Admin user delete:** `DELETE /api/v1/users/<id>` lets staff and company owners remove a user from their company. Accounts that belong to other companies are kept; the account is deleted only when this was its last company. The API refuses to delete yourself, a staff user (unless you are staff), or a company's only owner (409 `last_company_owner`). Emits `identity.user.deleted` with `source=admin`.
-- **Safer account deletion scope:** admin and self-service deletes now delete the account row only when the user has no link left to any other company. Ownership and group membership count as links, not just membership rows, so an owner or group member set through Django admin is never wiped from another company. The only-owner guard (409 `last_company_owner`) checks the company being left only; being the only owner of another company no longer blocks the delete.
-- **No sign-in lock-out:** the Admin REST API refuses (400 `login_method_required`) to disable magic link, or to deactivate or delete the last OAuth/SAML provider, when that would leave a company with no way to sign in. New companies keep magic link enabled by default. See [docs/magic-link.md](docs/magic-link.md).
-
-- **Magic link webhook URL:** `identity.auth.magic_link.requested` webhooks now include `magic_link_url`, and the admin sample payload shows it. When a company has an enabled webhook rule for this event, identity-service skips its own sign-in email so users don't get two links; without a rule, the built-in email is sent as before. The URL signs the user in until it expires or is used, so send this event only to endpoints you trust. See [docs/magic-link.md](docs/magic-link.md).
-
-- **SAML 2.0 SSO:** Company admins can configure multiple SAML IdPs per company via `oauth-social-apps`. Identity-service exposes SP metadata, ACS, login, and optional SLO under `/api/v1/saml/<organization_slug>/`. See [docs/saml.md](docs/saml.md).
-- **Twitch login:** companies can add one Twitch OAuth app. Sign-in uses the Helix user id. A verified Helix email links an existing account. See [Set up Twitch](docs/oauth-login.md#set-up-twitch).
-- **OAuth batch 2 providers:** identity-hosted OAuth adds **LinkedIn** (OpenID Connect), **Slack** (OpenID Connect userInfo claims), generic **OpenID Connect** and **Keycloak**, **Okta**, and **Auth0**, each with hand-written strict adapter fixtures and literal uid assertions. Supported release total: **14** providers (`tools/data/oauth_e2e_covered_slugs.json`).
-- **OAuth provider catalog:** identity-service ships a checked-in django-allauth provider catalog (`apps/authapi/provider_catalog.json`) with catalog entries for OAuth2/OIDC providers and SAML. Admin API: `GET /api/v1/oauth-provider-catalog`. OAuth app CRUD accepts `docs_slug` plus validated `extra_settings`. Catalog generation tracks the installed django-allauth version and end-to-end adapter test coverage per provider.
-- **django-allauth 65.19.5:** dependency upgraded to match the provider dataset.
-- **Editable display name:** `PATCH /api/v1/user` with `{"name": "…"}` sets the user's name (first word in `first_name`, the rest in `last_name`). New tokens and `GET /api/v1/user` use it.
-- **Magic link email language:** `POST /api/v1/magic-link/request` accepts an optional `language` (`fr`, `fr-FR`, …) that picks the email locale and the webhook `language` field.
+- **Account deletion:** self-service deletion only leaves the token company when the user belongs to others, accounts are deleted only once no company link remains, and a company's last owner cannot be removed (`last_company_owner`, `company_owner_required`).
+- **No sign-in lock-out:** the Admin API refuses (`login_method_required`) to disable a company's last sign-in method.
+- **Magic link:** the verify page signs in without a confirmation click, and new users get a username from their email.
+- **Names on sign-in:** OAuth and SAML sign-ins never overwrite an existing user name.
+- **OAuth provider catalog v2:** structured `console_url` entries and a language-neutral settings schema; `supported` now follows strict adapter test coverage.
 
 ### ⚠️ Deprecated
 
-- `GET /api/v1/login-events` and `GET /api/v1/login-events/<id>` keep their response shape but read from the event log. Use `GET /api/v1/events?event_type=identity.auth.login.succeeded,identity.auth.login.failed`.
-
-### 🗑 Removed
-
-- The `LoginEvent` model. Migration `actions.0005` copies the last 7 days of sign-ins into the event log; older rows are dropped, as the default retention would delete them anyway. Event ids change, so links to `/login-events/<id>` from before the upgrade no longer resolve.
-
-### 🚨 Changed
-
-- **Self-service account deletion per company:** `DELETE /api/v1/user` no longer returns **409** for users in several companies. It removes only the token company's membership and company-scoped data, and keeps the account for the other companies. Users with a single company are still fully deleted.
-- **Last company owner protection:** `DELETE /api/v1/user` returns **409** `last_company_owner` (with the affected `companies`) when the user is the only owner of a company that would lose them. `PATCH /api/v1/companies/<id>/` with `owner_ids: []` returns **400** `company_owner_required`. Both prevent a company from being left without an owner.
-- **Magic link opens without a confirmation click:** `GET /api/v1/magic-link/verify` returns a page that submits itself, so users land in the app straight away. The token is still consumed by POST only, so email link scanners that fetch the URL don't burn it. Without JavaScript a **Continue sign-in** button remains.
-- **Names are never overwritten on sign-in:** OAuth and SAML sign-ins that link to an existing user by email only fill the name when the user has none. Previously an empty `last_name` was filled from the provider even when `first_name` was set. `GET` and `PUT /api/v1/user` now always return `name`/`full_name` from the user row instead of cached metadata.
-- **Magic link usernames:** new magic link users get a username from their email (`ada` for `ada@acme.com`, with a short suffix when taken) instead of `magic_<name>_<random>`.
-
-### 🐛 Bug Fixes
-
-- **Group events from the admin API:** creating, renaming and deleting a group through `/api/v1/groups`, and changing a user's groups through `PUT /api/v1/users/<id>` (`group_ids`), now emit `identity.group.created`, `identity.group.updated`, `identity.group.deleted` and `identity.group.membership_changed`. Before, only Django admin and SCIM emitted them, so webhooks never fired for groups managed in the admin app. Django admin now also emits `identity.group.membership_changed` when members or nested groups are edited, and `identity.group.deleted` for the bulk **Delete selected** action. Membership changes for a single user are linked to that user in the event log.
-
-### 🔒 Security
-
-- SAML ACS processing requires signed assertions (python3-saml strict mode), single-use `InResponseTo` and assertion IDs, SSRF-pinned metadata import, and company-bound IdP configuration. IdP-initiated SSO and email account linking use explicit opt-in policies.
-- SAML never auto-links an existing global user by assertion email unless the domain is in the company `verified_email_domains` field and the IdP has `trusted_for_verified_domains`. IdP `email_verified` attributes are ignored. Conflicts return `saml_email_conflict` (no duplicate user).
-- `verified_email_domains` is platform-only (Django admin); company owner API rejects attempts to set it.
-- SAML SocialAccount keys are scoped per company IdP (`saml-{social_app_id}`). A SAML SocialApp belongs to one company and cannot be moved. IdP entity IDs are globally unique across companies. ACS enforces strict signed assertions, session-bound single-use `InResponseTo`, and shared-cache assertion replay TTL.
-- SAML login accepts `token_delivery` values `code` and `fragment` only, the same rule as authorize. ACS errors are JSON error codes. Transient NameIDs and assertions without an email are rejected (`saml_nameid_transient`, `saml_email_required`). Each completed login writes one login event.
-- SAML metadata URLs are imported when the IdP is saved, and only a signing certificate is stored. PUT cannot replace `client_id` with a value another app already uses. A duplicate organization slug returns 404.
-- IdP logout revokes the user's refresh sessions for that company.
-
-### 🔒 Security
-
-- Okta, Auth0, and self-hosted GitLab account ids are scoped by issuer or host. gitlab.com accounts stay unscoped. Self-hosted GitLab does not auto-link by email (`oauth_email_conflict`).
-- GitLab uid migration `0015` rewrites `SocialAccount` rows, including accounts saved without a `SocialToken`. Ambiguous rows and rows that cannot be prefixed fail the migration and list their ids. `manage.py scope_gitlab_social_uids` binds a row to one GitLab app before migrate is re-run.
-- A verified id_token with userinfo that omits `sub` is rejected (`oauth_subject_mismatch`). The account id is not taken from `id` or `mail`.
-- OIDC, Google, Okta, and Auth0 id_tokens are verified once by Shellui. allauth's jti replay cache is not used on that path, and userinfo `sub` must match the verified id_token `sub`.
-- Okta and Auth0 logins fail closed when the token response omits `id_token` (`oauth_id_token_missing`). Keycloak, generic OpenID Connect, and LinkedIn do the same when the requested scope includes `openid`.
-- Company domain join uses only a verified email. A client-sent LinkedIn `server_url` is rejected (`oauth_setting_not_allowed`). URL settings must be https (`oauth_extra_settings_invalid`).
-- Auth0 and GitLab profile requests send the access token in the Authorization header.
-- OpenID Connect discovery `issuer` must match the configured server, and LinkedIn discovery hosts are pinned (`oauth_discovery_issuer_mismatch`, `oauth_provider_host_not_allowed`).
-- Twitch authorize and token hosts are pinned to `id.twitch.tv`. The profile host is pinned to `api.twitch.tv`. Company URL and scope overrides are rejected. Shellui requests `user:read:email` and treats the Helix `email` as verified, because Twitch returns that field only for a verified address. A missing email or user id does not create an account (`oauth_identity_failed`, `token_exchange_failed`).
-- OpenID Connect `SocialAccount` keys use per-app `provider_id` and issuer-scoped UIDs to prevent cross-issuer `sub` collisions.
-- OAuth SocialApp admin list and attach paths are company-scoped; secret `extra_settings` fields are redacted in API responses.
-- PKCE verifiers are stored server-side (nonce cache), not in signed OAuth `state`.
-- URL-type provider settings are validated against private/loopback addresses at save time (SSRF mitigation for discovery `server_url`).
-- OAuth token exchange failures return a fixed client message instead of exception text.
-
-### 🚨 Changed
-
-- **OAuth provider catalog v2:** `console_url` entries are `{kind, url, form}` with optional `placeholders` (no embedded English). Extra settings schema exposes `name`, `type`, `required`, and `secret` only; Shellui admin translates by field name. `GET /api/v1/oauth-provider-catalog` adds `console_link_kinds` and `console_link_forms` for admin mapping.
-- **Honest `supported` count:** `supported: true` for OAuth follows `tools/data/oauth_e2e_covered_slugs.json`, which is regenerated only for providers that pass the strict adapter harness (`tools/audit_oauth_strict_coverage.py`). **15** OAuth providers are supported in this release, plus SAML.
-
-### 🔒 Security
-
-- **Google id_token on callback:** login callback verifies Google id_tokens against JWKS before email linking; wrong issuer, audience, or signing key returns `oauth_id_token_invalid` (no userinfo fallback).
-- **LinkedIn OIDC:** fixed LinkedIn discovery and hosts (`www.linkedin.com`, `api.linkedin.com`); companies cannot set a custom `server_url`.
-- **Company IdPs:** Keycloak, generic OpenID Connect, Okta, and Auth0 never auto-link by email; conflicting emails return `oauth_email_conflict`.
-- **Okta and Auth0 base URLs:** missing `OKTA_BASE_URL` or `AUTH0_URL` fails closed instead of calling `https://None/...` endpoints.
-- OpenID Connect migration **0014** rekeys existing `SocialAccount` rows to `(provider_id, issuer|sub)` with audit-backed reverse.
-- OAuth uses `request_context` plus a `ContextVar` for the company `SocialApp` (no `allauth_context.request` assignment).
-- Apple `form_post` bridges via a single-use cookie; POST `id_token` must verify against Apple JWKS and nonce before use.
-- SSRF-safe OAuth HTTP pins resolved IPs; hostname resolution rejects mixed public/private answers.
-- PKCE and OAuth state consumption use atomic `cache.add`.
+- `GET /api/v1/login-events` now reads from the event log; use `GET /api/v1/events?event_type=identity.auth.login.succeeded,identity.auth.login.failed` instead.
 
 ### 📚 Documentation
 
-- Regenerated [docs/oauth-providers.md](docs/oauth-providers.md) from the catalog (CI drift check). English labels for generated docs live in `tools/catalog_doc_strings_en.py`.
+- [docs/oauth-providers.md](docs/oauth-providers.md) is generated from the provider catalog, with a CI drift check.
+
+### 🗑 Removed
+
+- The `LoginEvent` model: migration `actions.0005` copies the last 7 days of sign-ins into the event log, and old `/login-events/<id>` links no longer resolve.
+
+### 🐛 Bug Fixes
+
+- **Group events:** group changes made through the admin API and Django admin now emit `identity.group.*` events, so webhooks fire for them.
+
+### 🔒 Security
+
+- **SAML:** signed assertions only, single-use `InResponseTo` and assertion IDs, company-scoped IdPs, and no email auto-linking outside trusted verified domains.
+- **OAuth identity:** id_tokens are verified (Google, Apple, OpenID Connect, Okta, Auth0), account ids are scoped by issuer or host, and company IdPs never auto-link by email.
+- **OAuth transport:** pinned provider hosts, SSRF-safe HTTP and discovery, server-side PKCE, atomic state consumption, and redacted secrets in API responses.
+- **Account id migrations:** `0014` (OpenID Connect) and `0015` (GitLab) rekey existing social accounts; run `manage.py scope_gitlab_social_uids` if `0015` reports ambiguous rows.
 
 ## [0.6.0] - 2026-09-29
 

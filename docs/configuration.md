@@ -125,7 +125,7 @@ Concurrency ≈ `workers × threads`. Under-provisioned pools can queue even sim
 
 ---
 
-## Shared cache (Redis, `develop` / v0.6.0+)
+## Shared cache (Redis, v0.6.0+)
 
 | Variable | Default | Purpose |
 | -------- | ------- | ------- |
@@ -144,7 +144,7 @@ See [PUBLISH.md](https://github.com/shellui/identity-service/blob/develop/PUBLIS
 
 ---
 
-## Enterprise SCIM (`develop` / v0.6.0+)
+## Enterprise SCIM (v0.6.0+)
 
 | Variable | Default | Purpose |
 | -------- | ------- | ------- |

@@ -30,6 +30,11 @@ const sidebars = {
     },
     {
       type: 'doc',
+      id: 'saml',
+      label: 'SAML',
+    },
+    {
+      type: 'doc',
       id: 'scim',
       label: 'SCIM',
     },
