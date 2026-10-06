@@ -1,4 +1,6 @@
 // @ts-check
+// Sidebar for docs.shellui.com/identity. The central site in shellui/shellui
+// (tools/docusaurus) loads this file. Doc ids are file names in this folder.
 
 /** @type {import('@docusaurus/plugin-content-docs').SidebarsConfig} */
 const sidebars = {
@@ -35,8 +37,18 @@ const sidebars = {
     },
     {
       type: 'doc',
+      id: 'saml',
+      label: 'SAML',
+    },
+    {
+      type: 'doc',
       id: 'actions',
       label: 'Action triggers',
+    },
+    {
+      type: 'doc',
+      id: 'n8n',
+      label: 'n8n',
     },
     {
       type: 'doc',

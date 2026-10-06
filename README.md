@@ -162,23 +162,19 @@ Production auth abuse controls, HTTPS defaults, Postgres SSL, and trusted-proxy 
 - `/api/v1/settings` only enables providers configured for the requested company; OAuth client details require an authenticated company member.
 - Avatar URL from provider userinfo is included in JWT metadata (`user_metadata.avatar_url`) for Shellui profile display.
 
-## Documentation (Docusaurus)
+## Documentation
 
-Project docs live in `docs/` and are built with Docusaurus in `tools/docusaurus/` (Shellui-branded chrome aligned with [shellui/shellui](https://github.com/shellui/shellui)). Published at [https://identity.docs.shellui.com](https://identity.docs.shellui.com) on release tags.
+Project docs live in `docs/`, with the sidebar in `docs/sidebars.js`. They are published at [https://docs.shellui.com/identity](https://docs.shellui.com/identity) by [shellui/shellui](https://github.com/shellui/shellui), which builds the docs of every Shellui service into one site. This repository no longer builds or deploys its own docs site.
 
-Preview locally:
-
-```bash
-cd tools/docusaurus && npm install && npm start
-```
-
-Production build:
+Preview locally with live reload: clone `shellui` next to this repository, then run:
 
 ```bash
-./tools/generate-docs.sh
+cd ../shellui
+pnpm install
+DOCS_SERVICES=identity pnpm docs:start
 ```
 
-Output is generated in `tools/docusaurus/build`.
+See [Build the docs site](https://github.com/shellui/shellui/blob/develop/docs/docs-site.md) for details. CI runs the same build on every pull request (the **Docs build** job), so a broken link or invalid page fails the check.
 
 ## Tests
 
@@ -186,7 +182,7 @@ Output is generated in `tools/docusaurus/build`.
 uv run python manage.py test
 ```
 
-Pull requests and pushes to `main` / `develop` run [`.github/workflows/ci.yml`](.github/workflows/ci.yml): Django tests, lockfile check, dependency audit (`pip-audit`), secret scan (gitleaks), markdown link check (lychee), and a Docker image build.
+Pull requests and pushes to `main` / `develop` run [`.github/workflows/ci.yml`](.github/workflows/ci.yml): Django tests, lockfile check, dependency audit (`pip-audit`), secret scan (gitleaks), markdown link check (lychee), a docs build against [shellui/shellui](https://github.com/shellui/shellui), and a Docker image build.
 
 For a gitleaks false positive, add an inline `# gitleaks:allow` comment on the flagged line; `.gitleaksignore` is only for fingerprints of commits already in history.
 

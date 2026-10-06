@@ -137,7 +137,7 @@ def root(request):
         "identity_docs_url": getattr(
             settings,
             "SHELLUI_IDENTITY_DOCS_URL",
-            "https://identity.docs.shellui.com",
+            "https://docs.shellui.com/identity",
         ),
         "github_url": getattr(
             settings,

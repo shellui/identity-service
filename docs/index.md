@@ -4,7 +4,7 @@ Welcome to **Shellui identity-service** — a Django backend that provides Shell
 
 **Current docs target:** release **v0.6.0** on **`develop`** (Redis shared cache, enterprise SCIM).
 
-Live site: [https://identity.docs.shellui.com](https://identity.docs.shellui.com) · Project setup: [README.md](https://github.com/shellui/identity-service/blob/develop/README.md) on GitHub.
+Live site: [https://docs.shellui.com/identity](https://docs.shellui.com/identity) · Project setup: [README.md](https://github.com/shellui/identity-service/blob/develop/README.md) on GitHub.
 
 ---
 
@@ -42,12 +42,12 @@ Live site: [https://identity.docs.shellui.com](https://identity.docs.shellui.com
 
 ## Preview these docs locally
 
-From the repository root:
+These pages are built and published by [shellui/shellui](https://github.com/shellui/shellui) as part of [docs.shellui.com](https://docs.shellui.com). The sidebar is `docs/sidebars.js` in this repository. To preview your edits with live reload, clone `shellui` next to this repository and run:
 
 ```bash
-cd tools/docusaurus
-npm install
-npm start
+cd ../shellui
+pnpm install
+DOCS_SERVICES=identity pnpm docs:start
 ```
 
-Open the URL printed by Docusaurus (default `http://localhost:3000`).
+The site picks up `../identity-service/docs` and reloads as you edit. See [Build the docs site](https://github.com/shellui/shellui/blob/develop/docs/docs-site.md) for the other options.
