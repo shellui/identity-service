@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from django.conf import settings
@@ -9,6 +10,70 @@ from django.db.utils import OperationalError, ProgrammingError
 from django.http import HttpRequest
 
 from .models import Company, CompanyOAuthRedirect
+
+# Schemes that must never be a desktop redirect, even when the shape looks like an app id.
+_DENIED_REDIRECT_SCHEMES = frozenset(
+    {
+        'http',
+        'https',
+        'javascript',
+        'data',
+        'file',
+        'vbscript',
+        'about',
+        'blob',
+        'ftp',
+        'ftps',
+        'ws',
+        'wss',
+        'mailto',
+        'tel',
+        'sms',
+        'ssh',
+        'sftp',
+        'ldap',
+        'ldaps',
+        'chrome',
+        'chrome-extension',
+        'moz-extension',
+        'ms-appx',
+        'ms-appx-web',
+        'intent',
+        'market',
+        'content',
+        'android-app',
+        'view-source',
+        'filesystem',
+        'jar',
+        'nfs',
+        'tftp',
+        'gopher',
+        'news',
+        'nntp',
+        'irc',
+        'ircs',
+        'magnet',
+        'cid',
+        'mid',
+        'mms',
+        'mmsto',
+        'ms-help',
+        'res',
+        'mk',
+        'mhtml',
+        'webcal',
+        'feed',
+        'git',
+        'svn',
+        'dict',
+        'wais',
+        'shttp',
+    }
+)
+
+# Reverse-DNS (com.example.app) or an app scheme with a hyphen (shellui-playground).
+_APP_SCHEME_RE = re.compile(r'^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)+$')
+_DESKTOP_URI_CONTROL_RE = re.compile(r'[\x00-\x20\x7f\\]')
 
 DEFAULT_LOGIN_CALLBACK_PATH = '/login/callback'
 
@@ -56,6 +121,75 @@ def origin_of_url(url: str) -> str:
     return f'{p.scheme}://{p.netloc}'
 
 
+def is_allowed_app_scheme(scheme: str) -> bool:
+    """True for a reverse-DNS or hyphenated app scheme, never for a browser scheme."""
+    value = (scheme or '').strip().lower()
+    if not value or value in _DENIED_REDIRECT_SCHEMES or len(value) > 64:
+        return False
+    return _APP_SCHEME_RE.fullmatch(value) is not None
+
+
+def is_custom_scheme_redirect(url: str) -> bool:
+    """True when ``url`` uses an allowed desktop app scheme."""
+    return is_allowed_app_scheme(urlsplit((url or '').strip()).scheme)
+
+
+def normalize_desktop_redirect_uri(raw: str) -> tuple[str | None, str | None]:
+    """
+    Canonical exact custom-scheme URI.
+    Returns (uri, None) or (None, error_message).
+    """
+    s = (raw or '').strip()
+    if not s:
+        return None, 'Empty base_url.'
+    lowered = s.lower()
+    if (
+        _DESKTOP_URI_CONTROL_RE.search(s)
+        or '%00' in lowered
+        or '%0a' in lowered
+        or '%0d' in lowered
+    ):
+        return None, 'Invalid desktop redirect.'
+    if '#' in s:
+        return None, 'Desktop redirect must not include a fragment.'
+    if '://' not in s:
+        return None, 'Desktop redirect must be an exact custom-scheme URI.'
+    try:
+        parsed = urlsplit(s)
+    except ValueError:
+        return None, 'Invalid desktop redirect.'
+    scheme = (parsed.scheme or '').lower()
+    if scheme in _DENIED_REDIRECT_SCHEMES:
+        return None, 'Desktop redirect scheme is not allowed.'
+    if not is_allowed_app_scheme(scheme):
+        return None, 'Desktop redirect must be an exact custom-scheme URI.'
+    if '@' in parsed.netloc or '%' in parsed.netloc or parsed.username or parsed.password:
+        return None, 'Desktop redirect must not include userinfo.'
+    try:
+        port = parsed.port
+    except ValueError:
+        return None, 'Invalid desktop redirect.'
+    if port is not None and not 1 <= port <= 65535:
+        return None, 'Invalid desktop redirect.'
+    if not parsed.netloc and not parsed.path:
+        return None, 'Invalid desktop redirect.'
+    if parsed.fragment:
+        return None, 'Desktop redirect must not include a fragment.'
+    canonical = canonical_url_no_fragment(s)
+    if not canonical or len(canonical) > 500 or not is_custom_scheme_redirect(canonical):
+        return None, 'Invalid desktop redirect.'
+    return canonical, None
+
+
+def normalize_oauth_redirect_entry(raw: str, *, kind: str) -> tuple[str | None, str | None]:
+    """Normalize an allowlist row for ``kind`` (``web`` origin or exact ``desktop`` URI)."""
+    if kind == CompanyOAuthRedirect.KIND_DESKTOP:
+        return normalize_desktop_redirect_uri(raw)
+    if kind == CompanyOAuthRedirect.KIND_WEB:
+        return normalize_allowlist_origin(raw)
+    return None, 'kind must be web or desktop.'
+
+
 def normalize_allowlist_origin(raw: str) -> tuple[str | None, str | None]:
     """
     Normalize an allowlist entry to a canonical origin.
@@ -99,11 +233,18 @@ def normalize_client_redirect_url(request: HttpRequest, raw: str) -> tuple[str |
         joined = f'{request.scheme}://{request.get_host()}{s}'
         return canonical_url_no_fragment(joined), None
     p = urlsplit(s)
-    if p.scheme not in ('http', 'https'):
-        return None, 'redirect_to must use http or https.'
-    if not p.netloc:
-        return None, 'Invalid redirect_to.'
-    return canonical_url_no_fragment(s), None
+    if p.scheme in ('http', 'https'):
+        if not p.netloc:
+            return None, 'Invalid redirect_to.'
+        return canonical_url_no_fragment(s), None
+    if is_allowed_app_scheme(p.scheme):
+        uri, err = normalize_desktop_redirect_uri(s)
+        if err or not uri:
+            if err and 'fragment' in err:
+                return None, 'redirect_to must not include a fragment.'
+            return None, 'Invalid redirect_to.'
+        return uri, None
+    return None, 'redirect_to must use http or https.'
 
 
 def _hostname_is_loopback(hostname: str | None) -> bool:
@@ -132,13 +273,19 @@ def redirect_url_allowed_for_company(company: Company, absolute_url: str, reques
     candidate = canonical_url_no_fragment(absolute_url)
     if not candidate:
         return False
+    if is_custom_scheme_redirect(candidate):
+        return _desktop_redirect_exact_match(company, candidate)
     if is_loopback_redirect_url(candidate):
         return loopback_oauth_redirects_allowed()
     candidate_origin = origin_of_url(candidate)
     if not candidate_origin:
         return False
     try:
-        rows = CompanyOAuthRedirect.objects.filter(company_id=company.id, is_active=True)
+        rows = CompanyOAuthRedirect.objects.filter(
+            company_id=company.id,
+            is_active=True,
+            kind=CompanyOAuthRedirect.KIND_WEB,
+        )
         for row in rows:
             allowed = origin_of_url(row.base_url) or canonical_url_no_fragment(row.base_url)
             if not allowed:
@@ -151,6 +298,22 @@ def redirect_url_allowed_for_company(company: Company, absolute_url: str, reques
     except (OperationalError, ProgrammingError):
         return False
     return False
+
+
+def _desktop_redirect_exact_match(company: Company, candidate: str) -> bool:
+    """True only when an active desktop row stores this exact URI. No prefix match."""
+    exact, err = normalize_desktop_redirect_uri(candidate)
+    if err or not exact:
+        return False
+    try:
+        return CompanyOAuthRedirect.objects.filter(
+            company_id=company.id,
+            is_active=True,
+            kind=CompanyOAuthRedirect.KIND_DESKTOP,
+            base_url=exact,
+        ).exists()
+    except (OperationalError, ProgrammingError):
+        return False
 
 
 def loopback_client_bounce_url_for_oauth_error(

@@ -6,12 +6,12 @@ class ShellUIOpenAPISerializer(serializers.Serializer):
 
 
 class ProviderAuthorizeSerializer(serializers.Serializer):
-    redirect_uri = serializers.URLField()
+    redirect_uri = serializers.CharField(max_length=2048)
 
 
 class ProviderCallbackSerializer(serializers.Serializer):
     code = serializers.CharField()
-    redirect_uri = serializers.URLField()
+    redirect_uri = serializers.CharField(max_length=2048)
     client_timezone = serializers.CharField(required=False, allow_blank=True, max_length=64)
     client_device_id = serializers.CharField(required=False, allow_blank=True, max_length=128)
 
@@ -19,7 +19,7 @@ class ProviderCallbackSerializer(serializers.Serializer):
 class ShellUIOAuthExchangeSerializer(serializers.Serializer):
     provider = serializers.CharField(max_length=64)
     code = serializers.CharField()
-    redirect_uri = serializers.URLField()
+    redirect_uri = serializers.CharField(max_length=2048)
     company_oauth_client_id = serializers.IntegerField(required=False, min_value=1)
     client_timezone = serializers.CharField(required=False, allow_blank=True, max_length=64)
     client_device_id = serializers.CharField(required=False, allow_blank=True, max_length=128)
@@ -32,12 +32,15 @@ class ShellUIRefreshTokenSerializer(serializers.Serializer):
 
 class ShellUIOAuthSessionExchangeSerializer(serializers.Serializer):
     auth_code = serializers.CharField(max_length=128)
-    redirect_to = serializers.URLField(max_length=2048)
+    redirect_to = serializers.CharField(max_length=2048)
+    code_verifier = serializers.CharField(required=False, allow_blank=True, max_length=128)
 
 
 class ShellUIMagicLinkRequestSerializer(serializers.Serializer):
     email = serializers.EmailField(max_length=254)
-    redirect_to = serializers.URLField(max_length=2048)
+    redirect_to = serializers.CharField(max_length=2048)
+    code_challenge = serializers.CharField(required=False, allow_blank=True, max_length=128)
+    code_challenge_method = serializers.CharField(required=False, allow_blank=True, max_length=16)
     company_id = serializers.IntegerField(required=False, min_value=1)
     client_timezone = serializers.CharField(required=False, allow_blank=True, max_length=64)
     client_device_id = serializers.CharField(required=False, allow_blank=True, max_length=128)
@@ -62,8 +65,9 @@ class ShellUIInvitationCreateSerializer(serializers.Serializer):
         allow_blank=True,
         max_length=2048,
         help_text=(
-            'App URL linked from the email (usually the shell origin). Must match the company '
-            'OAuth redirect allowlist. Omit to send the email without a link.'
+            'App URL linked from the email. An http(s) origin must match the company '
+            'redirect allowlist. A desktop app uses the exact custom-scheme URI from that '
+            'allowlist. Omit to send the email without a link.'
         ),
     )
 
@@ -81,6 +85,7 @@ class ShellUIInvitationCreateSerializer(serializers.Serializer):
 class ShellUIMagicLinkConsumeSerializer(serializers.Serializer):
     token = serializers.CharField(max_length=128)
     company_id = serializers.IntegerField(min_value=1)
+    code_verifier = serializers.CharField(required=False, allow_blank=True, max_length=128)
 
 
 class ShellUIAdminAuthMethodsUpdateSerializer(serializers.Serializer):
@@ -212,16 +217,22 @@ class ShellUIAdminOAuthRedirectCreateSerializer(serializers.Serializer):
         required=False,
         default='manual',
     )
+    kind = serializers.ChoiceField(
+        choices=['web', 'desktop'],
+        required=False,
+        default='web',
+    )
 
 
 class ShellUIAdminOAuthRedirectUpdateSerializer(serializers.Serializer):
     base_url = serializers.CharField(required=False, allow_blank=False, max_length=500)
     label = serializers.CharField(required=False, allow_blank=True, max_length=150)
     is_active = serializers.BooleanField(required=False)
+    kind = serializers.ChoiceField(choices=['web', 'desktop'], required=False)
 
     def validate(self, attrs: dict) -> dict:
         if not attrs:
-            raise serializers.ValidationError('Provide at least one of: base_url, label, is_active.')
+            raise serializers.ValidationError('Provide at least one of: base_url, label, is_active, kind.')
         return attrs
 
 

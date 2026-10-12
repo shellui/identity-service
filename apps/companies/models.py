@@ -272,7 +272,12 @@ class CompanyOAuthClient(models.Model):
 
 
 class CompanyOAuthRedirect(models.Model):
-    """Allowed post-OAuth bounce origins for a company (shell /login/callback hosts)."""
+    """Allowed post-login bounce targets for a company.
+
+    ``web`` stores an http(s) origin and matches any callback on that origin.
+    ``desktop`` stores one exact custom-scheme URI (for example
+    ``shellui-playground://callback``) and matches that URI only.
+    """
 
     SOURCE_MANUAL = 'manual'
     SOURCE_HOSTING = 'hosting'
@@ -281,14 +286,30 @@ class CompanyOAuthRedirect(models.Model):
         (SOURCE_HOSTING, 'Hosting'),
     ]
 
+    KIND_WEB = 'web'
+    KIND_DESKTOP = 'desktop'
+    KIND_CHOICES = [
+        (KIND_WEB, 'Web origin'),
+        (KIND_DESKTOP, 'Desktop app'),
+    ]
+
     company = models.ForeignKey(
         Company,
         on_delete=models.CASCADE,
         related_name='oauth_redirect_allowlist',
     )
+    kind = models.CharField(
+        max_length=16,
+        choices=KIND_CHOICES,
+        default=KIND_WEB,
+        help_text='web matches an http(s) origin prefix. desktop matches one exact custom-scheme URI.',
+    )
     base_url = models.CharField(
         max_length=500,
-        help_text='Canonical origin only (e.g. https://app.example.com).',
+        help_text=(
+            'Web: canonical http(s) origin (https://app.example.com). '
+            'Desktop: exact custom-scheme URI (shellui-playground://callback).'
+        ),
     )
     label = models.CharField(blank=True, max_length=150)
     source = models.CharField(

@@ -30,6 +30,7 @@ const sidebars = {
     ]),
     category('Sign-in', [
       doc('oauth-login', 'OAuth login'),
+      doc('desktop-apps', 'Desktop apps'),
       doc('oauth-providers', 'OAuth providers'),
       doc('magic-link', 'Magic link'),
       doc('saml', 'SAML single sign-on'),

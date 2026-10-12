@@ -4,7 +4,7 @@ description: How identity-service runs OAuth sign-in for a Shellui shell, from t
 
 # OAuth login
 
-identity-service owns the whole OAuth flow. Provider apps call back to one fixed URL on identity-service, which exchanges the code server-side, applies the company rules, and returns tokens to the shell. This page covers that flow, the confirmation page, token delivery, and the redirect allowlist. For passwordless email sign-in, see [Magic link](magic-link.md). A company can enable both.
+identity-service owns the whole OAuth flow. Provider apps call back to one fixed URL on identity-service, which exchanges the code server-side, applies the company rules, and returns tokens to the shell. This page covers that flow, the confirmation page, token delivery, and the redirect allowlist. For passwordless email sign-in, see [Magic link](magic-link.md). A company can enable both. A desktop app returns through a custom-scheme link instead of an http(s) shell. See [Desktop apps](desktop-apps.md). The http(s) rules on this page stay as they are.
 
 ## How the flow works
 
@@ -53,6 +53,8 @@ By default, identity-service sends the shell a one-time code, not the tokens. Th
 
 Choose the mode per request with `token_delivery=fragment` on `/api/v1/authorize`, or for the whole deployment with `OAUTH_TOKEN_DELIVERY`. `POST /api/v1/oauth/exchange` still serves older shells that receive the provider `?code=` themselves.
 
+A custom-scheme redirect always uses the one-time code, even when fragment delivery is selected. See [Desktop apps](desktop-apps.md).
+
 ## Redirect allowlist
 
 identity-service only sends codes or tokens to origins the company approved. This stops a crafted `redirect_to` from sending a session to another site:
@@ -60,11 +62,12 @@ identity-service only sends codes or tokens to origins the company approved. Thi
 | Target | Rule |
 | --- | --- |
 | Loopback (`127.0.0.1`, `localhost`, `::1`) | Allowed when `DEBUG=true` or `OAUTH_ALLOW_LOOPBACK_REDIRECTS=true`, for the CLI and local shells |
-| Other origins | Must match an active `CompanyOAuthRedirect` row for the company |
-| Hosting previews (`{slug}.{HOSTING_APP_DOMAIN}`) | Added and removed by hosting-service (`source=hosting`) when a site is created or deleted |
-| Empty allowlist | Every non-loopback `redirect_to` is denied |
+| Other http(s) origins | Must match an active `CompanyOAuthRedirect` row with `kind=web` for the company |
+| Desktop app URI | Must match an active row with `kind=desktop`, character for character. No prefix match. See [Desktop apps](desktop-apps.md) |
+| Hosting previews (`{slug}.{HOSTING_APP_DOMAIN}`) | Added and removed by hosting-service (`source=hosting`) when a site is created or deleted. These rows are `kind=web` |
+| Empty allowlist | Every non-loopback http(s) `redirect_to` is denied, and every custom-scheme `redirect_to` is denied |
 
-Store origins only: scheme, host, and optional port, for example `http://localhost:4000` or `https://app.example.com`. A path or query on an allowlist entry is ignored.
+Store web origins as scheme, host, and optional port, for example `http://localhost:4000` or `https://app.example.com`. A path or query on a web allowlist entry is ignored. A desktop row stores the full URI, for example `shellui-playground://callback`.
 
 ### Manage the allowlist
 
@@ -74,7 +77,7 @@ Staff and company owners can edit the allowlist in three places:
 - **Django admin**: **Company OAuth redirects**
 - **REST API**: `GET`, `POST`, `PATCH`, and `DELETE` on `/api/v1/oauth-redirects?company_id=…`
 
-This request adds a production shell origin for company `1`:
+`kind` defaults to `web`. Set `kind` to `desktop` for one exact custom-scheme URI. This request adds a production shell origin for company `1`:
 
 ```bash
 curl -s -X POST "https://auth.example.com/api/v1/oauth-redirects?company_id=1" \
@@ -119,6 +122,7 @@ To block login CSRF, `/api/v1/authorize` stores a random nonce in the `shellui_o
 
 ## Related
 
+- [Desktop apps](desktop-apps.md): custom-scheme return and PKCE
 - [OAuth providers](oauth-providers.md): supported providers and their settings
 - [Account deletion](account-deletion.md): `DELETE /api/v1/user`
 - [Upgrade notes](upgrading.md): moving from fragment delivery or shell-hosted callbacks

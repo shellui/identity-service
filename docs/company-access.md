@@ -43,7 +43,7 @@ Staff and company owners invite someone with `POST /api/v1/invitations`, or with
 identity-service stores a pending invitation and emails it. It does not create an account yet.
 
 - **`language`**: `en` or `fr`, the language of the email
-- **`app_url`**: the link in the email. It must pass the company [redirect allowlist](oauth-login.md#redirect-allowlist), otherwise the request returns **400** `invalid_app_url`. Shellui admin sends the shell origin
+- **`app_url`**: the link in the email. It must pass the company [redirect allowlist](oauth-login.md#redirect-allowlist), otherwise the request returns **400** `invalid_app_url`. Shellui admin sends the shell origin. A desktop app sends the exact custom-scheme URI (`kind=desktop`). PKCE is not required on this request. The person who accepts the invitation sends it on the later sign-in. See [Desktop apps](desktop-apps.md)
 - **409** `already_member`: someone with this email already has access. **409** `already_invited`: an invitation is pending
 - **503** `email_unavailable`: neither email-service nor SMTP could send the email. The invitation is not stored, so you can retry
 - Rate limit: `AUTH_RATE_LIMIT_INVITATION`, 30 per 5 minutes per company

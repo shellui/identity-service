@@ -11,7 +11,6 @@ from allauth.account.adapter import get_adapter as get_account_adapter
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
-from django.http import HttpResponseRedirect
 from django.shortcuts import render
 from django.utils import timezone
 from django.utils.decorators import method_decorator
@@ -36,7 +35,13 @@ from apps.companies.access import (
     invitation_revoked_decision,
     is_login_blocked_by_revoked_invitation,
 )
-from apps.companies.redirect_allowlist import append_oauth_error_params, validate_redirect_to_for_company
+from apps.authapi.client_pkce import PkceError, parse_client_pkce, verify_client_pkce
+from apps.authapi.desktop_return import client_redirect_reports_success, client_redirect_response
+from apps.companies.redirect_allowlist import (
+    append_oauth_error_params,
+    is_custom_scheme_redirect,
+    validate_redirect_to_for_company,
+)
 from apps.authapi import metrics as auth_metrics
 from apps.authapi.login_audit import (
     LoginOutcome,
@@ -242,6 +247,17 @@ class ShellUIMagicLinkRequestView(APIView):
         )
         if rerr or not redirect_to:
             return Response({'error': rerr or 'Invalid redirect_to.'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            code_challenge = parse_client_pkce(
+                serializer.validated_data.get('code_challenge'),
+                serializer.validated_data.get('code_challenge_method'),
+                required=is_custom_scheme_redirect(redirect_to),
+            )
+        except PkceError as exc:
+            return Response(
+                {'error': exc.message, 'error_code': exc.error_code},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         limited = _magic_link_rate_limits(request, company_id=company.id, email=email)
         if limited is not None:
@@ -272,6 +288,7 @@ class ShellUIMagicLinkRequestView(APIView):
             user=existing,
             client_timezone=client_tz,
             client_device_id=client_dev,
+            code_challenge=code_challenge,
         )
         requested_lang = normalize_magic_link_language(serializer.validated_data.get('language'))
         pref_lang = None
@@ -489,6 +506,7 @@ class ShellUIMagicLinkVerifyView(APIView):
                 browser_redirect=False,
                 token=serializer.validated_data['token'],
                 company_id=serializer.validated_data['company_id'],
+                code_verifier=serializer.validated_data.get('code_verifier') or None,
             )
         token = (request.POST.get('token') or '').strip()
         try:
@@ -509,6 +527,7 @@ class ShellUIMagicLinkVerifyView(APIView):
         browser_redirect: bool,
         token: str | None = None,
         company_id: int | None = None,
+        code_verifier: str | None = None,
     ):
         company, company_err = _required_company_from_request(request)
         if company_err:
@@ -527,6 +546,20 @@ class ShellUIMagicLinkVerifyView(APIView):
         cid = company_id if company_id is not None else company.id
         if company.id != cid:
             return Response({'error': 'company_id mismatch.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not browser_redirect:
+            preview, _preview_err = lookup_magic_link_token(raw_token=raw_token or '', company_id=cid)
+            if preview is not None:
+                pkce_message, pkce_code = verify_client_pkce(
+                    code_challenge=preview.code_challenge,
+                    code_verifier=code_verifier,
+                    required=is_custom_scheme_redirect(preview.redirect_to),
+                )
+                if pkce_message:
+                    return Response(
+                        {'error': pkce_message, 'error_code': pkce_code},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
 
         row, err = redeem_magic_link_token(raw_token=raw_token or '', company_id=cid)
         if err or row is None:
@@ -559,8 +592,14 @@ class ShellUIMagicLinkVerifyView(APIView):
                 client_device_id=client_dev,
             )
             if browser_redirect and redirect_to:
-                return HttpResponseRedirect(
-                    append_oauth_error_params(redirect_to, MAGIC_LINK_STAFF_DISABLED_MESSAGE, MAGIC_LINK_STAFF_DISABLED)
+                return client_redirect_response(
+                    request,
+                    append_oauth_error_params(
+                        redirect_to,
+                        MAGIC_LINK_STAFF_DISABLED_MESSAGE,
+                        MAGIC_LINK_STAFF_DISABLED,
+                    ),
+                    succeeded=False,
                 )
             return Response(
                 {'error': MAGIC_LINK_STAFF_DISABLED_MESSAGE, 'error_code': MAGIC_LINK_STAFF_DISABLED},
@@ -584,7 +623,7 @@ class ShellUIMagicLinkVerifyView(APIView):
                 client_device_id=client_dev,
             )
             if browser_redirect:
-                return _join_denied_response(decision=join, redirect_to=redirect_to)
+                return _join_denied_response(decision=join, redirect_to=redirect_to, request=request)
             return _join_denied_response(decision=join)
         if user is None:
             user = _create_magic_link_user(request, email=row.email)
@@ -608,7 +647,7 @@ class ShellUIMagicLinkVerifyView(APIView):
                 client_device_id=client_dev,
             )
             if browser_redirect:
-                return _join_denied_response(decision=join, redirect_to=redirect_to)
+                return _join_denied_response(decision=join, redirect_to=redirect_to, request=request)
             return _join_denied_response(decision=join)
 
         _notify_user_logged_in_for_oauth(request, user)
@@ -633,7 +672,12 @@ class ShellUIMagicLinkVerifyView(APIView):
                 payload=payload,
                 provider=MAGIC_LINK_PROVIDER,
                 token_delivery=delivery_mode,
+                code_challenge=row.code_challenge,
             )
-            return HttpResponseRedirect(location)
+            return client_redirect_response(
+                request,
+                location,
+                succeeded=client_redirect_reports_success(location),
+            )
 
         return Response(payload, status=status.HTTP_200_OK)

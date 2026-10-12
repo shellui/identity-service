@@ -6,6 +6,12 @@ description: Steps to take when you upgrade identity-service, release by release
 
 This page lists what you must change when you move to a newer identity-service release. Releases not listed here need no action beyond deploying the new image, which runs the database migrations on start. The full list of changes is in the [changelog](https://github.com/shellui/identity-service/blob/main/CHANGELOG.md).
 
+## Desktop app redirects
+
+Migrations `companies.0026_desktop_custom_scheme_redirect` and `authapi.0018_desktop_custom_scheme_redirect` add a `kind` on each allowlist row and a PKCE challenge column on session codes and magic-link tokens. Existing rows stay `kind=web`. Web shells need no change.
+
+A desktop app needs one exact custom-scheme URI on the allowlist and S256 PKCE. See [Desktop apps](desktop-apps.md).
+
 ## Upgrade to 0.7.0
 
 0.7.0 has two breaking changes: Redis becomes required in production, and magic link webhooks no longer carry the sign-in link. It also changes how staff accounts sign in and what the company metrics endpoint returns.

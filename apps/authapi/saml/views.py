@@ -35,7 +35,8 @@ from apps.authapi.saml.security import (
 from apps.authapi.saml.utils import SAMLConfigError, build_auth, build_saml_config
 from apps.authapi.saml.validation import check_validated_assertion
 from apps.companies.models import Company
-from apps.companies.redirect_allowlist import validate_redirect_to_for_company
+from apps.authapi.client_pkce import PkceError, parse_client_pkce
+from apps.companies.redirect_allowlist import is_custom_scheme_redirect, validate_redirect_to_for_company
 
 logger = logging.getLogger(__name__)
 
@@ -191,6 +192,15 @@ class ShellUISAMLLoginView(SAMLViewMixin, View):
         if rerr or not redirect_to:
             return saml_json_error(error_code='redirect_not_allowed', status=HTTPStatus.BAD_REQUEST)
 
+        try:
+            code_challenge = parse_client_pkce(
+                request.GET.get('code_challenge'),
+                request.GET.get('code_challenge_method'),
+                required=is_custom_scheme_redirect(redirect_to),
+            )
+        except PkceError as exc:
+            return saml_json_error(error_code=exc.error_code, status=HTTPStatus.BAD_REQUEST)
+
         token_delivery = _resolve_token_delivery(request=request)
         shellui_payload = {
             'company_id': int(company.id),
@@ -200,6 +210,8 @@ class ShellUISAMLLoginView(SAMLViewMixin, View):
             'token_delivery': token_delivery,
             'company_oauth_client_id': request.GET.get('company_oauth_client_id'),
         }
+        if code_challenge:
+            shellui_payload['code_challenge'] = code_challenge
         bind_oauth_social_app(request, social_app)
         try:
             with oauth_allauth_request(request, social_app=social_app):

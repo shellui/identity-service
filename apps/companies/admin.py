@@ -15,6 +15,7 @@ from apps.actions.scim_hooks import (
 from apps.authapi.provider_registry import supported_oauth_provider_slugs
 from .access import normalize_allowed_domains
 from .models import Company, CompanyGroup, CompanyMembership, CompanyOAuthClient, CompanyOAuthRedirect
+from .redirect_allowlist import normalize_oauth_redirect_entry
 
 
 class VerifiedEmailDomainsField(forms.CharField):
@@ -410,9 +411,28 @@ class CompanyOAuthClientAdmin(admin.ModelAdmin):
         return obj.social_app.provider
 
 
+class CompanyOAuthRedirectAdminForm(forms.ModelForm):
+    class Meta:
+        model = CompanyOAuthRedirect
+        fields = '__all__'
+
+    def clean(self):
+        cleaned = super().clean()
+        if self.errors:
+            return cleaned
+        kind = cleaned.get('kind') or CompanyOAuthRedirect.KIND_WEB
+        stored, err = normalize_oauth_redirect_entry(cleaned.get('base_url') or '', kind=kind)
+        if err or not stored:
+            self.add_error('base_url', err or 'Invalid base_url.')
+        else:
+            cleaned['base_url'] = stored
+        return cleaned
+
+
 @admin.register(CompanyOAuthRedirect)
 class CompanyOAuthRedirectAdmin(admin.ModelAdmin):
-    list_display = ('id', 'company', 'base_url', 'label', 'source', 'is_active', 'created_at')
-    list_filter = ('source', 'is_active', 'company')
+    form = CompanyOAuthRedirectAdminForm
+    list_display = ('id', 'company', 'kind', 'base_url', 'label', 'source', 'is_active', 'created_at')
+    list_filter = ('kind', 'source', 'is_active', 'company')
     search_fields = ('base_url', 'label', 'company__name')
     autocomplete_fields = ('company',)

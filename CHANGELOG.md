@@ -21,6 +21,16 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
 -->
 
+## [Unreleased]
+
+### ✨ Feature
+
+- **Desktop app sign-in:** a company can allow one exact custom-scheme URI (`CompanyOAuthRedirect.kind=desktop`, for example `shellui-playground://callback`). Magic link, OAuth, SAML, and invitations can return there with `shellui_auth_code`. Custom-scheme redirects require S256 PKCE. The verifier is checked at `POST /api/v1/oauth/session`, and the Origin check is skipped only after that check succeeds. Web http(s) redirects are unchanged. See [docs/desktop-apps.md](docs/desktop-apps.md).
+
+### 📚 Documentation
+
+- [docs/desktop-apps.md](docs/desktop-apps.md) describes the deep-link flow, PKCE, and the Origin rule.
+
 ## [0.7.0] - 2026-10-06
 
 ### 🐛 Bug Fixes

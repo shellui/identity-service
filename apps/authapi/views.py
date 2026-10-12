@@ -51,10 +51,19 @@ from apps.companies.access import (
 )
 from apps.companies.redirect_allowlist import (
     append_oauth_error_params,
+    is_custom_scheme_redirect,
     loopback_client_bounce_url_for_oauth_error,
+    normalize_oauth_redirect_entry,
     validate_redirect_to_for_company,
     validate_redirect_uri_for_company,
 )
+from .client_pkce import (
+    PkceError,
+    error_code_for_pkce_message,
+    parse_client_pkce,
+    presented_pkce_error,
+)
+from .desktop_return import client_redirect_reports_success, client_redirect_response
 from .renderers import PrometheusTextRenderer
 from .login_audit import LoginOutcome, oauth_provider_redirect_uri, record_login_event
 from .oauth_state import (
@@ -902,7 +911,18 @@ def _build_oauth_login_redirect(
     payload: dict,
     provider: str,
     token_delivery: str,
+    code_challenge: str | None = None,
 ) -> str:
+    challenge = (code_challenge or '').strip()
+    # A custom-scheme URI must not carry tokens in the fragment. Always use the one-time code.
+    if is_custom_scheme_redirect(redirect_to):
+        if not challenge:
+            return append_oauth_error_params(
+                redirect_to,
+                'code_challenge is required for this redirect.',
+                'pkce_required',
+            )
+        token_delivery = 'code'
     if token_delivery == 'fragment':
         return _build_callback_redirect(redirect_to, payload, provider=provider)
     delivery = create_oauth_session_delivery_code(
@@ -910,6 +930,7 @@ def _build_oauth_login_redirect(
         company=company,
         redirect_to=redirect_to,
         token_payload={**payload, 'provider': provider},
+        code_challenge=challenge,
     )
     return build_code_redirect_url(redirect_to, delivery.code)
 
@@ -930,12 +951,17 @@ def _build_shellui_authorize_url(
     client_timezone: str | None = None,
     client_device_id: str | None = None,
     switch_account: bool = False,
+    code_challenge: str | None = None,
 ) -> str:
     params: dict[str, str] = {
         'provider': str(provider).strip().lower(),
         'company_id': str(company.id),
         'redirect_to': redirect_to,
     }
+    challenge = (code_challenge or '').strip()
+    if challenge:
+        params['code_challenge'] = challenge
+        params['code_challenge_method'] = 'S256'
     if company_oauth_client_id is not None:
         params['company_oauth_client_id'] = str(company_oauth_client_id)
     tz = (client_timezone or '').strip()
@@ -959,6 +985,7 @@ def _oauth_method_choices_for_company(
     client_timezone: str | None = None,
     client_device_id: str | None = None,
     switch_account: bool = False,
+    code_challenge: str | None = None,
 ) -> list[dict]:
     current = str(current_provider or '').strip().lower()
     choices: list[dict] = []
@@ -975,6 +1002,7 @@ def _oauth_method_choices_for_company(
                     client_timezone=client_timezone,
                     client_device_id=client_device_id,
                     switch_account=switch_account and provider == current,
+                    code_challenge=code_challenge,
                 ),
                 'current': provider == current,
             }
@@ -989,6 +1017,7 @@ def _render_oauth_method_select_page(
     redirect_to: str,
     client_timezone: str | None = None,
     client_device_id: str | None = None,
+    code_challenge: str | None = None,
 ):
     methods = _oauth_method_choices_for_company(
         request,
@@ -996,6 +1025,7 @@ def _render_oauth_method_select_page(
         redirect_to,
         client_timezone=client_timezone,
         client_device_id=client_device_id,
+        code_challenge=code_challenge,
     )
     return render(
         request,
@@ -1027,7 +1057,8 @@ def _finalize_shellui_oauth_login(
     client_tz: str = '',
     client_dev: str | None = None,
     token_delivery: str | None = None,
-) -> HttpResponseRedirect:
+    code_challenge: str | None = None,
+) -> HttpResponse:
     _notify_user_logged_in_for_oauth(request, user)
     payload = _issue_shellui_tokens(user, company=company, avatar_url=avatar_url, oauth_provider=provider)
     auth_metrics.record_successful_login(provider, company_id=company.id)
@@ -1048,8 +1079,13 @@ def _finalize_shellui_oauth_login(
         payload=payload,
         provider=provider,
         token_delivery=delivery_mode,
+        code_challenge=code_challenge,
     )
-    return HttpResponseRedirect(location)
+    return client_redirect_response(
+        request,
+        location,
+        succeeded=client_redirect_reports_success(location),
+    )
 
 
 def _render_oauth_confirm_page(
@@ -1065,6 +1101,7 @@ def _render_oauth_confirm_page(
     client_dev: str | None = None,
     error_message: str | None = None,
     token_delivery: str | None = None,
+    code_challenge: str | None = None,
 ):
     confirm_token = build_oauth_confirm_token(
         user_id=user.id,
@@ -1076,6 +1113,7 @@ def _render_oauth_confirm_page(
         client_timezone=client_tz or None,
         client_device_id=client_dev,
         token_delivery=token_delivery,
+        code_challenge=code_challenge,
     )
     confirm_url = request.build_absolute_uri(reverse('shellui-oauth-confirm'))
     switch_account_url = f'{confirm_url}?{urlencode({"action": "switch", "confirm_token": confirm_token})}'
@@ -1087,6 +1125,7 @@ def _render_oauth_confirm_page(
         current_provider=provider,
         client_timezone=client_tz or None,
         client_device_id=client_dev,
+        code_challenge=code_challenge,
     )
     return render(
         request,
@@ -1140,12 +1179,16 @@ def _join_denied_response(
     *,
     decision,
     redirect_to: str | None = None,
+    request=None,
 ):
     """Return a browser redirect (when possible) or JSON 403 for blocked company joins."""
     code = decision.error_code or 'access_pending'
     message = decision.message or 'Access denied.'
     if redirect_to:
-        return HttpResponseRedirect(append_oauth_error_params(redirect_to, message, code))
+        location = append_oauth_error_params(redirect_to, message, code)
+        if request is not None:
+            return client_redirect_response(request, location, succeeded=False)
+        return HttpResponseRedirect(location)
     return JsonResponse({'error': message, 'error_code': code}, status=status.HTTP_403_FORBIDDEN)
 
 
@@ -1558,11 +1601,20 @@ class SocialAuthorizeView(APIView):
         )
         if rerr or not redirect_uri:
             return Response({'error': rerr or 'Invalid redirect_uri.'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            code_challenge = parse_client_pkce(
+                request.GET.get('code_challenge'),
+                request.GET.get('code_challenge_method'),
+                required=is_custom_scheme_redirect(redirect_uri),
+            )
+        except PkceError as exc:
+            return Response({'error': exc.message, 'error_code': exc.error_code}, status=status.HTTP_400_BAD_REQUEST)
         state, state_nonce = build_oauth_state(
             provider=provider,
             redirect_to=redirect_uri,
             company_id=company.id,
             company_oauth_client_id=company_oauth_client_id,
+            code_challenge=code_challenge or None,
         )
         try:
             authorize_url = build_authorize_url(
@@ -1622,6 +1674,12 @@ class SocialLoginView(APIView):
         )
         if rerr or not redirect_uri:
             return Response({'error': rerr or 'Invalid redirect_uri.'}, status=status.HTTP_400_BAD_REQUEST)
+        pkce_err = presented_pkce_error(
+            request.data,
+            required=is_custom_scheme_redirect(redirect_uri),
+        )
+        if pkce_err:
+            return Response({'error': pkce_err[0], 'error_code': pkce_err[1]}, status=status.HTTP_400_BAD_REQUEST)
 
         client_tz = serializer.validated_data.get('client_timezone') or ''
         client_dev = serializer.validated_data.get('client_device_id') or None
@@ -1909,6 +1967,19 @@ class ShellUIAuthorizeView(APIView):
                 message=rerr or 'Invalid redirect.',
                 error_code=err_code,
             )
+        try:
+            code_challenge = parse_client_pkce(
+                request.GET.get('code_challenge'),
+                request.GET.get('code_challenge_method'),
+                required=is_custom_scheme_redirect(redirect_to),
+            )
+        except PkceError as exc:
+            return _shellui_oauth_bounce_or_json(
+                request,
+                message=exc.message,
+                error_code=exc.error_code,
+                redirect_to_raw=redirect_to,
+            )
         if not provider:
             if not _enabled_oauth_providers(company):
                 return _shellui_oauth_bounce_or_json(
@@ -1923,6 +1994,7 @@ class ShellUIAuthorizeView(APIView):
                 redirect_to=redirect_to,
                 client_timezone=client_tz or None,
                 client_device_id=client_dev,
+                code_challenge=code_challenge or None,
             )
         if provider not in _enabled_oauth_providers(company):
             return _shellui_oauth_bounce_or_json(
@@ -1964,6 +2036,7 @@ class ShellUIAuthorizeView(APIView):
             client_timezone=client_tz or None,
             client_device_id=client_dev,
             token_delivery=token_delivery,
+            code_challenge=code_challenge or None,
         )
         resolved_oauth = resolve_oauth_client(
             provider,
@@ -2329,7 +2402,7 @@ class ShellUIOAuthCallbackView(APIView):
                 client_timezone=client_tz,
                 client_device_id=client_dev,
             )
-            return _join_denied_response(decision=join, redirect_to=redirect_to)
+            return _join_denied_response(decision=join, redirect_to=redirect_to, request=request)
         if should_skip_oauth_confirm(provider, email=email, userinfo=userinfo):
             if not is_company_access_enabled(company, user):
                 return _join_denied_response(
@@ -2339,6 +2412,7 @@ class ShellUIOAuthCallbackView(APIView):
                         message='Access denied for this company.',
                     ),
                     redirect_to=redirect_to,
+                    request=request,
                 )
             return _finalize_shellui_oauth_login(
                 request,
@@ -2350,6 +2424,7 @@ class ShellUIOAuthCallbackView(APIView):
                 client_tz=client_tz,
                 client_dev=client_dev,
                 token_delivery=state_payload.get('token_delivery'),
+                code_challenge=state_payload.get('code_challenge'),
             )
         return _render_oauth_confirm_page(
             request,
@@ -2362,6 +2437,7 @@ class ShellUIOAuthCallbackView(APIView):
             client_tz=client_tz,
             client_dev=client_dev,
             token_delivery=state_payload.get('token_delivery'),
+            code_challenge=state_payload.get('code_challenge'),
         )
 
 
@@ -2407,6 +2483,9 @@ class ShellUIOAuthConfirmView(APIView):
         client_dev = payload.get('client_device_id')
         if client_dev:
             authorize_params['client_device_id'] = client_dev
+        if payload.get('code_challenge'):
+            authorize_params['code_challenge'] = payload['code_challenge']
+            authorize_params['code_challenge_method'] = 'S256'
         authorize_path = f"{reverse('shellui-authorize')}?{urlencode(authorize_params)}"
         return HttpResponseRedirect(request.build_absolute_uri(authorize_path))
     def post(self, request):
@@ -2438,6 +2517,8 @@ class ShellUIOAuthConfirmView(APIView):
                 client_tz=payload.get('client_timezone') or '',
                 client_dev=payload.get('client_device_id'),
                 error_message=rerr or 'Invalid redirect.',
+                token_delivery=payload.get('token_delivery'),
+                code_challenge=payload.get('code_challenge'),
             )
 
         provider = payload['provider']
@@ -2449,6 +2530,7 @@ class ShellUIOAuthConfirmView(APIView):
                     message='Access denied for this company.',
                 ),
                 redirect_to=redirect_to,
+                request=request,
             )
 
         return _finalize_shellui_oauth_login(
@@ -2461,6 +2543,7 @@ class ShellUIOAuthConfirmView(APIView):
             client_tz=payload.get('client_timezone') or '',
             client_dev=payload.get('client_device_id'),
             token_delivery=payload.get('token_delivery'),
+            code_challenge=payload.get('code_challenge'),
         )
 
 
@@ -2471,7 +2554,10 @@ class ShellUIOAuthConfirmView(APIView):
         description=(
             'Preferred token delivery after OAuth login (H-03). The browser is redirected to '
             f'`redirect_to?{OAUTH_SESSION_CODE_PARAM}=…` instead of a URL fragment. '
-            'POST the code with the same `redirect_to` URL; optional Origin header must match when present.'
+            'POST the code with the same `redirect_to` URL. For an http(s) redirect, an Origin '
+            'header must match that origin when the header is present. For a custom-scheme '
+            'redirect, send `code_verifier` (S256). The Origin check is skipped only after that '
+            'verifier matches, because a desktop app has no matching browser origin.'
         ),
         auth=[],
         request=ShellUIOAuthSessionExchangeSerializer,
@@ -2493,9 +2579,14 @@ class ShellUIOAuthSessionView(APIView):
             code=validated['auth_code'],
             redirect_to=validated['redirect_to'],
             request_origin=(request.headers.get('Origin') or '').strip() or None,
+            code_verifier=validated.get('code_verifier') or None,
         )
         if err or not payload:
-            return Response({'error': err or 'Invalid auth code.'}, status=status.HTTP_400_BAD_REQUEST)
+            body = {'error': err or 'Invalid auth code.'}
+            pkce_code = error_code_for_pkce_message(err)
+            if pkce_code:
+                body['error_code'] = pkce_code
+            return Response(body, status=status.HTTP_400_BAD_REQUEST)
         return Response(payload)
 
 
@@ -2536,6 +2627,9 @@ class ShellUIOAuthExchangeView(APIView):
         )
         if rerr or not redirect_uri:
             return Response({'error': rerr or 'Invalid redirect_uri.'}, status=status.HTTP_400_BAD_REQUEST)
+        pkce_err = presented_pkce_error(request.data, required=is_custom_scheme_redirect(redirect_uri))
+        if pkce_err:
+            return Response({'error': pkce_err[0], 'error_code': pkce_err[1]}, status=status.HTTP_400_BAD_REQUEST)
         company_oauth_client_id = validated.get('company_oauth_client_id')
         _row, oauth_client_err = _get_company_oauth_client(company, provider, company_oauth_client_id)
         if oauth_client_err:
@@ -4099,6 +4193,7 @@ def _oauth_redirect_payload(row: CompanyOAuthRedirect) -> dict:
     return {
         'id': row.id,
         'base_url': row.base_url,
+        'kind': row.kind or CompanyOAuthRedirect.KIND_WEB,
         'label': row.label or '',
         'source': row.source or CompanyOAuthRedirect.SOURCE_MANUAL,
         'is_active': bool(row.is_active),
@@ -4111,16 +4206,18 @@ def _oauth_redirect_payload(row: CompanyOAuthRedirect) -> dict:
         tags=['oauth-redirects'],
         summary='List company OAuth redirect allowlist (staff or company owner)',
         description=(
-            'Origins allowed as post-OAuth bounce targets (`redirect_to`). '
+            'Targets allowed as post-login bounce destinations (`redirect_to`). '
+            '`kind=web` (default) is an http(s) origin prefix. `kind=desktop` is one exact '
+            'custom-scheme URI, for example `shellui-playground://callback`. '
             'Loopback (localhost / 127.0.0.1 / ::1) is allowed when DEBUG or '
-            'OAUTH_ALLOW_LOOPBACK_REDIRECTS=true. Empty allowlist denies other redirects. '
+            'OAUTH_ALLOW_LOOPBACK_REDIRECTS=true. Empty allowlist denies other http(s) redirects. '
             'Entries with `source=hosting` are synced from hosting-service preview sites.'
         ),
         operation_id='api_v1_oauth_redirects_list',
     ),
     post=extend_schema(
         tags=['oauth-redirects'],
-        summary='Add OAuth redirect allowlist origin (staff or company owner)',
+        summary='Add an OAuth redirect allowlist entry (staff or company owner)',
         request=ShellUIAdminOAuthRedirectCreateSerializer,
     ),
 )
@@ -4136,21 +4233,21 @@ class ShellUIAdminOAuthRedirectListView(APIView):
         return Response([_oauth_redirect_payload(r) for r in rows])
 
     def post(self, request):
-        from apps.companies.redirect_allowlist import normalize_allowlist_origin
-
         _actor, company, err = _require_staff_or_company_owner(request)
         if err:
             return err
         serializer = ShellUIAdminOAuthRedirectCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         validated = serializer.validated_data
-        origin, nerr = normalize_allowlist_origin(validated['base_url'])
-        if nerr or not origin:
+        kind = str(validated.get('kind') or CompanyOAuthRedirect.KIND_WEB)
+        stored, nerr = normalize_oauth_redirect_entry(validated['base_url'], kind=kind)
+        if nerr or not stored:
             return Response({'error': nerr or 'Invalid base_url.'}, status=status.HTTP_400_BAD_REQUEST)
         try:
             row = CompanyOAuthRedirect.objects.create(
                 company=company,
-                base_url=origin,
+                base_url=stored,
+                kind=kind,
                 label=str(validated.get('label') or '').strip()[:150],
                 source=str(validated.get('source') or CompanyOAuthRedirect.SOURCE_MANUAL),
                 is_active=bool(validated.get('is_active', True)),
@@ -4194,8 +4291,6 @@ class ShellUIAdminOAuthRedirectDetailView(APIView):
         return Response(_oauth_redirect_payload(row))
 
     def patch(self, request, pk):
-        from apps.companies.redirect_allowlist import normalize_allowlist_origin
-
         _actor, company, err = _require_staff_or_company_owner(request)
         if err:
             return err
@@ -4206,11 +4301,14 @@ class ShellUIAdminOAuthRedirectDetailView(APIView):
         serializer = ShellUIAdminOAuthRedirectUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         validated = serializer.validated_data
-        if 'base_url' in validated:
-            origin, nerr = normalize_allowlist_origin(validated['base_url'])
-            if nerr or not origin:
+        next_kind = str(validated.get('kind') or row.kind or CompanyOAuthRedirect.KIND_WEB)
+        next_base = validated.get('base_url', row.base_url)
+        if 'base_url' in validated or 'kind' in validated:
+            stored, nerr = normalize_oauth_redirect_entry(next_base, kind=next_kind)
+            if nerr or not stored:
                 return Response({'error': nerr or 'Invalid base_url.'}, status=status.HTTP_400_BAD_REQUEST)
-            row.base_url = origin
+            row.base_url = stored
+            row.kind = next_kind
         if 'label' in validated:
             row.label = str(validated.get('label') or '').strip()[:150]
         if 'is_active' in validated:
@@ -4281,6 +4379,7 @@ class ShellUIHostingOAuthRedirectSyncView(APIView):
             base_url=origin,
             defaults={
                 'label': label,
+                'kind': CompanyOAuthRedirect.KIND_WEB,
                 'source': CompanyOAuthRedirect.SOURCE_HOSTING,
                 'is_active': True,
             },

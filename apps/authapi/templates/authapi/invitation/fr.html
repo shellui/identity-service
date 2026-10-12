@@ -6,7 +6,11 @@
   <p>{{ inviter_name }} vous invite à rejoindre {{ company_name }}.</p>
   {% if app_url %}
   <p><a href="{{ app_url }}">Ouvrir {{ company_name }}</a></p>
+  {% if desktop_redirect %}
+  <p>Si le bouton n'ouvre pas l'application, copiez ce lien :</p>
+  {% else %}
   <p>Si le bouton ne fonctionne pas, copiez cette URL dans votre navigateur :</p>
+  {% endif %}
   <p><a href="{{ app_url }}">{{ app_url }}</a></p>
   {% endif %}
   <p>Connectez-vous avec {{ email }} pour commencer.</p>
