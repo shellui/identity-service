@@ -26,18 +26,6 @@ from apps.actions.scheduled_jobs import (
 
 PREFIX = 'shellui_auth_scheduled_job'
 
-METRIC_NAMES = (
-    f'{PREFIX}_runs_total',
-    f'{PREFIX}_items_total',
-    f'{PREFIX}_last_success_timestamp_seconds',
-    f'{PREFIX}_last_run_timestamp_seconds',
-    f'{PREFIX}_last_run_duration_seconds',
-    f'{PREFIX}_overdue',
-    'shellui_auth_scheduler_enabled',
-    'shellui_auth_scheduler_redis_up',
-    'shellui_auth_scheduler_beat_last_seen_timestamp_seconds',
-)
-
 
 class ScheduledJobsCollector:
     def collect(self):

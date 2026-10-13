@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from allauth.core.exceptions import ImmediateHttpResponse
 from allauth.socialaccount.adapter import DefaultSocialAccountAdapter
 from allauth.socialaccount.models import SocialApp
 from django.core.exceptions import MultipleObjectsReturned

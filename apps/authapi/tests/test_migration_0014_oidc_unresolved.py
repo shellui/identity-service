@@ -1,9 +1,10 @@
 import importlib
 
 from allauth.socialaccount.models import SocialAccount
-from django.apps import apps
 from django.contrib.auth import get_user_model
 from django.test import TestCase
+
+from apps.authapi.tests.test_migration_0014_oidc import _HistoricalApps, ensure_oidc_audit_table
 
 User = get_user_model()
 _migration = importlib.import_module('apps.authapi.migrations.0014_migrate_oidc_social_account_keys')
@@ -19,7 +20,8 @@ class OidcMigration0014UnresolvedProviderTests(TestCase):
             extra_data={'userinfo': {'iss': 'https://issuer.example.com'}},
         )
 
-        _migration.forwards(apps, None)
+        ensure_oidc_audit_table()
+        _migration.forwards(_HistoricalApps(), None)
 
         account.refresh_from_db()
         self.assertEqual(account.provider, 'openid_connect')

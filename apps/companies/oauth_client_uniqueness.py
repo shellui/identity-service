@@ -59,7 +59,6 @@ def compute_oauth_client_dedupe_key(
 def sync_company_oauth_client_uniqueness_fields(row: CompanyOAuthClient) -> None:
     app = row.social_app
     slug = social_app_catalog_slug(app)
-    row.catalog_slug = slug
     row.dedupe_key = compute_oauth_client_dedupe_key(app, catalog_slug=slug)
 
 

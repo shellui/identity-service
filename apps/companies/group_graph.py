@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from django.contrib.auth import get_user_model
-from django.db.models import QuerySet
 
 from .models import Company, CompanyGroup
 
@@ -66,24 +65,6 @@ def effective_user_ids_for_group(group: CompanyGroup) -> set[int]:
         user_ids.update(nested.members.values_list('pk', flat=True))
         stack.extend(nested.member_groups.filter(company_id=company_id))
     return user_ids
-
-
-def effective_users_for_group(group: CompanyGroup) -> QuerySet:
-    """QuerySet of users with effective membership in ``group`` (nested groups included)."""
-    ids = effective_user_ids_for_group(group)
-    if not ids:
-        return User.objects.none()
-    return User.objects.filter(pk__in=ids)
-
-
-def effective_users_for_company_groups(company: Company, groups: QuerySet[CompanyGroup]) -> QuerySet:
-    """Union of effective users across multiple groups in a company."""
-    all_ids: set[int] = set()
-    for group in groups.filter(company=company):
-        all_ids.update(effective_user_ids_for_group(group))
-    if not all_ids:
-        return User.objects.none()
-    return User.objects.filter(pk__in=all_ids)
 
 
 def effective_group_ids_for_user(user: User, company: Company) -> set[int]:

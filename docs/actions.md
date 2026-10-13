@@ -45,7 +45,7 @@ Magic link sign-in emails are not sent through webhook rules. identity-service a
 | `identity.user.invited` | `POST /api/v1/invitations` (admin panel **Invite user**) | No account exists yet: payload has `invitation_id`, `email`, `language` (invitation language), `invited_by`, `invitation_url` (app URL, not a credential), no `user_id`. While an enabled rule exists, identity-service skips its own invitation email |
 | `identity.user.invitation_revoked` | `POST /api/v1/invitations/{id}/revoke` | Same payload plus `revoked_by`. Sign-in with that email is refused until a new invitation |
 | `identity.user.deleted` | Django admin deletes a User, `DELETE /api/v1/users/{id}` (admin panel), or `DELETE /api/v1/user` (self-service) | Admin panel and self-service deletes emit for the current company only and keep accounts linked to other companies; Django admin emits **once per membership** before deleting the account |
-| `identity.user.updated` | Not emitted | Registered with `emit_by_default=false` |
+| `identity.user.updated` | Name, email, username, explicit avatar, language, region, company access, Django active flag, direct groups, or owner role changed via the API, Django admin, or SCIM | Payload includes current values and `changed_fields`. Unchanged saves do not emit. No tokens or sign-in links. Same signing and retry as other webhooks |
 | `identity.group.created` | SCIM or Django admin group create | |
 | `identity.group.updated` | Display name / external id change | |
 | `identity.group.deleted` | Group removed | |

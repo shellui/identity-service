@@ -20,11 +20,8 @@ from apps.authapi.provider_registry import (
     ProviderCatalogEntry,
     catalog_entry_for_social_app,
     resolve_catalog_slug,
-    supported_oauth_provider_slugs,
 )
 from apps.companies.models import CompanyOAuthClient
-
-SUPPORTED_OAUTH_PROVIDERS = supported_oauth_provider_slugs()
 
 
 @dataclass(frozen=True)
@@ -333,41 +330,6 @@ def fetch_provider_userinfo(
                 )
             raise ValueError('OAuth provider did not return a user id.')
         return sociallogin_userinfo(sociallogin)
-
-
-def complete_oauth_social_login(
-    *,
-    request,
-    provider: str,
-    redirect_uri: str,
-    company_id: int,
-    company_oauth_client_id: int | None,
-    pkce_code_verifier: str | None = None,
-):
-    resolved = resolve_oauth_client(
-        provider,
-        company_id=company_id,
-        company_oauth_client_id=company_oauth_client_id,
-    )
-    social_app = get_social_app_for_client(resolved)
-    sociallogin, token_data = exchange_allauth_code(
-        request,
-        social_app=social_app,
-        redirect_uri=redirect_uri,
-        pkce_code_verifier=pkce_code_verifier,
-    )
-    if sociallogin is None:
-        from apps.authapi.oauth_errors import OAuthSubjectMismatchError
-
-        raise OAuthSubjectMismatchError(
-            'OAuth userinfo subject does not match the identity token.',
-        )
-    userinfo = sociallogin_userinfo(sociallogin)
-    access_token = str(token_data.get('access_token') or '')
-    id_token = token_data.get('id_token')
-    id_str = id_token.strip() if isinstance(id_token, str) and id_token.strip() else None
-    token_bundle = OAuthTokenBundle(access_token=access_token, id_token=id_str)
-    return sociallogin, token_bundle, userinfo, resolved
 
 
 def oauth_skip_confirm_provider_ids() -> frozenset[str]:

@@ -20,7 +20,7 @@ Sign-in events cannot trigger webhook rules: anonymous traffic can produce faile
 
 Scheduled job runs are recorded as two staff-only platform events, described in [Platform events (staff only)](#platform-events-staff-only).
 
-`identity.user.updated` is not emitted by default, so it is not logged either.
+`identity.user.updated` is logged when a tracked profile field changes. `changed_fields` names those fields. A `false` value such as `active: false` is omitted from `data` (empty values are dropped) and is still present on the webhook body.
 
 ## Row format
 
@@ -113,10 +113,6 @@ These events never reach company owners or other companies:
 - they cannot trigger webhook rules and are never forwarded to email-service
 
 They expire after the default retention of 7 days, like the runs.
-
-## Deprecated: `/api/v1/login-events`
-
-`GET /api/v1/login-events` and `GET /api/v1/login-events/{id}` still answer with the former login audit shape (`outcome`, `provider`, `client_country`, …), reading sign-in rows from the event log. Use `GET /api/v1/events?event_type=identity.auth.login.succeeded,identity.auth.login.failed` instead.
 
 ## Related
 

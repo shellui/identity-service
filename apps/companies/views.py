@@ -3,6 +3,8 @@ from rest_framework import mixins, status, viewsets
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from apps.actions.user_hooks import emit_profile_snapshots, snapshot_profiles_for_ids
+
 from .models import Company
 from .serializers import CompanySerializer, CompanyUpdateSerializer
 
@@ -94,6 +96,9 @@ class CompanyViewSet(
                     {'error': 'All owners must be members of this company.'},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
+            before_ids = set(company.owners.values_list('pk', flat=True))
+            befores = snapshot_profiles_for_ids(company, before_ids.symmetric_difference(owner_ids))
             company.owners.set(members_qs)
+            emit_profile_snapshots(company, befores, source='rest')
 
         return Response(CompanySerializer(company).data)

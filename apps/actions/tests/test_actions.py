@@ -1,4 +1,5 @@
 import json
+from dataclasses import replace
 from datetime import timedelta
 from unittest.mock import patch
 
@@ -8,11 +9,13 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from apps.actions.delivery import backoff_seconds, claim_next_pending_outbox, deliver_outbox_row
+from apps.actions.delivery import claim_next_pending_outbox, deliver_outbox_row
 from apps.actions.emit import emit_event
+from apps.actions.registry import get_event_type
 from apps.actions.handlers.webhook import WebhookDeliveryError
 from apps.actions.models import ActionOutbox, ActionRule, DeliveryAttempt
-from apps.actions.ssrf import SSRFError, validate_webhook_url
+from apps.actions.ssrf import SSRFError, resolve_webhook_endpoint
+from apps.actions.webhook_retry import backoff_seconds
 from apps.actions.webhook_signing import encode_webhook_envelope, sign_webhook_body
 from apps.actions.webhook_transport import WebhookPostResult
 from apps.companies.models import Company
@@ -63,14 +66,9 @@ class EmitEventTests(TestCase):
         self.assertEqual(ActionOutbox.objects.count(), 0)
 
     def test_emit_by_default_false_skips_without_force(self):
-        ActionRule.objects.create(
-            company=self.company_a,
-            name='Updated',
-            event_type='identity.user.updated',
-            action_kind=ActionRule.ACTION_WEBHOOK,
-            config={'url': 'https://example.com/h', 'secret': 'x'},
-        )
-        rows = emit_event('identity.user.updated', self.company_a, {'user_id': 1})
+        quiet = replace(get_event_type('identity.user.created'), emit_by_default=False)
+        with patch('apps.actions.emit.get_event_type', return_value=quiet):
+            rows = emit_event('identity.user.created', self.company_a, {'user_id': 1})
         self.assertEqual(rows, [])
         self.assertEqual(ActionOutbox.objects.count(), 0)
 
@@ -133,11 +131,11 @@ class WebhookHandlerTests(TestCase):
 
     def test_ssrf_blocks_private_ip(self):
         with self.assertRaises(SSRFError):
-            validate_webhook_url('http://127.0.0.1/hook')
+            resolve_webhook_endpoint('http://127.0.0.1/hook')
         with self.assertRaises(SSRFError):
-            validate_webhook_url('http://100.100.100.200/latest/meta-data/')
+            resolve_webhook_endpoint('http://100.100.100.200/latest/meta-data/')
         with self.assertRaises(SSRFError):
-            validate_webhook_url('http://[::ffff:127.0.0.1]/hook')
+            resolve_webhook_endpoint('http://[::ffff:127.0.0.1]/hook')
         with self.assertRaises(WebhookDeliveryError):
             from apps.actions.handlers.webhook import deliver_webhook_action
 

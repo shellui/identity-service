@@ -75,13 +75,6 @@ def validate_refresh_session(refresh: ShellUIRefreshToken) -> tuple[RefreshToken
     return session, None
 
 
-def get_refresh_session_for_jti(jti: str) -> RefreshTokenSession | None:
-    normalized = (jti or '').strip()
-    if not normalized:
-        return None
-    return RefreshTokenSession.objects.filter(jti=normalized).first()
-
-
 def revoke_refresh_session(session: RefreshTokenSession) -> None:
     if session.revoked_at is None:
         session.revoked_at = timezone.now()
