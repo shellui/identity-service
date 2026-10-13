@@ -20,7 +20,7 @@ from apps.actions.scim_hooks import (
 from apps.authapi.provider_registry import supported_oauth_provider_slugs
 from .access import normalize_allowed_domains
 from .models import Company, CompanyGroup, CompanyMembership, CompanyOAuthClient, CompanyOAuthRedirect
-from .redirect_allowlist import normalize_allowlist_origin, normalize_registered_scheme
+from .redirect_allowlist import normalize_allowlist_origin, normalize_registered_schemes
 
 
 class VerifiedEmailDomainsField(forms.CharField):
@@ -75,11 +75,41 @@ class AllowedEmailDomainsField(forms.CharField):
         return normalize_allowed_domains(value)
 
 
+class DesktopRedirectSchemesField(forms.CharField):
+    """Comma-separated schemes in the widget; list[str] in cleaned_data / model."""
+
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault('required', False)
+        kwargs.setdefault(
+            'widget',
+            forms.TextInput(attrs={'size': 60, 'placeholder': 'shellui-playground, com.example.desktop'}),
+        )
+        kwargs.setdefault(
+            'help_text',
+            'Comma-separated lowercase custom URI schemes. Empty turns desktop sign-in off.',
+        )
+        super().__init__(*args, **kwargs)
+
+    def prepare_value(self, value):
+        if isinstance(value, list):
+            return ', '.join(str(item) for item in value if str(item).strip())
+        return '' if value in (None, '') else value
+
+    def to_python(self, value):
+        if value in self.empty_values:
+            return []
+        schemes, err = normalize_registered_schemes(value)
+        if err:
+            raise forms.ValidationError(err)
+        return schemes
+
+
 class CompanyAdminForm(forms.ModelForm):
     """Edit allowed_email_domains as a comma-separated list instead of raw JSON."""
 
     allowed_email_domains = AllowedEmailDomainsField(label='Allowed email domains')
     verified_email_domains = VerifiedEmailDomainsField(label='Verified email domains (SAML)')
+    desktop_redirect_schemes = DesktopRedirectSchemesField(label='Desktop redirect schemes')
 
     class Meta:
         model = Company
@@ -91,6 +121,7 @@ class CompanyAdminForm(forms.ModelForm):
             'verified_email_domains',
             'enable_magic_link',
             'data_retention_days',
+            'desktop_redirect_schemes',
             'owners',
         )
 
@@ -104,6 +135,7 @@ class CompanyAdminForm(forms.ModelForm):
             self.initial['verified_email_domains'] = normalize_allowed_domains(
                 self.instance.verified_email_domains
             )
+            self.initial['desktop_redirect_schemes'] = list(self.instance.desktop_redirect_schemes or [])
         self.fields['access_mode'].help_text = (
             'Public: anyone who signs in gets access for this company. '
             'Domain: only listed email domains get access; others are blocked and owners emailed. '
@@ -142,7 +174,7 @@ class CompanyMembershipInline(admin.TabularInline):
 class CompanyOAuthClientInline(admin.TabularInline):
     model = CompanyOAuthClient
     extra = 1
-    fields = ('social_app', 'is_active', 'desktop_redirect_scheme', 'created_at')
+    fields = ('social_app', 'is_active', 'created_at')
     readonly_fields = ('created_at',)
 
 
@@ -165,6 +197,16 @@ class CompanyAdmin(admin.ModelAdmin):
     readonly_fields = ('retention_status_display',)
     fieldsets = (
         (None, {'fields': ('name', 'slug')}),
+        (
+            'Desktop apps',
+            {
+                'fields': ('desktop_redirect_schemes',),
+                'description': (
+                    'Custom URI schemes for desktop apps that sign in to this company. '
+                    'Empty turns desktop sign-in off. The same list applies to OAuth, magic link, and SAML.'
+                ),
+            },
+        ),
         (
             'Join access',
             {
@@ -437,30 +479,13 @@ class CompanyGroupAdmin(admin.ModelAdmin):
         super().delete_queryset(request, queryset)
 
 
-class CompanyOAuthClientAdminForm(forms.ModelForm):
-    class Meta:
-        model = CompanyOAuthClient
-        fields = '__all__'
-
-    def clean_desktop_redirect_scheme(self):
-        scheme, err = normalize_registered_scheme(self.cleaned_data.get('desktop_redirect_scheme') or '')
-        if err:
-            raise forms.ValidationError(err)
-        return scheme or ''
-
-
-CompanyOAuthClientInline.form = CompanyOAuthClientAdminForm
-
-
 @admin.register(CompanyOAuthClient)
 class CompanyOAuthClientAdmin(admin.ModelAdmin):
-    form = CompanyOAuthClientAdminForm
     list_display = (
         'id',
         'company',
         'provider',
         'social_app',
-        'desktop_redirect_scheme',
         'is_active',
         'created_at',
     )
