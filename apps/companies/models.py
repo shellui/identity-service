@@ -109,6 +109,15 @@ class Company(models.Model):
             'for this company. Requires deployment MAGIC_LINK_ENABLED.'
         ),
     )
+    desktop_redirect_schemes = models.JSONField(
+        default=list,
+        blank=True,
+        help_text=(
+            'Lowercase custom URI schemes for desktop apps that sign in to this company, '
+            'for example ["shellui-playground"]. Empty turns desktop sign-in off. '
+            'A redirect is accepted when its scheme is in this list.'
+        ),
+    )
     DEFAULT_DATA_RETENTION_DAYS = 7
     data_retention_days = models.PositiveSmallIntegerField(
         default=DEFAULT_DATA_RETENTION_DAYS,
@@ -248,16 +257,6 @@ class CompanyOAuthClient(models.Model):
     )
     dedupe_key = models.CharField(max_length=512, null=True, blank=True)
     is_active = models.BooleanField(default=True)
-    desktop_redirect_scheme = models.CharField(
-        max_length=64,
-        blank=True,
-        default='',
-        help_text=(
-            'Lowercase custom URI scheme for this application, for example shellui-playground. '
-            'Empty keeps desktop sign-in off for this application. '
-            'A redirect is accepted only when its scheme matches.'
-        ),
-    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -298,7 +297,7 @@ class CompanyOAuthClient(models.Model):
 class CompanyOAuthRedirect(models.Model):
     """Allowed http(s) post-login bounce origins for a company.
 
-    Desktop sign-in uses ``CompanyOAuthClient.desktop_redirect_scheme``, not a row here.
+    Desktop sign-in uses ``Company.desktop_redirect_schemes``, not a row here.
     """
 
     SOURCE_MANUAL = 'manual'
