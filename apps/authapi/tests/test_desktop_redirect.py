@@ -1,4 +1,4 @@
-"""Custom-scheme desktop redirects: exact allowlist match and S256 PKCE."""
+"""Custom-scheme desktop redirects: one registered scheme per company and S256 PKCE."""
 
 from __future__ import annotations
 
@@ -36,10 +36,14 @@ DESKTOP = 'shellui-playground://callback'
 WEB = 'https://shell.example.com/login/callback'
 
 
-def _return_href(page: str) -> str:
-    match = re.search(r'id="return-to-app"[^>]*href="([^"]+)"', page)
+def _href_by_id(page: str, element_id: str) -> str:
+    match = re.search(rf'id="{element_id}"[^>]*href="([^"]+)"', page)
     assert match, page
     return html.unescape(match.group(1))
+
+
+def _return_href(page: str) -> str:
+    return _href_by_id(page, 'return-to-app')
 
 
 @override_settings(
@@ -68,15 +72,11 @@ class DesktopRedirectApiTests(TestCase):
             social_app=self.app,
             is_active=True,
         )
+        self.company.desktop_redirect_scheme = 'shellui-playground'
+        self.company.save(update_fields=['desktop_redirect_scheme'])
         CompanyOAuthRedirect.objects.create(
             company=self.company,
             base_url='https://shell.example.com',
-            is_active=True,
-        )
-        CompanyOAuthRedirect.objects.create(
-            company=self.company,
-            kind=CompanyOAuthRedirect.KIND_DESKTOP,
-            base_url=DESKTOP,
             is_active=True,
         )
         self.owner = User.objects.create_user(username='owner', email='owner@example.com', password='x')
@@ -101,56 +101,48 @@ class DesktopRedirectApiTests(TestCase):
                 return line[start:end]
         self.fail('confirm token missing')
 
-    def test_owner_can_add_exact_desktop_redirect(self):
+    def test_owner_can_register_and_clear_a_scheme(self):
         self.client.force_authenticate(user=self.owner)
-        create = self.client.post(
-            f'/api/v1/oauth-redirects?company_id={self.company.id}',
-            {
-                'base_url': 'Com.Shellui.App://Auth',
-                'kind': 'desktop',
-                'label': 'Playground',
-            },
+        rejected = self.client.patch(
+            f'/api/v1/companies/{self.company.id}/',
+            {'desktop_redirect_scheme': 'Com.Shellui.App'},
             format='json',
         )
-        self.assertEqual(create.status_code, 201, create.data)
-        self.assertEqual(create.data['kind'], 'desktop')
-        self.assertEqual(create.data['base_url'], 'com.shellui.app://auth')
-        listing = self.client.get(f'/api/v1/oauth-redirects?company_id={self.company.id}')
-        kinds = {row['base_url']: row['kind'] for row in listing.data}
-        self.assertEqual(kinds['https://shell.example.com'], 'web')
-        self.assertEqual(kinds[DESKTOP], 'desktop')
-
-    def test_desktop_allowlist_rejects_bad_schemes_and_prefix(self):
-        self.client.force_authenticate(user=self.owner)
-        for base_url in (
-            'javascript:alert(1)',
-            'file:///etc/passwd',
-            'https://app.example.com',
-            'shellui-playground://callback#frag',
-            'shellui-playground://user@callback',
-        ):
-            response = self.client.post(
-                f'/api/v1/oauth-redirects?company_id={self.company.id}',
-                {'base_url': base_url, 'kind': 'desktop'},
+        self.assertEqual(rejected.status_code, 400, rejected.data)
+        for scheme in ('http', 'https', 'javascript', 'data', 'file', 'vbscript', 'about', 'blob'):
+            response = self.client.patch(
+                f'/api/v1/companies/{self.company.id}/',
+                {'desktop_redirect_scheme': scheme},
                 format='json',
             )
-            self.assertEqual(response.status_code, 400, response.data)
-        duplicate = self.client.post(
-            f'/api/v1/oauth-redirects?company_id={self.company.id}',
-            {'base_url': DESKTOP, 'kind': 'desktop'},
+            self.assertEqual(response.status_code, 400, scheme)
+        updated = self.client.patch(
+            f'/api/v1/companies/{self.company.id}/',
+            {'desktop_redirect_scheme': 'com.shellui.app'},
             format='json',
         )
-        self.assertEqual(duplicate.status_code, 400)
-        self.assertIn('already on the allowlist', duplicate.data['error'])
+        self.assertEqual(updated.status_code, 200, updated.data)
+        self.assertEqual(updated.data['desktop_redirect_scheme'], 'com.shellui.app')
+        self.company.refresh_from_db()
+        self.assertEqual(self.company.desktop_redirect_scheme, 'com.shellui.app')
+        cleared = self.client.patch(
+            f'/api/v1/companies/{self.company.id}/',
+            {'desktop_redirect_scheme': ''},
+            format='json',
+        )
+        self.assertEqual(cleared.status_code, 200, cleared.data)
+        self.assertEqual(cleared.data['desktop_redirect_scheme'], '')
 
-    def test_member_cannot_edit_allowlist(self):
+    def test_member_cannot_edit_scheme(self):
         self.client.force_authenticate(user=self.member)
-        response = self.client.post(
-            f'/api/v1/oauth-redirects?company_id={self.company.id}',
-            {'base_url': 'com.shellui.other://callback', 'kind': 'desktop'},
+        response = self.client.patch(
+            f'/api/v1/companies/{self.company.id}/',
+            {'desktop_redirect_scheme': 'com.shellui.other'},
             format='json',
         )
         self.assertIn(response.status_code, (401, 403))
+        self.company.refresh_from_db()
+        self.assertEqual(self.company.desktop_redirect_scheme, 'shellui-playground')
 
     def test_authorize_requires_s256_pkce_for_desktop_only(self):
         missing = self.client.get(
@@ -216,12 +208,26 @@ class DesktopRedirectApiTests(TestCase):
         self.assertIn('code_challenge_method=S256', content)
         self.assertNotIn(VERIFIER, content)
 
-    def test_unlisted_and_prefix_desktop_targets_are_rejected(self):
+    def test_scheme_match_accepts_other_paths_and_rejects_other_schemes(self):
         for redirect_to in (
             'shellui-playground://callback/extra',
             'shellui-playground://other',
+        ):
+            response = self.client.get(
+                '/api/v1/authorize',
+                {
+                    'provider': 'github',
+                    'company_id': self.company.id,
+                    'redirect_to': redirect_to,
+                    'code_challenge': CHALLENGE,
+                    'code_challenge_method': 'S256',
+                },
+            )
+            self.assertEqual(response.status_code, 302, redirect_to)
+        for redirect_to in (
             'javascript:alert(1)',
             'shellui-playground://user@callback',
+            'com.other.app://callback',
         ):
             response = self.client.get(
                 '/api/v1/authorize',
@@ -583,7 +589,7 @@ class DesktopRedirectApiTests(TestCase):
         )
         self.assertEqual(consumed.status_code, 200, consumed.data)
 
-    def test_invitation_accepts_exact_desktop_app_url(self):
+    def test_invitation_accepts_a_registered_scheme(self):
         self.client.force_authenticate(user=self.owner)
         with self.captureOnCommitCallbacks(execute=True):
             created = self.client.post(
@@ -597,13 +603,19 @@ class DesktopRedirectApiTests(TestCase):
         self.assertIn(DESKTOP, html_body)
         self.assertNotIn(VERIFIER, html_body)
 
-        prefix = self.client.post(
+        other_path = self.client.post(
             f'/api/v1/invitations?company_id={self.company.id}',
-            {'email': 'grace@example.com', 'language': 'en', 'app_url': DESKTOP + '/extra'},
+            {'email': 'grace@example.com', 'language': 'en', 'app_url': 'shellui-playground://auth/done'},
             format='json',
         )
-        self.assertEqual(prefix.status_code, 400)
-        self.assertEqual(prefix.data['error_code'], 'invalid_app_url')
+        self.assertEqual(other_path.status_code, 201, other_path.data)
+        other_scheme = self.client.post(
+            f'/api/v1/invitations?company_id={self.company.id}',
+            {'email': 'june@example.com', 'language': 'en', 'app_url': 'com.other.app://callback'},
+            format='json',
+        )
+        self.assertEqual(other_scheme.status_code, 400)
+        self.assertEqual(other_scheme.data['error_code'], 'invalid_app_url')
 
         mail.outbox.clear()
         with self.captureOnCommitCallbacks(execute=True):
@@ -672,6 +684,112 @@ class DesktopRedirectApiTests(TestCase):
         self.assertNotEqual(allowed.data.get('error_code'), 'pkce_required')
         self.assertTrue(exchange.called)
 
+    def test_browser_errors_are_html_and_api_clients_stay_json(self):
+        browser = Client()
+        params = {
+            'provider': 'github',
+            'company_id': self.company.id,
+            'redirect_to': 'javascript:alert(1)',
+            'code_challenge': CHALLENGE,
+            'code_challenge_method': 'S256',
+        }
+        page = browser.get('/api/v1/authorize', params, HTTP_ACCEPT='text/html')
+        self.assertEqual(page.status_code, 400)
+        body = page.content.decode()
+        self.assertIn('text/html', page['Content-Type'])
+        self.assertIn('data-error-code="invalid_redirect"', body)
+        self.assertIn('Go back', body)
+        self.assertNotIn('id="back-to-app"', body)
+        self.assertNotIn('javascript:', body)
+        self.assertNotIn(CHALLENGE, body)
+
+        french = browser.get(
+            '/api/v1/authorize',
+            params,
+            HTTP_ACCEPT='text/html',
+            HTTP_ACCEPT_LANGUAGE='fr',
+        )
+        french_body = html.unescape(french.content.decode())
+        self.assertIn('lang="fr"', french_body)
+        self.assertIn("La connexion n'a pas abouti", french_body)
+        self.assertIn('Retour', french_body)
+        self.assertNotIn('javascript:', french_body)
+
+        as_json = self.client.get('/api/v1/authorize', params)
+        self.assertEqual(as_json.status_code, 400)
+        self.assertEqual(as_json.json()['error'], 'redirect_to must use http or https.')
+        self.assertEqual(as_json.json()['error_code'], 'invalid_redirect')
+        self.assertNotIn('<html', as_json.content.decode())
+
+        self.company.desktop_redirect_scheme = ''
+        self.company.save(update_fields=['desktop_redirect_scheme'])
+        unregistered = browser.get(
+            '/api/v1/authorize',
+            {
+                'provider': 'github',
+                'company_id': self.company.id,
+                'redirect_to': DESKTOP,
+                'code_challenge': CHALLENGE,
+                'code_challenge_method': 'S256',
+            },
+            HTTP_ACCEPT='text/html',
+        )
+        unregistered_body = unregistered.content.decode()
+        self.assertIn('data-error-code="unregistered_scheme"', unregistered_body)
+        self.assertNotIn('id="back-to-app"', unregistered_body)
+        self.assertNotIn('shellui-playground://', unregistered_body)
+        self.assertIn('id="go-back"', unregistered_body)
+
+        self.company.desktop_redirect_scheme = 'shellui-playground'
+        self.company.save(update_fields=['desktop_redirect_scheme'])
+        pkce = browser.get(
+            '/api/v1/authorize',
+            {'provider': 'github', 'company_id': self.company.id, 'redirect_to': DESKTOP},
+            HTTP_ACCEPT='text/html',
+            HTTP_ACCEPT_LANGUAGE='en',
+        )
+        pkce_body = pkce.content.decode()
+        self.assertIn('data-error-code="pkce_required"', pkce_body)
+        self.assertIn('Back to the app', pkce_body)
+        href = _href_by_id(pkce_body, 'back-to-app')
+        self.assertEqual(href, f'{DESKTOP}?error=pkce_required')
+        self.assertNotIn('shellui_auth_code', href)
+        self.assertNotIn('token', href)
+        self.assertNotIn(CHALLENGE, pkce_body)
+
+    def test_expired_magic_link_page_returns_to_the_registered_scheme(self):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from apps.authapi.magic_link import create_magic_link_token
+
+        _row, raw = create_magic_link_token(
+            company=self.company,
+            email='member@example.com',
+            redirect_to=DESKTOP,
+            user=self.member,
+            code_challenge=CHALLENGE,
+        )
+        MagicLinkToken.objects.update(expires_at=timezone.now() - timedelta(seconds=5))
+        browser = Client()
+        response = browser.get(
+            f'/api/v1/magic-link/verify?token={raw}&company_id={self.company.id}',
+            HTTP_ACCEPT='text/html',
+        )
+        self.assertEqual(response.status_code, 400)
+        body = response.content.decode()
+        self.assertIn('data-error-code="magic_link_expired"', body)
+        self.assertNotIn(raw, body)
+        self.assertEqual(_href_by_id(body, 'back-to-app'), f'{DESKTOP}?error=magic_link_expired')
+        french = browser.get(
+            f'/api/v1/magic-link/verify?token={raw}&company_id={self.company.id}',
+            HTTP_ACCEPT='text/html',
+            HTTP_ACCEPT_LANGUAGE='fr',
+        )
+        self.assertIn("Revenir à l'application", html.unescape(french.content.decode()))
+        self.assertNotIn(raw, french.content.decode())
+
     def test_social_authorize_stores_desktop_challenge(self):
         missing = self.client.get(
             '/api/v1/providers/github/authorize/',
@@ -704,12 +822,8 @@ class DesktopSamlLoginTests(TestCase):
         self.client = Client()
         self.site = Site.objects.get_current()
         self.company = Company.objects.create(name='SAML Desktop', slug='saml-desktop')
-        CompanyOAuthRedirect.objects.create(
-            company=self.company,
-            kind=CompanyOAuthRedirect.KIND_DESKTOP,
-            base_url=DESKTOP,
-            is_active=True,
-        )
+        self.company.desktop_redirect_scheme = 'shellui-playground'
+        self.company.save(update_fields=['desktop_redirect_scheme'])
         self.creds = generate_test_idp_credentials(entity_id='https://idp.test.example/desktop')
         self.app = SocialApp.objects.create(
             provider='saml',
@@ -737,6 +851,7 @@ class DesktopSamlLoginTests(TestCase):
             data={'redirect_to': DESKTOP, 'company_id': str(self.company.id), **params},
             follow=False,
             HTTP_HOST='identity.test.example',
+            HTTP_ACCEPT='text/html',
         )
 
     def _stashed(self) -> dict:
@@ -747,7 +862,26 @@ class DesktopSamlLoginTests(TestCase):
     def test_desktop_login_requires_pkce_and_stores_only_the_challenge(self):
         missing = self._login()
         self.assertEqual(missing.status_code, 400)
-        self.assertEqual(missing.json()['error_code'], 'pkce_required')
+        page = missing.content.decode()
+        self.assertIn('text/html', missing['Content-Type'])
+        self.assertIn('data-error-code="pkce_required"', page)
+        self.assertIn('Back to the app', page)
+        href = _href_by_id(page, 'back-to-app')
+        self.assertEqual(href, 'shellui-playground://callback?error=pkce_required')
+        self.assertNotIn('shellui_auth_code', page)
+        self.assertNotIn(CHALLENGE, href)
+        self.assertNotIn(VERIFIER, page)
+        as_json = self.client.get(
+            reverse('shellui-saml-login', kwargs={'organization_slug': self.app.client_id}),
+            data={
+                'redirect_to': DESKTOP,
+                'company_id': str(self.company.id),
+            },
+            HTTP_HOST='identity.test.example',
+            HTTP_ACCEPT='application/json',
+        )
+        self.assertEqual(as_json.status_code, 400)
+        self.assertEqual(as_json.json()['error_code'], 'pkce_required')
 
         started = self._login(code_challenge=CHALLENGE, code_challenge_method='S256')
         self.assertEqual(started.status_code, 302)

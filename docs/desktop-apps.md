@@ -4,28 +4,39 @@ description: Sign a desktop app in through the system browser and return with a 
 
 # Desktop apps
 
-A desktop app signs people in through the system browser, then returns to the app with a custom-scheme deep link such as `shellui-playground://callback?shellui_auth_code=…`. The Shellui playground is the first app that uses this. Web shells keep the http(s) flow in [OAuth login](oauth-login.md). That flow is unchanged: an http(s) `redirect_to` is still an origin on the allowlist, and PKCE stays optional there.
+A desktop app signs people in through the system browser, then returns to the app with a custom-scheme deep link such as `shellui-playground://callback?shellui_auth_code=…`. You register one scheme on the company. Desktop sign-in stays off until that scheme is set. Web shells keep the http(s) flow in [OAuth login](oauth-login.md). An http(s) `redirect_to` is still an origin on the allowlist, and PKCE stays optional there.
 
-## Allow the deep link
+## Pick a scheme
 
-Add one exact URI to the company redirect allowlist with `kind` set to `desktop`. The match is exact. A different path, host, or query is refused. There is no prefix match.
+You choose the scheme when you register the desktop app with the operating system. Use a lowercase name that belongs to your app, such as `shellui-playground` or `com.example.desktop`. The value must be an [RFC 3986](https://www.rfc-editor.org/rfc/rfc3986#section-3.1) scheme: a letter, then letters, digits, `+`, `-`, or `.`.
 
-The scheme must look like an app id: a hyphenated name such as `shellui-playground`, or a reverse-DNS name such as `com.shellui.app`. These schemes are refused: `http`, `https`, `javascript`, `data`, `file`, `vbscript`, `about`, `blob`, `ftp`, and other browser or network schemes. The URI cannot contain userinfo (`user:pass@host`) or a fragment (`#…`).
+These schemes are refused: `http`, `https`, `javascript`, `data`, `file`, `vbscript`, `about`, `blob`, and other browser or network schemes such as `ftp`, `mailto`, and `ws`. Uppercase is refused. Send `shellui-playground`, not `Shellui-Playground`.
 
-Staff and company owners add the row in the same places as a web origin:
+The deep link the app opens looks like this:
 
-- **Shellui admin**: OAuth setup, once that screen sends `kind`
-- **Django admin**: Company OAuth redirects, kind **Desktop app**
-- **REST API**: `POST /api/v1/oauth-redirects?company_id=…`
-
-```bash
-curl -s -X POST "https://auth.example.com/api/v1/oauth-redirects?company_id=1" \
-  -H "Authorization: Bearer $ACCESS_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"base_url":"shellui-playground://callback","kind":"desktop","label":"Playground"}'
+```text
+shellui-playground://callback
 ```
 
-A `kind=web` row is still an http(s) origin prefix, for example `https://app.example.com`. Hosting preview sync only writes web rows.
+`callback` is the path your app handles. identity-service accepts any path on the registered scheme, for example `shellui-playground://auth/done`. A different scheme is refused.
+
+## Register the scheme
+
+Set `desktop_redirect_scheme` on the company. An empty value keeps desktop sign-in off, so a custom-scheme `redirect_to` returns `unregistered_scheme`.
+
+Staff and company owners set it in the same places as other company settings:
+
+- **Django admin**: open the company and edit **Desktop sign-in**
+- **REST API**: `PATCH /api/v1/companies/<id>/` (company owner)
+
+```bash
+curl -s -X PATCH "https://auth.example.com/api/v1/companies/1/" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"desktop_redirect_scheme":"shellui-playground"}'
+```
+
+Send `{"desktop_redirect_scheme":""}` to turn desktop sign-in off again. The http(s) redirect allowlist is unchanged. Hosting preview sync still writes web origins only.
 
 ## PKCE
 
@@ -76,13 +87,27 @@ identity-service skips that check only after PKCE has succeeded for a custom-sch
 
 ## Sign-in flow
 
-1. The app opens the system browser to `GET /api/v1/authorize` with `company_id`, `redirect_to` (the exact allowlisted URI), `code_challenge`, `code_challenge_method=S256`, and optionally `provider`.
+1. The app opens the system browser to `GET /api/v1/authorize` with `company_id`, `redirect_to` (a URI on the registered scheme), `code_challenge`, `code_challenge_method=S256`, and optionally `provider`.
 2. The person signs in with an OAuth provider, SAML, or a magic link.
 3. The browser shows **Return to the app** (English or French, from `Accept-Language`) and a button. The page also sets `window.location` to the deep link, because some browsers block an automatic custom-scheme navigation.
 4. The deep link is `shellui-playground://callback?shellui_auth_code=…`.
 5. The app posts `auth_code`, the same `redirect_to`, and `code_verifier` to `POST /api/v1/oauth/session`.
 
 The code lasts `OAUTH_SESSION_CODE_TTL_SECONDS` (120 seconds by default) and works once, as for a web shell.
+
+## Browser error page
+
+A sign-in error that a person hits in the browser renders an HTML page in English or French, from `Accept-Language`. The page states what failed and offers **Go back** (`Retour`). It does not include a token, an auth code, or the sign-in URL.
+
+When the request already has a redirect on the company's registered scheme, the page also shows **Back to the app** (`Revenir à l'application`). That link opens the same path with only an `error` query parameter:
+
+```text
+shellui-playground://callback?error=pkce_required
+```
+
+The app reads `error` and shows its own message. The query never contains `shellui_auth_code`, a verifier, or a token. If the scheme is missing or not the registered one, the page has no app button.
+
+Clients that send `Accept: application/json`, and JSON API endpoints such as `POST /api/v1/oauth/session`, still receive JSON.
 
 ## Magic link
 
@@ -96,31 +121,32 @@ The same rules as [Magic link](magic-link.md) still hold:
 
 A custom-scheme `redirect_to` has no https page to offer, so the staff notice has no **Go to sign-in** button.
 
-`POST /api/v1/magic-link/verify` with JSON, for a custom-scheme link, also requires `code_verifier`. identity-service checks it before the token is used. The browser form that the email opens does not send the verifier. The app sends it at `POST /api/v1/oauth/session`.
+`POST /api/v1/magic-link/verify` with JSON, for a custom-scheme link, also requires `code_verifier`. identity-service checks it before the token is used. The browser form that the email opens does not send the verifier. The app sends it at `POST /api/v1/oauth/session`. An expired or invalid link shows the browser error page. When the stored redirect uses the registered scheme, **Back to the app** opens `shellui-playground://callback?error=magic_link_expired` (or `magic_link_invalid`).
 
 ## SAML and invitations
 
 SAML uses the same PKCE query parameters on `/api/v1/saml/<organization_slug>/login/`. `GET /api/v1/authorize?provider=saml` forwards the challenge onto that URL. The challenge is stored with the AuthnRequest. The verifier is not.
 
-`POST /api/v1/invitations` accepts an exact desktop URI as `app_url` when that URI is on the allowlist. PKCE is not required when the invitation is created: the inviter does not have the invitee's verifier. The person who accepts the invitation sends PKCE on the later sign-in. The email (English and French) says to copy the link when the button does not open the app. An http(s) invitation email keeps the sentence about copying the URL into a browser.
+`POST /api/v1/invitations` accepts a desktop URI as `app_url` when its scheme is the company's registered scheme. PKCE is not required when the invitation is created: the inviter does not have the invitee's verifier. The person who accepts the invitation sends PKCE on the later sign-in. The email (English and French) says to copy the link when the button does not open the app. An http(s) invitation email keeps the sentence about copying the URL into a browser.
 
 ## What to change in the client and in admin
 
 **@shellui/core and the desktop app**
 
-- Register the custom scheme with the operating system, and add that exact URI as `kind=desktop` for the company.
+- Register the custom scheme with the operating system, and set that scheme on the company with `desktop_redirect_scheme`.
 - Generate a PKCE verifier, send the S256 challenge on authorize, magic link, and SAML, and keep the verifier in the app.
 - Open the system browser for sign-in. Handle the deep link, read `shellui_auth_code`, and exchange it with `code_verifier`.
+- Handle `error` on the same deep link when sign-in fails in the browser. Do not expect a token on that URL.
 - Do not send the verifier to the browser, and do not expect `Origin` to match the custom scheme.
-- Treat `shellui_oauth_error` and `shellui_oauth_error_code` on the deep link as a failed sign-in.
+- Treat `shellui_oauth_error` and `shellui_oauth_error_code` on the success-path deep link as a failed sign-in.
 
 **Shellui admin**
 
-- Offer `kind` on the OAuth redirect screen: `web` (origin prefix) or `desktop` (exact URI).
-- Show desktop rows separately from hosting previews. Hosting sync does not create them.
+- Edit `desktop_redirect_scheme` with the other company settings. Leave it empty until the app has a scheme.
+- Do not add a desktop row on the OAuth redirect allowlist. That list stays http(s) origins.
 - Do not require PKCE when an owner sends an invitation to a desktop URI.
 
-Migrations `companies.0026_desktop_custom_scheme_redirect` and `authapi.0018_desktop_custom_scheme_redirect` add `kind` and the stored challenge. Existing rows stay `kind=web`. Web shells need no client change.
+Migration `companies.0027_company_desktop_redirect_scheme` stores the scheme on the company and drops allowlist `kind`. Migration `authapi.0018_desktop_custom_scheme_redirect` stores the PKCE challenge. Web shells need no client change.
 
 ## Related
 

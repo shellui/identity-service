@@ -22,8 +22,8 @@ from .serializers import CompanySerializer, CompanyUpdateSerializer
         tags=['companies'],
         summary='Update company settings',
         description=(
-            'Only company owners can update company name, owners list, and join access '
-            '(public / domain / invite) settings.'
+            'Only company owners can update company name, owners list, join access '
+            '(public / domain / invite), and the desktop sign-in scheme.'
         ),
         request=CompanyUpdateSerializer,
     ),
@@ -31,8 +31,8 @@ from .serializers import CompanySerializer, CompanyUpdateSerializer
         tags=['companies'],
         summary='Replace company settings',
         description=(
-            'Only company owners can update company name, owners list, and join access '
-            '(public / domain / invite) settings.'
+            'Only company owners can update company name, owners list, join access '
+            '(public / domain / invite), and the desktop sign-in scheme.'
         ),
         request=CompanyUpdateSerializer,
     ),
@@ -83,6 +83,9 @@ class CompanyViewSet(
         if 'allowed_email_domains' in validated:
             company.allowed_email_domains = validated['allowed_email_domains']
             update_fields.append('allowed_email_domains')
+        if 'desktop_redirect_scheme' in validated:
+            company.desktop_redirect_scheme = validated['desktop_redirect_scheme']
+            update_fields.append('desktop_redirect_scheme')
         if update_fields:
             company.save(update_fields=update_fields)
 

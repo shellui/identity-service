@@ -190,6 +190,22 @@ def create_magic_link_token(
     return row, raw_token
 
 
+def magic_link_stored_redirect(*, raw_token: str, company_id: int) -> str:
+    """Redirect stored for this token, if the row exists. Does not reveal the token."""
+    token = (raw_token or '').strip()
+    if not token:
+        return ''
+    row = (
+        MagicLinkToken.objects.filter(
+            token_hash=hash_magic_link_token(token),
+            company_id=company_id,
+        )
+        .only('redirect_to')
+        .first()
+    )
+    return (row.redirect_to or '') if row else ''
+
+
 def lookup_magic_link_token(
     *,
     raw_token: str,

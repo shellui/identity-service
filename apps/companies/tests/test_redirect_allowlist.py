@@ -1,13 +1,15 @@
 from django.test import RequestFactory, TestCase, override_settings
 
-from apps.companies.admin import CompanyOAuthRedirectAdminForm
+from apps.companies.admin import CompanyAdminForm, CompanyOAuthRedirectAdminForm
 from apps.companies.models import Company, CompanyOAuthRedirect
 from apps.companies.redirect_allowlist import (
+    desktop_error_deep_link,
     is_custom_scheme_redirect,
     loopback_oauth_redirects_allowed,
     normalize_allowlist_origin,
     normalize_client_redirect_url,
     normalize_desktop_redirect_uri,
+    normalize_registered_scheme,
     redirect_url_allowed_for_company,
     validate_redirect_to_for_company,
     validate_redirect_uri_for_company,
@@ -167,37 +169,59 @@ class RedirectAllowlistTests(TestCase):
         self.assertIsNone(url)
         self.assertEqual(err, 'redirect_to must not include a fragment.')
 
-    def test_desktop_allowlist_is_exact_and_ignores_web_rows(self):
+    def test_registered_scheme_is_lowercase_rfc3986(self):
+        scheme, err = normalize_registered_scheme('shellui-playground')
+        self.assertIsNone(err)
+        self.assertEqual(scheme, 'shellui-playground')
+        dotted, err = normalize_registered_scheme('com.shellui.app')
+        self.assertIsNone(err)
+        self.assertEqual(dotted, 'com.shellui.app')
+        plus, err = normalize_registered_scheme('shellui+desktop')
+        self.assertIsNone(err)
+        self.assertEqual(plus, 'shellui+desktop')
+        cleared, err = normalize_registered_scheme('  ')
+        self.assertEqual(cleared, '')
+        self.assertIsNone(err)
+        for raw in (
+            'Shellui-Playground',
+            'http',
+            'https',
+            'javascript',
+            'data',
+            'file',
+            'vbscript',
+            'about',
+            'blob',
+            'ftp',
+            '1app',
+            'my_app',
+            'web+shellui',
+        ):
+            scheme, err = normalize_registered_scheme(raw)
+            self.assertIsNone(scheme, raw)
+            self.assertTrue(err, raw)
+
+    def test_desktop_redirect_matches_registered_scheme_only(self):
+        self.company.desktop_redirect_scheme = 'shellui-playground'
+        self.company.save(update_fields=['desktop_redirect_scheme'])
         CompanyOAuthRedirect.objects.create(
             company=self.company,
-            kind=CompanyOAuthRedirect.KIND_DESKTOP,
-            base_url='shellui-playground://callback',
-            is_active=True,
-        )
-        CompanyOAuthRedirect.objects.create(
-            company=self.company,
-            kind=CompanyOAuthRedirect.KIND_WEB,
             base_url='https://app.example.com',
             is_active=True,
         )
-        self.assertTrue(
-            redirect_url_allowed_for_company(
-                self.company,
-                'shellui-playground://callback',
-                self.request,
+        for target in (
+            'shellui-playground://callback',
+            'shellui-playground://callback/extra',
+            'shellui-playground://other',
+        ):
+            self.assertTrue(
+                redirect_url_allowed_for_company(self.company, target, self.request),
+                target,
             )
-        )
         self.assertFalse(
             redirect_url_allowed_for_company(
                 self.company,
-                'shellui-playground://callback/extra',
-                self.request,
-            )
-        )
-        self.assertFalse(
-            redirect_url_allowed_for_company(
-                self.company,
-                'shellui-playground://other',
+                'com.other.app://callback',
                 self.request,
             )
         )
@@ -208,21 +232,8 @@ class RedirectAllowlistTests(TestCase):
                 self.request,
             )
         )
-        self.assertFalse(
-            redirect_url_allowed_for_company(
-                self.company,
-                'https://shellui-playground/callback',
-                self.request,
-            )
-        )
-
-    def test_inactive_desktop_row_is_ignored(self):
-        CompanyOAuthRedirect.objects.create(
-            company=self.company,
-            kind=CompanyOAuthRedirect.KIND_DESKTOP,
-            base_url='shellui-playground://callback',
-            is_active=False,
-        )
+        self.company.desktop_redirect_scheme = ''
+        self.company.save(update_fields=['desktop_redirect_scheme'])
         self.assertFalse(
             redirect_url_allowed_for_company(
                 self.company,
@@ -231,23 +242,29 @@ class RedirectAllowlistTests(TestCase):
             )
         )
 
-    def test_admin_form_normalizes_desktop_and_rejects_javascript(self):
+    def test_error_deep_link_carries_only_the_error_code(self):
+        link = desktop_error_deep_link(
+            'shellui-playground://callback?shellui_auth_code=secret',
+            'pkce_required',
+        )
+        self.assertEqual(link, 'shellui-playground://callback?error=pkce_required')
+        self.assertIsNone(desktop_error_deep_link('javascript:alert(1)', 'invalid_redirect'))
+
+    def test_admin_form_normalizes_web_origin_and_company_scheme(self):
         form = CompanyOAuthRedirectAdminForm(
             data={
                 'company': self.company.id,
-                'kind': CompanyOAuthRedirect.KIND_DESKTOP,
-                'base_url': 'Shellui-Playground://Callback',
-                'label': 'Playground',
+                'base_url': 'https://App.Example.com/login',
+                'label': 'Shell',
                 'source': CompanyOAuthRedirect.SOURCE_MANUAL,
                 'is_active': True,
             }
         )
         self.assertTrue(form.is_valid(), form.errors)
-        self.assertEqual(form.cleaned_data['base_url'], 'shellui-playground://callback')
+        self.assertEqual(form.cleaned_data['base_url'], 'https://app.example.com')
         rejected = CompanyOAuthRedirectAdminForm(
             data={
                 'company': self.company.id,
-                'kind': CompanyOAuthRedirect.KIND_DESKTOP,
                 'base_url': 'javascript:alert(1)',
                 'label': '',
                 'source': CompanyOAuthRedirect.SOURCE_MANUAL,
@@ -256,3 +273,29 @@ class RedirectAllowlistTests(TestCase):
         )
         self.assertFalse(rejected.is_valid())
         self.assertIn('base_url', rejected.errors)
+        company_form = CompanyAdminForm(
+            data={
+                'name': self.company.name,
+                'slug': self.company.slug,
+                'access_mode': Company.ACCESS_PUBLIC,
+                'allowed_email_domains': '',
+                'desktop_redirect_scheme': 'javascript',
+                'data_retention_days': 7,
+            },
+            instance=self.company,
+        )
+        self.assertFalse(company_form.is_valid())
+        self.assertIn('desktop_redirect_scheme', company_form.errors)
+        accepted = CompanyAdminForm(
+            data={
+                'name': self.company.name,
+                'slug': self.company.slug,
+                'access_mode': Company.ACCESS_PUBLIC,
+                'allowed_email_domains': '',
+                'desktop_redirect_scheme': 'shellui-playground',
+                'data_retention_days': 7,
+            },
+            instance=self.company,
+        )
+        self.assertTrue(accepted.is_valid(), accepted.errors)
+        self.assertEqual(accepted.cleaned_data['desktop_redirect_scheme'], 'shellui-playground')

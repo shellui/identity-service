@@ -36,7 +36,12 @@ from apps.authapi.saml.utils import SAMLConfigError, build_auth, build_saml_conf
 from apps.authapi.saml.validation import check_validated_assertion
 from apps.companies.models import Company
 from apps.authapi.client_pkce import PkceError, parse_client_pkce
-from apps.companies.redirect_allowlist import is_custom_scheme_redirect, validate_redirect_to_for_company
+from apps.authapi.signin_error import signin_error_response
+from apps.companies.redirect_allowlist import (
+    client_redirect_error_code,
+    is_custom_scheme_redirect,
+    validate_redirect_to_for_company,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -169,6 +174,26 @@ class ShellUISAMLMetadataView(SAMLViewMixin, View):
         return HttpResponse(content=metadata, content_type='text/xml')
 
 
+def _saml_browser_error(
+    request: HttpRequest,
+    *,
+    error_code: str,
+    status: int,
+    company=None,
+    redirect_to: str | None = None,
+) -> HttpResponse:
+    """HTML for a person in the browser. JSON when Accept is application/json."""
+    return signin_error_response(
+        request,
+        message='',
+        error_code=error_code,
+        status_code=int(status),
+        company=company,
+        redirect_to=redirect_to,
+        json_body={'error_code': error_code},
+    )
+
+
 @method_decorator(csrf_exempt, name='dispatch')
 class ShellUISAMLLoginView(SAMLViewMixin, View):
     def get(self, request: HttpRequest, organization_slug: str) -> HttpResponse:
@@ -178,19 +203,30 @@ class ShellUISAMLLoginView(SAMLViewMixin, View):
         social_app = provider.app
         company_id = shellui_company_id_from_app(social_app)
         if company_id is None:
-            return saml_json_error(error_code='saml_company_mismatch', status=HTTPStatus.FORBIDDEN)
+            return _saml_browser_error(
+                request,
+                error_code='saml_company_mismatch',
+                status=HTTPStatus.FORBIDDEN,
+            )
         try:
             company = Company.objects.get(pk=int(company_id))
         except (Company.DoesNotExist, TypeError, ValueError):
-            return saml_json_error(error_code='callback_company', status=HTTPStatus.BAD_REQUEST)
+            return _saml_browser_error(request, error_code='callback_company', status=HTTPStatus.BAD_REQUEST)
 
+        raw_redirect = request.GET.get('redirect_to')
         redirect_to, rerr = validate_redirect_to_for_company(
             company=company,
             request=request,
-            redirect_to_raw=request.GET.get('redirect_to'),
+            redirect_to_raw=raw_redirect,
         )
         if rerr or not redirect_to:
-            return saml_json_error(error_code='redirect_not_allowed', status=HTTPStatus.BAD_REQUEST)
+            return _saml_browser_error(
+                request,
+                error_code=client_redirect_error_code(rerr),
+                status=HTTPStatus.BAD_REQUEST,
+                company=company,
+                redirect_to=raw_redirect,
+            )
 
         try:
             code_challenge = parse_client_pkce(
@@ -199,7 +235,13 @@ class ShellUISAMLLoginView(SAMLViewMixin, View):
                 required=is_custom_scheme_redirect(redirect_to),
             )
         except PkceError as exc:
-            return saml_json_error(error_code=exc.error_code, status=HTTPStatus.BAD_REQUEST)
+            return _saml_browser_error(
+                request,
+                error_code=exc.error_code,
+                status=HTTPStatus.BAD_REQUEST,
+                company=company,
+                redirect_to=redirect_to,
+            )
 
         token_delivery = _resolve_token_delivery(request=request)
         shellui_payload = {
@@ -219,9 +261,21 @@ class ShellUISAMLLoginView(SAMLViewMixin, View):
                 redirect_url = auth.login(return_to='')
                 request_id = auth.get_last_request_id()
         except SAMLConfigError:
-            return saml_json_error(error_code='saml_idp_config_invalid', status=HTTPStatus.INTERNAL_SERVER_ERROR)
+            return _saml_browser_error(
+                request,
+                error_code='saml_idp_config_invalid',
+                status=HTTPStatus.INTERNAL_SERVER_ERROR,
+                company=company,
+                redirect_to=redirect_to,
+            )
         if not request_id:
-            return saml_json_error(error_code='saml_authn_request_failed', status=HTTPStatus.BAD_REQUEST)
+            return _saml_browser_error(
+                request,
+                error_code='saml_authn_request_failed',
+                status=HTTPStatus.BAD_REQUEST,
+                company=company,
+                redirect_to=redirect_to,
+            )
         request.session[SHELLUI_SAML_AUTHN_REQUEST_SESSION_KEY] = str(request_id)
         request.session.modified = True
         stash_saml_request_id(request_id=request_id, payload=shellui_payload)

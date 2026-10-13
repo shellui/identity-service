@@ -60,10 +60,26 @@ class SAMLLoginSecurityTests(TestCase):
             },
             follow=False,
             HTTP_HOST=self.http_host,
+            HTTP_ACCEPT='text/html',
         )
         self.assertEqual(response.status_code, 400)
-        body = response.json()
-        self.assertEqual(body['error_code'], 'redirect_not_allowed')
+        page = response.content.decode()
+        self.assertIn('text/html', response['Content-Type'])
+        self.assertIn('data-error-code="redirect_not_allowed"', page)
+        self.assertIn('id="go-back"', page)
+        self.assertNotIn('id="back-to-app"', page)
+        self.assertNotIn('https://evil.example', page)
+        as_json = self.client.get(
+            login_url,
+            data={
+                'redirect_to': 'https://evil.example/phish',
+                'company_id': str(self.company.id),
+            },
+            follow=False,
+            HTTP_HOST=self.http_host,
+            HTTP_ACCEPT='application/json',
+        )
+        self.assertEqual(as_json.json()['error_code'], 'redirect_not_allowed')
 
     def _login(self, **params):
         login_url = reverse('shellui-saml-login', kwargs={'organization_slug': self.app.client_id})

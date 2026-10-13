@@ -217,22 +217,16 @@ class ShellUIAdminOAuthRedirectCreateSerializer(serializers.Serializer):
         required=False,
         default='manual',
     )
-    kind = serializers.ChoiceField(
-        choices=['web', 'desktop'],
-        required=False,
-        default='web',
-    )
 
 
 class ShellUIAdminOAuthRedirectUpdateSerializer(serializers.Serializer):
     base_url = serializers.CharField(required=False, allow_blank=False, max_length=500)
     label = serializers.CharField(required=False, allow_blank=True, max_length=150)
     is_active = serializers.BooleanField(required=False)
-    kind = serializers.ChoiceField(choices=['web', 'desktop'], required=False)
 
     def validate(self, attrs: dict) -> dict:
         if not attrs:
-            raise serializers.ValidationError('Provide at least one of: base_url, label, is_active, kind.')
+            raise serializers.ValidationError('Provide at least one of: base_url, label, is_active.')
         return attrs
 
 

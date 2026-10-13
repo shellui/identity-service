@@ -51,12 +51,14 @@ from apps.companies.access import (
 )
 from apps.companies.redirect_allowlist import (
     append_oauth_error_params,
+    client_redirect_error_code,
     is_custom_scheme_redirect,
     loopback_client_bounce_url_for_oauth_error,
-    normalize_oauth_redirect_entry,
+    normalize_allowlist_origin,
     validate_redirect_to_for_company,
     validate_redirect_uri_for_company,
 )
+from apps.authapi.signin_error import request_wants_html, signin_error_response
 from .client_pkce import (
     PkceError,
     error_code_for_pkce_message,
@@ -287,8 +289,9 @@ def _oauth_id_token_invalid_response(
         message=detail,
         error_code='oauth_id_token_invalid',
         redirect_to_raw=redirect_to_raw,
+        company=company,
     )
-    if isinstance(bounced, HttpResponseRedirect):
+    if isinstance(bounced, HttpResponseRedirect) or request_wants_html(request):
         return bounced
     return Response({'detail': detail, 'error_code': 'oauth_id_token_invalid'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -319,6 +322,7 @@ def _oauth_provider_error_response(
         status_code=exc.status_code,
         error_code=exc.code,
         redirect_to_raw=redirect_to_raw,
+        company=company,
     )
 
 
@@ -1151,6 +1155,21 @@ _OAUTH_SIGNIN_FAILED_DETAIL = 'OAuth sign-in failed. Try again or contact your a
 _OAUTH_SIGNIN_FAILED_REASON = 'oauth_signin_failed'
 
 
+def _company_for_signin_error(request, company: Company | None) -> Company | None:
+    """Company already loaded, or the company_id on a browser sign-in URL."""
+    if company is not None:
+        return company
+    raw = request.GET.get('company_id')
+    if raw in (None, '') and hasattr(request, 'POST'):
+        raw = request.POST.get('company_id')
+    if raw in (None, ''):
+        return None
+    try:
+        return Company.objects.filter(pk=int(raw)).first()
+    except (TypeError, ValueError):
+        return None
+
+
 def _shellui_oauth_bounce_or_json(
     request,
     *,
@@ -1158,10 +1177,12 @@ def _shellui_oauth_bounce_or_json(
     status_code: int = status.HTTP_400_BAD_REQUEST,
     error_code: str = 'oauth_authorize_failed',
     redirect_to_raw: str | None = None,
+    company: Company | None = None,
 ):
     """
-    For loopback `redirect_to` targets, redirect back to the Shell app with `shellui_oauth_error`
-    query params so the UI can render the message. Otherwise return JSON (e.g. production).
+    Loopback targets bounce back to the shell. A browser gets an HTML error page.
+    API clients (Accept: application/json) still get JSON. The page has a desktop
+    return link only when the redirect scheme is registered for the company.
     """
     raw = redirect_to_raw if redirect_to_raw is not None else request.GET.get('redirect_to')
     bounce = loopback_client_bounce_url_for_oauth_error(
@@ -1172,7 +1193,14 @@ def _shellui_oauth_bounce_or_json(
     )
     if bounce:
         return HttpResponseRedirect(bounce)
-    return JsonResponse({'error': message, 'error_code': error_code}, status=status_code)
+    return signin_error_response(
+        request,
+        message=message,
+        error_code=error_code,
+        status_code=status_code,
+        company=_company_for_signin_error(request, company),
+        redirect_to=raw,
+    )
 
 
 def _join_denied_response(
@@ -1944,7 +1972,7 @@ class ShellUIAuthorizeView(APIView):
                 or status.HTTP_400_BAD_REQUEST,
                 error_code='authorize_company',
             )
-            if isinstance(bounced, HttpResponseRedirect):
+            if isinstance(bounced, HttpResponseRedirect) or request_wants_html(request):
                 return bounced
             return company_err
         provider = request.GET.get('provider', '').strip().lower()
@@ -1957,15 +1985,11 @@ class ShellUIAuthorizeView(APIView):
             redirect_to_raw=request.GET.get('redirect_to'),
         )
         if rerr or not redirect_to:
-            err_code = (
-                'redirect_not_allowed'
-                if rerr and ('not allowed' in rerr or 'Invalid redirect_to' in rerr)
-                else 'invalid_redirect'
-            )
             return _shellui_oauth_bounce_or_json(
                 request,
                 message=rerr or 'Invalid redirect.',
-                error_code=err_code,
+                error_code=client_redirect_error_code(rerr),
+                company=company,
             )
         try:
             code_challenge = parse_client_pkce(
@@ -2228,16 +2252,12 @@ class ShellUIOAuthCallbackView(APIView):
             redirect_to_raw=redirect_to_raw,
         )
         if rerr or not redirect_to:
-            err_code = (
-                'redirect_not_allowed'
-                if rerr and ('not allowed' in rerr or 'Invalid redirect_to' in rerr)
-                else 'invalid_redirect'
-            )
             return _shellui_oauth_bounce_or_json(
                 request,
                 message=rerr or 'Invalid redirect.',
-                error_code=err_code,
+                error_code=client_redirect_error_code(rerr),
                 redirect_to_raw=redirect_to_raw,
+                company=company,
             )
         if not code:
             return _shellui_oauth_bounce_or_json(
@@ -2245,6 +2265,7 @@ class ShellUIOAuthCallbackView(APIView):
                 message='Missing authorization code.',
                 error_code='missing_code',
                 redirect_to_raw=redirect_to,
+                company=company,
             )
         if provider not in _enabled_oauth_providers(company):
             return _shellui_oauth_bounce_or_json(
@@ -2252,6 +2273,7 @@ class ShellUIOAuthCallbackView(APIView):
                 message=f"Provider '{provider}' is not enabled.",
                 error_code='provider_disabled',
                 redirect_to_raw=redirect_to,
+                company=company,
             )
         _row, oauth_client_err = _get_company_oauth_client(company, provider, company_oauth_client_id)
         if oauth_client_err:
@@ -2260,6 +2282,7 @@ class ShellUIOAuthCallbackView(APIView):
                 message=oauth_client_err,
                 error_code='oauth_client_unavailable',
                 redirect_to_raw=redirect_to,
+                company=company,
             )
         callback_url = oauth_provider_redirect_uri(request)
         from .oauth_state import OAUTH_APPLE_BRIDGE_COOKIE
@@ -2327,8 +2350,9 @@ class ShellUIOAuthCallbackView(APIView):
                     message=resolve_err or 'Could not resolve OAuth account.',
                     error_code=identity_code,
                     redirect_to_raw=redirect_to,
+                    company=company,
                 )
-                if isinstance(bounced, HttpResponseRedirect):
+                if isinstance(bounced, HttpResponseRedirect) or request_wants_html(request):
                     return bounced
                 body = {'detail': resolve_err or 'Could not resolve OAuth account.'}
                 if resolve_code:
@@ -2369,8 +2393,9 @@ class ShellUIOAuthCallbackView(APIView):
                 message=_OAUTH_SIGNIN_FAILED_DETAIL,
                 error_code='token_exchange_failed',
                 redirect_to_raw=redirect_to,
+                company=company,
             )
-            if isinstance(bounced, HttpResponseRedirect):
+            if isinstance(bounced, HttpResponseRedirect) or request_wants_html(request):
                 return bounced
             return Response(
                 {'detail': _OAUTH_SIGNIN_FAILED_DETAIL, 'error_code': 'token_exchange_failed'},
@@ -4193,7 +4218,6 @@ def _oauth_redirect_payload(row: CompanyOAuthRedirect) -> dict:
     return {
         'id': row.id,
         'base_url': row.base_url,
-        'kind': row.kind or CompanyOAuthRedirect.KIND_WEB,
         'label': row.label or '',
         'source': row.source or CompanyOAuthRedirect.SOURCE_MANUAL,
         'is_active': bool(row.is_active),
@@ -4206,9 +4230,8 @@ def _oauth_redirect_payload(row: CompanyOAuthRedirect) -> dict:
         tags=['oauth-redirects'],
         summary='List company OAuth redirect allowlist (staff or company owner)',
         description=(
-            'Targets allowed as post-login bounce destinations (`redirect_to`). '
-            '`kind=web` (default) is an http(s) origin prefix. `kind=desktop` is one exact '
-            'custom-scheme URI, for example `shellui-playground://callback`. '
+            'http(s) origins allowed as post-login bounce destinations (`redirect_to`). '
+            'Desktop sign-in uses the company `desktop_redirect_scheme`, not a row here. '
             'Loopback (localhost / 127.0.0.1 / ::1) is allowed when DEBUG or '
             'OAUTH_ALLOW_LOOPBACK_REDIRECTS=true. Empty allowlist denies other http(s) redirects. '
             'Entries with `source=hosting` are synced from hosting-service preview sites.'
@@ -4239,15 +4262,13 @@ class ShellUIAdminOAuthRedirectListView(APIView):
         serializer = ShellUIAdminOAuthRedirectCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         validated = serializer.validated_data
-        kind = str(validated.get('kind') or CompanyOAuthRedirect.KIND_WEB)
-        stored, nerr = normalize_oauth_redirect_entry(validated['base_url'], kind=kind)
+        stored, nerr = normalize_allowlist_origin(validated['base_url'])
         if nerr or not stored:
             return Response({'error': nerr or 'Invalid base_url.'}, status=status.HTTP_400_BAD_REQUEST)
         try:
             row = CompanyOAuthRedirect.objects.create(
                 company=company,
                 base_url=stored,
-                kind=kind,
                 label=str(validated.get('label') or '').strip()[:150],
                 source=str(validated.get('source') or CompanyOAuthRedirect.SOURCE_MANUAL),
                 is_active=bool(validated.get('is_active', True)),
@@ -4301,14 +4322,11 @@ class ShellUIAdminOAuthRedirectDetailView(APIView):
         serializer = ShellUIAdminOAuthRedirectUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         validated = serializer.validated_data
-        next_kind = str(validated.get('kind') or row.kind or CompanyOAuthRedirect.KIND_WEB)
-        next_base = validated.get('base_url', row.base_url)
-        if 'base_url' in validated or 'kind' in validated:
-            stored, nerr = normalize_oauth_redirect_entry(next_base, kind=next_kind)
+        if 'base_url' in validated:
+            stored, nerr = normalize_allowlist_origin(validated['base_url'])
             if nerr or not stored:
                 return Response({'error': nerr or 'Invalid base_url.'}, status=status.HTTP_400_BAD_REQUEST)
             row.base_url = stored
-            row.kind = next_kind
         if 'label' in validated:
             row.label = str(validated.get('label') or '').strip()[:150]
         if 'is_active' in validated:
@@ -4379,7 +4397,6 @@ class ShellUIHostingOAuthRedirectSyncView(APIView):
             base_url=origin,
             defaults={
                 'label': label,
-                'kind': CompanyOAuthRedirect.KIND_WEB,
                 'source': CompanyOAuthRedirect.SOURCE_HOSTING,
                 'is_active': True,
             },

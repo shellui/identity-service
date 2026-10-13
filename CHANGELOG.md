@@ -25,11 +25,12 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 ### ✨ Feature
 
-- **Desktop app sign-in:** a company can allow one exact custom-scheme URI (`CompanyOAuthRedirect.kind=desktop`, for example `shellui-playground://callback`). Magic link, OAuth, SAML, and invitations can return there with `shellui_auth_code`. Custom-scheme redirects require S256 PKCE. The verifier is checked at `POST /api/v1/oauth/session`, and the Origin check is skipped only after that check succeeds. Web http(s) redirects are unchanged. See [docs/desktop-apps.md](docs/desktop-apps.md).
+- **Desktop app sign-in:** each company registers one custom scheme (`desktop_redirect_scheme`, for example `shellui-playground`). A redirect is accepted only when its scheme matches, such as `shellui-playground://callback`. Desktop sign-in stays off until the scheme is set. S256 PKCE and the 120s one-time code are unchanged. See [docs/desktop-apps.md](docs/desktop-apps.md).
+- **Sign-in error pages:** browser sign-in errors render an English or French page. When the redirect scheme is registered, **Back to the app** opens `<scheme>://…?error=<error_code>` with no token. `Accept: application/json` and API endpoints stay JSON.
 
 ### 📚 Documentation
 
-- [docs/desktop-apps.md](docs/desktop-apps.md) describes the deep-link flow, PKCE, and the Origin rule.
+- [docs/desktop-apps.md](docs/desktop-apps.md) describes how to pick and register a scheme, the deep link, the error callback, PKCE, and the Origin rule.
 
 ## [0.7.0] - 2026-10-06
 

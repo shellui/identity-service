@@ -8,9 +8,9 @@ This page lists what you must change when you move to a newer identity-service r
 
 ## Desktop app redirects
 
-Migrations `companies.0026_desktop_custom_scheme_redirect` and `authapi.0018_desktop_custom_scheme_redirect` add a `kind` on each allowlist row and a PKCE challenge column on session codes and magic-link tokens. Existing rows stay `kind=web`. Web shells need no change.
+Migration `companies.0027_company_desktop_redirect_scheme` stores one custom scheme on the company (`desktop_redirect_scheme`) and removes allowlist `kind`. Migration `authapi.0018_desktop_custom_scheme_redirect` adds the PKCE challenge column on session codes and magic-link tokens. Web shells need no change.
 
-A desktop app needs one exact custom-scheme URI on the allowlist and S256 PKCE. See [Desktop apps](desktop-apps.md).
+A desktop app needs that scheme set, and S256 PKCE on every custom-scheme redirect. Until the scheme is set, desktop sign-in is off. See [Desktop apps](desktop-apps.md).
 
 ## Upgrade to 0.7.0
 

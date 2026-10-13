@@ -53,7 +53,7 @@ Every event, and every sign-in, is also stored in the **event log** (`GET /api/v
 - `POST /api/v1/oauth/confirm` complete sign-in after the confirmation screen (browser form)
 - `GET /api/v1/oauth/confirm?action=switch&confirm_token=…` restart OAuth with account picker (Google/Microsoft)
 - `POST /api/v1/oauth/exchange` deprecated SPA code exchange (older shells that still receive `?code=` on the frontend)
-- `GET/POST /api/v1/oauth-redirects` manage per-company post-login bounce targets (staff or company owner). `kind=web` is an http(s) origin prefix. `kind=desktop` is one exact custom-scheme URI and requires S256 PKCE. Loopback http(s) redirects are allowed when `DEBUG=true` or `OAUTH_ALLOW_LOOPBACK_REDIRECTS=true`. An empty list denies other http(s) redirects. `source=hosting` rows are synced from hosting-service
+- `GET/POST /api/v1/oauth-redirects` manage per-company http(s) post-login bounce targets (staff or company owner). Loopback http(s) redirects are allowed when `DEBUG=true` or `OAUTH_ALLOW_LOOPBACK_REDIRECTS=true`. An empty list denies other http(s) redirects. `source=hosting` rows are synced from hosting-service. Desktop sign-in uses `Company.desktop_redirect_scheme` (one lowercase custom scheme) and requires S256 PKCE. See [docs/desktop-apps.md](docs/desktop-apps.md)
 - `PUT/DELETE /api/v1/hosting-oauth-redirects` hosting-service sync using the caller's identity JWT (staff or company owner)
 - `POST /api/v1/token?grant_type=refresh_token` refresh session using `refresh_token` in the body (Bearer access token optional)
 - `POST /api/v1/logout` logout endpoint (revokes refresh session and denylists access token)

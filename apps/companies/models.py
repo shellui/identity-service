@@ -94,6 +94,15 @@ class Company(models.Model):
             'for this company. Requires deployment MAGIC_LINK_ENABLED.'
         ),
     )
+    desktop_redirect_scheme = models.CharField(
+        max_length=64,
+        blank=True,
+        default='',
+        help_text=(
+            'Lowercase custom URI scheme for desktop sign-in, for example shellui-playground. '
+            'Empty keeps desktop sign-in off. Redirects are accepted only when the scheme matches.'
+        ),
+    )
     DEFAULT_DATA_RETENTION_DAYS = 7
     data_retention_days = models.PositiveSmallIntegerField(
         default=DEFAULT_DATA_RETENTION_DAYS,
@@ -272,11 +281,9 @@ class CompanyOAuthClient(models.Model):
 
 
 class CompanyOAuthRedirect(models.Model):
-    """Allowed post-login bounce targets for a company.
+    """Allowed http(s) post-login bounce origins for a company.
 
-    ``web`` stores an http(s) origin and matches any callback on that origin.
-    ``desktop`` stores one exact custom-scheme URI (for example
-    ``shellui-playground://callback``) and matches that URI only.
+    Desktop sign-in uses ``Company.desktop_redirect_scheme``, not a row here.
     """
 
     SOURCE_MANUAL = 'manual'
@@ -286,30 +293,14 @@ class CompanyOAuthRedirect(models.Model):
         (SOURCE_HOSTING, 'Hosting'),
     ]
 
-    KIND_WEB = 'web'
-    KIND_DESKTOP = 'desktop'
-    KIND_CHOICES = [
-        (KIND_WEB, 'Web origin'),
-        (KIND_DESKTOP, 'Desktop app'),
-    ]
-
     company = models.ForeignKey(
         Company,
         on_delete=models.CASCADE,
         related_name='oauth_redirect_allowlist',
     )
-    kind = models.CharField(
-        max_length=16,
-        choices=KIND_CHOICES,
-        default=KIND_WEB,
-        help_text='web matches an http(s) origin prefix. desktop matches one exact custom-scheme URI.',
-    )
     base_url = models.CharField(
         max_length=500,
-        help_text=(
-            'Web: canonical http(s) origin (https://app.example.com). '
-            'Desktop: exact custom-scheme URI (shellui-playground://callback).'
-        ),
+        help_text='Canonical http(s) origin (https://app.example.com).',
     )
     label = models.CharField(blank=True, max_length=150)
     source = models.CharField(

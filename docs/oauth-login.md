@@ -62,12 +62,12 @@ identity-service only sends codes or tokens to origins the company approved. Thi
 | Target | Rule |
 | --- | --- |
 | Loopback (`127.0.0.1`, `localhost`, `::1`) | Allowed when `DEBUG=true` or `OAUTH_ALLOW_LOOPBACK_REDIRECTS=true`, for the CLI and local shells |
-| Other http(s) origins | Must match an active `CompanyOAuthRedirect` row with `kind=web` for the company |
-| Desktop app URI | Must match an active row with `kind=desktop`, character for character. No prefix match. See [Desktop apps](desktop-apps.md) |
-| Hosting previews (`{slug}.{HOSTING_APP_DOMAIN}`) | Added and removed by hosting-service (`source=hosting`) when a site is created or deleted. These rows are `kind=web` |
-| Empty allowlist | Every non-loopback http(s) `redirect_to` is denied, and every custom-scheme `redirect_to` is denied |
+| Other http(s) origins | Must match an active `CompanyOAuthRedirect` row for the company |
+| Desktop app URI | Scheme must equal `Company.desktop_redirect_scheme`. Desktop sign-in is off until that field is set. See [Desktop apps](desktop-apps.md) |
+| Hosting previews (`{slug}.{HOSTING_APP_DOMAIN}`) | Added and removed by hosting-service (`source=hosting`) when a site is created or deleted |
+| Empty allowlist | Every non-loopback http(s) `redirect_to` is denied. A custom-scheme `redirect_to` is denied unless the company has registered that scheme |
 
-Store web origins as scheme, host, and optional port, for example `http://localhost:4000` or `https://app.example.com`. A path or query on a web allowlist entry is ignored. A desktop row stores the full URI, for example `shellui-playground://callback`.
+Store web origins as scheme, host, and optional port, for example `http://localhost:4000` or `https://app.example.com`. A path or query on a web allowlist entry is ignored. A desktop redirect is not an allowlist row: register the scheme on the company, then send `shellui-playground://callback`.
 
 ### Manage the allowlist
 
@@ -77,7 +77,7 @@ Staff and company owners can edit the allowlist in three places:
 - **Django admin**: **Company OAuth redirects**
 - **REST API**: `GET`, `POST`, `PATCH`, and `DELETE` on `/api/v1/oauth-redirects?company_id=…`
 
-`kind` defaults to `web`. Set `kind` to `desktop` for one exact custom-scheme URI. This request adds a production shell origin for company `1`:
+This request adds a production shell origin for company `1`:
 
 ```bash
 curl -s -X POST "https://auth.example.com/api/v1/oauth-redirects?company_id=1" \

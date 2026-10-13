@@ -37,6 +37,7 @@ from apps.companies.access import (
 )
 from apps.authapi.client_pkce import PkceError, parse_client_pkce, verify_client_pkce
 from apps.authapi.desktop_return import client_redirect_reports_success, client_redirect_response
+from apps.authapi.signin_error import request_wants_html, signin_error_response
 from apps.companies.redirect_allowlist import (
     append_oauth_error_params,
     is_custom_scheme_redirect,
@@ -57,6 +58,7 @@ from apps.authapi.magic_link import (
     is_staff_account,
     lookup_magic_link_token,
     magic_link_enabled_for_company,
+    magic_link_stored_redirect,
     magic_link_row_is_for_staff,
     magic_link_ttl,
     normalize_magic_link_language,
@@ -80,6 +82,30 @@ from apps.authapi.views import (
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
+
+
+def _magic_link_browser_error_code(message: str | None) -> str:
+    text = (message or '').strip().lower()
+    if text == 'magic link expired.':
+        return 'magic_link_expired'
+    if 'already used' in text:
+        return 'magic_link_used'
+    return 'magic_link_invalid'
+
+
+def _magic_link_browser_error(request, *, message: str, status_code: int, company, raw_token: str = ''):
+    error_code = _magic_link_browser_error_code(message)
+    redirect_to = ''
+    if company is not None and raw_token:
+        redirect_to = magic_link_stored_redirect(raw_token=raw_token, company_id=company.id)
+    return signin_error_response(
+        request,
+        message=message,
+        error_code=error_code,
+        status_code=status_code,
+        company=company,
+        redirect_to=redirect_to or None,
+    )
 
 MAGIC_LINK_PROVIDER = 'magic_link'
 
@@ -432,33 +458,38 @@ class ShellUIMagicLinkVerifyView(APIView):
     def get(self, request):
         company, company_err = _required_company_from_request(request)
         if company_err:
-            return company_err
+            if not request_wants_html(request):
+                return company_err
+            data = company_err.data if isinstance(getattr(company_err, 'data', None), dict) else {}
+            return signin_error_response(
+                request,
+                message=str(data.get('error') or 'Invalid request.'),
+                error_code='authorize_company',
+                status_code=getattr(company_err, 'status_code', 400) or 400,
+            )
         if not magic_link_enabled_for_company(company):
-            return Response(
-                {
-                    'error': 'Magic link sign-in is disabled for this company.',
-                    'error_code': 'magic_link_disabled',
-                },
-                status=status.HTTP_403_FORBIDDEN,
+            message = 'Magic link sign-in is disabled for this company.'
+            if not request_wants_html(request):
+                return Response(
+                    {'error': message, 'error_code': 'magic_link_disabled'},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+            return signin_error_response(
+                request,
+                message=message,
+                error_code='magic_link_disabled',
+                status_code=status.HTTP_403_FORBIDDEN,
+                company=company,
             )
         raw_token = request.GET.get('token') or ''
         row, err = lookup_magic_link_token(raw_token=raw_token, company_id=company.id)
         if err or row is None:
-            return render(
+            return _magic_link_browser_error(
                 request,
-                'authapi/magic_link_confirm.html',
-                {
-                    **_CONFIRM_PAGE_DEFAULTS,
-                    'error_message': err or 'Invalid link.',
-                    'company_name': company.name,
-                    'email': '',
-                    'token': '',
-                    'company_id': company.id,
-                    'form_action': request.build_absolute_uri(
-                        '?' + urlencode({'company_id': str(company.id)})
-                    ),
-                },
-                status=400,
+                message=err or 'Invalid link.',
+                status_code=status.HTTP_400_BAD_REQUEST,
+                company=company,
+                raw_token=raw_token,
             )
         if magic_link_row_is_for_staff(row):
             # The link holder has this account's token, so saying why is fine here.
@@ -534,11 +565,17 @@ class ShellUIMagicLinkVerifyView(APIView):
             return company_err
 
         if not magic_link_enabled_for_company(company):
+            message = 'Magic link sign-in is disabled for this company.'
+            if browser_redirect and request_wants_html(request):
+                return signin_error_response(
+                    request,
+                    message=message,
+                    error_code='magic_link_disabled',
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    company=company,
+                )
             return Response(
-                {
-                    'error': 'Magic link sign-in is disabled for this company.',
-                    'error_code': 'magic_link_disabled',
-                },
+                {'error': message, 'error_code': 'magic_link_disabled'},
                 status=status.HTTP_403_FORBIDDEN,
             )
 
@@ -571,6 +608,14 @@ class ShellUIMagicLinkVerifyView(APIView):
                 company=company,
                 failure_reason=err or 'invalid_token',
             )
+            if browser_redirect:
+                return _magic_link_browser_error(
+                    request,
+                    message=err or 'Invalid link.',
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    company=company,
+                    raw_token=raw_token or '',
+                )
             return Response({'error': err or 'Invalid link.'}, status=status.HTTP_400_BAD_REQUEST)
 
         redirect_to = row.redirect_to

@@ -15,7 +15,7 @@ from apps.actions.scim_hooks import (
 from apps.authapi.provider_registry import supported_oauth_provider_slugs
 from .access import normalize_allowed_domains
 from .models import Company, CompanyGroup, CompanyMembership, CompanyOAuthClient, CompanyOAuthRedirect
-from .redirect_allowlist import normalize_oauth_redirect_entry
+from .redirect_allowlist import normalize_allowlist_origin, normalize_registered_scheme
 
 
 class VerifiedEmailDomainsField(forms.CharField):
@@ -85,6 +85,7 @@ class CompanyAdminForm(forms.ModelForm):
             'allowed_email_domains',
             'verified_email_domains',
             'enable_magic_link',
+            'desktop_redirect_scheme',
             'data_retention_days',
             'owners',
         )
@@ -110,6 +111,12 @@ class CompanyAdminForm(forms.ModelForm):
 
     def clean_verified_email_domains(self):
         return normalize_allowed_domains(self.cleaned_data.get('verified_email_domains'))
+
+    def clean_desktop_redirect_scheme(self):
+        scheme, err = normalize_registered_scheme(self.cleaned_data.get('desktop_redirect_scheme') or '')
+        if err:
+            raise forms.ValidationError(err)
+        return scheme or ''
 
     def clean(self):
         cleaned = super().clean()
@@ -189,6 +196,17 @@ class CompanyAdmin(admin.ModelAdmin):
                     'Event log rows, finished webhook deliveries and SCIM provisioning events are deleted '
                     'after this many days by the purge_expired_data scheduled job. '
                     'Company owners see the value in the admin panel but cannot change it.'
+                ),
+            },
+        ),
+        (
+            'Desktop sign-in',
+            {
+                'fields': ('desktop_redirect_scheme',),
+                'description': (
+                    'One lowercase custom scheme for this app, for example shellui-playground. '
+                    'Leave it empty to keep desktop sign-in off. '
+                    'A redirect is accepted only when its scheme matches, such as shellui-playground://callback.'
                 ),
             },
         ),
@@ -420,8 +438,7 @@ class CompanyOAuthRedirectAdminForm(forms.ModelForm):
         cleaned = super().clean()
         if self.errors:
             return cleaned
-        kind = cleaned.get('kind') or CompanyOAuthRedirect.KIND_WEB
-        stored, err = normalize_oauth_redirect_entry(cleaned.get('base_url') or '', kind=kind)
+        stored, err = normalize_allowlist_origin(cleaned.get('base_url') or '')
         if err or not stored:
             self.add_error('base_url', err or 'Invalid base_url.')
         else:
@@ -432,7 +449,7 @@ class CompanyOAuthRedirectAdminForm(forms.ModelForm):
 @admin.register(CompanyOAuthRedirect)
 class CompanyOAuthRedirectAdmin(admin.ModelAdmin):
     form = CompanyOAuthRedirectAdminForm
-    list_display = ('id', 'company', 'kind', 'base_url', 'label', 'source', 'is_active', 'created_at')
-    list_filter = ('kind', 'source', 'is_active', 'company')
+    list_display = ('id', 'company', 'base_url', 'label', 'source', 'is_active', 'created_at')
+    list_filter = ('source', 'is_active', 'company')
     search_fields = ('base_url', 'label', 'company__name')
     autocomplete_fields = ('company',)
