@@ -1,6 +1,6 @@
 """DRF renderers for non-JSON responses."""
 
-from rest_framework.renderers import BaseRenderer, JSONRenderer
+from rest_framework.renderers import BaseRenderer
 from rest_framework.utils import json
 
 
@@ -28,4 +28,21 @@ class PrometheusTextRenderer(BaseRenderer):
         return json.dumps(data).encode(self.charset)
 
 
-DEFAULT_METRICS_RENDERERS = [JSONRenderer, PrometheusTextRenderer]
+class SignInPageRenderer(BaseRenderer):
+    """Accepts ``text/html`` so browser sign-in errors can return their own page.
+
+    API clients still get JSON. This renderer does not build a browsable API.
+    """
+
+    media_type = 'text/html'
+    format = 'html'
+    charset = 'utf-8'
+
+    def render(self, data, accepted_media_type=None, renderer_context=None):
+        if data is None:
+            return b''
+        if isinstance(data, (bytes, bytearray, memoryview)):
+            return bytes(data)
+        if isinstance(data, str):
+            return data.encode(self.charset)
+        return b''

@@ -39,6 +39,21 @@ class CompanyMembership(models.Model):
         state = 'enabled' if self.is_enabled else 'disabled'
         return f'{self.company_id}:{self.user_id}:{state}'
 
+    def save(self, *args, **kwargs):
+        source = None
+        before = None
+        if self.pk and self.user_id and self.company_id:
+            from apps.actions.user_hooks import current_user_profile_event_source, profile_snapshot
+
+            source = current_user_profile_event_source()
+            if source:
+                before = profile_snapshot(self.user, self.company)
+        super().save(*args, **kwargs)
+        if source and before is not None:
+            from apps.actions.user_hooks import emit_user_updated_if_changed
+
+            emit_user_updated_if_changed(self.company, self.user, source=source, before=before)
+
 
 class Company(models.Model):
     ACCESS_PUBLIC = 'public'
@@ -231,9 +246,18 @@ class CompanyOAuthClient(models.Model):
         on_delete=models.CASCADE,
         related_name='company_oauth_clients',
     )
-    catalog_slug = models.CharField(max_length=128, blank=True, default='')
     dedupe_key = models.CharField(max_length=512, null=True, blank=True)
     is_active = models.BooleanField(default=True)
+    desktop_redirect_scheme = models.CharField(
+        max_length=64,
+        blank=True,
+        default='',
+        help_text=(
+            'Lowercase custom URI scheme for this application, for example shellui-playground. '
+            'Empty keeps desktop sign-in off for this application. '
+            'A redirect is accepted only when its scheme matches.'
+        ),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -272,7 +296,10 @@ class CompanyOAuthClient(models.Model):
 
 
 class CompanyOAuthRedirect(models.Model):
-    """Allowed post-OAuth bounce origins for a company (shell /login/callback hosts)."""
+    """Allowed http(s) post-login bounce origins for a company.
+
+    Desktop sign-in uses ``CompanyOAuthClient.desktop_redirect_scheme``, not a row here.
+    """
 
     SOURCE_MANUAL = 'manual'
     SOURCE_HOSTING = 'hosting'
@@ -288,7 +315,7 @@ class CompanyOAuthRedirect(models.Model):
     )
     base_url = models.CharField(
         max_length=500,
-        help_text='Canonical origin only (e.g. https://app.example.com).',
+        help_text='Canonical http(s) origin (https://app.example.com).',
     )
     label = models.CharField(blank=True, max_length=150)
     source = models.CharField(

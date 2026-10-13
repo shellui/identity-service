@@ -6,6 +6,11 @@ from django.urls import path, reverse
 from django.utils.html import format_html
 
 from apps.actions.retention import retention_status
+from apps.actions.user_hooks import (
+    emit_profile_snapshots,
+    snapshot_profiles_for_ids,
+    user_profile_event_source,
+)
 from apps.actions.scim_hooks import (
     emit_group_created,
     emit_group_deleted,
@@ -15,6 +20,7 @@ from apps.actions.scim_hooks import (
 from apps.authapi.provider_registry import supported_oauth_provider_slugs
 from .access import normalize_allowed_domains
 from .models import Company, CompanyGroup, CompanyMembership, CompanyOAuthClient, CompanyOAuthRedirect
+from .redirect_allowlist import normalize_allowlist_origin, normalize_registered_scheme
 
 
 class VerifiedEmailDomainsField(forms.CharField):
@@ -136,7 +142,7 @@ class CompanyMembershipInline(admin.TabularInline):
 class CompanyOAuthClientInline(admin.TabularInline):
     model = CompanyOAuthClient
     extra = 1
-    fields = ('social_app', 'is_active', 'created_at')
+    fields = ('social_app', 'is_active', 'desktop_redirect_scheme', 'created_at')
     readonly_fields = ('created_at',)
 
 
@@ -301,6 +307,23 @@ class CompanyAdmin(admin.ModelAdmin):
         redirect_to = f'{add_url}?provider={normalized_provider}&_popup=0&next={next_url}'
         return HttpResponseRedirect(redirect_to)
 
+    def save_formset(self, request, form, formset, change):
+        if formset.model is CompanyMembership:
+            with user_profile_event_source('admin'):
+                super().save_formset(request, form, formset, change)
+            return
+        super().save_formset(request, form, formset, change)
+
+    def save_related(self, request, form, formsets, change):
+        company = form.instance
+        before_ids = set(company.owners.values_list('pk', flat=True)) if company.pk else set()
+        new_owners = form.cleaned_data.get('owners')
+        after_ids = {user.pk for user in new_owners} if new_owners is not None else before_ids
+        befores = snapshot_profiles_for_ids(company, before_ids.symmetric_difference(after_ids)) if company.pk else {}
+        super().save_related(request, form, formsets, change)
+        if company.pk and befores:
+            emit_profile_snapshots(company, befores, source='admin')
+
 
 @admin.register(CompanyMembership)
 class CompanyMembershipAdmin(admin.ModelAdmin):
@@ -311,6 +334,14 @@ class CompanyMembershipAdmin(admin.ModelAdmin):
     autocomplete_fields = ('company', 'user')
     readonly_fields = ('created_at', 'updated_at')
     ordering = ('company__name', 'user__email')
+
+    def save_model(self, request, obj, form, change):
+        with user_profile_event_source('admin'):
+            super().save_model(request, obj, form, change)
+
+    def changelist_view(self, request, extra_context=None):
+        with user_profile_event_source('admin'):
+            return super().changelist_view(request, extra_context)
 
 
 class CompanyGroupAdminForm(forms.ModelForm):
@@ -368,8 +399,15 @@ class CompanyGroupAdmin(admin.ModelAdmin):
 
     def save_related(self, request, form, formsets, change):
         group = form.instance
-        before_users = set(group.members.values_list('pk', flat=True)) if change else set()
-        before_groups = set(group.member_groups.values_list('pk', flat=True)) if change else set()
+        before_users = set(group.members.values_list('pk', flat=True)) if change and group.pk else set()
+        before_groups = set(group.member_groups.values_list('pk', flat=True)) if change and group.pk else set()
+        new_members = form.cleaned_data.get('members')
+        after_ids = {user.pk for user in new_members} if new_members is not None else before_users
+        profile_befores = (
+            snapshot_profiles_for_ids(group.company, before_users.symmetric_difference(after_ids))
+            if group.company_id
+            else {}
+        )
         super().save_related(request, form, formsets, change)
         after_users = set(group.members.values_list('pk', flat=True))
         after_groups = set(group.member_groups.values_list('pk', flat=True))
@@ -385,6 +423,8 @@ class CompanyGroupAdmin(admin.ModelAdmin):
                     user_ids=sorted(user_ids),
                     nested_group_ids=sorted(group_ids),
                 )
+        if profile_befores:
+            emit_profile_snapshots(group.company, profile_befores, source='admin')
 
     def delete_model(self, request, obj):
         company = obj.company
@@ -397,9 +437,33 @@ class CompanyGroupAdmin(admin.ModelAdmin):
         super().delete_queryset(request, queryset)
 
 
+class CompanyOAuthClientAdminForm(forms.ModelForm):
+    class Meta:
+        model = CompanyOAuthClient
+        fields = '__all__'
+
+    def clean_desktop_redirect_scheme(self):
+        scheme, err = normalize_registered_scheme(self.cleaned_data.get('desktop_redirect_scheme') or '')
+        if err:
+            raise forms.ValidationError(err)
+        return scheme or ''
+
+
+CompanyOAuthClientInline.form = CompanyOAuthClientAdminForm
+
+
 @admin.register(CompanyOAuthClient)
 class CompanyOAuthClientAdmin(admin.ModelAdmin):
-    list_display = ('id', 'company', 'provider', 'social_app', 'is_active', 'created_at')
+    form = CompanyOAuthClientAdminForm
+    list_display = (
+        'id',
+        'company',
+        'provider',
+        'social_app',
+        'desktop_redirect_scheme',
+        'is_active',
+        'created_at',
+    )
     list_filter = ('social_app__provider', 'is_active', 'company')
     search_fields = ('social_app__name', 'social_app__client_id', 'company__name')
     autocomplete_fields = ('company',)
@@ -410,8 +474,26 @@ class CompanyOAuthClientAdmin(admin.ModelAdmin):
         return obj.social_app.provider
 
 
+class CompanyOAuthRedirectAdminForm(forms.ModelForm):
+    class Meta:
+        model = CompanyOAuthRedirect
+        fields = '__all__'
+
+    def clean(self):
+        cleaned = super().clean()
+        if self.errors:
+            return cleaned
+        stored, err = normalize_allowlist_origin(cleaned.get('base_url') or '')
+        if err or not stored:
+            self.add_error('base_url', err or 'Invalid base_url.')
+        else:
+            cleaned['base_url'] = stored
+        return cleaned
+
+
 @admin.register(CompanyOAuthRedirect)
 class CompanyOAuthRedirectAdmin(admin.ModelAdmin):
+    form = CompanyOAuthRedirectAdminForm
     list_display = ('id', 'company', 'base_url', 'label', 'source', 'is_active', 'created_at')
     list_filter = ('source', 'is_active', 'company')
     search_fields = ('base_url', 'label', 'company__name')

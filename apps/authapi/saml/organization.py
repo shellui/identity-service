@@ -8,8 +8,6 @@ import secrets
 from allauth.socialaccount.models import SocialApp
 from django.http import Http404
 
-from apps.companies.models import Company, CompanyOAuthClient
-
 ORG_SLUG_RE = re.compile(r'^[a-z0-9][a-z0-9_-]{7,127}$')
 
 
@@ -55,24 +53,6 @@ def get_saml_app_for_slug(request, organization_slug: str) -> SocialApp:
     if str(app.provider).strip().lower() != 'saml':
         raise Http404('saml_app_not_found')
     return app
-
-
-def require_company_for_saml_app(app: SocialApp, *, company_id: int) -> Company:
-    owner = shellui_company_id_from_app(app)
-    if owner is None or int(owner) != int(company_id):
-        raise PermissionError('saml_company_mismatch')
-    try:
-        return Company.objects.get(pk=int(company_id))
-    except Company.DoesNotExist as exc:
-        raise PermissionError('saml_company_mismatch') from exc
-
-
-def company_owns_saml_app(company_id: int, app: SocialApp) -> bool:
-    linked = CompanyOAuthClient.objects.filter(company_id=company_id, social_app=app).exists()
-    if not linked:
-        return False
-    owner = shellui_company_id_from_app(app)
-    return owner is not None and int(owner) == int(company_id)
 
 
 def idp_entity_id_from_settings(settings_data: dict) -> str:

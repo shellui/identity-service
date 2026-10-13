@@ -54,11 +54,6 @@ def merge_shellui_advanced(existing: dict | None) -> dict:
     return merged
 
 
-def idp_initiated_sso_allowed(settings_data: dict) -> bool:
-    advanced = settings_data.get('advanced') if isinstance(settings_data.get('advanced'), dict) else {}
-    return not merge_shellui_advanced(advanced)['reject_idp_initiated_sso']
-
-
 def security_settings(settings_data: dict, *, require_signed_messages: bool = False) -> dict:
     advanced = merge_shellui_advanced(
         settings_data.get('advanced') if isinstance(settings_data.get('advanced'), dict) else {}

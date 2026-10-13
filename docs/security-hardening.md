@@ -67,6 +67,8 @@ Loopback redirect targets (`127.0.0.1`, `localhost`, `::1`) are allowed only wit
 
 `GET /api/v1/settings` returns only provider slugs and feature flags to anonymous callers. OAuth client IDs and labels are included only for signed-in members of the company.
 
+A desktop deep link is accepted when its scheme equals the `desktop_redirect_scheme` of the OAuth application making the request. It is not an allowlist row. `POST /api/v1/oauth/session` skips the `Origin` check only after S256 PKCE succeeds for that custom-scheme redirect. A missing or wrong `code_verifier` is rejected and the code stays unused. http(s) redirects keep the Origin check. See [Desktop apps](desktop-apps.md#origin-check).
+
 ## Account deletion
 
 `DELETE /api/v1/user` refuses personal access tokens and the last owner of a company, and requires a recent sign-in: the token's `auth_time` must be within `SELF_SERVICE_ACCOUNT_DELETE_MAX_IAT_AGE` (5 minutes by default). A token refresh keeps `auth_time`, so the user must sign in again. See [Account deletion](account-deletion.md).

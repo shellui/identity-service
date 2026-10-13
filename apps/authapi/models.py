@@ -168,6 +168,8 @@ class OAuthSessionDeliveryCode(models.Model):
         related_name='oauth_session_delivery_codes',
     )
     redirect_to = models.CharField(max_length=2048)
+    # S256 code_challenge for desktop custom-scheme redirects. Never the verifier.
+    code_challenge = models.CharField(max_length=128, blank=True, default='')
     token_payload = models.JSONField()
     expires_at = models.DateTimeField(db_index=True)
     redeemed_at = models.DateTimeField(null=True, blank=True, db_index=True)
@@ -203,6 +205,8 @@ class MagicLinkToken(models.Model):
     email = models.EmailField(max_length=254, db_index=True)
     token_hash = models.CharField(max_length=64, unique=True, db_index=True)
     redirect_to = models.CharField(max_length=2048)
+    # S256 code_challenge when the link returns to a desktop app. Never the verifier.
+    code_challenge = models.CharField(max_length=128, blank=True, default='')
     expires_at = models.DateTimeField(db_index=True)
     consumed_at = models.DateTimeField(null=True, blank=True, db_index=True)
     client_timezone = models.CharField(max_length=64, blank=True)
@@ -217,12 +221,3 @@ class MagicLinkToken(models.Model):
 
     def __str__(self) -> str:
         return f'MagicLinkToken(id={self.pk}, email={self.email})'
-
-
-class OidcSocialAccountKeyMigration(models.Model):
-    """Audit rows updated by migration 0014 (reverse restores only these accounts)."""
-
-    social_account_id = models.BigIntegerField(db_index=True)
-    old_provider = models.CharField(max_length=200)
-    old_uid = models.CharField(max_length=255)
-    migrated_at = models.DateTimeField(auto_now_add=True)

@@ -199,6 +199,32 @@ Use this only for Docker/Coolify networks you control.
 
 While this rule is enabled, identity-service does not send its own invitation email, so your workflow must notify the user. `invitation_url` only opens the app; the user still signs in normally, and the account is created on that first sign-in (`identity.user.created`). `identity.user.invitation_revoked` has the same payload plus `revoked_by`.
 
+### `identity.user.updated`
+
+Sent when a tracked profile field changes. `changed_fields` lists the names. The body has no token or sign-in link. Headers match the other events (`webhook-signature`, `X-Shellui-Event`).
+
+```json
+{
+  "id": "990e8400-e29b-41d4-a716-446655440004",
+  "type": "identity.user.updated",
+  "time": "2026-09-24T13:32:00+00:00",
+  "company": { "id": 1, "slug": "acme", "name": "Acme" },
+  "data": {
+    "user_id": 42,
+    "email": "ada@acme.com",
+    "username": "ada@acme.com",
+    "source": "rest",
+    "language": "en",
+    "region": "UTC",
+    "name": "Ada Lovelace",
+    "active": true,
+    "role": "member",
+    "group_ids": [7],
+    "changed_fields": ["name"]
+  }
+}
+```
+
 ### `identity.scim.user.provisioned`
 
 ```json

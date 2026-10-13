@@ -14,7 +14,7 @@ from django.utils import timezone
 
 from apps.actions.handlers.webhook import WebhookDeliveryError, deliver_webhook_action
 from apps.actions.models import ActionOutbox, ActionRule, DeliveryAttempt
-from apps.actions.webhook_retry import compute_retry_delay_seconds
+from apps.actions.webhook_retry import backoff_seconds, compute_retry_delay_seconds
 
 logger = logging.getLogger(__name__)
 
@@ -23,15 +23,6 @@ _DISPATCH_EXECUTOR: ThreadPoolExecutor | None = None
 
 def _max_attempts() -> int:
     return int(getattr(settings, 'ACTIONS_OUTBOX_MAX_ATTEMPTS', 8))
-
-
-def _backoff_seconds(attempt_number: int) -> int:
-    return min(3600, 30 * (2 ** max(0, attempt_number - 1)))
-
-
-def backoff_seconds(attempt_number: int) -> int:
-    """Public helper for tests and docs."""
-    return _backoff_seconds(attempt_number)
 
 
 def _lease_seconds() -> int:
@@ -177,7 +168,7 @@ def _apply_delivery_result(
             attempt_number=attempt_number,
             http_status=http_status,
             retry_after_seconds=attempt_meta.get('retry_after_seconds'),
-            base_backoff_seconds=_backoff_seconds(attempt_number),
+            base_backoff_seconds=backoff_seconds(attempt_number),
         )
         row.next_attempt_at = timezone.now() + timedelta(seconds=delay)
     row.save(

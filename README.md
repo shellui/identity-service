@@ -7,7 +7,7 @@ It supports OAuth login for **15** django-allauth OAuth2/OIDC providers on the i
 ## Features
 
 - Shellui-compatible auth API at `/api/v1/*`
-- OAuth login via django-allauth (15 supported OAuth2/OIDC providers — [docs/oauth-providers.md](docs/oauth-providers.md); flow — [docs/oauth-login.md](docs/oauth-login.md))
+- OAuth login via django-allauth (15 supported OAuth2/OIDC providers - [docs/oauth-providers.md](docs/oauth-providers.md); flow - [docs/oauth-login.md](docs/oauth-login.md))
 - SAML 2.0 SSO with multiple IdPs per company (see [docs/saml.md](docs/saml.md))
 - Company join modes: **public**, **domain** allow-list, or **invitation-only** (see [docs/company-access.md](docs/company-access.md))
 - JWT access + refresh token issuance (RS256 with JWKS when `JWT_PRIVATE_KEY` is set)
@@ -15,7 +15,7 @@ It supports OAuth login for **15** django-allauth OAuth2/OIDC providers on the i
 - User metadata endpoint (`/api/v1/user`)
 - Permissive API CORS by default (`CORS_ALLOW_ALL_ORIGINS=true`, `CORS_ALLOW_CREDENTIALS=false`) so hosted preview origins and custom shells can call JWT APIs without per-origin env edits; auth is Bearer JWT. OAuth token delivery stays strict via the company redirect allowlist (see [docs/oauth-login.md](docs/oauth-login.md))
 - OpenAPI docs with drf-spectacular
-- **Enterprise SCIM**: per-company user and **nested group** provisioning for Okta / Entra ID / similar IdPs — see [docs/scim.md](docs/scim.md)
+- **Enterprise SCIM**: per-company user and **nested group** provisioning for Okta / Entra ID / similar IdPs - see [docs/scim.md](docs/scim.md)
 
 ## Enterprise SCIM
 
@@ -29,7 +29,7 @@ Each company turns SCIM on by creating a **Company SCIM token** in Shellui admin
 
 ## Shellui webhooks (domain events)
 
-Company **webhook rules** in Django admin map catalog events (`identity.scim.user.provisioned`, `identity.user.created`, group changes, SCIM conflicts, …) to **signed HTTPS endpoints** (n8n-friendly). Delivery uses a DB outbox and `transaction.on_commit`, with retries every minute by the built-in scheduler. See **[docs/actions.md](docs/actions.md)** and **[docs/n8n.md](docs/n8n.md)**.
+Company **webhook rules** in Django admin map catalog events (`identity.scim.user.provisioned`, `identity.user.created`, `identity.user.updated`, group changes, SCIM conflicts, …) to **signed HTTPS endpoints** (n8n-friendly). Delivery uses a DB outbox and `transaction.on_commit`, with retries every minute by the built-in scheduler. See **[docs/actions.md](docs/actions.md)** and **[docs/n8n.md](docs/n8n.md)**.
 
 Every event, and every sign-in, is also stored in the **event log** (`GET /api/v1/events`) for the company data retention (default 7 days, Django admin only). See **[docs/event-log.md](docs/event-log.md)**.
 
@@ -39,21 +39,21 @@ Every event, and every sign-in, is also stored in the **event log** (`GET /api/v
 
 ## Project Structure
 
-- `src/config/` Django project settings and URL routing
-- `src/apps/authapi/` authentication API and OAuth flow
-- `src/apps/companies/` example business domain app
+- `config/` Django project settings and URL routing
+- `apps/authapi/` authentication API and OAuth flow
+- `apps/companies/` companies, OAuth applications, and the redirect allowlist
 
 ## Main Auth Endpoints
 
 - `GET /.well-known/jwks.json` public JWKS for RS256 JWT verification (see [docs/jwks.md](docs/jwks.md))
 - `GET /api/v1/settings` list enabled login methods/providers
-- `GET /api/v1/authorize?provider=github&redirect_to=...&company_id=...` start OAuth (provider `redirect_uri` is always this service’s `/api/v1/oauth/callback`; `redirect_to` is the SPA/CLI bounce target and must be allowlisted or loopback)
+- `GET /api/v1/authorize?provider=github&redirect_to=…&company_id=…` start OAuth (provider `redirect_uri` is always this service's `/api/v1/oauth/callback`; `redirect_to` is the SPA/CLI bounce target and must be allowlisted or loopback)
 - `GET /api/v1/oauth/callback` provider callback (server-side code exchange + account confirmation + redirect to `redirect_to` with one-time `shellui_auth_code`)
 - `POST /api/v1/oauth/session` exchange `shellui_auth_code` for JWT JSON (default delivery; fragment legacy via `token_delivery=fragment`)
 - `POST /api/v1/oauth/confirm` complete sign-in after the confirmation screen (browser form)
 - `GET /api/v1/oauth/confirm?action=switch&confirm_token=…` restart OAuth with account picker (Google/Microsoft)
 - `POST /api/v1/oauth/exchange` deprecated SPA code exchange (older shells that still receive `?code=` on the frontend)
-- `GET/POST /api/v1/oauth-redirects` manage per-company post-OAuth bounce origins (staff or company owner); loopback always allowed; empty list denies non-loopback; `source=hosting` rows are synced from hosting-service
+- `GET/POST /api/v1/oauth-redirects` manage per-company http(s) post-login bounce targets (staff or company owner). Loopback http(s) redirects are allowed when `DEBUG=true` or `OAUTH_ALLOW_LOOPBACK_REDIRECTS=true`. An empty list denies other http(s) redirects. `source=hosting` rows are synced from hosting-service. Desktop sign-in uses each OAuth application's `desktop_redirect_scheme` (one lowercase custom scheme) and requires S256 PKCE. See [docs/desktop-apps.md](docs/desktop-apps.md)
 - `PUT/DELETE /api/v1/hosting-oauth-redirects` hosting-service sync using the caller's identity JWT (staff or company owner)
 - `POST /api/v1/token?grant_type=refresh_token` refresh session using `refresh_token` in the body (Bearer access token optional)
 - `POST /api/v1/logout` logout endpoint (revokes refresh session and denylists access token)
@@ -66,12 +66,12 @@ Every event, and every sign-in, is also stored in the **event log** (`GET /api/v
 
 These routes require a valid JWT whose user has `is_staff=true` (`user_metadata.is_staff` is set from Django when tokens are issued).
 
-- `GET /api/v1/users?q=&page=&page_size=` — paginated user list (`page_size` capped at 100)
-- `GET /api/v1/users/<id>` — single user (Django fields + `user_metadata` cache)
+- `GET /api/v1/users?q=&page=&page_size=` - paginated user list (`page_size` capped at 100)
+- `GET /api/v1/users/<id>` - single user (Django fields + `user_metadata` cache)
 - `PUT /api/v1/users/<id>`: JSON body may include `first_name`, `last_name`, `is_active` (staff or company owner; **per-company** membership enable), and optional `data` object to merge into cached metadata (same idea as `PUT /api/v1/user`). `is_staff` and `is_superuser` are read-only in every REST API: only Django admin may change them, and a body with either field gets **400** `admin_only_field`. You cannot disable your own company access via this API. Enabling a previously disabled membership emails the user.
 - `POST /api/v1/invitations`: invites `email` to the current company (staff or company owner). Stores a pending invitation (no account yet) and sends an invitation email in `language` (`en`, `fr`) linking to `app_url`, or emits `identity.user.invited` instead when a webhook rule exists. The first sign-in with that email accepts it. `GET /api/v1/invitations` lists open invitations; `POST /api/v1/invitations/<id>/revoke` revokes one, which blocks sign-in for that email; `DELETE /api/v1/invitations/<id>` deletes a revoked one for good, which lifts the block. See [docs/company-access.md](docs/company-access.md#invitations).
 - `DELETE /api/v1/users/<id>`: removes the user and their data from the current company (staff or company owner). The account is deleted only when this was their last company. Emits `identity.user.deleted` with `source=admin`. Refuses to delete yourself (400), a staff user unless you are staff (403), or a company's only owner (409 `last_company_owner`).
-- `PATCH /api/v1/companies/<id>/` — company owners may update `name`, `owner_ids`, `access_mode` (`public` \| `domain` \| `invite`), and `allowed_email_domains`. `data_retention_days` is read-only (Django admin).
+- `PATCH /api/v1/companies/<id>/` - company owners may update `name`, `owner_ids`, `access_mode` (`public` \| `domain` \| `invite`), and `allowed_email_domains`. `data_retention_days` is read-only (Django admin).
 - `GET /api/v1/events`, `GET /api/v1/events/<id>`, `GET /api/v1/events/types`, `GET /api/v1/events/retention`: event log and retention status (staff or company owner). See [docs/event-log.md](docs/event-log.md).
 
 ## Quick Start
@@ -81,7 +81,7 @@ These routes require a valid JWT whose user has `is_staff=true` (`user_metadata.
 uv sync
 cp .env.example .env
 # Set SECRET_KEY; generate JWT keys for production (DEBUG=false)
-npm ci && npm run build:css   # first run only (or skip — runserver rebuilds when DEBUG=true)
+npm ci && npm run build:css   # first run only (or skip - runserver rebuilds when DEBUG=true)
 uv run python manage.py migrate
 uv run python manage.py runserver
 ```
@@ -111,13 +111,13 @@ uv run python manage.py generate_jwt_keys
 Copy the output into `.env` (or your secret manager). The private key must stay on one line with `\n` for newlines:
 
 ```bash
-JWT_KEY_ID=abc123...
-JWT_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nMIIE...\n-----END PRIVATE KEY-----\n"
+JWT_KEY_ID=abc123…
+JWT_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nMIIE…\n-----END PRIVATE KEY-----\n"
 ```
 
 In Coolify / Docker secret UIs, paste **only the PEM** (quotes stripped). See [docs/jwks.md](docs/jwks.md).
 
-`JWT_PUBLIC_KEY` is optional (derived from the private key). Verifiers fetch the public key from `GET /.well-known/jwks.json` — see [docs/jwks.md](docs/jwks.md).
+`JWT_PUBLIC_KEY` is optional (derived from the private key). Verifiers fetch the public key from `GET /.well-known/jwks.json` - see [docs/jwks.md](docs/jwks.md).
 
 With Docker Compose, add `JWT_PRIVATE_KEY` to `.env` before running when `DEBUG=false`.
 
@@ -138,7 +138,7 @@ backend: {
 
 ## OAuth provider apps
 
-Register a **single** Authorization callback URL on each IdP app pointing at **identity-service** — not the shell. Every supported provider uses the same callback ([docs/oauth-providers.md](docs/oauth-providers.md)). No query string:
+Register a **single** Authorization callback URL on each IdP app pointing at **identity-service** - not the shell. Every supported provider uses the same callback ([docs/oauth-providers.md](docs/oauth-providers.md)). No query string:
 
 | Environment | Callback URL |
 |-------------|--------------|
@@ -182,7 +182,7 @@ Pull requests and pushes to `main` / `develop` run [`.github/workflows/ci.yml`](
 
 For a gitleaks false positive, add an inline `# gitleaks:allow` comment on the flagged line; `.gitleaksignore` is only for fingerprints of commits already in history.
 
-Pull requests **to `main`** also run the pre-release checklist ([`.github/workflows/pre-release.yml`](.github/workflows/pre-release.yml)) — same checks as:
+Pull requests **to `main`** also run the pre-release checklist ([`.github/workflows/pre-release.yml`](.github/workflows/pre-release.yml)) - same checks as:
 
 ```bash
 ./tools/pre-release-check.sh
@@ -190,7 +190,7 @@ Pull requests **to `main`** also run the pre-release checklist ([`.github/workfl
 
 ## Releases (Docker Hub)
 
-Current release: `0.7.0` (`shellui/identity-service:0.7.0`).
+Current release: `0.8.0` (`shellui/identity-service:0.8.0`).
 
 See [PUBLISH.md](PUBLISH.md) for the pre-release checklist (automated via `./tools/pre-release-check.sh`), tagging conventions, and steps to build, push, and deploy `shellui/identity-service` on Docker Hub.
 
@@ -211,7 +211,7 @@ chmod +x prod-config-check.sh
 
 The script prints `PASS:` / `FAIL:` / `WARN:` / `INFO:` lines and exits non-zero when any hard check fails. Optional env: `EXPECTED_JWT_ISSUER` and `EXPECTED_JWT_AUDIENCE` (defaults: base URL origin and `shellui`). On Coolify with internal Docker Postgres, set `POSTGRES_SSL_REQUIRE=false`.
 
-See [PUBLISH.md](PUBLISH.md#post-deploy-production-config-check) for the full check list. Full OAuth login (fragment delivery) is not verified by the script — production should use `OAUTH_TOKEN_DELIVERY=fragment` until [Shellui #66](https://github.com/shellui/shellui/issues/66) lands.
+See [PUBLISH.md](PUBLISH.md#post-deploy-production-config-check) for the full check list. Full OAuth login (fragment delivery) is not verified by the script - production should use `OAUTH_TOKEN_DELIVERY=fragment` until [Shellui #66](https://github.com/shellui/shellui/issues/66) lands.
 
 ## Docker (local run)
 
@@ -239,12 +239,12 @@ The container runs migrations automatically, stores SQLite at `/app/data/db.sqli
 
 Runtime env vars:
 
-- `SECRET_KEY` (required; Django sessions/CSRF — not used for JWT signing when `JWT_PRIVATE_KEY` is set)
-- `JWT_PRIVATE_KEY` (required in production; RS256 private key PEM — generate with `uv run python manage.py generate_jwt_keys`, see [JWT private key](#jwt-private-key-rs256))
+- `SECRET_KEY` (required; Django sessions/CSRF - not used for JWT signing when `JWT_PRIVATE_KEY` is set)
+- `JWT_PRIVATE_KEY` (required in production; RS256 private key PEM - generate with `uv run python manage.py generate_jwt_keys`, see [JWT private key](#jwt-private-key-rs256))
 - `JWT_PUBLIC_KEY`, `JWT_KEY_ID`, `JWT_PREVIOUS_PUBLIC_KEY`, `JWT_PREVIOUS_KEY_ID` (optional; see JWKS docs)
 - `JWT_ACCEPT_HS256_LEGACY` (default `false` in production with RS256; set `true` only during HS256 migration)
 - `JWT_ISSUER`, `JWT_AUDIENCE` (required in production; included on issued tokens)
-- `JWT_ACCESS_TOKEN_LIFETIME` (default `5m`; e.g. `30s`, `5m`, `2h` — bare integer = seconds)
+- `JWT_ACCESS_TOKEN_LIFETIME` (default `5m`; e.g. `30s`, `5m`, `2h` - bare integer = seconds)
 - `JWT_REFRESH_TOKEN_LIFETIME` (default `7d`)
 - `DEBUG` (default `false`)
 - `ALLOWED_HOSTS` (comma-separated hostnames; empty → `localhost,127.0.0.1`)
@@ -257,16 +257,16 @@ Runtime env vars:
 - `REDIS_URL` (required when `DEBUG=false`; shared cache for auth rate limits, logout access-token denylist, OAuth PKCE state, SAML replay protection and last-seen throttling, and the scheduled jobs broker). Without it a production container logs `REDIS_URL is required when DEBUG is false` and exits with status 1, also with `SCHEDULER_ENABLED=false`. With `DEBUG=true` it is optional: unset uses in-process LocMem and the scheduled jobs do not run
 - `GUNICORN_WORKERS` (default `4`)
 - `GUNICORN_THREADS` (default `4`)
-- `GET /health/live` — DB-free liveness probe (configure load balancers to use this instead of `/`)
+- `GET /health/live` - DB-free liveness probe (configure load balancers to use this instead of `/`)
 - `GUNICORN_TIMEOUT` (default `60`; restarts a frozen worker process only, it does not stop a request stuck in a `gthread` worker)
 - `GUNICORN_GRACEFUL_TIMEOUT` (default `30`), `GUNICORN_KEEP_ALIVE` (default `75`), `GUNICORN_MAX_REQUESTS` (default `1000`), `GUNICORN_MAX_REQUESTS_JITTER` (default `200`)
 - `EMAIL_TIMEOUT` (default `10` seconds for SMTP)
 - `POSTGRES_STATEMENT_TIMEOUT` (default `15` seconds) and `POSTGRES_LOCK_TIMEOUT` (default `5` seconds); `0` turns one off
 - `LOG_LEVEL` (default `INFO`) and `SLOW_REQUEST_THRESHOLD_SECONDS` (default `2`; `0` turns it off)
-- `SENTRY_DSN` (optional; enable Sentry error reporting — leave empty in local dev)
+- `SENTRY_DSN` (optional; enable Sentry error reporting - leave empty in local dev)
 - `SENTRY_ENVIRONMENT` (optional; default `development` when `DEBUG=true`, else `production`)
 - `SENTRY_RELEASE` (optional; default `project.version` from `pyproject.toml`)
-- `SENTRY_TRACES_SAMPLE_RATE` (optional; default `0` — errors only; set e.g. `0.1` for performance traces)
+- `SENTRY_TRACES_SAMPLE_RATE` (optional; default `0` - errors only; set e.g. `0.1` for performance traces)
 - `EMAIL_SERVICE_URL` (optional; production default `https://email.shellui.com`. Local: `http://localhost:8003`. From Docker: `http://host.docker.internal:8003`)
 - `EMAIL_SERVICE_API_KEY` (optional; `esk_` service key. Unset keeps SMTP / the console backend. See [docs/email-service.md](docs/email-service.md))
 

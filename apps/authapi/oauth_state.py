@@ -9,12 +9,13 @@ from django.conf import settings
 from django.core import signing
 from django.core.cache import cache
 
+from .client_pkce import CHALLENGE_RE
+
 OAUTH_STATE_SALT = 'shellui.oauth.authorize.v1'
 OAUTH_STATE_MAX_AGE_SECONDS = 15 * 60
 OAUTH_STATE_NONCE_COOKIE = 'shellui_oauth_state_nonce'
 OAUTH_STATE_USED_CACHE_PREFIX = 'shellui:oauth_state_used:'
 OAUTH_PKCE_CACHE_PREFIX = 'shellui:oauth_pkce:'
-OAUTH_APPLE_POST_CACHE_PREFIX = 'shellui:oauth_apple_post:'
 OAUTH_APPLE_POST_STATE_USED_PREFIX = 'shellui:oauth_apple_post_state:'
 OAUTH_APPLE_BRIDGE_COOKIE = 'shellui_apple_oauth_bridge'
 OAUTH_APPLE_BRIDGE_CACHE_PREFIX = 'shellui:oauth_apple_bridge:'
@@ -27,29 +28,6 @@ def stash_oauth_pkce_verifier(nonce: str, verifier: str) -> None:
     if not key or not value:
         return
     cache.set(f'{OAUTH_PKCE_CACHE_PREFIX}{key}', value, timeout=OAUTH_STATE_MAX_AGE_SECONDS)
-
-
-def stash_apple_oauth_post_payload(nonce: str, payload: dict) -> None:
-    key = str(nonce or '').strip()
-    if not key or not isinstance(payload, dict):
-        return
-    cache.set(
-        f'{OAUTH_APPLE_POST_CACHE_PREFIX}{key}',
-        payload,
-        timeout=OAUTH_STATE_MAX_AGE_SECONDS,
-    )
-
-
-def consume_apple_oauth_post_payload(nonce: str) -> dict | None:
-    key = str(nonce or '').strip()
-    if not key:
-        return None
-    cache_key = f'{OAUTH_APPLE_POST_CACHE_PREFIX}{key}'
-    value = cache.get(cache_key)
-    if isinstance(value, dict):
-        cache.delete(cache_key)
-        return value
-    return None
 
 
 def consume_oauth_pkce_verifier(nonce: str) -> str | None:
@@ -118,6 +96,7 @@ def build_oauth_state(
     client_timezone: str | None = None,
     client_device_id: str | None = None,
     token_delivery: str | None = None,
+    code_challenge: str | None = None,
     nonce: str | None = None,
 ) -> tuple[str, str]:
     """
@@ -142,6 +121,9 @@ def build_oauth_state(
     delivery = (token_delivery or '').strip().lower()
     if delivery in {'code', 'fragment'}:
         payload['token_delivery'] = delivery
+    challenge = (code_challenge or '').strip()
+    if challenge:
+        payload['code_challenge'] = challenge
     return signing.dumps(payload, salt=OAUTH_STATE_SALT), state_nonce
 
 
@@ -192,6 +174,11 @@ def parse_oauth_state(state: str | None) -> tuple[dict | None, str | None]:
     delivery = str(payload.get('token_delivery') or '').strip().lower()
     if delivery in {'code', 'fragment'}:
         out['token_delivery'] = delivery
+    challenge = str(payload.get('code_challenge') or '').strip()
+    if challenge:
+        if not CHALLENGE_RE.fullmatch(challenge):
+            return None, 'Invalid OAuth state payload.'
+        out['code_challenge'] = challenge
     return out, None
 
 

@@ -18,6 +18,12 @@ from apps.scim.context import get_scim_company
 from apps.scim.routing import scim_reverse_kwargs
 from apps.scim.group_members import parse_scim_members
 from apps.scim.filters import ShellUIGroupFilterQuery, ShellUIUserFilterQuery
+from apps.actions.user_hooks import (
+    emit_profile_snapshots,
+    emit_user_updated_if_changed,
+    profile_snapshot,
+    snapshot_profiles_for_ids,
+)
 from apps.actions.scim_hooks import (
     emit_group_created,
     emit_group_deleted,
@@ -86,6 +92,7 @@ class ShellUIScimUser(_ShellUIResourceTypeMixin, SCIMUser):
             obj = ScimUserBridge(obj)
         super().__init__(obj, request=request)
         self._pending_membership_active: bool | None = None
+        self._profile_before: dict | None = None
 
     @property
     def _company(self):
@@ -180,6 +187,18 @@ class ShellUIScimUser(_ShellUIResourceTypeMixin, SCIMUser):
         if not enabled:
             invalidate_user_company_auth_state(user, company)
 
+    def _capture_profile_before(self, company, user) -> None:
+        if self._profile_before is not None or not getattr(user, 'pk', None):
+            return
+        stored = type(user).objects.get(pk=user.pk)
+        self._profile_before = profile_snapshot(stored, company)
+
+    def _emit_profile_before(self, company, user) -> None:
+        before = self._profile_before
+        self._profile_before = None
+        if before is not None:
+            emit_user_updated_if_changed(company, user, source='scim', before=before)
+
     def _emit_membership_change(self, company, user, *, was_enabled: bool, enabled: bool) -> None:
         if was_enabled == enabled:
             return
@@ -202,6 +221,8 @@ class ShellUIScimUser(_ShellUIResourceTypeMixin, SCIMUser):
                 is_new = False
             elif not user.has_usable_password():
                 user.set_unusable_password()
+        if not is_new:
+            self._capture_profile_before(company, user)
         was_enabled = False if is_new else is_company_access_enabled(company, user)
         self._assert_can_persist_user(company)
         try:
@@ -219,6 +240,7 @@ class ShellUIScimUser(_ShellUIResourceTypeMixin, SCIMUser):
             emit_user_provisioned(company, user)
         else:
             self._emit_membership_change(company, user, was_enabled=was_enabled, enabled=enabled)
+            self._emit_profile_before(company, user)
 
     def delete(self):
         company = self._company
@@ -236,6 +258,7 @@ class ShellUIScimUser(_ShellUIResourceTypeMixin, SCIMUser):
         if path and path.first_path == ('active', None, None):
             company = self._company
             user = self.obj.user
+            self._capture_profile_before(company, user)
             was_enabled = is_company_access_enabled(company, user)
             enabled = bool(value)
             set_company_access(company, user, enabled=enabled)
@@ -426,6 +449,10 @@ class ShellUIScimGroup(_ShellUIResourceTypeMixin, SCIMGroup):
     def _apply_member_parsed(self, parsed, *, replace: bool):
         users = self._validated_users(parsed.user_ids)
         nested = self._validated_member_groups(parsed.group_ids)
+        current_ids = set(self.obj.members.values_list('pk', flat=True))
+        incoming_ids = set(parsed.user_ids)
+        affected = current_ids | incoming_ids if replace else incoming_ids - current_ids
+        profile_befores = snapshot_profiles_for_ids(self._company, affected)
         change = 'members_replaced' if replace else 'members_added'
         if replace:
             self.obj.members.set(users)
@@ -442,6 +469,7 @@ class ShellUIScimGroup(_ShellUIResourceTypeMixin, SCIMGroup):
             user_ids=parsed.user_ids,
             nested_group_ids=parsed.group_ids,
         )
+        emit_profile_snapshots(self._company, profile_befores, source='scim')
 
     def _set_members(self, members):
         self._apply_member_parsed(parse_scim_members(members), replace=True)
@@ -455,6 +483,7 @@ class ShellUIScimGroup(_ShellUIResourceTypeMixin, SCIMGroup):
     def handle_remove(self, path, value, operation):
         if path.first_path == ('members', None, None):
             parsed = parse_scim_members(value or [])
+            profile_befores = snapshot_profiles_for_ids(self._company, parsed.user_ids)
             if parsed.user_ids:
                 users = self._validated_users(parsed.user_ids)
                 for user in users:
@@ -476,6 +505,7 @@ class ShellUIScimGroup(_ShellUIResourceTypeMixin, SCIMGroup):
                 user_ids=parsed.user_ids,
                 nested_group_ids=parsed.group_ids,
             )
+            emit_profile_snapshots(self._company, profile_befores, source='scim')
             return
         raise exceptions.NotImplementedError
 

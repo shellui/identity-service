@@ -20,7 +20,8 @@ from apps.companies.access import (
     is_company_access_enabled,
     is_login_blocked_by_revoked_invitation,
 )
-from apps.companies.models import Company
+from apps.companies.models import Company, CompanyOAuthClient
+from apps.companies.redirect_allowlist import bind_desktop_application
 
 
 def profile_from_saml_auth(request: HttpRequest, social_app, auth) -> tuple[OAuthProfile | None, str | None]:
@@ -97,6 +98,16 @@ def complete_shellui_saml_login(
             redirect_to_raw=shellui_state.get('redirect_to'),
         )
     owner = shellui_company_id_from_app(social_app)
+    if owner is not None and int(owner) == int(company.id):
+        bind_desktop_application(
+            request,
+            CompanyOAuthClient.objects.filter(
+                company=company,
+                social_app=social_app,
+                is_active=True,
+            ).first(),
+            restrict=True,
+        )
     if owner is None or int(owner) != int(company.id):
         return _shellui_oauth_bounce_or_json(
             request,
@@ -138,7 +149,7 @@ def complete_shellui_saml_login(
             client_timezone=client_tz,
             client_device_id=client_dev,
         )
-        return _join_denied_response(decision=revoked, redirect_to=redirect_to)
+        return _join_denied_response(decision=revoked, redirect_to=redirect_to, request=request)
     user, created, uerror = resolve_saml_user(
         company=company,
         social_app=social_app,
@@ -190,7 +201,7 @@ def complete_shellui_saml_login(
             client_timezone=client_tz,
             client_device_id=client_dev,
         )
-        return _join_denied_response(decision=join, redirect_to=redirect_to)
+        return _join_denied_response(decision=join, redirect_to=redirect_to, request=request)
     if should_skip_oauth_confirm(provider, email=profile.email, userinfo=profile.userinfo):
         if not is_company_access_enabled(company, user):
             return _join_denied_response(
@@ -200,6 +211,7 @@ def complete_shellui_saml_login(
                     message='Access denied for this company.',
                 ),
                 redirect_to=redirect_to,
+                request=request,
             )
         return _finalize_shellui_oauth_login(
             request,
@@ -211,6 +223,7 @@ def complete_shellui_saml_login(
             client_tz=client_tz,
             client_dev=client_dev,
             token_delivery=shellui_state.get('token_delivery'),
+            code_challenge=shellui_state.get('code_challenge'),
         )
     return _render_oauth_confirm_page(
         request,
@@ -222,4 +235,5 @@ def complete_shellui_saml_login(
         client_tz=client_tz,
         client_dev=client_dev,
         token_delivery=shellui_state.get('token_delivery'),
+        code_challenge=shellui_state.get('code_challenge'),
     )

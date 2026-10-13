@@ -8,7 +8,8 @@ from datetime import timedelta
 from django.conf import settings
 from django.utils import timezone
 
-from apps.companies.redirect_allowlist import canonical_url_no_fragment, origin_of_url
+from apps.authapi.client_pkce import verify_client_pkce
+from apps.companies.redirect_allowlist import canonical_url_no_fragment, is_custom_scheme_redirect, origin_of_url
 
 from .models import OAuthSessionDeliveryCode
 
@@ -27,6 +28,7 @@ def create_oauth_session_delivery_code(
     company,
     redirect_to: str,
     token_payload: dict,
+    code_challenge: str = '',
 ) -> OAuthSessionDeliveryCode:
     code = secrets.token_urlsafe(32)
     expires_at = timezone.now() + oauth_session_code_ttl()
@@ -35,6 +37,7 @@ def create_oauth_session_delivery_code(
         user=user,
         company=company,
         redirect_to=canonical_url_no_fragment(redirect_to),
+        code_challenge=(code_challenge or '')[:128],
         token_payload=token_payload,
         expires_at=expires_at,
     )
@@ -51,6 +54,7 @@ def redeem_oauth_session_code(
     code: str,
     redirect_to: str,
     request_origin: str | None = None,
+    code_verifier: str | None = None,
 ) -> tuple[dict | None, str | None]:
     raw_code = (code or '').strip()
     if not raw_code:
@@ -71,7 +75,22 @@ def redeem_oauth_session_code(
     if requested != row.redirect_to:
         return None, 'redirect_to does not match auth code.'
 
-    if request_origin:
+    custom_scheme = is_custom_scheme_redirect(row.redirect_to)
+    pkce_message, _pkce_code = verify_client_pkce(
+        code_challenge=row.code_challenge,
+        code_verifier=code_verifier,
+        required=custom_scheme,
+    )
+    if pkce_message:
+        # Leave the code unredeemed so the app can retry with the verifier.
+        # A wrong verifier is not brute-forced: the verifier is 43-128 characters.
+        return None, pkce_message
+
+    # A desktop app has no browser origin that matches the custom scheme
+    # (Tauri sends tauri://localhost, or no Origin). Skip the Origin check
+    # only after PKCE has succeeded for that custom-scheme redirect.
+    # http(s) redirects keep the Origin check, including when PKCE was optional.
+    if not custom_scheme and request_origin:
         allowed_origin = origin_of_url(row.redirect_to)
         if allowed_origin and request_origin.rstrip('/') != allowed_origin.rstrip('/'):
             return None, 'Origin does not match redirect_to.'

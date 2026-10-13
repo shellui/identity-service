@@ -2,7 +2,11 @@ from django.contrib import admin
 from django.contrib.auth import get_user_model
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 
-from apps.actions.user_hooks import emit_user_account_created
+from apps.actions.user_hooks import (
+    emit_user_account_created,
+    emit_user_company_snapshots,
+    snapshot_user_companies,
+)
 from apps.authapi.account_lifecycle import delete_user_account
 
 from .models import PersonalAccessToken, UserActivity, UserPreference
@@ -90,6 +94,12 @@ class UserAdmin(DjangoUserAdmin):
             return '—'
         text = ', '.join(names)
         return text if len(text) <= 64 else text[:61] + '…'
+
+    def save_model(self, request, obj, form, change):
+        befores = snapshot_user_companies(obj) if change and obj.pk else {}
+        super().save_model(request, obj, form, change)
+        if change and befores:
+            emit_user_company_snapshots(obj, befores, source='admin')
 
     def save_related(self, request, form, formsets, change):
         super().save_related(request, form, formsets, change)

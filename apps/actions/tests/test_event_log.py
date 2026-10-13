@@ -1,4 +1,6 @@
+from dataclasses import replace
 from datetime import timedelta
+from unittest.mock import patch
 from io import StringIO
 from pathlib import Path
 
@@ -10,7 +12,7 @@ from rest_framework.test import APIClient
 
 from apps.actions.emit import emit_event
 from apps.actions.models import ActionOutbox, ActionRule, EventLog
-from apps.actions.registry import all_event_types
+from apps.actions.registry import all_event_types, get_event_type
 from apps.actions.retention import purge_expired_data, retention_status
 from apps.authapi.login_audit import LoginOutcome, record_login_event
 from apps.companies.access import set_company_access
@@ -56,7 +58,9 @@ class RecordEventTests(TestCase):
         self.assertNotIn('magic_link_url', EventLog.objects.get().data)
 
     def test_events_not_emitted_by_default_are_not_logged(self):
-        emit_event('identity.user.updated', self.company, {'user_id': self.user.pk})
+        quiet = replace(get_event_type('identity.user.created'), emit_by_default=False)
+        with patch('apps.actions.emit.get_event_type', return_value=quiet):
+            emit_event('identity.user.created', self.company, {'user_id': self.user.pk})
         self.assertFalse(EventLog.objects.exists())
 
     def test_login_is_logged_with_compact_data(self):
@@ -141,7 +145,7 @@ class EventLogApiTests(TestCase):
         rows = {r['type']: r for r in self._get('/api/v1/events/types').data['results']}
         self.assertFalse(rows['identity.auth.login.failed']['webhook'])
         self.assertTrue(rows['identity.user.created']['webhook'])
-        self.assertNotIn('identity.user.updated', rows)
+        self.assertTrue(rows['identity.user.updated']['webhook'])
 
     def test_retention_status_flags_stale_events(self):
         _log(self.company, days_ago=7.5)
@@ -155,23 +159,6 @@ class EventLogApiTests(TestCase):
         set_company_access(self.company, self.ada, enabled=True)
         self.client.force_authenticate(user=self.ada)
         self.assertEqual(self._get('/api/v1/events').status_code, 403)
-
-    def test_legacy_login_events_shape(self):
-        _log(self.company, 'identity.group.created')
-        _log(
-            self.company,
-            'identity.auth.login.failed',
-            user=self.ada,
-            data={'provider': 'github', 'failure_reason': 'nope', 'client_country': 'FR'},
-        )
-        response = self._get('/api/v1/login-events', outcome='failure', client_country='fr')
-        self.assertEqual(response.data['count'], 1)
-        row = response.data['results'][0]
-        self.assertEqual(row['outcome'], 'failure')
-        self.assertEqual(row['provider'], 'github')
-        self.assertEqual(row['user_email'], 'ada@acme.test')
-        self.assertFalse(row['is_staff_at_event'])
-        self.assertEqual(row['client_city'], '')
 
     def test_login_events_cannot_be_webhook_rules(self):
         response = self.client.post(
@@ -231,7 +218,11 @@ class AdminApiEventLoggingTests(TestCase):
         self.client.put(url, {'group_ids': [eng.pk]}, format='json')
         self.client.put(url, {'group_ids': [eng.pk]}, format='json')
         self.client.put(url, {'group_ids': [ops.pk]}, format='json')
-        rows = list(EventLog.objects.order_by('pk').values_list('data__display_name', 'data__change', 'user_id'))
+        rows = list(
+            EventLog.objects.filter(event_type='identity.group.membership_changed')
+            .order_by('pk')
+            .values_list('data__display_name', 'data__change', 'user_id')
+        )
         self.assertEqual(
             rows,
             [

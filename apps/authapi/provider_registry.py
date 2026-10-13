@@ -86,9 +86,6 @@ class ProviderCatalogEntry:
             multiple_allowed=bool(raw.get('multiple_allowed')),
         )
 
-    def social_app_provider(self) -> str:
-        return self.allauth_id
-
     def social_app_provider_id(self) -> str:
         if self.allauth_id == 'openid_connect':
             return self.provider_id or self.docs_slug

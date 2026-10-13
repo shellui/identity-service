@@ -300,6 +300,10 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
         'apps.authapi.permissions.ShellUIPermission',
     ],
+    'DEFAULT_RENDERER_CLASSES': [
+        'rest_framework.renderers.JSONRenderer',
+        'apps.authapi.renderers.SignInPageRenderer',
+    ],
 }
 
 SPECTACULAR_SETTINGS = {
@@ -396,15 +400,6 @@ DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@localhost')
 # Seconds before an SMTP connect, read or write gives up. Django's default is no timeout,
 # so an unreachable mail server could hold a login request forever.
 EMAIL_TIMEOUT = _env_positive_float('EMAIL_TIMEOUT', 10.0)
-
-# Shellui email-service. Unset EMAIL_SERVICE_API_KEY keeps the SMTP / console backend.
-EMAIL_SERVICE_URL = (
-    os.getenv('EMAIL_SERVICE_URL', 'https://email.shellui.com').strip() or 'https://email.shellui.com'
-).rstrip('/')
-EMAIL_SERVICE_API_KEY = os.getenv('EMAIL_SERVICE_API_KEY', '').strip()
-EMAIL_SERVICE_TIMEOUT_SECONDS = _env_float('EMAIL_SERVICE_TIMEOUT_SECONDS', 5.0)
-EMAIL_SERVICE_SEND_ATTEMPTS = _env_int('EMAIL_SERVICE_SEND_ATTEMPTS', 3)
-EMAIL_SERVICE_RETRY_MAX_SLEEP_SECONDS = _env_float('EMAIL_SERVICE_RETRY_MAX_SLEEP_SECONDS', 1.0)
 
 # Shellui email-service. Unset EMAIL_SERVICE_API_KEY keeps the SMTP / console backend.
 EMAIL_SERVICE_URL = (

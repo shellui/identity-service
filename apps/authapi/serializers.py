@@ -6,12 +6,12 @@ class ShellUIOpenAPISerializer(serializers.Serializer):
 
 
 class ProviderAuthorizeSerializer(serializers.Serializer):
-    redirect_uri = serializers.URLField()
+    redirect_uri = serializers.CharField(max_length=2048)
 
 
 class ProviderCallbackSerializer(serializers.Serializer):
     code = serializers.CharField()
-    redirect_uri = serializers.URLField()
+    redirect_uri = serializers.CharField(max_length=2048)
     client_timezone = serializers.CharField(required=False, allow_blank=True, max_length=64)
     client_device_id = serializers.CharField(required=False, allow_blank=True, max_length=128)
 
@@ -19,7 +19,7 @@ class ProviderCallbackSerializer(serializers.Serializer):
 class ShellUIOAuthExchangeSerializer(serializers.Serializer):
     provider = serializers.CharField(max_length=64)
     code = serializers.CharField()
-    redirect_uri = serializers.URLField()
+    redirect_uri = serializers.CharField(max_length=2048)
     company_oauth_client_id = serializers.IntegerField(required=False, min_value=1)
     client_timezone = serializers.CharField(required=False, allow_blank=True, max_length=64)
     client_device_id = serializers.CharField(required=False, allow_blank=True, max_length=128)
@@ -32,12 +32,15 @@ class ShellUIRefreshTokenSerializer(serializers.Serializer):
 
 class ShellUIOAuthSessionExchangeSerializer(serializers.Serializer):
     auth_code = serializers.CharField(max_length=128)
-    redirect_to = serializers.URLField(max_length=2048)
+    redirect_to = serializers.CharField(max_length=2048)
+    code_verifier = serializers.CharField(required=False, allow_blank=True, max_length=128)
 
 
 class ShellUIMagicLinkRequestSerializer(serializers.Serializer):
     email = serializers.EmailField(max_length=254)
-    redirect_to = serializers.URLField(max_length=2048)
+    redirect_to = serializers.CharField(max_length=2048)
+    code_challenge = serializers.CharField(required=False, allow_blank=True, max_length=128)
+    code_challenge_method = serializers.CharField(required=False, allow_blank=True, max_length=16)
     company_id = serializers.IntegerField(required=False, min_value=1)
     client_timezone = serializers.CharField(required=False, allow_blank=True, max_length=64)
     client_device_id = serializers.CharField(required=False, allow_blank=True, max_length=128)
@@ -62,8 +65,9 @@ class ShellUIInvitationCreateSerializer(serializers.Serializer):
         allow_blank=True,
         max_length=2048,
         help_text=(
-            'App URL linked from the email (usually the shell origin). Must match the company '
-            'OAuth redirect allowlist. Omit to send the email without a link.'
+            'App URL linked from the email. An http(s) origin must match the company '
+            'redirect allowlist. A desktop app uses the exact custom-scheme URI from that '
+            'allowlist. Omit to send the email without a link.'
         ),
     )
 
@@ -81,6 +85,7 @@ class ShellUIInvitationCreateSerializer(serializers.Serializer):
 class ShellUIMagicLinkConsumeSerializer(serializers.Serializer):
     token = serializers.CharField(max_length=128)
     company_id = serializers.IntegerField(min_value=1)
+    code_verifier = serializers.CharField(required=False, allow_blank=True, max_length=128)
 
 
 class ShellUIAdminAuthMethodsUpdateSerializer(serializers.Serializer):
@@ -164,13 +169,26 @@ class ShellUIAdminOAuthClientCreateSerializer(serializers.Serializer):
 class ShellUIAdminOAuthClientUpdateSerializer(serializers.Serializer):
     social_app_id = serializers.IntegerField(required=False, min_value=1)
     is_active = serializers.BooleanField(required=False)
+    desktop_redirect_scheme = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=64,
+    )
 
     def validate(self, attrs: dict) -> dict:
         if not attrs:
             raise serializers.ValidationError(
-                'Provide at least one of: social_app_id, is_active.'
+                'Provide at least one of: social_app_id, is_active, desktop_redirect_scheme.'
             )
         return attrs
+
+    def validate_desktop_redirect_scheme(self, value):
+        from apps.companies.redirect_allowlist import normalize_registered_scheme
+
+        scheme, err = normalize_registered_scheme(value or '')
+        if err:
+            raise serializers.ValidationError(err)
+        return scheme or ''
 
 
 class ShellUIAdminOAuthSocialAppCreateSerializer(serializers.Serializer):
@@ -180,12 +198,24 @@ class ShellUIAdminOAuthSocialAppCreateSerializer(serializers.Serializer):
     client_secret = serializers.CharField(max_length=191)
     tenant = serializers.CharField(required=False, allow_blank=True, max_length=255)
     extra_settings = serializers.DictField(required=False, allow_empty=True)
+    desktop_redirect_scheme = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=64,
+    )
 
     def validate(self, attrs: dict) -> dict:
         slug = str(attrs.get('docs_slug') or attrs.get('provider') or '').strip().lower()
         if not slug:
             raise serializers.ValidationError('Provide docs_slug (preferred) or provider.')
         attrs['docs_slug'] = slug
+        if 'desktop_redirect_scheme' in attrs:
+            from apps.companies.redirect_allowlist import normalize_registered_scheme
+
+            scheme, err = normalize_registered_scheme(attrs.get('desktop_redirect_scheme') or '')
+            if err:
+                raise serializers.ValidationError({'desktop_redirect_scheme': err})
+            attrs['desktop_redirect_scheme'] = scheme or ''
         return attrs
 
 
@@ -194,12 +224,25 @@ class ShellUIAdminOAuthSocialAppUpdateSerializer(serializers.Serializer):
     client_secret = serializers.CharField(required=False, allow_blank=False, max_length=191)
     tenant = serializers.CharField(required=False, allow_blank=True, max_length=255)
     extra_settings = serializers.DictField(required=False, allow_empty=True)
+    desktop_redirect_scheme = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=64,
+    )
 
     def validate(self, attrs: dict) -> dict:
         if not attrs:
             raise serializers.ValidationError(
-                'Provide at least one of: client_id, client_secret, tenant, extra_settings.'
+                'Provide at least one of: client_id, client_secret, tenant, extra_settings, '
+                'desktop_redirect_scheme.'
             )
+        if 'desktop_redirect_scheme' in attrs:
+            from apps.companies.redirect_allowlist import normalize_registered_scheme
+
+            scheme, err = normalize_registered_scheme(attrs.get('desktop_redirect_scheme') or '')
+            if err:
+                raise serializers.ValidationError({'desktop_redirect_scheme': err})
+            attrs['desktop_redirect_scheme'] = scheme or ''
         return attrs
 
 

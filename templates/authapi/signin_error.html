@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="{{ page_language|default:'en' }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }}</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f4f6f8;
+      --card: #ffffff;
+      --text: #111827;
+      --muted: #6b7280;
+      --border: #e5e7eb;
+      --primary: #111827;
+      --primary-hover: #1f2937;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0f1419;
+        --card: #151b23;
+        --text: #e7ecf3;
+        --muted: #9aa7b8;
+        --border: #2a3441;
+        --primary: #e7ecf3;
+        --primary-hover: #ffffff;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 1.5rem;
+      touch-action: manipulation;
+    }
+    .card {
+      width: min(100%, 420px);
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 1.5rem;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+    }
+    h1 {
+      margin: 0 0 0.35rem;
+      font-size: 1.2rem;
+      font-weight: 650;
+      letter-spacing: -0.02em;
+      text-wrap: balance;
+    }
+    .subtitle {
+      margin: 0 0 1.25rem;
+      color: var(--muted);
+      font-size: 0.92rem;
+      line-height: 1.45;
+    }
+    a.button, button.button {
+      display: block;
+      width: 100%;
+      text-align: center;
+      text-decoration: none;
+      border: 0;
+      border-radius: 10px;
+      padding: 0.75rem 1rem;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      background: var(--primary);
+      color: var(--card);
+      min-height: 44px;
+    }
+    a.button:hover, button.button:hover { background: var(--primary-hover); }
+    a.button:focus-visible, button.button:focus-visible {
+      outline: 2px solid var(--text);
+      outline-offset: 2px;
+    }
+    button.button-secondary {
+      margin-top: 0.75rem;
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    button.button-secondary:hover { background: rgba(127, 127, 127, 0.08); }
+    noscript .subtitle { margin-top: 1rem; margin-bottom: 0; }
+  </style>
+</head>
+<body>
+  <main class="card" data-error-code="{{ error_code }}">
+    <h1>{{ title }}</h1>
+    <p class="subtitle">{{ message }}</p>
+    {% if back_to_app_url %}
+      <a id="back-to-app" class="button" href="{{ back_to_app_url }}">{{ back_to_app_label }}</a>
+      <button id="go-back" class="button button-secondary" type="button">{{ go_back }}</button>
+    {% else %}
+      <button id="go-back" class="button" type="button">{{ go_back }}</button>
+    {% endif %}
+    <noscript><p class="subtitle">{{ noscript }}</p></noscript>
+  </main>
+  <script>
+    (function () {
+      var button = document.getElementById('go-back');
+      if (!button) return;
+      button.addEventListener('click', function () {
+        if (window.history.length > 1) {
+          window.history.back();
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

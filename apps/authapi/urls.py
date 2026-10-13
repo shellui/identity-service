@@ -5,8 +5,6 @@ from apps.actions.event_log_views import (
     ShellUIAdminEventListView,
     ShellUIAdminEventRetentionView,
     ShellUIAdminEventTypesView,
-    ShellUIAdminLoginEventDetailView,
-    ShellUIAdminLoginEventListView,
 )
 from apps.actions.scheduled_job_views import (
     ScheduledJobRunDetailView,
@@ -83,8 +81,6 @@ urlpatterns = [
     path('events/types', ShellUIAdminEventTypesView.as_view(), name='shellui-admin-event-types'),
     path('events/retention', ShellUIAdminEventRetentionView.as_view(), name='shellui-admin-event-retention'),
     path('events/<int:pk>', ShellUIAdminEventDetailView.as_view(), name='shellui-admin-event-detail'),
-    path('login-events', ShellUIAdminLoginEventListView.as_view(), name='shellui-admin-login-events'),
-    path('login-events/<int:pk>', ShellUIAdminLoginEventDetailView.as_view(), name='shellui-admin-login-event-detail'),
     path('oauth-clients', ShellUIAdminOAuthClientListView.as_view(), name='shellui-admin-oauth-clients'),
     path('oauth-clients/<int:pk>', ShellUIAdminOAuthClientDetailView.as_view(), name='shellui-admin-oauth-client-detail'),
     path('oauth-redirects', ShellUIAdminOAuthRedirectListView.as_view(), name='shellui-admin-oauth-redirects'),

@@ -20,11 +20,8 @@ from apps.authapi.provider_registry import (
     ProviderCatalogEntry,
     catalog_entry_for_social_app,
     resolve_catalog_slug,
-    supported_oauth_provider_slugs,
 )
 from apps.companies.models import CompanyOAuthClient
-
-SUPPORTED_OAUTH_PROVIDERS = supported_oauth_provider_slugs()
 
 
 @dataclass(frozen=True)
@@ -207,26 +204,30 @@ def build_authorize_url(
         token_delivery = 'code'
         client_timezone = ''
         client_device_id = ''
+        code_challenge = ''
         state_payload, _state_err = parse_oauth_state(signed_state)
         if state_payload:
             shellui_redirect = str(state_payload.get('redirect_to') or shellui_redirect)
             token_delivery = str(state_payload.get('token_delivery') or token_delivery)
             client_timezone = str(state_payload.get('client_timezone') or '')
             client_device_id = str(state_payload.get('client_device_id') or '')
+            code_challenge = str(state_payload.get('code_challenge') or '')
         login_path = reverse(
             'shellui-saml-login',
             kwargs={'organization_slug': social_app.client_id},
         )
-        params = urlencode(
-            {
-                'company_id': company_id or '',
-                'redirect_to': shellui_redirect,
-                'company_oauth_client_id': company_oauth_client_id or '',
-                'token_delivery': token_delivery,
-                'client_timezone': client_timezone,
-                'client_device_id': client_device_id,
-            }
-        )
+        saml_params = {
+            'company_id': company_id or '',
+            'redirect_to': shellui_redirect,
+            'company_oauth_client_id': company_oauth_client_id or '',
+            'token_delivery': token_delivery,
+            'client_timezone': client_timezone,
+            'client_device_id': client_device_id,
+        }
+        if code_challenge:
+            saml_params['code_challenge'] = code_challenge
+            saml_params['code_challenge_method'] = 'S256'
+        params = urlencode(saml_params)
         return request.build_absolute_uri(f'{login_path}?{params}')
     return build_allauth_authorize_url(
         request,
@@ -329,41 +330,6 @@ def fetch_provider_userinfo(
                 )
             raise ValueError('OAuth provider did not return a user id.')
         return sociallogin_userinfo(sociallogin)
-
-
-def complete_oauth_social_login(
-    *,
-    request,
-    provider: str,
-    redirect_uri: str,
-    company_id: int,
-    company_oauth_client_id: int | None,
-    pkce_code_verifier: str | None = None,
-):
-    resolved = resolve_oauth_client(
-        provider,
-        company_id=company_id,
-        company_oauth_client_id=company_oauth_client_id,
-    )
-    social_app = get_social_app_for_client(resolved)
-    sociallogin, token_data = exchange_allauth_code(
-        request,
-        social_app=social_app,
-        redirect_uri=redirect_uri,
-        pkce_code_verifier=pkce_code_verifier,
-    )
-    if sociallogin is None:
-        from apps.authapi.oauth_errors import OAuthSubjectMismatchError
-
-        raise OAuthSubjectMismatchError(
-            'OAuth userinfo subject does not match the identity token.',
-        )
-    userinfo = sociallogin_userinfo(sociallogin)
-    access_token = str(token_data.get('access_token') or '')
-    id_token = token_data.get('id_token')
-    id_str = id_token.strip() if isinstance(id_token, str) and id_token.strip() else None
-    token_bundle = OAuthTokenBundle(access_token=access_token, id_token=id_str)
-    return sociallogin, token_bundle, userinfo, resolved
 
 
 def oauth_skip_confirm_provider_ids() -> frozenset[str]:

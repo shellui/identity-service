@@ -208,7 +208,3 @@ def sociallogin_userinfo(sociallogin) -> dict[str, Any]:
     if isinstance(state, dict) and isinstance(state.get('id_token'), dict):
         data['_verified_id_token_claims'] = state['id_token']
     return data
-
-
-def catalog_entry_from_client(social_app: SocialApp):
-    return catalog_entry_for_social_app(social_app)
