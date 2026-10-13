@@ -1,4 +1,4 @@
-"""Custom-scheme desktop redirects: one registered scheme per application and S256 PKCE."""
+"""Custom-scheme desktop redirects: one company scheme list and S256 PKCE."""
 
 from __future__ import annotations
 
@@ -60,7 +60,11 @@ class DesktopRedirectApiTests(TestCase):
         cache.clear()
         mail.outbox.clear()
         self.client = APIClient()
-        self.company = Company.objects.create(name='Desktop Co', slug='desktop-co')
+        self.company = Company.objects.create(
+            name='Desktop Co',
+            slug='desktop-co',
+            desktop_redirect_schemes=['shellui-playground'],
+        )
         self.app = SocialApp.objects.create(
             provider='github',
             name='GitHub Test',
@@ -71,7 +75,6 @@ class DesktopRedirectApiTests(TestCase):
             company=self.company,
             social_app=self.app,
             is_active=True,
-            desktop_redirect_scheme='shellui-playground',
         )
         CompanyOAuthRedirect.objects.create(
             company=self.company,
@@ -100,69 +103,113 @@ class DesktopRedirectApiTests(TestCase):
                 return line[start:end]
         self.fail('confirm token missing')
 
-    def _put_scheme(self, user, scheme):
+    def _patch_schemes(self, user, schemes):
         self.client.force_authenticate(user=user)
-        return self.client.put(
-            f'/api/v1/oauth-clients/{self.oauth_client.id}?company_id={self.company.id}',
-            {'desktop_redirect_scheme': scheme},
+        return self.client.patch(
+            f'/api/v1/companies/{self.company.id}/',
+            {'desktop_redirect_schemes': schemes},
             format='json',
         )
 
-    def test_owner_can_register_and_clear_a_scheme(self):
-        rejected = self._put_scheme(self.owner, 'Com.Shellui.App')
+    def test_owner_and_staff_can_register_and_clear_schemes(self):
+        rejected = self._patch_schemes(self.owner, ['Com.Shellui.App'])
         self.assertEqual(rejected.status_code, 400, rejected.data)
-        for scheme in ('http', 'https', 'javascript', 'data', 'file', 'vbscript', 'about', 'blob'):
-            response = self._put_scheme(self.owner, scheme)
+        for scheme in ('http', 'https', 'javascript', 'data', 'file', 'vbscript', 'about', 'blob', 'web+shellui'):
+            response = self._patch_schemes(self.owner, [scheme])
             self.assertEqual(response.status_code, 400, scheme)
-        updated = self._put_scheme(self.owner, 'com.shellui.app')
+        updated = self._patch_schemes(self.owner, ['com.shellui.app', 'com.shellui.app'])
         self.assertEqual(updated.status_code, 200, updated.data)
-        self.assertEqual(updated.data['desktop_redirect_scheme'], 'com.shellui.app')
-        self.oauth_client.refresh_from_db()
-        self.assertEqual(self.oauth_client.desktop_redirect_scheme, 'com.shellui.app')
-        cleared = self._put_scheme(self.owner, '')
+        self.assertEqual(updated.data['desktop_redirect_schemes'], ['com.shellui.app'])
+        self.company.refresh_from_db()
+        self.assertEqual(self.company.desktop_redirect_schemes, ['com.shellui.app'])
+        staff = User.objects.create_user(
+            username='staff',
+            email='staff@example.com',
+            password='x',
+            is_staff=True,
+        )
+        set_company_access(self.company, staff, enabled=True)
+        self.company.members.add(staff)
+        staff_updated = self._patch_schemes(staff, ['shellui-playground'])
+        self.assertEqual(staff_updated.status_code, 200, staff_updated.data)
+        self.assertEqual(staff_updated.data['desktop_redirect_schemes'], ['shellui-playground'])
+        cleared = self._patch_schemes(self.owner, [])
         self.assertEqual(cleared.status_code, 200, cleared.data)
-        self.assertEqual(cleared.data['desktop_redirect_scheme'], '')
+        self.assertEqual(cleared.data['desktop_redirect_schemes'], [])
 
-    def test_member_cannot_edit_scheme(self):
-        response = self._put_scheme(self.member, 'com.shellui.other')
+    def test_member_cannot_edit_schemes(self):
+        response = self._patch_schemes(self.member, ['com.shellui.other'])
         self.assertIn(response.status_code, (401, 403))
-        self.oauth_client.refresh_from_db()
-        self.assertEqual(self.oauth_client.desktop_redirect_scheme, 'shellui-playground')
+        self.company.refresh_from_db()
+        self.assertEqual(self.company.desktop_redirect_schemes, ['shellui-playground'])
 
-    def test_redirect_uses_only_the_application_making_the_request(self):
-        other_app = SocialApp.objects.create(
-            provider='google',
-            name='Google Test',
-            client_id='google-cid',
-            secret='google-secret',
-        )
-        CompanyOAuthClient.objects.create(
-            company=self.company,
-            social_app=other_app,
-            is_active=True,
-            desktop_redirect_scheme='com.other.app',
-        )
+    def test_one_scheme_serves_social_and_magic_link(self):
         params = {
             'company_id': self.company.id,
             'code_challenge': CHALLENGE,
             'code_challenge_method': 'S256',
         }
-        github = self.client.get(
-            '/api/v1/authorize',
-            {**params, 'provider': 'github', 'redirect_to': 'com.other.app://callback'},
-        )
-        self.assertEqual(github.status_code, 400)
-        self.assertEqual(github.json()['error_code'], 'unregistered_scheme')
-        google = self.client.get(
-            '/api/v1/authorize',
-            {**params, 'provider': 'google', 'redirect_to': 'com.other.app://callback'},
-        )
-        self.assertEqual(google.status_code, 302, google.content)
-        own = self.client.get(
+        social = self.client.get(
             '/api/v1/authorize',
             {**params, 'provider': 'github', 'redirect_to': DESKTOP},
         )
-        self.assertEqual(own.status_code, 302)
+        self.assertEqual(social.status_code, 302, social.content)
+        with self.captureOnCommitCallbacks(execute=True):
+            magic = self.client.post(
+                '/api/v1/magic-link/request',
+                {
+                    'company_id': self.company.id,
+                    'email': 'member@example.com',
+                    'redirect_to': DESKTOP,
+                    'code_challenge': CHALLENGE,
+                    'code_challenge_method': 'S256',
+                },
+                format='json',
+            )
+        self.assertEqual(magic.status_code, 200, getattr(magic, 'data', None))
+        self.assertEqual(len(mail.outbox), 1)
+
+        unknown = self.client.get(
+            '/api/v1/authorize',
+            {**params, 'provider': 'github', 'redirect_to': 'com.other.app://callback'},
+        )
+        self.assertEqual(unknown.status_code, 400)
+        self.assertEqual(unknown.json()['error_code'], 'unregistered_scheme')
+        unknown_magic = self.client.post(
+            '/api/v1/magic-link/request',
+            {
+                'company_id': self.company.id,
+                'email': 'member@example.com',
+                'redirect_to': 'com.other.app://callback',
+                'code_challenge': CHALLENGE,
+                'code_challenge_method': 'S256',
+            },
+            format='json',
+        )
+        self.assertEqual(unknown_magic.status_code, 400)
+        self.assertIn('not registered', unknown_magic.data['error'])
+
+        self.company.desktop_redirect_schemes = []
+        self.company.save(update_fields=['desktop_redirect_schemes'])
+        off = self.client.get(
+            '/api/v1/authorize',
+            {**params, 'provider': 'github', 'redirect_to': DESKTOP},
+        )
+        self.assertEqual(off.status_code, 400)
+        self.assertEqual(off.json()['error_code'], 'unregistered_scheme')
+        off_magic = self.client.post(
+            '/api/v1/magic-link/request',
+            {
+                'company_id': self.company.id,
+                'email': 'member@example.com',
+                'redirect_to': DESKTOP,
+                'code_challenge': CHALLENGE,
+                'code_challenge_method': 'S256',
+            },
+            format='json',
+        )
+        self.assertEqual(off_magic.status_code, 400)
+        self.assertIn('not registered', off_magic.data['error'])
 
     def test_authorize_requires_s256_pkce_for_desktop_only(self):
         missing = self.client.get(
@@ -741,8 +788,8 @@ class DesktopRedirectApiTests(TestCase):
         self.assertEqual(as_json.json()['error_code'], 'invalid_redirect')
         self.assertNotIn('<html', as_json.content.decode())
 
-        self.oauth_client.desktop_redirect_scheme = ''
-        self.oauth_client.save(update_fields=['desktop_redirect_scheme'])
+        self.company.desktop_redirect_schemes = []
+        self.company.save(update_fields=['desktop_redirect_schemes'])
         unregistered = browser.get(
             '/api/v1/authorize',
             {
@@ -760,8 +807,8 @@ class DesktopRedirectApiTests(TestCase):
         self.assertNotIn('shellui-playground://', unregistered_body)
         self.assertIn('id="go-back"', unregistered_body)
 
-        self.oauth_client.desktop_redirect_scheme = 'shellui-playground'
-        self.oauth_client.save(update_fields=['desktop_redirect_scheme'])
+        self.company.desktop_redirect_schemes = ['shellui-playground']
+        self.company.save(update_fields=['desktop_redirect_schemes'])
         pkce = browser.get(
             '/api/v1/authorize',
             {'provider': 'github', 'company_id': self.company.id, 'redirect_to': DESKTOP},
@@ -841,7 +888,11 @@ class DesktopSamlLoginTests(TestCase):
     def setUp(self):
         self.client = Client()
         self.site = Site.objects.get_current()
-        self.company = Company.objects.create(name='SAML Desktop', slug='saml-desktop')
+        self.company = Company.objects.create(
+            name='SAML Desktop',
+            slug='saml-desktop',
+            desktop_redirect_schemes=['shellui-playground'],
+        )
         self.creds = generate_test_idp_credentials(entity_id='https://idp.test.example/desktop')
         self.app = SocialApp.objects.create(
             provider='saml',
@@ -864,7 +915,6 @@ class DesktopSamlLoginTests(TestCase):
             company=self.company,
             social_app=self.app,
             is_active=True,
-            desktop_redirect_scheme='shellui-playground',
         )
 
     def _login(self, **params):

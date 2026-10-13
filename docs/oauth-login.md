@@ -63,11 +63,11 @@ identity-service only sends codes or tokens to origins the company approved. Thi
 | --- | --- |
 | Loopback (`127.0.0.1`, `localhost`, `::1`) | Allowed when `DEBUG=true` or `OAUTH_ALLOW_LOOPBACK_REDIRECTS=true`, for the CLI and local shells |
 | Other http(s) origins | Must match an active `CompanyOAuthRedirect` row for the company |
-| Desktop app URI | Scheme must equal the `desktop_redirect_scheme` of the OAuth application making the request. Desktop sign-in is off for that application until the field is set. See [Desktop apps](desktop-apps.md) |
+| Desktop app URI | Scheme must be in the company `desktop_redirect_schemes` list. An empty list turns desktop sign-in off. See [Desktop apps](desktop-apps.md) |
 | Hosting previews (`{slug}.{HOSTING_APP_DOMAIN}`) | Added and removed by hosting-service (`source=hosting`) when a site is created or deleted |
-| Empty allowlist | Every non-loopback http(s) `redirect_to` is denied. A custom-scheme `redirect_to` is denied unless the application making the request has registered that scheme |
+| Empty allowlist | Every non-loopback http(s) `redirect_to` is denied. A custom-scheme `redirect_to` is denied unless that scheme is in `desktop_redirect_schemes` |
 
-Store web origins as scheme, host, and optional port, for example `http://localhost:4000` or `https://app.example.com`. A path or query on a web allowlist entry is ignored. A desktop redirect is not an allowlist row: register the scheme on the OAuth application, then send `shellui-playground://callback`.
+Store web origins as scheme, host, and optional port, for example `http://localhost:4000` or `https://app.example.com`. A path or query on a web allowlist entry is ignored. A desktop redirect is not an allowlist row: add the scheme to the company, then send `shellui-playground://callback`.
 
 ### Manage the allowlist
 

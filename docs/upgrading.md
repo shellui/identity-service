@@ -6,12 +6,18 @@ description: Steps to take when you upgrade identity-service, release by release
 
 This page lists what you must change when you move to a newer identity-service release. Releases not listed here need no action beyond deploying the new image, which runs the database migrations on start. The full list of changes is in the [changelog](../CHANGELOG.md).
 
+## Upgrade to 0.8.1
+
+0.8.1 moves desktop sign-in schemes from each OAuth application onto the company.
+
+1. **Set schemes on the company.** `PATCH /api/v1/companies/{id}/` with `{"desktop_redirect_schemes":["shellui-playground"]}`. An empty list turns desktop sign-in off for every method. Migration `companies.0029_company_desktop_redirect_schemes` copies existing non-empty values onto that list (duplicates dropped) and removes `CompanyOAuthClient.desktop_redirect_scheme`. OAuth client and social app requests no longer accept that field. See [Desktop apps](desktop-apps.md).
+
 ## Upgrade to 0.8.0
 
 0.8.0 removes the login-events API and requires a registered scheme plus S256 PKCE for desktop sign-in. Web shells need no change.
 
 1. **Stop calling `/api/v1/login-events`.** `GET /api/v1/login-events` and `GET /api/v1/login-events/{id}` are removed. Use `GET /api/v1/events?event_type=identity.auth.login.succeeded,identity.auth.login.failed`. See [Event log](event-log.md).
-2. **Register a scheme before a desktop app signs in.** Set `desktop_redirect_scheme` on the OAuth application that app uses, and send S256 PKCE on every custom-scheme redirect. Until the scheme is set, desktop sign-in is off for that application. Migration `companies.0027_company_desktop_redirect_scheme` stores the scheme and removes allowlist `kind`. Migration `authapi.0018_desktop_custom_scheme_redirect` adds the PKCE challenge column. See [Desktop apps](desktop-apps.md).
+2. **Register a scheme before a desktop app signs in.** 0.8.0 stored one `desktop_redirect_scheme` on the OAuth application. 0.8.1 moved that allowlist to the company. Send S256 PKCE on every custom-scheme redirect. See [Upgrade to 0.8.1](#upgrade-to-081) and [Desktop apps](desktop-apps.md). Migration `authapi.0018_desktop_custom_scheme_redirect` adds the PKCE challenge column.
 
 `identity.user.updated` fires when a tracked profile field changes. Add a webhook rule if you want that event. See [Webhooks](actions.md).
 
