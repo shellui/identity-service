@@ -21,32 +21,27 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
 -->
 
-## [Unreleased]
+## [0.8.0] - 2026-10-13
 
 ### ✨ Feature
 
-- **User profile webhooks:** `identity.user.updated` fires when name, email, username, explicit avatar, language, region, company access, the Django active flag, direct groups, or owner role changes through the API, Django admin, or SCIM. The payload lists `changed_fields` and never includes tokens or sign-in links. An unchanged save does not emit it.
+- **Desktop app sign-in:** one custom scheme per OAuth application (`desktop_redirect_scheme`), accepted only for that application, with S256 PKCE and the existing 120s one-time code ([docs/desktop-apps.md](docs/desktop-apps.md)).
+- **Sign-in error pages:** English or French HTML in the browser, and **Back to the app** opens `<scheme>://…?error=<error_code>` with no token when that scheme is registered (`Accept: application/json` stays JSON).
+- **User profile webhooks:** `identity.user.updated` lists `changed_fields` when a tracked profile field changes through the API, Django admin, or SCIM, omits tokens and sign-in links, and does not fire on an unchanged save.
 
 ### 🗑 Removed
 
-- Duplicate `EMAIL_SERVICE_*` settings.
-- Unused dependencies `html2text`, `django-filter`, `signxml`, and `markdown`. API responses stay JSON. Browser sign-in errors still return HTML.
-- Unused helpers, the unused catalog argument `include_unsupported`, and `CompanyOAuthClient.catalog_slug`.
-- `GET /api/v1/login-events` and `GET /api/v1/login-events/{id}`. Read sign-ins from `GET /api/v1/events`.
-- The `OidcSocialAccountKeyMigration` audit table (migration `authapi.0019`). Migration `0014` is unchanged.
+- Duplicate `EMAIL_SERVICE_*` settings, unused `html2text`, `django-filter`, `signxml`, and `markdown`, unused helpers, `include_unsupported`, and `CompanyOAuthClient.catalog_slug` (API responses stay JSON; browser sign-in errors stay HTML).
+- `GET /api/v1/login-events` and `GET /api/v1/login-events/{id}` (read sign-ins from `GET /api/v1/events`).
+- The `OidcSocialAccountKeyMigration` audit table (migration `authapi.0019`; migration `0014` is unchanged).
 
 ### 🏗 Chore
 
 - Webhook and email-service retry backoff share one helper next to `compute_retry_delay_seconds`.
 
-### ✨ Feature
-
-- **Desktop app sign-in:** each OAuth application registers one custom scheme (`desktop_redirect_scheme`, for example `shellui-playground`). A redirect is accepted only when its scheme matches that application, such as `shellui-playground://callback`. Desktop sign-in stays off for an application until its scheme is set. S256 PKCE and the 120s one-time code are unchanged. See [docs/desktop-apps.md](docs/desktop-apps.md).
-- **Sign-in error pages:** browser sign-in errors render an English or French page. When the redirect scheme is registered, **Back to the app** opens `<scheme>://…?error=<error_code>` with no token. `Accept: application/json` and API endpoints stay JSON.
-
 ### 📚 Documentation
 
-- [docs/desktop-apps.md](docs/desktop-apps.md) describes how to pick and register a scheme, the deep link, the error callback, PKCE, and the Origin rule.
+- [docs/desktop-apps.md](docs/desktop-apps.md) covers the scheme, the deep link, the error callback, PKCE, and the Origin rule.
 
 ## [0.7.0] - 2026-10-06
 

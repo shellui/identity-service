@@ -2,7 +2,7 @@
 
 How to build, publish, and run the `shellui/identity-service` Docker image on [Docker Hub](https://hub.docker.com/r/shellui/identity-service).
 
-Publishing is **manual** — there is no CI workflow for Docker Hub yet.
+Publishing is **manual** - there is no CI workflow for Docker Hub yet.
 
 ## Image overview
 
@@ -37,11 +37,11 @@ Manual equivalents (if you are not using the script):
 
 ### 1. Version alignment
 
-Ensure these match the release version (e.g. `0.7.0`):
+Ensure these match the release version (e.g. `0.8.0`):
 
 - `version` in `pyproject.toml` (OpenAPI / API metadata via `config.settings.VERSION`)
 - `CHANGELOG.md` entry with date
-- Git tag `v0.7.0` (optional but recommended; not enforced by the script)
+- Git tag `v0.8.0` (optional but recommended; not enforced by the script)
 - CI green on the release commit (`.github/workflows/ci.yml` + pre-release workflow)
 
 ### 2. No secrets in the build context
@@ -65,7 +65,7 @@ Covered by `./tools/pre-release-check.sh`. Manual form:
 export SECRET_KEY="$(uv run python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())")"
 eval "$(uv run python manage.py generate_jwt_keys --shell)"
 
-VERSION=0.7.0
+VERSION=0.8.0
 docker build -t "shellui/identity-service:${VERSION}" .
 
 docker run --rm -d --name identity-release-smoke -p 18000:8000 \
@@ -95,38 +95,38 @@ docker login
 
 ### Tagging
 
-For semver release `0.7.0`, typical Docker Hub tags:
+For semver release `0.8.0`, typical Docker Hub tags:
 
 | Tag      | Purpose                                  |
 | -------- | ---------------------------------------- |
-| `0.7.0`  | Exact release (pin in production)        |
-| `0.7`    | Latest patch in the 0.7 line             |
+| `0.8.0`  | Exact release (pin in production)        |
+| `0.8`    | Latest patch in the 0.8 line             |
 | `latest` | Newest published release (use with care) |
 
-### Option A — single platform (fastest, not recommended, see option B)
+### Option A - single platform (fastest, not recommended, see option B)
 
 From the repository root:
 
 ```bash
-VERSION=0.7.0
+VERSION=0.8.0
 IMAGE=shellui/identity-service
 
 docker build -t "${IMAGE}:${VERSION}" .
 docker push "${IMAGE}:${VERSION}"
 
 # Optional extra tags
-docker tag "${IMAGE}:${VERSION}" "${IMAGE}:0.7"
+docker tag "${IMAGE}:${VERSION}" "${IMAGE}:0.8"
 docker tag "${IMAGE}:${VERSION}" "${IMAGE}:latest"
-docker push "${IMAGE}:0.7"
+docker push "${IMAGE}:0.8"
 docker push "${IMAGE}:latest"
 ```
 
-### Option B — multi-arch (recommended for production)
+### Option B - multi-arch (recommended for production)
 
 If you build on Apple Silicon, a plain `docker build` may produce `linux/arm64` only. Most cloud VMs expect `linux/amd64`. Publish both with buildx:
 
 ```bash
-VERSION=0.7.0
+VERSION=0.8.0
 IMAGE=shellui/identity-service
 
 docker buildx create --use --name multi 2>/dev/null || docker buildx use multi
@@ -134,6 +134,7 @@ docker buildx create --use --name multi 2>/dev/null || docker buildx use multi
 docker buildx build \
   --platform linux/amd64,linux/arm64 \
   -t "${IMAGE}:${VERSION}" \
+  -t "${IMAGE}:0.8" \
   -t "${IMAGE}:latest" \
   --push .
 ```
@@ -141,7 +142,7 @@ docker buildx build \
 ### Git tag (recommended)
 
 ```bash
-VERSION=0.7.0
+VERSION=0.8.0
 git tag -a "v${VERSION}" -m "Release ${VERSION}"
 git push origin "v${VERSION}"
 ```
@@ -162,7 +163,7 @@ docker run -d \
   -e ALLOWED_HOSTS='auth.example.com' \
   -e CSRF_TRUSTED_ORIGINS='https://auth.example.com,https://app.example.com' \
   -e REDIS_URL='redis://redis:6379/0' \
-  shellui/identity-service:0.7.0
+  shellui/identity-service:0.8.0
 ```
 
 `REDIS_URL` is required: with `DEBUG=false` (the image default) the container logs `REDIS_URL is required when DEBUG is false (example: redis://redis:6379/0)` and exits with status 1 when it is missing. The container also runs the scheduled jobs (`retry_webhooks` every minute, `purge_expired_data` every hour) in a Celery worker next to gunicorn. There is no cron to set up. See [docs/scheduled-jobs.md](docs/scheduled-jobs.md) for a dedicated worker container (`worker` command) or `SCHEDULER_ENABLED=false`.
@@ -171,7 +172,7 @@ The entrypoint runs migrations on start, then starts **Gunicorn** (`config.wsgi:
 
 **`GUNICORN_TIMEOUT` does not kill stuck `gthread` workers.** A worker keeps sending heartbeats while one of its threads is blocked, so gunicorn does not restart it. Per-request deadlines come from `EMAIL_TIMEOUT`, `POSTGRES_STATEMENT_TIMEOUT`, `POSTGRES_LOCK_TIMEOUT`, the OAuth HTTP timeouts, and a response timeout on the reverse proxy. See [docs/configuration.md](docs/configuration.md#gunicorn-docker-entrypoint).
 
-**Concurrency:** with defaults after this release, up to `workers × threads` requests run at once (e.g. `4 × 4 = 16`). With `GUNICORN_WORKERS=2` and `GUNICORN_THREADS=2` you only get **four** concurrent handlers. OAuth callbacks and token refresh perform several DB writes and up to ~20s outbound HTTP each; when all handlers are busy, **even `GET /` queues** (session middleware + DB) until the client or reverse proxy times out — intermittent “hang then works again”.
+**Concurrency:** with defaults after this release, up to `workers × threads` requests run at once (e.g. `4 × 4 = 16`). With `GUNICORN_WORKERS=2` and `GUNICORN_THREADS=2` you only get **four** concurrent handlers. OAuth callbacks and token refresh perform several DB writes and up to ~20s outbound HTTP each; when all handlers are busy, **even `GET /` queues** (session middleware + DB) until the client or reverse proxy times out - intermittent "hang then works again".
 
 **Liveness:** point health checks at `GET /health/live` (no session/DB). Do not use `/` or `/api/v1/settings` as the only probe if traffic is bursty.
 
@@ -179,7 +180,7 @@ The entrypoint runs migrations on start, then starts **Gunicorn** (`config.wsgi:
 
 ### Post-deploy production config check
 
-After deploying a release (e.g. `0.7.0`), run the smoke script against the live HTTPS URL:
+After deploying a release (e.g. `0.8.0`), run the smoke script against the live HTTPS URL:
 
 ```bash
 ./tools/prod-config-check.sh https://id.shellui.com
@@ -196,7 +197,7 @@ Optional environment:
 | `EXPECTED_JWT_AUDIENCE`| `shellui`                       |
 | `COMPANY_ID`           | (none; use `--company-id` flag) |
 
-Full OAuth login (fragment vs code delivery) cannot be verified without a configured IdP — the script prints guidance to set `OAUTH_TOKEN_DELIVERY=fragment` until Shellui #66.
+Full OAuth login (fragment vs code delivery) cannot be verified without a configured IdP - the script prints guidance to set `OAUTH_TOKEN_DELIVERY=fragment` until Shellui #66.
 
 ### Required runtime env vars (production)
 
@@ -267,7 +268,7 @@ Do not commit `.env` or real OAuth secrets to git. Do not pass secrets as Docker
 Pull and run a previous tag or digest:
 
 ```bash
-docker pull shellui/identity-service:0.2.0
+docker pull shellui/identity-service:0.7.0
 ```
 
 Data in `identity-service-data` (or Postgres) is independent of the image tag; test migrations when downgrading.
