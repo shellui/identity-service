@@ -5,7 +5,7 @@ from __future__ import annotations
 from allauth.socialaccount.models import SocialApp
 
 from apps.authapi.oauth_request_context import get_bound_oauth_social_app as _ctx_bound_app
-from apps.authapi.provider_registry import ProviderCatalogEntry, resolve_catalog_slug
+from apps.authapi.provider_registry import ProviderCatalogEntry
 
 REQUEST_SOCIAL_APP_ATTR = 'shellui_oauth_social_app'
 
@@ -85,16 +85,3 @@ def compose_social_account_uid(
     if issuer:
         return f'{issuer}|{uid}'
     return uid
-
-
-def lookup_catalog_slug_for_social_account(provider: str, uid: str) -> str | None:
-    """Best-effort docs_slug for JWT display from stored SocialAccount keys."""
-    key = str(provider or '').strip().lower()
-    if not key:
-        return None
-    entry = resolve_catalog_slug(key)
-    if entry is not None:
-        return entry.docs_slug
-    if '|' in uid:
-        return key
-    return resolve_catalog_slug(key) and key or key

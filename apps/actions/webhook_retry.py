@@ -50,6 +50,11 @@ def parse_retry_after_header(value: str | None, *, now: datetime | None = None) 
     return max(0, int(delta))
 
 
+def backoff_seconds(attempt_number: int) -> int:
+    """Exponential wait before the next delivery attempt, capped at one hour."""
+    return min(MAX_BACKOFF_SECONDS, 30 * (2 ** max(0, attempt_number - 1)))
+
+
 def compute_retry_delay_seconds(
     *,
     attempt_number: int,

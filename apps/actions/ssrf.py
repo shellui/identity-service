@@ -119,8 +119,3 @@ def resolve_webhook_endpoint(url: str, *, allow_private: bool = False) -> Resolv
         ),
         path=path,
     )
-
-
-def validate_webhook_url(url: str, *, allow_private: bool = False) -> str:
-    resolve_webhook_endpoint(url, allow_private=allow_private)
-    return url.strip()

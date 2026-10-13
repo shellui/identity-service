@@ -103,8 +103,6 @@ _DESKTOP_URI_CONTROL_RE = re.compile(r'[\x00-\x20\x7f\\]')
 _ERROR_CODE_RE = re.compile(r'^[a-z][a-z0-9_]{0,63}$')
 UNREGISTERED_SCHEME_MESSAGE = 'Sign-in scheme is not registered for this application.'
 
-DEFAULT_LOGIN_CALLBACK_PATH = '/login/callback'
-
 SHELLUI_OAUTH_ERROR_PARAM = 'shellui_oauth_error'
 SHELLUI_OAUTH_ERROR_CODE_PARAM = 'shellui_oauth_error_code'
 
@@ -231,11 +229,6 @@ def normalize_desktop_redirect_uri(raw: str) -> tuple[str | None, str | None]:
     return canonical, None
 
 
-def normalize_oauth_redirect_entry(raw: str) -> tuple[str | None, str | None]:
-    """Normalize a web allowlist origin (http or https)."""
-    return normalize_allowlist_origin(raw)
-
-
 def client_redirect_error_code(message: str | None) -> str:
     """Stable code for a redirect validation message."""
     text = message or ''
@@ -280,12 +273,6 @@ def normalize_allowlist_origin(raw: str) -> tuple[str | None, str | None]:
     if not origin:
         return None, 'Invalid base_url.'
     return origin, None
-
-
-def server_default_redirect_url(request: HttpRequest) -> str:
-    return canonical_url_no_fragment(
-        f'{request.scheme}://{request.get_host()}{DEFAULT_LOGIN_CALLBACK_PATH}',
-    )
 
 
 def normalize_client_redirect_url(request: HttpRequest, raw: str) -> tuple[str | None, str | None]:

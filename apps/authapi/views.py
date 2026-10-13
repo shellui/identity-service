@@ -106,7 +106,6 @@ from .user_activity import touch_user_last_seen
 from .throttling import rate_limit
 from .oauth import (
     OAuthTokenBundle,
-    SUPPORTED_OAUTH_PROVIDERS,
     build_authorize_url,
     exchange_code_for_token,
     fetch_provider_userinfo,
@@ -163,7 +162,11 @@ from apps.actions.scim_hooks import (
     emit_group_membership_changed,
     emit_group_updated,
 )
-from apps.actions.user_hooks import emit_oauth_user_created_if_new
+from apps.actions.user_hooks import (
+    emit_oauth_user_created_if_new,
+    emit_user_updated_if_changed,
+    profile_snapshot,
+)
 from .account_lifecycle import delete_user_for_company
 from .self_service_delete import (
     LAST_COMPANY_OWNER,
@@ -713,7 +716,7 @@ def _identity_oauth_callback_url(request) -> str:
     return oauth_provider_redirect_uri(request)
 
 
-def _catalog_provider_payload(request, entry, *, include_unsupported: bool) -> dict:
+def _catalog_provider_payload(request, entry) -> dict:
     return {
         'docs_slug': entry.docs_slug,
         'name': entry.name,
@@ -1380,22 +1383,10 @@ def _required_company_for_token_refresh(
     return company, None
 
 
-def _require_staff(request):
-    user = _authenticate_bearer_user(request)
-    if not user:
-        return None, None, Response({'error': 'Unauthorized'}, status=status.HTTP_401_UNAUTHORIZED)
-    if not user.is_staff:
-        return None, None, Response({'error': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
-    company, cerr = _required_company_from_request(request, user=user)
-    if cerr:
-        return None, None, cerr
-    return user, company, None
-
-
 def _require_staff_or_company_owner(request):
     """
-    Like `_require_staff` but also allows users in `company.owners` (same `company_id` as token).
-    Used for company-scoped admin APIs so operators without Django `is_staff` can use the admin SPA.
+    Staff, or a user in ``company.owners`` for the token company.
+    Used for company-scoped admin APIs so operators without Django ``is_staff`` can use the admin SPA.
     """
     user = _authenticate_bearer_user(request)
     if not user:
@@ -3103,6 +3094,7 @@ class ShellUIUserView(APIView):
         serializer = ShellUIUserProfileUpdateSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        before = profile_snapshot(user, _company)
         first, _, last = serializer.validated_data['name'].partition(' ')
         user.first_name = first
         user.last_name = last
@@ -3112,6 +3104,7 @@ class ShellUIUserView(APIView):
         if isinstance(cached, dict):
             _apply_display_name(user, cached)
             cache.set(cache_key, cached, timeout=60 * 60 * 24 * 30)
+        emit_user_updated_if_changed(_company, user, source='rest', before=before)
         return self.get(request)
 
     def put(self, request):
@@ -3129,6 +3122,7 @@ class ShellUIUserView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         data = {k: v for k, v in data.items() if k not in _SHELLUI_JWT_PRIVILEGED_METADATA_KEYS}
+        before = profile_snapshot(user, company)
         cache_key = f"shellui:user_metadata:{user.id}"
         current = cache.get(cache_key) or {}
         merged = {**current, **data}
@@ -3158,6 +3152,9 @@ class ShellUIUserView(APIView):
         merged['is_company_owner'] = _is_user_company_owner(user, company)
         _enrich_user_metadata_avatar(user, merged)
         cache.set(cache_key, merged, timeout=60 * 60 * 24 * 30)
+        if 'avatar_url' not in data:
+            before = {**before, 'avatar_url': profile_snapshot(user, company)['avatar_url']}
+        emit_user_updated_if_changed(company, user, source='rest', before=before)
         return Response(
             {
                 'id': str(user.id),
@@ -3261,6 +3258,7 @@ class ShellUIPreferenceView(APIView):
 
         serializer = UserPreferenceSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        before = profile_snapshot(user, _company)
 
         preference, _ = UserPreference.objects.get_or_create(user=user)
         validated = serializer.validated_data
@@ -3273,6 +3271,7 @@ class ShellUIPreferenceView(APIView):
         if 'colorScheme' in validated:
             preference.color_scheme = validated['colorScheme']
         preference.save()
+        emit_user_updated_if_changed(_company, user, source='rest', before=before)
         return Response(_user_preferences_payload(user), status=status.HTTP_200_OK)
 
     def delete(self, request):
@@ -3283,7 +3282,9 @@ class ShellUIPreferenceView(APIView):
         if company_err:
             return company_err
 
+        before = profile_snapshot(user, _company)
         UserPreference.objects.filter(user=user).delete()
+        emit_user_updated_if_changed(_company, user, source='rest', before=before)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -3428,6 +3429,18 @@ class ShellUIAdminUserDetailView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
+        before = profile_snapshot(target, company)
+
+        def emit_profile():
+            profile_before = before
+            payload = validated.get('data')
+            if not (isinstance(payload, dict) and 'avatar_url' in payload):
+                profile_before = {
+                    **before,
+                    'avatar_url': profile_snapshot(target, company)['avatar_url'],
+                }
+            emit_user_updated_if_changed(company, target, source='admin', before=profile_before)
+
         was_company_enabled = is_company_access_enabled(company, target)
         update_fields: list[str] = []
         if 'first_name' in validated:
@@ -3453,6 +3466,7 @@ class ShellUIAdminUserDetailView(APIView):
             )
             if scim_in_request.exists():
                 scim_ids = sorted(scim_in_request.values_list('pk', flat=True))
+                emit_profile()
                 return Response(
                     {
                         'error': (
@@ -3469,6 +3483,7 @@ class ShellUIAdminUserDetailView(APIView):
             existing_manual_ids = set(manual_groups.values_list('id', flat=True))
             missing_ids = sorted(requested_ids - existing_manual_ids)
             if missing_ids:
+                emit_profile()
                 return Response(
                     {'error': f'Unknown manual group ids for this company: {missing_ids}.'},
                     status=status.HTTP_400_BAD_REQUEST,
@@ -3511,6 +3526,7 @@ class ShellUIAdminUserDetailView(APIView):
             else:
                 merged['shelluiPreferences'] = _user_preferences_payload(target)
 
+        emit_profile()
         return Response(_admin_user_payload(target, company))
 
     def delete(self, request, pk):
@@ -3893,7 +3909,7 @@ class ShellUIAdminOAuthProviderCatalogView(APIView):
                 continue
             if entry.legacy and not include_legacy:
                 continue
-            providers.append(_catalog_provider_payload(request, entry, include_unsupported=include_legacy))
+            providers.append(_catalog_provider_payload(request, entry))
         from apps.authapi.oauth_catalog_meta import CONSOLE_LINK_FORMS, CONSOLE_LINK_KINDS
 
         return Response(

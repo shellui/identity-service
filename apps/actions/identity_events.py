@@ -102,10 +102,32 @@ register_event(
     DomainEventType(
         id='identity.user.updated',
         label='User updated',
-        description='User profile or SCIM attributes changed. Noisy; not emitted by default.',
+        description=(
+            'A tracked profile field changed: name, email, username, explicit avatar, language, '
+            'region, company access (active), Django account flag (is_active), direct groups, or '
+            'owner role. Emitted only when at least one of those fields changes, from the REST API, '
+            'Django admin, or SCIM. changed_fields lists the names. Tokens and sign-in links are omitted.'
+        ),
         payload_fields=_USER
-        + (EventFieldDoc('changed_fields', 'List of changed attribute names', ['displayName']),),
-        emit_by_default=False,
+        + (
+            EventFieldDoc('name', 'Display name', 'Ada Lovelace'),
+            EventFieldDoc('active', 'Company access is enabled for this company', True),
+            EventFieldDoc('is_active', 'Django account is active', True),
+            EventFieldDoc('role', 'owner or member in this company', 'member'),
+            EventFieldDoc('group_ids', 'Direct company group ids', [7]),
+            EventFieldDoc('avatar_url', 'Explicit avatar URL, or null', None),
+            EventFieldDoc('changed_fields', 'Tracked fields that changed', ['name']),
+        ),
+        sensitive_fields=(
+            'token',
+            'magic_link_url',
+            'password',
+            'secret',
+            'refresh_token',
+            'access_token',
+            'id_token',
+            'authorization',
+        ),
     )
 )
 

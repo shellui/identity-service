@@ -39,6 +39,21 @@ class CompanyMembership(models.Model):
         state = 'enabled' if self.is_enabled else 'disabled'
         return f'{self.company_id}:{self.user_id}:{state}'
 
+    def save(self, *args, **kwargs):
+        source = None
+        before = None
+        if self.pk and self.user_id and self.company_id:
+            from apps.actions.user_hooks import current_user_profile_event_source, profile_snapshot
+
+            source = current_user_profile_event_source()
+            if source:
+                before = profile_snapshot(self.user, self.company)
+        super().save(*args, **kwargs)
+        if source and before is not None:
+            from apps.actions.user_hooks import emit_user_updated_if_changed
+
+            emit_user_updated_if_changed(self.company, self.user, source=source, before=before)
+
 
 class Company(models.Model):
     ACCESS_PUBLIC = 'public'
@@ -231,7 +246,6 @@ class CompanyOAuthClient(models.Model):
         on_delete=models.CASCADE,
         related_name='company_oauth_clients',
     )
-    catalog_slug = models.CharField(max_length=128, blank=True, default='')
     dedupe_key = models.CharField(max_length=512, null=True, blank=True)
     is_active = models.BooleanField(default=True)
     desktop_redirect_scheme = models.CharField(

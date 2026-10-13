@@ -6,6 +6,11 @@ from django.urls import path, reverse
 from django.utils.html import format_html
 
 from apps.actions.retention import retention_status
+from apps.actions.user_hooks import (
+    emit_profile_snapshots,
+    snapshot_profiles_for_ids,
+    user_profile_event_source,
+)
 from apps.actions.scim_hooks import (
     emit_group_created,
     emit_group_deleted,
@@ -302,6 +307,23 @@ class CompanyAdmin(admin.ModelAdmin):
         redirect_to = f'{add_url}?provider={normalized_provider}&_popup=0&next={next_url}'
         return HttpResponseRedirect(redirect_to)
 
+    def save_formset(self, request, form, formset, change):
+        if formset.model is CompanyMembership:
+            with user_profile_event_source('admin'):
+                super().save_formset(request, form, formset, change)
+            return
+        super().save_formset(request, form, formset, change)
+
+    def save_related(self, request, form, formsets, change):
+        company = form.instance
+        before_ids = set(company.owners.values_list('pk', flat=True)) if company.pk else set()
+        new_owners = form.cleaned_data.get('owners')
+        after_ids = {user.pk for user in new_owners} if new_owners is not None else before_ids
+        befores = snapshot_profiles_for_ids(company, before_ids.symmetric_difference(after_ids)) if company.pk else {}
+        super().save_related(request, form, formsets, change)
+        if company.pk and befores:
+            emit_profile_snapshots(company, befores, source='admin')
+
 
 @admin.register(CompanyMembership)
 class CompanyMembershipAdmin(admin.ModelAdmin):
@@ -312,6 +334,14 @@ class CompanyMembershipAdmin(admin.ModelAdmin):
     autocomplete_fields = ('company', 'user')
     readonly_fields = ('created_at', 'updated_at')
     ordering = ('company__name', 'user__email')
+
+    def save_model(self, request, obj, form, change):
+        with user_profile_event_source('admin'):
+            super().save_model(request, obj, form, change)
+
+    def changelist_view(self, request, extra_context=None):
+        with user_profile_event_source('admin'):
+            return super().changelist_view(request, extra_context)
 
 
 class CompanyGroupAdminForm(forms.ModelForm):
@@ -369,8 +399,15 @@ class CompanyGroupAdmin(admin.ModelAdmin):
 
     def save_related(self, request, form, formsets, change):
         group = form.instance
-        before_users = set(group.members.values_list('pk', flat=True)) if change else set()
-        before_groups = set(group.member_groups.values_list('pk', flat=True)) if change else set()
+        before_users = set(group.members.values_list('pk', flat=True)) if change and group.pk else set()
+        before_groups = set(group.member_groups.values_list('pk', flat=True)) if change and group.pk else set()
+        new_members = form.cleaned_data.get('members')
+        after_ids = {user.pk for user in new_members} if new_members is not None else before_users
+        profile_befores = (
+            snapshot_profiles_for_ids(group.company, before_users.symmetric_difference(after_ids))
+            if group.company_id
+            else {}
+        )
         super().save_related(request, form, formsets, change)
         after_users = set(group.members.values_list('pk', flat=True))
         after_groups = set(group.member_groups.values_list('pk', flat=True))
@@ -386,6 +423,8 @@ class CompanyGroupAdmin(admin.ModelAdmin):
                     user_ids=sorted(user_ids),
                     nested_group_ids=sorted(group_ids),
                 )
+        if profile_befores:
+            emit_profile_snapshots(group.company, profile_befores, source='admin')
 
     def delete_model(self, request, obj):
         company = obj.company

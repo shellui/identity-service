@@ -26,7 +26,6 @@ _TENANT_GUID_RE = re.compile(
 
 MICROSOFT_JWKS_URL = 'https://login.microsoftonline.com/common/discovery/v2.0/keys'
 GOOGLE_JWKS_URL = 'https://www.googleapis.com/oauth2/v3/certs'
-APPLE_JWKS_URL = 'https://appleid.apple.com/auth/keys'
 
 _MICROSOFT_DOMAIN_TID_CACHE_TTL_SECONDS = 3600
 _microsoft_domain_tid_cache: dict[str, tuple[str | None, float]] = {}
@@ -86,26 +85,6 @@ def _issuer_from_unverified_jwt(raw: str) -> str:
     if isinstance(claims, dict):
         iss = claims.get('iss')
         if isinstance(iss, str):
-            return iss.strip().rstrip('/')
-    return ''
-
-
-def issuer_from_social_account_extra(extra: dict) -> str:
-    if not isinstance(extra, dict):
-        return ''
-    if isinstance(extra.get('iss'), str) and extra['iss'].strip():
-        return extra['iss'].strip().rstrip('/')
-    id_token = extra.get('id_token')
-    if isinstance(id_token, dict):
-        iss = id_token.get('iss')
-        if isinstance(iss, str) and iss.strip():
-            return iss.strip().rstrip('/')
-    if isinstance(id_token, str) and id_token.strip():
-        return _issuer_from_unverified_jwt(id_token.strip())
-    userinfo = extra.get('userinfo')
-    if isinstance(userinfo, dict):
-        iss = userinfo.get('iss')
-        if isinstance(iss, str) and iss.strip():
             return iss.strip().rstrip('/')
     return ''
 
@@ -257,9 +236,3 @@ def verified_login_id_token_claims(
     except Exception:
         return {}
     return verified if isinstance(verified, dict) else {}
-
-
-def microsoft_configured_tenant_is_guid(social_app: SocialApp) -> bool:
-    settings_data = social_app.settings if isinstance(getattr(social_app, 'settings', None), dict) else {}
-    tenant = str(settings_data.get('tenant') or '').strip()
-    return bool(tenant and _TENANT_GUID_RE.match(tenant))
