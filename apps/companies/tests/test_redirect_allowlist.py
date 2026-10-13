@@ -1,7 +1,8 @@
+from allauth.socialaccount.models import SocialApp
 from django.test import RequestFactory, TestCase, override_settings
 
-from apps.companies.admin import CompanyAdminForm, CompanyOAuthRedirectAdminForm
-from apps.companies.models import Company, CompanyOAuthRedirect
+from apps.companies.admin import CompanyOAuthClientAdminForm, CompanyOAuthRedirectAdminForm
+from apps.companies.models import Company, CompanyOAuthClient, CompanyOAuthRedirect
 from apps.companies.redirect_allowlist import (
     desktop_error_deep_link,
     is_custom_scheme_redirect,
@@ -202,8 +203,18 @@ class RedirectAllowlistTests(TestCase):
             self.assertTrue(err, raw)
 
     def test_desktop_redirect_matches_registered_scheme_only(self):
-        self.company.desktop_redirect_scheme = 'shellui-playground'
-        self.company.save(update_fields=['desktop_redirect_scheme'])
+        app = SocialApp.objects.create(
+            provider='github',
+            name='GitHub',
+            client_id='allow-cid',
+            secret='allow-secret',
+        )
+        client = CompanyOAuthClient.objects.create(
+            company=self.company,
+            social_app=app,
+            is_active=True,
+            desktop_redirect_scheme='shellui-playground',
+        )
         CompanyOAuthRedirect.objects.create(
             company=self.company,
             base_url='https://app.example.com',
@@ -232,8 +243,8 @@ class RedirectAllowlistTests(TestCase):
                 self.request,
             )
         )
-        self.company.desktop_redirect_scheme = ''
-        self.company.save(update_fields=['desktop_redirect_scheme'])
+        client.desktop_redirect_scheme = ''
+        client.save(update_fields=['desktop_redirect_scheme'])
         self.assertFalse(
             redirect_url_allowed_for_company(
                 self.company,
@@ -250,7 +261,7 @@ class RedirectAllowlistTests(TestCase):
         self.assertEqual(link, 'shellui-playground://callback?error=pkce_required')
         self.assertIsNone(desktop_error_deep_link('javascript:alert(1)', 'invalid_redirect'))
 
-    def test_admin_form_normalizes_web_origin_and_company_scheme(self):
+    def test_admin_form_normalizes_web_origin_and_application_scheme(self):
         form = CompanyOAuthRedirectAdminForm(
             data={
                 'company': self.company.id,
@@ -273,29 +284,33 @@ class RedirectAllowlistTests(TestCase):
         )
         self.assertFalse(rejected.is_valid())
         self.assertIn('base_url', rejected.errors)
-        company_form = CompanyAdminForm(
-            data={
-                'name': self.company.name,
-                'slug': self.company.slug,
-                'access_mode': Company.ACCESS_PUBLIC,
-                'allowed_email_domains': '',
-                'desktop_redirect_scheme': 'javascript',
-                'data_retention_days': 7,
-            },
-            instance=self.company,
+        app = SocialApp.objects.create(
+            provider='google',
+            name='Google',
+            client_id='allow-google',
+            secret='allow-google-secret',
         )
-        self.assertFalse(company_form.is_valid())
-        self.assertIn('desktop_redirect_scheme', company_form.errors)
-        accepted = CompanyAdminForm(
+        client_form = CompanyOAuthClientAdminForm(
             data={
-                'name': self.company.name,
-                'slug': self.company.slug,
-                'access_mode': Company.ACCESS_PUBLIC,
-                'allowed_email_domains': '',
+                'company': self.company.id,
+                'social_app': app.id,
+                'is_active': True,
+                'catalog_slug': '',
+                'dedupe_key': '',
+                'desktop_redirect_scheme': 'javascript',
+            }
+        )
+        self.assertFalse(client_form.is_valid())
+        self.assertIn('desktop_redirect_scheme', client_form.errors)
+        accepted = CompanyOAuthClientAdminForm(
+            data={
+                'company': self.company.id,
+                'social_app': app.id,
+                'is_active': True,
+                'catalog_slug': '',
+                'dedupe_key': '',
                 'desktop_redirect_scheme': 'shellui-playground',
-                'data_retention_days': 7,
-            },
-            instance=self.company,
+            }
         )
         self.assertTrue(accepted.is_valid(), accepted.errors)
         self.assertEqual(accepted.cleaned_data['desktop_redirect_scheme'], 'shellui-playground')

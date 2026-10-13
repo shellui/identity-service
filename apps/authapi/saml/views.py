@@ -34,10 +34,11 @@ from apps.authapi.saml.security import (
 )
 from apps.authapi.saml.utils import SAMLConfigError, build_auth, build_saml_config
 from apps.authapi.saml.validation import check_validated_assertion
-from apps.companies.models import Company
+from apps.companies.models import Company, CompanyOAuthClient
 from apps.authapi.client_pkce import PkceError, parse_client_pkce
 from apps.authapi.signin_error import signin_error_response
 from apps.companies.redirect_allowlist import (
+    bind_desktop_application,
     client_redirect_error_code,
     is_custom_scheme_redirect,
     validate_redirect_to_for_company,
@@ -213,6 +214,15 @@ class ShellUISAMLLoginView(SAMLViewMixin, View):
         except (Company.DoesNotExist, TypeError, ValueError):
             return _saml_browser_error(request, error_code='callback_company', status=HTTPStatus.BAD_REQUEST)
 
+        bind_desktop_application(
+            request,
+            CompanyOAuthClient.objects.filter(
+                company=company,
+                social_app=social_app,
+                is_active=True,
+            ).first(),
+            restrict=True,
+        )
         raw_redirect = request.GET.get('redirect_to')
         redirect_to, rerr = validate_redirect_to_for_company(
             company=company,
@@ -332,10 +342,19 @@ def _revoke_saml_company_refresh_sessions(request: HttpRequest, *, social_app, c
     ).update(revoked_at=timezone.now())
 
 
-def _validate_saml_slo_relay_state(request: HttpRequest, *, company: Company) -> str | None:
+def _validate_saml_slo_relay_state(request: HttpRequest, *, company: Company, social_app) -> str | None:
     relay = str(request.GET.get('RelayState') or request.POST.get('RelayState') or '').strip()
     if not relay:
         return None
+    bind_desktop_application(
+        request,
+        CompanyOAuthClient.objects.filter(
+            company=company,
+            social_app=social_app,
+            is_active=True,
+        ).first(),
+        restrict=True,
+    )
     redirect_to, rerr = validate_redirect_to_for_company(
         company=company,
         request=request,
@@ -376,13 +395,13 @@ class ShellUISAMLSLSView(SAMLViewMixin, View):
         errors = auth.get_errors()
         if errors:
             return saml_http_error(error_code='saml_sls_failed', status=HTTPStatus.BAD_REQUEST)
-        relay = _validate_saml_slo_relay_state(request, company=company)
+        relay = _validate_saml_slo_relay_state(request, company=company, social_app=social_app)
         if redirect_to is None and relay:
             redirect_to = relay
         if not redirect_to:
             redirect_to = '/'
         elif relay and redirect_to != relay:
-            safe_relay = _validate_saml_slo_relay_state(request, company=company)
+            safe_relay = _validate_saml_slo_relay_state(request, company=company, social_app=social_app)
             if safe_relay:
                 redirect_to = safe_relay
             else:

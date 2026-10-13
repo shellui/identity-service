@@ -51,6 +51,7 @@ from apps.companies.access import (
 )
 from apps.companies.redirect_allowlist import (
     append_oauth_error_params,
+    bind_desktop_application,
     client_redirect_error_code,
     is_custom_scheme_redirect,
     loopback_client_bounce_url_for_oauth_error,
@@ -623,6 +624,29 @@ def _get_company_oauth_client(
     return None, 'Requested company_oauth_client_id is not available for this provider.'
 
 
+def _oauth_client_for_desktop_binding(
+    company: Company,
+    provider: str,
+    company_oauth_client_id: int | None,
+) -> CompanyOAuthClient | None:
+    """Application whose scheme this sign-in request must match.
+
+    An explicit ``company_oauth_client_id`` selects that row, or none when the
+    id is not available for the provider. When the id is omitted, the active
+    client for the named provider is used. None denies every custom scheme.
+    """
+    if company_oauth_client_id is not None:
+        row, _err = _get_company_oauth_client(company, provider, company_oauth_client_id)
+        return row
+    wanted = str(provider or '').strip().lower()
+    if not wanted:
+        return None
+    for row in _company_oauth_clients(company):
+        if social_app_catalog_slug(row.social_app).strip().lower() == wanted:
+            return row
+    return None
+
+
 def _enabled_oauth_providers(company: Company) -> list[str]:
     slugs: set[str] = set()
     for row in _company_oauth_clients(company):
@@ -646,6 +670,7 @@ def _oauth_client_payload(row: CompanyOAuthClient) -> dict:
         'client_id': row.social_app.client_id,
         'tenant': str(social_app_settings.get('tenant') or ''),
         'social_app_id': row.social_app_id,
+        'desktop_redirect_scheme': row.desktop_redirect_scheme or '',
         'is_active': row.is_active,
         'created_at': row.created_at,
         'updated_at': row.updated_at,
@@ -671,6 +696,7 @@ def _oauth_social_app_payload(company: Company, app: SocialApp, *, request=None)
         'is_linked': mapping is not None,
         'mapping_id': mapping.id if mapping is not None else None,
         'mapping_is_active': bool(mapping.is_active) if mapping is not None else False,
+        'desktop_redirect_scheme': (mapping.desktop_redirect_scheme or '') if mapping is not None else '',
     }
     if str(app.provider).strip().lower() == 'saml' and request is not None:
         from apps.authapi.saml.utils import sp_public_urls
@@ -1617,9 +1643,14 @@ class SocialAuthorizeView(APIView):
         if company_err:
             return company_err
         company_oauth_client_id = _parse_company_oauth_client_id(request.GET.get('company_oauth_client_id'))
-        _row, oauth_client_err = _get_company_oauth_client(company, provider, company_oauth_client_id)
+        _, oauth_client_err = _get_company_oauth_client(company, provider, company_oauth_client_id)
         if oauth_client_err:
             return Response({'error': oauth_client_err}, status=status.HTTP_400_BAD_REQUEST)
+        bind_desktop_application(
+            request,
+            _oauth_client_for_desktop_binding(company, provider, company_oauth_client_id),
+            restrict=True,
+        )
         serializer = ProviderAuthorizeSerializer(data=request.query_params)
         serializer.is_valid(raise_exception=True)
         redirect_uri, rerr = validate_redirect_uri_for_company(
@@ -1690,9 +1721,14 @@ class SocialLoginView(APIView):
         company_oauth_client_id = _parse_company_oauth_client_id(
             request.data.get('company_oauth_client_id') or request.GET.get('company_oauth_client_id')
         )
-        _row, oauth_client_err = _get_company_oauth_client(company, provider, company_oauth_client_id)
+        _, oauth_client_err = _get_company_oauth_client(company, provider, company_oauth_client_id)
         if oauth_client_err:
             return Response({'error': oauth_client_err}, status=status.HTTP_400_BAD_REQUEST)
+        bind_desktop_application(
+            request,
+            _oauth_client_for_desktop_binding(company, provider, company_oauth_client_id),
+            restrict=True,
+        )
         serializer = ProviderCallbackSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         redirect_uri, rerr = validate_redirect_uri_for_company(
@@ -1977,6 +2013,12 @@ class ShellUIAuthorizeView(APIView):
             return company_err
         provider = request.GET.get('provider', '').strip().lower()
         company_oauth_client_id = _parse_company_oauth_client_id(request.GET.get('company_oauth_client_id'))
+        oauth_client = (
+            _oauth_client_for_desktop_binding(company, provider, company_oauth_client_id)
+            if provider
+            else None
+        )
+        bind_desktop_application(request, oauth_client, restrict=bool(provider))
         client_tz = request.GET.get('client_timezone', '')
         client_dev = request.GET.get('client_device_id', '') or None
         redirect_to, rerr = validate_redirect_to_for_company(
@@ -2245,6 +2287,8 @@ class ShellUIOAuthCallbackView(APIView):
                 error_code='callback_company',
                 redirect_to_raw=redirect_to_raw,
             )
+        oauth_client = _oauth_client_for_desktop_binding(company, provider, company_oauth_client_id)
+        bind_desktop_application(request, oauth_client, restrict=True)
 
         redirect_to, rerr = validate_redirect_to_for_company(
             company=company,
@@ -2483,6 +2527,10 @@ class ShellUIOAuthConfirmView(APIView):
             company = Company.objects.get(pk=int(payload['company_id']))
         except Company.DoesNotExist:
             return Response({'error': 'Company not found.'}, status=status.HTTP_404_NOT_FOUND)
+        provider = payload['provider']
+        company_oauth_client_id = payload.get('company_oauth_client_id')
+        oauth_client = _oauth_client_for_desktop_binding(company, provider, company_oauth_client_id)
+        bind_desktop_application(request, oauth_client, restrict=True)
         redirect_to, rerr = validate_redirect_to_for_company(
             company=company,
             request=request,
@@ -2490,7 +2538,6 @@ class ShellUIOAuthConfirmView(APIView):
         )
         if rerr or not redirect_to:
             return Response({'error': rerr or 'Invalid redirect.'}, status=status.HTTP_400_BAD_REQUEST)
-        provider = payload['provider']
         company_oauth_client_id = payload.get('company_oauth_client_id')
         if provider not in _enabled_oauth_providers(company):
             return Response({'error': 'Provider not enabled.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -2525,6 +2572,11 @@ class ShellUIOAuthConfirmView(APIView):
         except Company.DoesNotExist:
             return Response({'error': 'Company not found.'}, status=status.HTTP_404_NOT_FOUND)
 
+        provider = payload['provider']
+        oauth_client = _oauth_client_for_desktop_binding(
+            company, provider, payload.get('company_oauth_client_id')
+        )
+        bind_desktop_application(request, oauth_client, restrict=True)
         redirect_to, rerr = validate_redirect_to_for_company(
             company=company,
             request=request,
@@ -2546,7 +2598,6 @@ class ShellUIOAuthConfirmView(APIView):
                 code_challenge=payload.get('code_challenge'),
             )
 
-        provider = payload['provider']
         if not is_company_access_enabled(company, user):
             return _join_denied_response(
                 decision=JoinDecision(
@@ -2645,6 +2696,15 @@ class ShellUIOAuthExchangeView(APIView):
         validated = serializer.validated_data
         provider = str(validated['provider']).strip().lower()
         code = str(validated['code']).strip()
+        company_oauth_client_id = validated.get('company_oauth_client_id')
+        _, oauth_client_err = _get_company_oauth_client(company, provider, company_oauth_client_id)
+        if oauth_client_err:
+            return Response({'error': oauth_client_err}, status=status.HTTP_400_BAD_REQUEST)
+        bind_desktop_application(
+            request,
+            _oauth_client_for_desktop_binding(company, provider, company_oauth_client_id),
+            restrict=True,
+        )
         redirect_uri, rerr = validate_redirect_uri_for_company(
             company=company,
             request=request,
@@ -2655,10 +2715,6 @@ class ShellUIOAuthExchangeView(APIView):
         pkce_err = presented_pkce_error(request.data, required=is_custom_scheme_redirect(redirect_uri))
         if pkce_err:
             return Response({'error': pkce_err[0], 'error_code': pkce_err[1]}, status=status.HTTP_400_BAD_REQUEST)
-        company_oauth_client_id = validated.get('company_oauth_client_id')
-        _row, oauth_client_err = _get_company_oauth_client(company, provider, company_oauth_client_id)
-        if oauth_client_err:
-            return Response({'error': oauth_client_err}, status=status.HTTP_400_BAD_REQUEST)
         client_tz = validated.get('client_timezone') or ''
         client_dev = validated.get('client_device_id') or None
         try:
@@ -3975,8 +4031,14 @@ class ShellUIAdminOAuthSocialAppListView(APIView):
             mapping, _created = CompanyOAuthClient.objects.get_or_create(
                 company=company,
                 social_app=app,
-                defaults={'is_active': True},
+                defaults={
+                    'is_active': True,
+                    'desktop_redirect_scheme': validated.get('desktop_redirect_scheme') or '',
+                },
             )
+            if 'desktop_redirect_scheme' in validated and not _created:
+                mapping.desktop_redirect_scheme = validated['desktop_redirect_scheme']
+                mapping.save(update_fields=['desktop_redirect_scheme', 'updated_at'])
         except IntegrityError:
             duplicate = find_duplicate_for_social_app(company.id, app)
             if duplicate is not None:
@@ -4086,6 +4148,8 @@ class ShellUIAdminOAuthSocialAppDetailView(APIView):
             else:
                 settings_data.pop('tenant', None)
         app.settings = settings_data
+        if 'desktop_redirect_scheme' in validated:
+            mapping.desktop_redirect_scheme = validated['desktop_redirect_scheme']
         duplicate = find_duplicate_for_social_app(
             company.id,
             app,
@@ -4096,6 +4160,7 @@ class ShellUIAdminOAuthSocialAppDetailView(APIView):
         app.save()
         mapping.save()
         app.refresh_from_db()
+        mapping.refresh_from_db()
         return Response(_oauth_social_app_payload(company, app, request=request))
 
     def delete(self, request, pk):
@@ -4189,6 +4254,8 @@ class ShellUIAdminOAuthClientDetailView(APIView):
                 if blocked:
                     return blocked
             row.is_active = validated['is_active']
+        if 'desktop_redirect_scheme' in validated:
+            row.desktop_redirect_scheme = validated['desktop_redirect_scheme']
         try:
             row.save()
         except IntegrityError:
@@ -4231,7 +4298,7 @@ def _oauth_redirect_payload(row: CompanyOAuthRedirect) -> dict:
         summary='List company OAuth redirect allowlist (staff or company owner)',
         description=(
             'http(s) origins allowed as post-login bounce destinations (`redirect_to`). '
-            'Desktop sign-in uses the company `desktop_redirect_scheme`, not a row here. '
+            'Desktop sign-in uses the application `desktop_redirect_scheme`, not a row here. '
             'Loopback (localhost / 127.0.0.1 / ::1) is allowed when DEBUG or '
             'OAUTH_ALLOW_LOOPBACK_REDIRECTS=true. Empty allowlist denies other http(s) redirects. '
             'Entries with `source=hosting` are synced from hosting-service preview sites.'

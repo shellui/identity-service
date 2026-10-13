@@ -25,7 +25,7 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 ### ✨ Feature
 
-- **Desktop app sign-in:** each company registers one custom scheme (`desktop_redirect_scheme`, for example `shellui-playground`). A redirect is accepted only when its scheme matches, such as `shellui-playground://callback`. Desktop sign-in stays off until the scheme is set. S256 PKCE and the 120s one-time code are unchanged. See [docs/desktop-apps.md](docs/desktop-apps.md).
+- **Desktop app sign-in:** each OAuth application registers one custom scheme (`desktop_redirect_scheme`, for example `shellui-playground`). A redirect is accepted only when its scheme matches that application, such as `shellui-playground://callback`. Desktop sign-in stays off for an application until its scheme is set. S256 PKCE and the 120s one-time code are unchanged. See [docs/desktop-apps.md](docs/desktop-apps.md).
 - **Sign-in error pages:** browser sign-in errors render an English or French page. When the redirect scheme is registered, **Back to the app** opens `<scheme>://…?error=<error_code>` with no token. `Accept: application/json` and API endpoints stay JSON.
 
 ### 📚 Documentation

@@ -1,4 +1,4 @@
-"""Custom-scheme desktop redirects: one registered scheme per company and S256 PKCE."""
+"""Custom-scheme desktop redirects: one registered scheme per application and S256 PKCE."""
 
 from __future__ import annotations
 
@@ -71,9 +71,8 @@ class DesktopRedirectApiTests(TestCase):
             company=self.company,
             social_app=self.app,
             is_active=True,
+            desktop_redirect_scheme='shellui-playground',
         )
-        self.company.desktop_redirect_scheme = 'shellui-playground'
-        self.company.save(update_fields=['desktop_redirect_scheme'])
         CompanyOAuthRedirect.objects.create(
             company=self.company,
             base_url='https://shell.example.com',
@@ -101,48 +100,69 @@ class DesktopRedirectApiTests(TestCase):
                 return line[start:end]
         self.fail('confirm token missing')
 
-    def test_owner_can_register_and_clear_a_scheme(self):
-        self.client.force_authenticate(user=self.owner)
-        rejected = self.client.patch(
-            f'/api/v1/companies/{self.company.id}/',
-            {'desktop_redirect_scheme': 'Com.Shellui.App'},
+    def _put_scheme(self, user, scheme):
+        self.client.force_authenticate(user=user)
+        return self.client.put(
+            f'/api/v1/oauth-clients/{self.oauth_client.id}?company_id={self.company.id}',
+            {'desktop_redirect_scheme': scheme},
             format='json',
         )
+
+    def test_owner_can_register_and_clear_a_scheme(self):
+        rejected = self._put_scheme(self.owner, 'Com.Shellui.App')
         self.assertEqual(rejected.status_code, 400, rejected.data)
         for scheme in ('http', 'https', 'javascript', 'data', 'file', 'vbscript', 'about', 'blob'):
-            response = self.client.patch(
-                f'/api/v1/companies/{self.company.id}/',
-                {'desktop_redirect_scheme': scheme},
-                format='json',
-            )
+            response = self._put_scheme(self.owner, scheme)
             self.assertEqual(response.status_code, 400, scheme)
-        updated = self.client.patch(
-            f'/api/v1/companies/{self.company.id}/',
-            {'desktop_redirect_scheme': 'com.shellui.app'},
-            format='json',
-        )
+        updated = self._put_scheme(self.owner, 'com.shellui.app')
         self.assertEqual(updated.status_code, 200, updated.data)
         self.assertEqual(updated.data['desktop_redirect_scheme'], 'com.shellui.app')
-        self.company.refresh_from_db()
-        self.assertEqual(self.company.desktop_redirect_scheme, 'com.shellui.app')
-        cleared = self.client.patch(
-            f'/api/v1/companies/{self.company.id}/',
-            {'desktop_redirect_scheme': ''},
-            format='json',
-        )
+        self.oauth_client.refresh_from_db()
+        self.assertEqual(self.oauth_client.desktop_redirect_scheme, 'com.shellui.app')
+        cleared = self._put_scheme(self.owner, '')
         self.assertEqual(cleared.status_code, 200, cleared.data)
         self.assertEqual(cleared.data['desktop_redirect_scheme'], '')
 
     def test_member_cannot_edit_scheme(self):
-        self.client.force_authenticate(user=self.member)
-        response = self.client.patch(
-            f'/api/v1/companies/{self.company.id}/',
-            {'desktop_redirect_scheme': 'com.shellui.other'},
-            format='json',
-        )
+        response = self._put_scheme(self.member, 'com.shellui.other')
         self.assertIn(response.status_code, (401, 403))
-        self.company.refresh_from_db()
-        self.assertEqual(self.company.desktop_redirect_scheme, 'shellui-playground')
+        self.oauth_client.refresh_from_db()
+        self.assertEqual(self.oauth_client.desktop_redirect_scheme, 'shellui-playground')
+
+    def test_redirect_uses_only_the_application_making_the_request(self):
+        other_app = SocialApp.objects.create(
+            provider='google',
+            name='Google Test',
+            client_id='google-cid',
+            secret='google-secret',
+        )
+        CompanyOAuthClient.objects.create(
+            company=self.company,
+            social_app=other_app,
+            is_active=True,
+            desktop_redirect_scheme='com.other.app',
+        )
+        params = {
+            'company_id': self.company.id,
+            'code_challenge': CHALLENGE,
+            'code_challenge_method': 'S256',
+        }
+        github = self.client.get(
+            '/api/v1/authorize',
+            {**params, 'provider': 'github', 'redirect_to': 'com.other.app://callback'},
+        )
+        self.assertEqual(github.status_code, 400)
+        self.assertEqual(github.json()['error_code'], 'unregistered_scheme')
+        google = self.client.get(
+            '/api/v1/authorize',
+            {**params, 'provider': 'google', 'redirect_to': 'com.other.app://callback'},
+        )
+        self.assertEqual(google.status_code, 302, google.content)
+        own = self.client.get(
+            '/api/v1/authorize',
+            {**params, 'provider': 'github', 'redirect_to': DESKTOP},
+        )
+        self.assertEqual(own.status_code, 302)
 
     def test_authorize_requires_s256_pkce_for_desktop_only(self):
         missing = self.client.get(
@@ -721,8 +741,8 @@ class DesktopRedirectApiTests(TestCase):
         self.assertEqual(as_json.json()['error_code'], 'invalid_redirect')
         self.assertNotIn('<html', as_json.content.decode())
 
-        self.company.desktop_redirect_scheme = ''
-        self.company.save(update_fields=['desktop_redirect_scheme'])
+        self.oauth_client.desktop_redirect_scheme = ''
+        self.oauth_client.save(update_fields=['desktop_redirect_scheme'])
         unregistered = browser.get(
             '/api/v1/authorize',
             {
@@ -740,8 +760,8 @@ class DesktopRedirectApiTests(TestCase):
         self.assertNotIn('shellui-playground://', unregistered_body)
         self.assertIn('id="go-back"', unregistered_body)
 
-        self.company.desktop_redirect_scheme = 'shellui-playground'
-        self.company.save(update_fields=['desktop_redirect_scheme'])
+        self.oauth_client.desktop_redirect_scheme = 'shellui-playground'
+        self.oauth_client.save(update_fields=['desktop_redirect_scheme'])
         pkce = browser.get(
             '/api/v1/authorize',
             {'provider': 'github', 'company_id': self.company.id, 'redirect_to': DESKTOP},
@@ -822,8 +842,6 @@ class DesktopSamlLoginTests(TestCase):
         self.client = Client()
         self.site = Site.objects.get_current()
         self.company = Company.objects.create(name='SAML Desktop', slug='saml-desktop')
-        self.company.desktop_redirect_scheme = 'shellui-playground'
-        self.company.save(update_fields=['desktop_redirect_scheme'])
         self.creds = generate_test_idp_credentials(entity_id='https://idp.test.example/desktop')
         self.app = SocialApp.objects.create(
             provider='saml',
@@ -842,7 +860,12 @@ class DesktopSamlLoginTests(TestCase):
             },
         )
         self.app.sites.add(self.site)
-        CompanyOAuthClient.objects.create(company=self.company, social_app=self.app, is_active=True)
+        CompanyOAuthClient.objects.create(
+            company=self.company,
+            social_app=self.app,
+            is_active=True,
+            desktop_redirect_scheme='shellui-playground',
+        )
 
     def _login(self, **params):
         login_url = reverse('shellui-saml-login', kwargs={'organization_slug': self.app.client_id})

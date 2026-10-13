@@ -14,14 +14,15 @@ class Migration(migrations.Migration):
 
     operations = [
         migrations.AddField(
-            model_name='company',
+            model_name='companyoauthclient',
             name='desktop_redirect_scheme',
             field=models.CharField(
                 blank=True,
                 default='',
                 help_text=(
-                    'Lowercase custom URI scheme for desktop sign-in, for example shellui-playground. '
-                    'Empty keeps desktop sign-in off. Redirects are accepted only when the scheme matches.'
+                    'Lowercase custom URI scheme for this application, for example shellui-playground. '
+                    'Empty keeps desktop sign-in off for this application. '
+                    'A redirect is accepted only when its scheme matches.'
                 ),
                 max_length=64,
             ),

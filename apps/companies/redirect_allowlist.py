@@ -9,7 +9,7 @@ from django.conf import settings
 from django.db.utils import OperationalError, ProgrammingError
 from django.http import HttpRequest
 
-from .models import Company, CompanyOAuthRedirect
+from .models import Company, CompanyOAuthClient, CompanyOAuthRedirect
 
 # Schemes that must never be a desktop redirect, even when the shape looks like an app id.
 _DENIED_REDIRECT_SCHEMES = frozenset(
@@ -101,7 +101,7 @@ _DENIED_REDIRECT_SCHEMES = frozenset(
 _RFC3986_SCHEME_RE = re.compile(r'^[a-z][a-z0-9+.-]*$')
 _DESKTOP_URI_CONTROL_RE = re.compile(r'[\x00-\x20\x7f\\]')
 _ERROR_CODE_RE = re.compile(r'^[a-z][a-z0-9_]{0,63}$')
-UNREGISTERED_SCHEME_MESSAGE = 'Sign-in scheme is not registered for this company.'
+UNREGISTERED_SCHEME_MESSAGE = 'Sign-in scheme is not registered for this application.'
 
 DEFAULT_LOGIN_CALLBACK_PATH = '/login/callback'
 
@@ -335,17 +335,35 @@ def loopback_oauth_redirects_allowed() -> bool:
     return bool(getattr(settings, 'OAUTH_ALLOW_LOOPBACK_REDIRECTS', settings.DEBUG))
 
 
+def bind_desktop_application(request: HttpRequest, oauth_client, *, restrict: bool) -> None:
+    """Remember which application this sign-in request belongs to.
+
+    When ``restrict`` is true, a custom-scheme redirect must match that
+    application's scheme. When it is false, any active application of the
+    company may own the scheme.
+    """
+    request.shellui_desktop_oauth_client = oauth_client
+    request.shellui_desktop_restrict = restrict
+
+
+def _request_desktop_application(request: HttpRequest):
+    client = getattr(request, 'shellui_desktop_oauth_client', None)
+    restrict = bool(getattr(request, 'shellui_desktop_restrict', False))
+    return client, restrict
+
+
 def redirect_url_allowed_for_company(company: Company, absolute_url: str, request: HttpRequest) -> bool:
     """
     Allow loopback when ``OAUTH_ALLOW_LOOPBACK_REDIRECTS`` (default: DEBUG). Otherwise require
     an active company allowlist origin match. Empty allowlist denies non-loopback.
+    A custom scheme must match the application bound on the request, or, when no
+    application is bound, an active application of this company.
     """
-    _ = request
     candidate = canonical_url_no_fragment(absolute_url)
     if not candidate:
         return False
     if is_custom_scheme_redirect(candidate):
-        return _desktop_redirect_scheme_match(company, candidate)
+        return _desktop_redirect_scheme_match(company, candidate, request)
     if is_loopback_redirect_url(candidate):
         return loopback_oauth_redirects_allowed()
     candidate_origin = origin_of_url(candidate)
@@ -370,20 +388,32 @@ def redirect_url_allowed_for_company(company: Company, absolute_url: str, reques
     return False
 
 
-def registered_desktop_scheme(company: Company) -> str:
-    """Lowercase scheme for this company, or '' when desktop sign-in is off."""
-    return (getattr(company, 'desktop_redirect_scheme', '') or '').strip().lower()
+def registered_desktop_scheme(oauth_client) -> str:
+    """Lowercase scheme for this application, or '' when desktop sign-in is off."""
+    return (getattr(oauth_client, 'desktop_redirect_scheme', '') or '').strip().lower()
 
 
-def _desktop_redirect_scheme_match(company: Company, candidate: str) -> bool:
-    """True when the URI scheme equals the company's registered scheme."""
-    registered = registered_desktop_scheme(company)
+def _scheme_matches_application(oauth_client, candidate: str) -> bool:
+    if oauth_client is None or not getattr(oauth_client, 'is_active', False):
+        return False
+    registered = registered_desktop_scheme(oauth_client)
     if not registered or not is_allowed_app_scheme(registered):
         return False
     exact, err = normalize_desktop_redirect_uri(candidate)
     if err or not exact:
         return False
     return urlsplit(exact).scheme == registered
+
+
+def _desktop_redirect_scheme_match(company: Company, candidate: str, request: HttpRequest) -> bool:
+    """True when the URI scheme equals the application bound to this request."""
+    oauth_client, restrict = _request_desktop_application(request)
+    if restrict:
+        if oauth_client is None or int(oauth_client.company_id) != int(company.id):
+            return False
+        return _scheme_matches_application(oauth_client, candidate)
+    rows = CompanyOAuthClient.objects.filter(company_id=company.id, is_active=True)
+    return any(_scheme_matches_application(row, candidate) for row in rows)
 
 
 def loopback_client_bounce_url_for_oauth_error(

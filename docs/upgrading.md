@@ -4,13 +4,13 @@ description: Steps to take when you upgrade identity-service, release by release
 
 # Upgrade notes
 
-This page lists what you must change when you move to a newer identity-service release. Releases not listed here need no action beyond deploying the new image, which runs the database migrations on start. The full list of changes is in the [changelog](https://github.com/shellui/identity-service/blob/main/CHANGELOG.md).
+This page lists what you must change when you move to a newer identity-service release. Releases not listed here need no action beyond deploying the new image, which runs the database migrations on start. The full list of changes is in the [changelog](../CHANGELOG.md).
 
 ## Desktop app redirects
 
-Migration `companies.0027_company_desktop_redirect_scheme` stores one custom scheme on the company (`desktop_redirect_scheme`) and removes allowlist `kind`. Migration `authapi.0018_desktop_custom_scheme_redirect` adds the PKCE challenge column on session codes and magic-link tokens. Web shells need no change.
+Migration `companies.0027_company_desktop_redirect_scheme` stores one custom scheme on each OAuth application (`CompanyOAuthClient.desktop_redirect_scheme`) and removes allowlist `kind`. Migration `authapi.0018_desktop_custom_scheme_redirect` adds the PKCE challenge column on session codes and magic-link tokens. Web shells need no change.
 
-A desktop app needs that scheme set, and S256 PKCE on every custom-scheme redirect. Until the scheme is set, desktop sign-in is off. See [Desktop apps](desktop-apps.md).
+A desktop app needs that scheme set on the OAuth application it uses, and S256 PKCE on every custom-scheme redirect. Until the scheme is set, desktop sign-in is off for that application. See [Desktop apps](desktop-apps.md).
 
 ## Upgrade to 0.7.0
 

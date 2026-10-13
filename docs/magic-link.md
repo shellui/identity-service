@@ -43,7 +43,7 @@ The shell asks identity-service to email a link with `POST /api/v1/magic-link/re
 
 The fields and responses work as follows:
 
-- **`redirect_to`**: must pass the company [redirect allowlist](oauth-login.md#redirect-allowlist), as for OAuth. A custom-scheme URI is accepted when its scheme is `desktop_redirect_scheme`, and it requires `code_challenge` and `code_challenge_method` set to `S256`. See [Desktop apps](desktop-apps.md)
+- **`redirect_to`**: must pass the company [redirect allowlist](oauth-login.md#redirect-allowlist), as for OAuth. A custom-scheme URI is accepted when its scheme is the `desktop_redirect_scheme` of an OAuth application for that company, and it requires `code_challenge` and `code_challenge_method` set to `S256`. See [Desktop apps](desktop-apps.md)
 - **`language`** (optional): the UI language (`fr`, `fr-FR`, …). It picks the email language and is sent as `language` in the webhook payload. Unsupported values are ignored
 - **200**: a generic message, whether or not the email has an account, so the endpoint cannot be used to find accounts. A staff address gets the same answer, but a notice instead of a link, see [Staff accounts](#staff-accounts)
 - **403** `magic_link_disabled`: magic links are off for the company or the deployment

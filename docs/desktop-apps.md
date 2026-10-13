@@ -4,7 +4,7 @@ description: Sign a desktop app in through the system browser and return with a 
 
 # Desktop apps
 
-A desktop app signs people in through the system browser, then returns to the app with a custom-scheme deep link such as `shellui-playground://callback?shellui_auth_code=…`. You register one scheme on the company. Desktop sign-in stays off until that scheme is set. Web shells keep the http(s) flow in [OAuth login](oauth-login.md). An http(s) `redirect_to` is still an origin on the allowlist, and PKCE stays optional there.
+A desktop app signs people in through the system browser, then returns to the app with a custom-scheme deep link such as `shellui-playground://callback?shellui_auth_code=…`. You register one scheme on each OAuth application. Desktop sign-in stays off for that application until the scheme is set. Web shells keep the http(s) flow in [OAuth login](oauth-login.md). An http(s) `redirect_to` is still an origin on the allowlist, and PKCE stays optional there.
 
 ## Pick a scheme
 
@@ -22,21 +22,24 @@ shellui-playground://callback
 
 ## Register the scheme
 
-Set `desktop_redirect_scheme` on the company. An empty value keeps desktop sign-in off, so a custom-scheme `redirect_to` returns `unregistered_scheme`.
+Set `desktop_redirect_scheme` on the OAuth application (`CompanyOAuthClient`), not on the company. Each application has its own scheme. An empty value keeps desktop sign-in off for that application, so a custom-scheme `redirect_to` returns `unregistered_scheme`.
 
-Staff and company owners set it in the same places as other company settings:
+When the sign-in request names an application (`provider` or `company_oauth_client_id`), the redirect scheme must match that application. A scheme registered on a different application is refused. Magic link and invitations, which do not name one application, accept a scheme registered on any active application of the company.
 
-- **Django admin**: open the company and edit **Desktop sign-in**
-- **REST API**: `PATCH /api/v1/companies/<id>/` (company owner)
+Staff and company owners set it in the same places as other application settings:
+
+- **Django admin**: open **Company OAuth clients** and edit **Desktop redirect scheme**
+- **REST API**: `PUT /api/v1/oauth-clients/<id>?company_id=<company_id>` (company owner)
+- **OAuth application API**: `POST` or `PUT /api/v1/oauth-social-apps` accepts the same field and stores it on the company mapping
 
 ```bash
-curl -s -X PATCH "https://auth.example.com/api/v1/companies/1/" \
+curl -s -X PUT "https://auth.example.com/api/v1/oauth-clients/4/?company_id=1" \
   -H "Authorization: Bearer $ACCESS_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"desktop_redirect_scheme":"shellui-playground"}'
 ```
 
-Send `{"desktop_redirect_scheme":""}` to turn desktop sign-in off again. The http(s) redirect allowlist is unchanged. Hosting preview sync still writes web origins only.
+Send `{"desktop_redirect_scheme":""}` to turn desktop sign-in off for that application. The http(s) redirect allowlist is unchanged. Hosting preview sync still writes web origins only.
 
 ## PKCE
 
@@ -99,13 +102,13 @@ The code lasts `OAUTH_SESSION_CODE_TTL_SECONDS` (120 seconds by default) and wor
 
 A sign-in error that a person hits in the browser renders an HTML page in English or French, from `Accept-Language`. The page states what failed and offers **Go back** (`Retour`). It does not include a token, an auth code, or the sign-in URL.
 
-When the request already has a redirect on the company's registered scheme, the page also shows **Back to the app** (`Revenir à l'application`). That link opens the same path with only an `error` query parameter:
+When the request already has a redirect on that application's registered scheme, the page also shows **Back to the app** (`Revenir à l'application`). That link opens the same path with only an `error` query parameter:
 
 ```text
 shellui-playground://callback?error=pkce_required
 ```
 
-The app reads `error` and shows its own message. The query never contains `shellui_auth_code`, a verifier, or a token. If the scheme is missing or not the registered one, the page has no app button.
+The app reads `error` and shows its own message. The query never contains `shellui_auth_code`, a verifier, or a token. If the scheme is missing, or it is not the scheme registered for the application making the request, the page has no app button.
 
 Clients that send `Accept: application/json`, and JSON API endpoints such as `POST /api/v1/oauth/session`, still receive JSON.
 
@@ -127,13 +130,13 @@ A custom-scheme `redirect_to` has no https page to offer, so the staff notice ha
 
 SAML uses the same PKCE query parameters on `/api/v1/saml/<organization_slug>/login/`. `GET /api/v1/authorize?provider=saml` forwards the challenge onto that URL. The challenge is stored with the AuthnRequest. The verifier is not.
 
-`POST /api/v1/invitations` accepts a desktop URI as `app_url` when its scheme is the company's registered scheme. PKCE is not required when the invitation is created: the inviter does not have the invitee's verifier. The person who accepts the invitation sends PKCE on the later sign-in. The email (English and French) says to copy the link when the button does not open the app. An http(s) invitation email keeps the sentence about copying the URL into a browser.
+`POST /api/v1/invitations` accepts a desktop URI as `app_url` when its scheme is registered on an active OAuth application of the company. PKCE is not required when the invitation is created: the inviter does not have the invitee's verifier. The person who accepts the invitation sends PKCE on the later sign-in. The email (English and French) says to copy the link when the button does not open the app. An http(s) invitation email keeps the sentence about copying the URL into a browser.
 
 ## What to change in the client and in admin
 
 **@shellui/core and the desktop app**
 
-- Register the custom scheme with the operating system, and set that scheme on the company with `desktop_redirect_scheme`.
+- Register the custom scheme with the operating system, and set that scheme on the OAuth application with `desktop_redirect_scheme`.
 - Generate a PKCE verifier, send the S256 challenge on authorize, magic link, and SAML, and keep the verifier in the app.
 - Open the system browser for sign-in. Handle the deep link, read `shellui_auth_code`, and exchange it with `code_verifier`.
 - Handle `error` on the same deep link when sign-in fails in the browser. Do not expect a token on that URL.
@@ -142,11 +145,11 @@ SAML uses the same PKCE query parameters on `/api/v1/saml/<organization_slug>/lo
 
 **Shellui admin**
 
-- Edit `desktop_redirect_scheme` with the other company settings. Leave it empty until the app has a scheme.
+- Edit `desktop_redirect_scheme` with the other application settings. Leave it empty until that application has a scheme.
 - Do not add a desktop row on the OAuth redirect allowlist. That list stays http(s) origins.
 - Do not require PKCE when an owner sends an invitation to a desktop URI.
 
-Migration `companies.0027_company_desktop_redirect_scheme` stores the scheme on the company and drops allowlist `kind`. Migration `authapi.0018_desktop_custom_scheme_redirect` stores the PKCE challenge. Web shells need no client change.
+Migration `companies.0027_company_desktop_redirect_scheme` stores the scheme on each OAuth application and drops allowlist `kind`. Migration `authapi.0018_desktop_custom_scheme_redirect` stores the PKCE challenge. Web shells need no client change.
 
 ## Related
 

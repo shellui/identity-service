@@ -85,7 +85,6 @@ class CompanyAdminForm(forms.ModelForm):
             'allowed_email_domains',
             'verified_email_domains',
             'enable_magic_link',
-            'desktop_redirect_scheme',
             'data_retention_days',
             'owners',
         )
@@ -111,12 +110,6 @@ class CompanyAdminForm(forms.ModelForm):
 
     def clean_verified_email_domains(self):
         return normalize_allowed_domains(self.cleaned_data.get('verified_email_domains'))
-
-    def clean_desktop_redirect_scheme(self):
-        scheme, err = normalize_registered_scheme(self.cleaned_data.get('desktop_redirect_scheme') or '')
-        if err:
-            raise forms.ValidationError(err)
-        return scheme or ''
 
     def clean(self):
         cleaned = super().clean()
@@ -144,7 +137,7 @@ class CompanyMembershipInline(admin.TabularInline):
 class CompanyOAuthClientInline(admin.TabularInline):
     model = CompanyOAuthClient
     extra = 1
-    fields = ('social_app', 'is_active', 'created_at')
+    fields = ('social_app', 'is_active', 'desktop_redirect_scheme', 'created_at')
     readonly_fields = ('created_at',)
 
 
@@ -196,17 +189,6 @@ class CompanyAdmin(admin.ModelAdmin):
                     'Event log rows, finished webhook deliveries and SCIM provisioning events are deleted '
                     'after this many days by the purge_expired_data scheduled job. '
                     'Company owners see the value in the admin panel but cannot change it.'
-                ),
-            },
-        ),
-        (
-            'Desktop sign-in',
-            {
-                'fields': ('desktop_redirect_scheme',),
-                'description': (
-                    'One lowercase custom scheme for this app, for example shellui-playground. '
-                    'Leave it empty to keep desktop sign-in off. '
-                    'A redirect is accepted only when its scheme matches, such as shellui-playground://callback.'
                 ),
             },
         ),
@@ -416,9 +398,33 @@ class CompanyGroupAdmin(admin.ModelAdmin):
         super().delete_queryset(request, queryset)
 
 
+class CompanyOAuthClientAdminForm(forms.ModelForm):
+    class Meta:
+        model = CompanyOAuthClient
+        fields = '__all__'
+
+    def clean_desktop_redirect_scheme(self):
+        scheme, err = normalize_registered_scheme(self.cleaned_data.get('desktop_redirect_scheme') or '')
+        if err:
+            raise forms.ValidationError(err)
+        return scheme or ''
+
+
+CompanyOAuthClientInline.form = CompanyOAuthClientAdminForm
+
+
 @admin.register(CompanyOAuthClient)
 class CompanyOAuthClientAdmin(admin.ModelAdmin):
-    list_display = ('id', 'company', 'provider', 'social_app', 'is_active', 'created_at')
+    form = CompanyOAuthClientAdminForm
+    list_display = (
+        'id',
+        'company',
+        'provider',
+        'social_app',
+        'desktop_redirect_scheme',
+        'is_active',
+        'created_at',
+    )
     list_filter = ('social_app__provider', 'is_active', 'company')
     search_fields = ('social_app__name', 'social_app__client_id', 'company__name')
     autocomplete_fields = ('company',)

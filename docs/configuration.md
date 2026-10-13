@@ -4,7 +4,7 @@ description: Every environment variable of identity-service, grouped by topic, w
 
 # Configuration
 
-identity-service is configured with environment variables. Copy [`.env.example`](https://github.com/shellui/identity-service/blob/main/.env.example) to `.env` for local runs, and pass the same variables to Docker, Coolify, or your orchestrator in production. Durations accept a bare number of seconds or a suffix: `s`, `m`, `h`, `d` (for example `5m` or `30d`).
+identity-service is configured with environment variables. Copy [`.env.example`](../.env.example) to `.env` for local runs, and pass the same variables to Docker, Coolify, or your orchestrator in production. Durations accept a bare number of seconds or a suffix: `s`, `m`, `h`, `d` (for example `5m` or `30d`).
 
 ## Required in production
 
