@@ -171,6 +171,7 @@ def create_magic_link_token(
     user=None,
     client_timezone: str = '',
     client_device_id: str | None = None,
+    code_challenge: str = '',
 ) -> tuple[MagicLinkToken, str]:
     normalized = (email or '').strip().lower()
     raw_token = secrets.token_urlsafe(32)
@@ -181,11 +182,28 @@ def create_magic_link_token(
         user=user,
         token_hash=hash_magic_link_token(raw_token),
         redirect_to=redirect_to,
+        code_challenge=(code_challenge or '')[:128],
         expires_at=expires_at,
         client_timezone=(client_timezone or '')[:64],
         client_device_id=(client_device_id or '')[:128] or None,
     )
     return row, raw_token
+
+
+def magic_link_stored_redirect(*, raw_token: str, company_id: int) -> str:
+    """Redirect stored for this token, if the row exists. Does not reveal the token."""
+    token = (raw_token or '').strip()
+    if not token:
+        return ''
+    row = (
+        MagicLinkToken.objects.filter(
+            token_hash=hash_magic_link_token(token),
+            company_id=company_id,
+        )
+        .only('redirect_to')
+        .first()
+    )
+    return (row.redirect_to or '') if row else ''
 
 
 def lookup_magic_link_token(

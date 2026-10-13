@@ -8,6 +8,7 @@ from django.template import TemplateDoesNotExist
 from django.template.loader import render_to_string
 
 from apps.companies.models import Company
+from apps.companies.redirect_allowlist import is_custom_scheme_redirect
 
 
 def _render(template_name: str, context: dict, *, language: str) -> str:
@@ -33,6 +34,7 @@ def send_invitation_email(
         'inviter_name': inviter_name,
         'email': email,
         'app_url': app_url,
+        'desktop_redirect': is_custom_scheme_redirect(app_url or ''),
     }
     message = EmailMultiAlternatives(
         subject=_render('subjects/{lang}.txt', context, language=language),

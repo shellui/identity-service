@@ -2,13 +2,106 @@
 
 from __future__ import annotations
 
+import re
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from django.conf import settings
 from django.db.utils import OperationalError, ProgrammingError
 from django.http import HttpRequest
 
-from .models import Company, CompanyOAuthRedirect
+from .models import Company, CompanyOAuthClient, CompanyOAuthRedirect
+
+# Schemes that must never be a desktop redirect, even when the shape looks like an app id.
+_DENIED_REDIRECT_SCHEMES = frozenset(
+    {
+        'http',
+        'https',
+        'javascript',
+        'data',
+        'file',
+        'vbscript',
+        'about',
+        'blob',
+        'ftp',
+        'ftps',
+        'ws',
+        'wss',
+        'mailto',
+        'tel',
+        'sms',
+        'ssh',
+        'sftp',
+        'ldap',
+        'ldaps',
+        'chrome',
+        'chrome-extension',
+        'moz-extension',
+        'ms-appx',
+        'ms-appx-web',
+        'intent',
+        'market',
+        'content',
+        'android-app',
+        'view-source',
+        'filesystem',
+        'jar',
+        'nfs',
+        'tftp',
+        'gopher',
+        'news',
+        'nntp',
+        'irc',
+        'ircs',
+        'magnet',
+        'cid',
+        'mid',
+        'mms',
+        'mmsto',
+        'ms-help',
+        'res',
+        'mk',
+        'mhtml',
+        'webcal',
+        'feed',
+        'git',
+        'svn',
+        'dict',
+        'wais',
+        'shttp',
+        'urn',
+        'uuid',
+        'geo',
+        'telnet',
+        'rtsp',
+        'rtspu',
+        'sip',
+        'sips',
+        'xmpp',
+        'callto',
+        'facetime',
+        'facetime-audio',
+        'maps',
+        'ms-settings',
+        'microsoft-edge',
+        'chrome-error',
+        'chrome-devtools',
+        'resource',
+        'android',
+        'dns',
+        'ipp',
+        'ipps',
+        'dav',
+        'imap',
+        'pop',
+        'smtp',
+    }
+)
+
+# RFC 3986: scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." ). Stored lowercase.
+_RFC3986_SCHEME_RE = re.compile(r'^[a-z][a-z0-9+.-]*$')
+_DESKTOP_URI_CONTROL_RE = re.compile(r'[\x00-\x20\x7f\\]')
+_ERROR_CODE_RE = re.compile(r'^[a-z][a-z0-9_]{0,63}$')
+UNREGISTERED_SCHEME_MESSAGE = 'Sign-in scheme is not registered for this application.'
 
 DEFAULT_LOGIN_CALLBACK_PATH = '/login/callback'
 
@@ -56,6 +149,118 @@ def origin_of_url(url: str) -> str:
     return f'{p.scheme}://{p.netloc}'
 
 
+def is_allowed_app_scheme(scheme: str) -> bool:
+    """True for a lowercase RFC 3986 scheme that is not a browser or network scheme."""
+    value = (scheme or '').strip().lower()
+    if (
+        not value
+        or len(value) > 64
+        or value in _DENIED_REDIRECT_SCHEMES
+        or value.startswith('web+')
+        or _RFC3986_SCHEME_RE.fullmatch(value) is None
+    ):
+        return False
+    return True
+
+
+def normalize_registered_scheme(raw: str) -> tuple[str | None, str | None]:
+    """Scheme stored on the company. An empty value turns desktop sign-in off."""
+    s = (raw or '').strip()
+    if not s:
+        return '', None
+    if s != s.lower():
+        return None, 'Scheme must be lowercase.'
+    if len(s) > 64 or _RFC3986_SCHEME_RE.fullmatch(s) is None:
+        return None, (
+            'Scheme must be an RFC 3986 scheme: a letter, then letters, digits, plus, hyphen, or dot.'
+        )
+    if s in _DENIED_REDIRECT_SCHEMES or s.startswith('web+'):
+        return None, 'This scheme is not allowed.'
+    return s, None
+
+
+def is_custom_scheme_redirect(url: str) -> bool:
+    """True when ``url`` uses an allowed desktop app scheme."""
+    return is_allowed_app_scheme(urlsplit((url or '').strip()).scheme)
+
+
+def normalize_desktop_redirect_uri(raw: str) -> tuple[str | None, str | None]:
+    """
+    Canonical exact custom-scheme URI.
+    Returns (uri, None) or (None, error_message).
+    """
+    s = (raw or '').strip()
+    if not s:
+        return None, 'Empty base_url.'
+    lowered = s.lower()
+    if (
+        _DESKTOP_URI_CONTROL_RE.search(s)
+        or '%00' in lowered
+        or '%0a' in lowered
+        or '%0d' in lowered
+    ):
+        return None, 'Invalid desktop redirect.'
+    if '#' in s:
+        return None, 'Desktop redirect must not include a fragment.'
+    if '://' not in s:
+        return None, 'Desktop redirect must be an exact custom-scheme URI.'
+    try:
+        parsed = urlsplit(s)
+    except ValueError:
+        return None, 'Invalid desktop redirect.'
+    scheme = (parsed.scheme or '').lower()
+    if scheme in _DENIED_REDIRECT_SCHEMES:
+        return None, 'Desktop redirect scheme is not allowed.'
+    if not is_allowed_app_scheme(scheme):
+        return None, 'Desktop redirect must be an exact custom-scheme URI.'
+    if '@' in parsed.netloc or '%' in parsed.netloc or parsed.username or parsed.password:
+        return None, 'Desktop redirect must not include userinfo.'
+    try:
+        port = parsed.port
+    except ValueError:
+        return None, 'Invalid desktop redirect.'
+    if port is not None and not 1 <= port <= 65535:
+        return None, 'Invalid desktop redirect.'
+    if not parsed.netloc and not parsed.path:
+        return None, 'Invalid desktop redirect.'
+    if parsed.fragment:
+        return None, 'Desktop redirect must not include a fragment.'
+    canonical = canonical_url_no_fragment(s)
+    if not canonical or len(canonical) > 500 or not is_custom_scheme_redirect(canonical):
+        return None, 'Invalid desktop redirect.'
+    return canonical, None
+
+
+def normalize_oauth_redirect_entry(raw: str) -> tuple[str | None, str | None]:
+    """Normalize a web allowlist origin (http or https)."""
+    return normalize_allowlist_origin(raw)
+
+
+def client_redirect_error_code(message: str | None) -> str:
+    """Stable code for a redirect validation message."""
+    text = message or ''
+    if 'not registered' in text:
+        return 'unregistered_scheme'
+    if 'not allowed' in text or 'Invalid redirect' in text:
+        return 'redirect_not_allowed'
+    return 'invalid_redirect'
+
+
+def desktop_error_deep_link(redirect_to: str, error_code: str) -> str | None:
+    """``scheme://host/path?error=<code>`` for a validated custom-scheme redirect.
+
+    The query is only ``error``. No token, auth code, or verifier is copied.
+    """
+    canonical, err = normalize_desktop_redirect_uri(redirect_to)
+    if err or not canonical or not is_custom_scheme_redirect(canonical):
+        return None
+    parsed = urlsplit(canonical)
+    code = (error_code or '').strip().lower()
+    if _ERROR_CODE_RE.fullmatch(code) is None:
+        code = 'signin_failed'
+    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path or '', urlencode([('error', code)]), ''))
+
+
 def normalize_allowlist_origin(raw: str) -> tuple[str | None, str | None]:
     """
     Normalize an allowlist entry to a canonical origin.
@@ -99,11 +304,18 @@ def normalize_client_redirect_url(request: HttpRequest, raw: str) -> tuple[str |
         joined = f'{request.scheme}://{request.get_host()}{s}'
         return canonical_url_no_fragment(joined), None
     p = urlsplit(s)
-    if p.scheme not in ('http', 'https'):
-        return None, 'redirect_to must use http or https.'
-    if not p.netloc:
-        return None, 'Invalid redirect_to.'
-    return canonical_url_no_fragment(s), None
+    if p.scheme in ('http', 'https'):
+        if not p.netloc:
+            return None, 'Invalid redirect_to.'
+        return canonical_url_no_fragment(s), None
+    if is_allowed_app_scheme(p.scheme):
+        uri, err = normalize_desktop_redirect_uri(s)
+        if err or not uri:
+            if err and 'fragment' in err:
+                return None, 'redirect_to must not include a fragment.'
+            return None, 'Invalid redirect_to.'
+        return uri, None
+    return None, 'redirect_to must use http or https.'
 
 
 def _hostname_is_loopback(hostname: str | None) -> bool:
@@ -123,22 +335,45 @@ def loopback_oauth_redirects_allowed() -> bool:
     return bool(getattr(settings, 'OAUTH_ALLOW_LOOPBACK_REDIRECTS', settings.DEBUG))
 
 
+def bind_desktop_application(request: HttpRequest, oauth_client, *, restrict: bool) -> None:
+    """Remember which application this sign-in request belongs to.
+
+    When ``restrict`` is true, a custom-scheme redirect must match that
+    application's scheme. When it is false, any active application of the
+    company may own the scheme.
+    """
+    request.shellui_desktop_oauth_client = oauth_client
+    request.shellui_desktop_restrict = restrict
+
+
+def _request_desktop_application(request: HttpRequest):
+    client = getattr(request, 'shellui_desktop_oauth_client', None)
+    restrict = bool(getattr(request, 'shellui_desktop_restrict', False))
+    return client, restrict
+
+
 def redirect_url_allowed_for_company(company: Company, absolute_url: str, request: HttpRequest) -> bool:
     """
     Allow loopback when ``OAUTH_ALLOW_LOOPBACK_REDIRECTS`` (default: DEBUG). Otherwise require
     an active company allowlist origin match. Empty allowlist denies non-loopback.
+    A custom scheme must match the application bound on the request, or, when no
+    application is bound, an active application of this company.
     """
-    _ = request
     candidate = canonical_url_no_fragment(absolute_url)
     if not candidate:
         return False
+    if is_custom_scheme_redirect(candidate):
+        return _desktop_redirect_scheme_match(company, candidate, request)
     if is_loopback_redirect_url(candidate):
         return loopback_oauth_redirects_allowed()
     candidate_origin = origin_of_url(candidate)
     if not candidate_origin:
         return False
     try:
-        rows = CompanyOAuthRedirect.objects.filter(company_id=company.id, is_active=True)
+        rows = CompanyOAuthRedirect.objects.filter(
+            company_id=company.id,
+            is_active=True,
+        )
         for row in rows:
             allowed = origin_of_url(row.base_url) or canonical_url_no_fragment(row.base_url)
             if not allowed:
@@ -151,6 +386,34 @@ def redirect_url_allowed_for_company(company: Company, absolute_url: str, reques
     except (OperationalError, ProgrammingError):
         return False
     return False
+
+
+def registered_desktop_scheme(oauth_client) -> str:
+    """Lowercase scheme for this application, or '' when desktop sign-in is off."""
+    return (getattr(oauth_client, 'desktop_redirect_scheme', '') or '').strip().lower()
+
+
+def _scheme_matches_application(oauth_client, candidate: str) -> bool:
+    if oauth_client is None or not getattr(oauth_client, 'is_active', False):
+        return False
+    registered = registered_desktop_scheme(oauth_client)
+    if not registered or not is_allowed_app_scheme(registered):
+        return False
+    exact, err = normalize_desktop_redirect_uri(candidate)
+    if err or not exact:
+        return False
+    return urlsplit(exact).scheme == registered
+
+
+def _desktop_redirect_scheme_match(company: Company, candidate: str, request: HttpRequest) -> bool:
+    """True when the URI scheme equals the application bound to this request."""
+    oauth_client, restrict = _request_desktop_application(request)
+    if restrict:
+        if oauth_client is None or int(oauth_client.company_id) != int(company.id):
+            return False
+        return _scheme_matches_application(oauth_client, candidate)
+    rows = CompanyOAuthClient.objects.filter(company_id=company.id, is_active=True)
+    return any(_scheme_matches_application(row, candidate) for row in rows)
 
 
 def loopback_client_bounce_url_for_oauth_error(
@@ -193,6 +456,8 @@ def validate_redirect_to_for_company(
     if err:
         return None, err
     if not redirect_url_allowed_for_company(company, url, request):
+        if is_custom_scheme_redirect(url):
+            return None, UNREGISTERED_SCHEME_MESSAGE
         return None, 'redirect_to is not allowed for this company.'
     return url, None
 
@@ -217,5 +482,7 @@ def validate_redirect_uri_for_company(
             err = err.replace('redirect_to', 'redirect_uri')
         return None, err
     if not redirect_url_allowed_for_company(company, url, request):
+        if is_custom_scheme_redirect(url):
+            return None, UNREGISTERED_SCHEME_MESSAGE
         return None, 'redirect_uri is not allowed for this company.'
     return url, None

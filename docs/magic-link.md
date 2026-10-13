@@ -43,7 +43,7 @@ The shell asks identity-service to email a link with `POST /api/v1/magic-link/re
 
 The fields and responses work as follows:
 
-- **`redirect_to`**: must pass the company [redirect allowlist](oauth-login.md#redirect-allowlist), as for OAuth
+- **`redirect_to`**: must pass the company [redirect allowlist](oauth-login.md#redirect-allowlist), as for OAuth. A custom-scheme URI is accepted when its scheme is the `desktop_redirect_scheme` of an OAuth application for that company, and it requires `code_challenge` and `code_challenge_method` set to `S256`. See [Desktop apps](desktop-apps.md)
 - **`language`** (optional): the UI language (`fr`, `fr-FR`, …). It picks the email language and is sent as `language` in the webhook payload. Unsupported values are ignored
 - **200**: a generic message, whether or not the email has an account, so the endpoint cannot be used to find accounts. A staff address gets the same answer, but a notice instead of a link, see [Staff accounts](#staff-accounts)
 - **403** `magic_link_disabled`: magic links are off for the company or the deployment
@@ -61,6 +61,8 @@ A webhook rule on `identity.auth.magic_link.requested` is a notification only. I
 ## Verify the link
 
 The link in the email opens `GET /api/v1/magic-link/verify?token=…&company_id=…`. That page posts itself to the same URL as soon as it loads, signs the user in, and redirects to `redirect_to` with tokens (session code or fragment). Company join rules apply as usual.
+
+When `redirect_to` is a custom scheme, the browser shows a **Return to the app** page (English or French) with a button, because some browsers block an automatic jump to the app. The deep link carries `shellui_auth_code`. The app exchanges it at `POST /api/v1/oauth/session` with `code_verifier`. A JSON `POST /api/v1/magic-link/verify` for that same link also requires `code_verifier`, and identity-service checks it before the token is used. An http(s) verify call is unchanged and does not require PKCE. An expired or invalid link shows an error page instead of JSON. If the stored redirect uses the registered scheme, **Back to the app** opens that URI with `error` and no token. See [Desktop apps](desktop-apps.md#browser-error-page).
 
 The `GET` alone does not use up the token, so email security scanners that only fetch the URL do not break the link. Without JavaScript, the page shows a **Continue sign-in** button instead.
 
@@ -115,7 +117,7 @@ When someone asks for a link for a staff address:
 - identity-service creates no token and sends no link
 - unused tokens already issued for the account are deleted
 - the same rate limits apply as for a magic link
-- the address gets a short notice instead: magic links are off for staff accounts, sign in with your usual method, and a **Go to sign-in** button to the app the request came from (the origin of `redirect_to`). The notice has no token and no sign-in link. A loopback `redirect_to` (CLI sign-in) gives no button
+- the address gets a short notice instead: magic links are off for staff accounts, sign in with your usual method, and a **Go to sign-in** button to the app the request came from (the origin of `redirect_to`). The notice has no token and no sign-in link. A loopback `redirect_to` (CLI sign-in) gives no button. A custom-scheme `redirect_to` gives no button either, because there is no https page to open
 
 The notice is sent the same way as a magic link: email-service `POST /api/v1/send` with the built-in template `identity.auth.magic_link.staff_blocked`, or the static templates in `apps/authapi/templates/authapi/magic_link_staff/` (English and French) over SMTP. Companies cannot edit that template or put rules on it. An email-service that does not know the template yet (`template_not_found`) also falls back to SMTP.
 
@@ -160,5 +162,6 @@ With `MAGIC_LINK_ENABLED=false`, `magic_link_globally_enabled` and `magic_link_e
 ## Related
 
 - [OAuth login](oauth-login.md): redirect allowlist and token delivery
+- [Desktop apps](desktop-apps.md): custom-scheme magic links and PKCE
 - [Email delivery](email-service.md): email-service and the SMTP fallback
 - [Configuration](configuration.md): environment variables

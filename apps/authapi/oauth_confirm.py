@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from django.core import signing
 
+from .client_pkce import CHALLENGE_RE
+
 OAUTH_CONFIRM_SALT = 'shellui.oauth.confirm.v1'
 OAUTH_CONFIRM_MAX_AGE_SECONDS = 5 * 60
 
@@ -19,6 +21,7 @@ def build_oauth_confirm_token(
     client_timezone: str | None = None,
     client_device_id: str | None = None,
     token_delivery: str | None = None,
+    code_challenge: str | None = None,
 ) -> str:
     payload: dict = {
         'user_id': int(user_id),
@@ -40,6 +43,9 @@ def build_oauth_confirm_token(
     delivery = (token_delivery or '').strip().lower()
     if delivery in {'code', 'fragment'}:
         payload['token_delivery'] = delivery
+    challenge = (code_challenge or '').strip()
+    if challenge:
+        payload['code_challenge'] = challenge
     return signing.dumps(payload, salt=OAUTH_CONFIRM_SALT)
 
 
@@ -90,4 +96,9 @@ def parse_oauth_confirm_token(token: str | None) -> tuple[dict | None, str | Non
     delivery = str(payload.get('token_delivery') or '').strip().lower()
     if delivery in {'code', 'fragment'}:
         out['token_delivery'] = delivery
+    challenge = str(payload.get('code_challenge') or '').strip()
+    if challenge:
+        if not CHALLENGE_RE.fullmatch(challenge):
+            return None, 'Invalid confirmation payload.'
+        out['code_challenge'] = challenge
     return out, None

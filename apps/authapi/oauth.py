@@ -207,26 +207,30 @@ def build_authorize_url(
         token_delivery = 'code'
         client_timezone = ''
         client_device_id = ''
+        code_challenge = ''
         state_payload, _state_err = parse_oauth_state(signed_state)
         if state_payload:
             shellui_redirect = str(state_payload.get('redirect_to') or shellui_redirect)
             token_delivery = str(state_payload.get('token_delivery') or token_delivery)
             client_timezone = str(state_payload.get('client_timezone') or '')
             client_device_id = str(state_payload.get('client_device_id') or '')
+            code_challenge = str(state_payload.get('code_challenge') or '')
         login_path = reverse(
             'shellui-saml-login',
             kwargs={'organization_slug': social_app.client_id},
         )
-        params = urlencode(
-            {
-                'company_id': company_id or '',
-                'redirect_to': shellui_redirect,
-                'company_oauth_client_id': company_oauth_client_id or '',
-                'token_delivery': token_delivery,
-                'client_timezone': client_timezone,
-                'client_device_id': client_device_id,
-            }
-        )
+        saml_params = {
+            'company_id': company_id or '',
+            'redirect_to': shellui_redirect,
+            'company_oauth_client_id': company_oauth_client_id or '',
+            'token_delivery': token_delivery,
+            'client_timezone': client_timezone,
+            'client_device_id': client_device_id,
+        }
+        if code_challenge:
+            saml_params['code_challenge'] = code_challenge
+            saml_params['code_challenge_method'] = 'S256'
+        params = urlencode(saml_params)
         return request.build_absolute_uri(f'{login_path}?{params}')
     return build_allauth_authorize_url(
         request,

@@ -15,6 +15,7 @@ from apps.actions.scim_hooks import (
 from apps.authapi.provider_registry import supported_oauth_provider_slugs
 from .access import normalize_allowed_domains
 from .models import Company, CompanyGroup, CompanyMembership, CompanyOAuthClient, CompanyOAuthRedirect
+from .redirect_allowlist import normalize_allowlist_origin, normalize_registered_scheme
 
 
 class VerifiedEmailDomainsField(forms.CharField):
@@ -136,7 +137,7 @@ class CompanyMembershipInline(admin.TabularInline):
 class CompanyOAuthClientInline(admin.TabularInline):
     model = CompanyOAuthClient
     extra = 1
-    fields = ('social_app', 'is_active', 'created_at')
+    fields = ('social_app', 'is_active', 'desktop_redirect_scheme', 'created_at')
     readonly_fields = ('created_at',)
 
 
@@ -397,9 +398,33 @@ class CompanyGroupAdmin(admin.ModelAdmin):
         super().delete_queryset(request, queryset)
 
 
+class CompanyOAuthClientAdminForm(forms.ModelForm):
+    class Meta:
+        model = CompanyOAuthClient
+        fields = '__all__'
+
+    def clean_desktop_redirect_scheme(self):
+        scheme, err = normalize_registered_scheme(self.cleaned_data.get('desktop_redirect_scheme') or '')
+        if err:
+            raise forms.ValidationError(err)
+        return scheme or ''
+
+
+CompanyOAuthClientInline.form = CompanyOAuthClientAdminForm
+
+
 @admin.register(CompanyOAuthClient)
 class CompanyOAuthClientAdmin(admin.ModelAdmin):
-    list_display = ('id', 'company', 'provider', 'social_app', 'is_active', 'created_at')
+    form = CompanyOAuthClientAdminForm
+    list_display = (
+        'id',
+        'company',
+        'provider',
+        'social_app',
+        'desktop_redirect_scheme',
+        'is_active',
+        'created_at',
+    )
     list_filter = ('social_app__provider', 'is_active', 'company')
     search_fields = ('social_app__name', 'social_app__client_id', 'company__name')
     autocomplete_fields = ('company',)
@@ -410,8 +435,26 @@ class CompanyOAuthClientAdmin(admin.ModelAdmin):
         return obj.social_app.provider
 
 
+class CompanyOAuthRedirectAdminForm(forms.ModelForm):
+    class Meta:
+        model = CompanyOAuthRedirect
+        fields = '__all__'
+
+    def clean(self):
+        cleaned = super().clean()
+        if self.errors:
+            return cleaned
+        stored, err = normalize_allowlist_origin(cleaned.get('base_url') or '')
+        if err or not stored:
+            self.add_error('base_url', err or 'Invalid base_url.')
+        else:
+            cleaned['base_url'] = stored
+        return cleaned
+
+
 @admin.register(CompanyOAuthRedirect)
 class CompanyOAuthRedirectAdmin(admin.ModelAdmin):
+    form = CompanyOAuthRedirectAdminForm
     list_display = ('id', 'company', 'base_url', 'label', 'source', 'is_active', 'created_at')
     list_filter = ('source', 'is_active', 'company')
     search_fields = ('base_url', 'label', 'company__name')

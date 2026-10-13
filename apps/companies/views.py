@@ -22,8 +22,8 @@ from .serializers import CompanySerializer, CompanyUpdateSerializer
         tags=['companies'],
         summary='Update company settings',
         description=(
-            'Only company owners can update company name, owners list, and join access '
-            '(public / domain / invite) settings.'
+            'Only company owners can update company name, owners list, join access '
+            '(public / domain / invite).'
         ),
         request=CompanyUpdateSerializer,
     ),
@@ -31,8 +31,8 @@ from .serializers import CompanySerializer, CompanyUpdateSerializer
         tags=['companies'],
         summary='Replace company settings',
         description=(
-            'Only company owners can update company name, owners list, and join access '
-            '(public / domain / invite) settings.'
+            'Only company owners can update company name, owners list, join access '
+            '(public / domain / invite).'
         ),
         request=CompanyUpdateSerializer,
     ),

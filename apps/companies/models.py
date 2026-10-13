@@ -234,6 +234,16 @@ class CompanyOAuthClient(models.Model):
     catalog_slug = models.CharField(max_length=128, blank=True, default='')
     dedupe_key = models.CharField(max_length=512, null=True, blank=True)
     is_active = models.BooleanField(default=True)
+    desktop_redirect_scheme = models.CharField(
+        max_length=64,
+        blank=True,
+        default='',
+        help_text=(
+            'Lowercase custom URI scheme for this application, for example shellui-playground. '
+            'Empty keeps desktop sign-in off for this application. '
+            'A redirect is accepted only when its scheme matches.'
+        ),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -272,7 +282,10 @@ class CompanyOAuthClient(models.Model):
 
 
 class CompanyOAuthRedirect(models.Model):
-    """Allowed post-OAuth bounce origins for a company (shell /login/callback hosts)."""
+    """Allowed http(s) post-login bounce origins for a company.
+
+    Desktop sign-in uses ``CompanyOAuthClient.desktop_redirect_scheme``, not a row here.
+    """
 
     SOURCE_MANUAL = 'manual'
     SOURCE_HOSTING = 'hosting'
@@ -288,7 +301,7 @@ class CompanyOAuthRedirect(models.Model):
     )
     base_url = models.CharField(
         max_length=500,
-        help_text='Canonical origin only (e.g. https://app.example.com).',
+        help_text='Canonical http(s) origin (https://app.example.com).',
     )
     label = models.CharField(blank=True, max_length=150)
     source = models.CharField(
