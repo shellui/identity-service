@@ -6,11 +6,14 @@ description: Steps to take when you upgrade identity-service, release by release
 
 This page lists what you must change when you move to a newer identity-service release. Releases not listed here need no action beyond deploying the new image, which runs the database migrations on start. The full list of changes is in the [changelog](../CHANGELOG.md).
 
-## Desktop app redirects
+## Upgrade to 0.8.0
 
-Migration `companies.0027_company_desktop_redirect_scheme` stores one custom scheme on each OAuth application (`CompanyOAuthClient.desktop_redirect_scheme`) and removes allowlist `kind`. Migration `authapi.0018_desktop_custom_scheme_redirect` adds the PKCE challenge column on session codes and magic-link tokens. Web shells need no change.
+0.8.0 removes the login-events API and requires a registered scheme plus S256 PKCE for desktop sign-in. Web shells need no change.
 
-A desktop app needs that scheme set on the OAuth application it uses, and S256 PKCE on every custom-scheme redirect. Until the scheme is set, desktop sign-in is off for that application. See [Desktop apps](desktop-apps.md).
+1. **Stop calling `/api/v1/login-events`.** `GET /api/v1/login-events` and `GET /api/v1/login-events/{id}` are removed. Use `GET /api/v1/events?event_type=identity.auth.login.succeeded,identity.auth.login.failed`. See [Event log](event-log.md).
+2. **Register a scheme before a desktop app signs in.** Set `desktop_redirect_scheme` on the OAuth application that app uses, and send S256 PKCE on every custom-scheme redirect. Until the scheme is set, desktop sign-in is off for that application. Migration `companies.0027_company_desktop_redirect_scheme` stores the scheme and removes allowlist `kind`. Migration `authapi.0018_desktop_custom_scheme_redirect` adds the PKCE challenge column. See [Desktop apps](desktop-apps.md).
+
+`identity.user.updated` fires when a tracked profile field changes. Add a webhook rule if you want that event. See [Webhooks](actions.md).
 
 ## Upgrade to 0.7.0
 
@@ -19,10 +22,9 @@ A desktop app needs that scheme set on the OAuth application it uses, and S256 P
 1. **Add Redis before you deploy.** With `DEBUG=false`, the container now exits at startup without `REDIS_URL`, also with `SCHEDULER_ENABLED=false`. See [Shared cache (Redis)](configuration.md#shared-cache-redis).
 2. **Remove your external scheduler.** The container now runs `retry_webhooks` and `purge_expired_data` itself. Delete the Coolify Scheduled Tasks or cron entries, or set `SCHEDULER_ENABLED=false` to keep them. See [Scheduled jobs](scheduled-jobs.md).
 3. **Stop delivering magic links from webhooks.** The `identity.auth.magic_link.requested` payload no longer contains `magic_link_url`, and identity-service always sends the sign-in email itself. A workflow that mailed the link (for example in n8n) no longer works. See [Magic link](magic-link.md).
-4. **Read sign-ins from the event log.** `GET /api/v1/login-events` and `GET /api/v1/login-events/{id}` are removed. Use `GET /api/v1/events?event_type=identity.auth.login.succeeded,identity.auth.login.failed`. See [Event log](event-log.md).
-5. **Give staff another sign-in method.** Staff and superuser accounts can no longer sign in with a magic link, and their unused links stop working. Make sure every staff member can sign in with OAuth, OIDC, SAML, or a Django admin password. See [Staff accounts](magic-link.md#staff-accounts).
-6. **Point global dashboards at `/api/v1/metrics/all`.** `GET /api/v1/metrics` now returns only the token company's series, also for staff. Process metrics, platform-wide user counts, and other companies' series are only on the global endpoint. See [Metrics](metrics.md).
-7. **Change staff flags in Django admin.** `PUT /api/v1/users/{id}` returns **400** `admin_only_field` when the body contains `is_staff` or `is_superuser`.
+4. **Give staff another sign-in method.** Staff and superuser accounts can no longer sign in with a magic link, and their unused links stop working. Make sure every staff member can sign in with OAuth, OIDC, SAML, or a Django admin password. See [Staff accounts](magic-link.md#staff-accounts).
+5. **Point global dashboards at `/api/v1/metrics/all`.** `GET /api/v1/metrics` now returns only the token company's series, also for staff. Process metrics, platform-wide user counts, and other companies' series are only on the global endpoint. See [Metrics](metrics.md).
+6. **Change staff flags in Django admin.** `PUT /api/v1/users/{id}` returns **400** `admin_only_field` when the body contains `is_staff` or `is_superuser`.
 
 ### Account ID migrations
 
