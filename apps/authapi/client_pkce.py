@@ -100,9 +100,11 @@ def error_code_for_pkce_message(message: str | None) -> str | None:
 def presented_pkce_error(data: Mapping, *, required: bool) -> tuple[str, str] | None:
     """Validate a challenge and verifier sent together (legacy token endpoints).
 
-    Web redirects with no PKCE fields return None. A custom-scheme redirect
-    without S256 PKCE returns an error. When a challenge is present, the
-    verifier must match it.
+    Legacy token endpoints (`/oauth/exchange`, provider login) still treat
+    PKCE as optional for http(s). A custom-scheme redirect without S256 PKCE
+    returns an error. When a challenge is present, the verifier must match it.
+    Session-code sign-in requires S256 on every redirect. That check lives in
+    the authorize, magic-link, and session-code paths, not here.
     """
     try:
         challenge = parse_client_pkce(

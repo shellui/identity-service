@@ -11,6 +11,7 @@ from rest_framework.test import APIClient
 
 from apps.authapi.oauth_state import OAUTH_STATE_NONCE_COOKIE, build_oauth_state, parse_oauth_state
 from apps.authapi.tests.oauth_ssrf_test_utils import pin_oauth_http_to_localhost
+from apps.authapi.tests.pkce_constants import CHALLENGE
 from apps.authapi.tests.oauth_strict_harness import _token_json_handler
 from apps.authapi.tests.oauth_test_crypto import (
     OAuthMockHttpsServer,
@@ -90,6 +91,7 @@ class GoogleIdTokenCallbackTests(TestCase):
             redirect_to=redirect_to,
             company_id=self.company.id,
             company_oauth_client_id=self.oauth_client.id,
+            code_challenge=CHALLENGE,
         )
         payload, err = parse_oauth_state(state)
         self.assertIsNone(err)

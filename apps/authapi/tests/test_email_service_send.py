@@ -86,6 +86,8 @@ class DirectSendTests(TestCase):
                 'email': email,
                 'redirect_to': 'https://app.example.com/login/callback',
                 'language': language,
+                'code_challenge': 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM',
+                'code_challenge_method': 'S256',
             },
             format='json',
         )

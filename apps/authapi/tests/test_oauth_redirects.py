@@ -12,6 +12,8 @@ from apps.authapi.oauth_state import (
     build_oauth_state,
     parse_oauth_state,
 )
+from apps.authapi.models import OAuthSessionDeliveryCode
+from apps.authapi.tests.pkce_constants import CHALLENGE, PKCE_BODY, VERIFIER
 from apps.companies.access import set_company_access
 from apps.companies.models import Company, CompanyOAuthClient, CompanyOAuthRedirect
 
@@ -93,6 +95,7 @@ class OAuthAuthorizeCallbackTests(TestCase):
                 'provider': 'github',
                 'company_id': self.company.id,
                 'redirect_to': redirect_to,
+                **PKCE_BODY,
             },
         )
         self.assertEqual(response.status_code, 302)
@@ -111,6 +114,7 @@ class OAuthAuthorizeCallbackTests(TestCase):
         self.assertEqual(payload['redirect_to'], redirect_to)
         self.assertEqual(payload['company_id'], self.company.id)
         self.assertEqual(payload['provider'], 'github')
+        self.assertEqual(payload['code_challenge'], CHALLENGE)
 
     def test_authorize_rejects_non_allowlisted_redirect(self):
         response = self.client.get(
@@ -131,6 +135,7 @@ class OAuthAuthorizeCallbackTests(TestCase):
                 'provider': 'github',
                 'company_id': self.company.id,
                 'redirect_to': 'http://127.0.0.1:8765/callback',
+                **PKCE_BODY,
             },
         )
         self.assertEqual(response.status_code, 302)
@@ -155,11 +160,13 @@ class OAuthAuthorizeCallbackTests(TestCase):
             {
                 'company_id': self.company.id,
                 'redirect_to': redirect_to,
+                **PKCE_BODY,
             },
         )
         self.assertEqual(response.status_code, 200)
         content = response.content.decode('utf-8')
         self.assertIn('Choose a sign-in method', content)
+        self.assertIn(CHALLENGE, content)
         self.assertIn('Continue with GitHub', content)
         self.assertIn('provider=github', content)
         self.assertIn('redirect_to=', content)
@@ -183,6 +190,7 @@ class OAuthAuthorizeCallbackTests(TestCase):
             {
                 'company_id': self.company.id,
                 'redirect_to': redirect_to,
+                **PKCE_BODY,
             },
         )
         self.assertEqual(response.status_code, 200)
@@ -221,6 +229,7 @@ class OAuthAuthorizeCallbackTests(TestCase):
             redirect_to=redirect_to,
             company_id=self.company.id,
             company_oauth_client_id=self.oauth_client.id,
+            code_challenge=CHALLENGE,
         )
         callback = self._oauth_callback(state)
         self.assertEqual(callback.status_code, 200)
@@ -247,9 +256,26 @@ class OAuthAuthorizeCallbackTests(TestCase):
         from urllib.parse import parse_qs, urlsplit
 
         auth_code = parse_qs(urlsplit(location).query)['shellui_auth_code'][0]
-        session = self.client.post(
+        stolen = self.client.post(
             '/api/v1/oauth/session',
             {'auth_code': auth_code, 'redirect_to': redirect_to},
+            format='json',
+            HTTP_ORIGIN='https://shell.example.com',
+        )
+        self.assertEqual(stolen.status_code, 400)
+        self.assertEqual(stolen.data['error_code'], 'pkce_required')
+        self.assertIsNone(OAuthSessionDeliveryCode.objects.get(code=auth_code).redeemed_at)
+        no_origin = self.client.post(
+            '/api/v1/oauth/session',
+            {'auth_code': auth_code, 'redirect_to': redirect_to, 'code_verifier': VERIFIER},
+            format='json',
+        )
+        self.assertEqual(no_origin.status_code, 400)
+        self.assertIn('Origin is required', no_origin.data['error'])
+        self.assertIsNone(OAuthSessionDeliveryCode.objects.get(code=auth_code).redeemed_at)
+        session = self.client.post(
+            '/api/v1/oauth/session',
+            {'auth_code': auth_code, 'redirect_to': redirect_to, 'code_verifier': VERIFIER},
             format='json',
             HTTP_ORIGIN='https://shell.example.com',
         )
@@ -359,6 +385,7 @@ class OAuthAuthorizeCallbackTests(TestCase):
             redirect_to=redirect_to,
             company_id=self.company.id,
             company_oauth_client_id=google_client.id,
+            code_challenge=CHALLENGE,
         )
         callback = self._oauth_callback(state)
         self.assertEqual(callback.status_code, 302)

@@ -446,14 +446,24 @@ class InvitationSignInTests(InvitationTestCase):
         with self.captureOnCommitCallbacks(execute=True):
             return self.anon.post(
                 '/api/v1/magic-link/request',
-                {'company_id': self.company.id, 'email': email, 'redirect_to': f'{APP_URL}login/callback'},
+                {
+                    'company_id': self.company.id,
+                    'email': email,
+                    'redirect_to': f'{APP_URL}login/callback',
+                    'code_challenge': 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM',
+                    'code_challenge_method': 'S256',
+                },
                 format='json',
             )
 
     def _verify(self, raw_token):
         return self.anon.post(
             '/api/v1/magic-link/verify',
-            {'token': raw_token, 'company_id': self.company.id},
+            {
+                'token': raw_token,
+                'company_id': self.company.id,
+                'code_verifier': 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk',
+            },
             format='json',
         )
 

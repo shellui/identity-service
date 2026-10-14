@@ -49,7 +49,7 @@ Every event, and every sign-in, is also stored in the **event log** (`GET /api/v
 - `GET /api/v1/settings` list enabled login methods/providers
 - `GET /api/v1/authorize?provider=github&redirect_to=…&company_id=…` start OAuth (provider `redirect_uri` is always this service's `/api/v1/oauth/callback`; `redirect_to` is the SPA/CLI bounce target and must be allowlisted or loopback)
 - `GET /api/v1/oauth/callback` provider callback (server-side code exchange + account confirmation + redirect to `redirect_to` with one-time `shellui_auth_code`)
-- `POST /api/v1/oauth/session` exchange `shellui_auth_code` for JWT JSON (default delivery; fragment legacy via `token_delivery=fragment`)
+- `POST /api/v1/oauth/session` exchange `shellui_auth_code` plus S256 `code_verifier` for JWT JSON (default delivery; fragment legacy via `token_delivery=fragment`)
 - `POST /api/v1/oauth/confirm` complete sign-in after the confirmation screen (browser form)
 - `GET /api/v1/oauth/confirm?action=switch&confirm_token=…` restart OAuth with account picker (Google/Microsoft)
 - `POST /api/v1/oauth/exchange` deprecated SPA code exchange (older shells that still receive `?code=` on the frontend)
