@@ -9,6 +9,8 @@ from apps.authapi.checks import (
     cors_allow_all_with_credentials_forbidden,
     jwt_hs256_legacy_disabled_in_production,
     jwt_issuer_audience_required_in_production,
+    secret_key_production_problem,
+    secret_key_refused_in_production,
 )
 from apps.authapi.jwks import generate_rsa_key_pair, resolve_jwt_configuration
 
@@ -177,10 +179,59 @@ class ProductionChecksTests(SimpleTestCase):
         JWT_ACCEPT_HS256_LEGACY=True,
         JWKS_ENABLED=True,
     )
-    def test_hs256_legacy_warns_in_production(self):
-        warnings = jwt_hs256_legacy_disabled_in_production(None)
-        self.assertTrue(warnings)
-        self.assertEqual(warnings[0].id, 'authapi.W001')
+    def test_hs256_legacy_is_an_error_in_production(self):
+        errors = jwt_hs256_legacy_disabled_in_production(None)
+        self.assertTrue(errors)
+        self.assertEqual(errors[0].id, 'authapi.E006')
+        self.assertTrue(errors[0].is_serious())
+
+    @override_settings(DEBUG=True, JWT_ACCEPT_HS256_LEGACY=True, JWKS_ENABLED=True)
+    def test_hs256_legacy_allowed_while_debugging(self):
+        self.assertEqual(jwt_hs256_legacy_disabled_in_production(None), [])
+
+    @override_settings(
+        DEBUG=False,
+        JWT_ACCEPT_HS256_LEGACY=False,
+        JWKS_ENABLED=True,
+    )
+    def test_hs256_legacy_off_is_silent(self):
+        self.assertEqual(jwt_hs256_legacy_disabled_in_production(None), [])
+
+
+_GOOD_SECRET = 'a' * 50
+
+
+class SecretKeyProductionCheckTests(SimpleTestCase):
+    def test_placeholder_and_short_keys_are_rejected(self):
+        self.assertEqual(
+            secret_key_production_problem('change-me-generate-a-strong-secret-key'),
+            'placeholder',
+        )
+        self.assertEqual(secret_key_production_problem('django-insecure-' + ('x' * 40)), 'placeholder')
+        self.assertEqual(secret_key_production_problem('ci-only-not-for-production-0123456789abcdef'), 'placeholder')
+        self.assertEqual(secret_key_production_problem('build-only-not-for-runtime'), 'placeholder')
+        self.assertEqual(secret_key_production_problem(''), 'empty')
+        self.assertEqual(secret_key_production_problem('x' * 49), 'short')
+        self.assertIsNone(secret_key_production_problem(_GOOD_SECRET))
+
+    @override_settings(DEBUG=False, SECRET_KEY='change-me-generate-a-strong-secret-key')
+    def test_placeholder_fails_the_system_check(self):
+        errors = secret_key_refused_in_production(None)
+        self.assertEqual(len(errors), 1)
+        self.assertEqual(errors[0].id, 'authapi.E005')
+        self.assertTrue(errors[0].is_serious())
+
+    @override_settings(DEBUG=False, SECRET_KEY='short-key')
+    def test_short_key_fails_the_system_check(self):
+        self.assertEqual(secret_key_refused_in_production(None)[0].id, 'authapi.E005')
+
+    @override_settings(DEBUG=True, SECRET_KEY='change-me-generate-a-strong-secret-key')
+    def test_placeholder_allowed_while_debugging(self):
+        self.assertEqual(secret_key_refused_in_production(None), [])
+
+    @override_settings(DEBUG=False, SECRET_KEY=_GOOD_SECRET)
+    def test_long_key_passes(self):
+        self.assertEqual(secret_key_refused_in_production(None), [])
 
 
 @override_settings(

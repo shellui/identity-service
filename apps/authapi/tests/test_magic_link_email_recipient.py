@@ -80,6 +80,8 @@ class MagicLinkRecipientTests(TestCase):
                         'company_id': self.company.id,
                         'email': email,
                         'redirect_to': 'https://app.evil.example/login/callback',
+                        'code_challenge': 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM',
+                        'code_challenge_method': 'S256',
                     },
                     format='json',
                 )

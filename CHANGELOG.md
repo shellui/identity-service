@@ -21,6 +21,14 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
 -->
 
+## [Unreleased]
+
+### 🔒 Security
+
+- **Web sign-in codes require S256 PKCE:** `POST /api/v1/oauth/session` rejects `shellui_auth_code` without `code_verifier`, and an http(s) exchange also requires an `Origin` that matches `redirect_to`.
+- **Session and CSRF cookies:** when the cookie is Secure, the name is `__Host-sessionid` or `__Host-csrftoken`, the CSRF cookie is HttpOnly, and neither cookie sets a Domain.
+- **Production secrets:** `DEBUG=false` refuses an empty, short, or placeholder `SECRET_KEY` (`authapi.E005`), and `JWT_ACCEPT_HS256_LEGACY=true` is an error (`authapi.E006`). Both fail `manage.py check --deploy`.
+
 ## [0.8.1] - 2026-10-13
 
 ### 🚨 Changed

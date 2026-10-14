@@ -90,7 +90,7 @@ Exchange the one-time code with the verifier:
 | `invalid_code_verifier` | Verifier is not 43 to 128 unreserved characters |
 | `pkce_verification_failed` | Verifier does not match the stored challenge |
 
-An http(s) redirect does not require PKCE. If the client sent a challenge, the exchange must send a matching verifier. Older session errors stay `{ "error": "…" }` with no `error_code`.
+An http(s) redirect requires the same S256 challenge and verifier. See [OAuth login](oauth-login.md#pkce-for-every-session-code). Older session errors that are not PKCE stay `{ "error": "…" }` with no `error_code`.
 
 Custom-scheme redirects always use the one-time code. `token_delivery=fragment` and `OAUTH_TOKEN_DELIVERY=fragment` do not put tokens in the deep link. If a custom-scheme redirect reaches the end of sign-in without a challenge, the deep link carries `shellui_oauth_error` and `shellui_oauth_error_code=pkce_required` instead of a code.
 
@@ -98,9 +98,9 @@ Custom-scheme redirects always use the one-time code. `token_delivery=fragment` 
 
 ## Origin check
 
-`POST /api/v1/oauth/session` compares the `Origin` header to the redirect origin when the redirect is http(s) and the header is present. A desktop app has no matching browser origin. Tauri may send `Origin: tauri://localhost`, or no `Origin` at all.
+`POST /api/v1/oauth/session` requires the `Origin` header on an http(s) redirect, and that header must match the redirect origin. A missing header is rejected. A desktop app has no matching browser origin. Tauri may send `Origin: tauri://localhost`, or no `Origin` at all.
 
-identity-service skips that check only after PKCE has succeeded for a custom-scheme redirect. A missing or wrong verifier is rejected first, and the code stays unused. An http(s) redirect keeps the Origin check, including when the client also sent PKCE.
+identity-service skips that check only after PKCE has succeeded for a custom-scheme redirect. A missing or wrong verifier is rejected first, and the code stays unused. An http(s) redirect keeps the Origin check after PKCE succeeds.
 
 ## Sign-in flow
 
@@ -163,7 +163,7 @@ SAML uses the same PKCE query parameters on `/api/v1/saml/<organization_slug>/lo
 - Do not add a desktop row on the OAuth redirect allowlist. That list stays http(s) origins.
 - Do not require PKCE when an owner sends an invitation to a desktop URI.
 
-Migration `companies.0029_company_desktop_redirect_schemes` copies existing schemes onto the company and drops `CompanyOAuthClient.desktop_redirect_scheme`. Migration `authapi.0018_desktop_custom_scheme_redirect` stores the PKCE challenge. Web shells need no client change.
+Migration `companies.0029_company_desktop_redirect_schemes` copies existing schemes onto the company and drops `CompanyOAuthClient.desktop_redirect_scheme`. Migration `authapi.0018_desktop_custom_scheme_redirect` stores the PKCE challenge. Web shells send the same S256 challenge and verifier. See [OAuth login](oauth-login.md#pkce-for-every-session-code).
 
 ## Related
 

@@ -102,6 +102,8 @@ class OwnerMagicLinkTakeoverRegressionTests(TestCase):
                 r = anon.post('/api/v1/magic-link/request', {
                     'company_id': self.company_a.id, 'email': 'ops@shellui.test',
                     'redirect_to': 'https://evil.example.com/login/callback',
+                    'code_challenge': 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM',
+                    'code_challenge_method': 'S256',
                 }, format='json')
         self.assertEqual(r.status_code, 200, r.data)
 
@@ -185,6 +187,8 @@ class MagicLinkTokenNeverStoredTests(TestCase):
         return APIClient().post('/api/v1/magic-link/request', {
             'company_id': self.company.id, 'email': 'ada@acme.test',
             'redirect_to': 'https://app.example.com/login/callback',
+            'code_challenge': 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM',
+            'code_challenge_method': 'S256',
         }, format='json')
 
     def _assert_absent(self, text: str, raw: str, row_hash: str, where: str) -> None:
@@ -256,9 +260,16 @@ class MagicLinkTokenNeverStoredTests(TestCase):
             bad = anon.post(f'/api/v1/magic-link/verify{self.q}',
                             {'token': raw + 'x', 'company_id': self.company.id}, format='json')
             self.assertEqual(bad.status_code, 400)
-            good = anon.post(f'/api/v1/magic-link/verify{self.q}',
-                             {'token': raw, 'company_id': self.company.id}, format='json',
-                             HTTP_REFERER=f'https://auth.example.com/api/v1/magic-link/verify?token={raw}')
+            good = anon.post(
+                f'/api/v1/magic-link/verify{self.q}',
+                {
+                    'token': raw,
+                    'company_id': self.company.id,
+                    'code_verifier': 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk',
+                },
+                format='json',
+                HTTP_REFERER=f'https://auth.example.com/api/v1/magic-link/verify?token={raw}',
+            )
             self.assertEqual(good.status_code, 200, good.data)
             again = anon.post(f'/api/v1/magic-link/verify{self.q}',
                               {'token': raw, 'company_id': self.company.id}, format='json')

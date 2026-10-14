@@ -287,6 +287,8 @@ class OidcIdTokenLoginCallbackTests(TestCase):
                     'provider': 'openid_connect',
                     'company_id': self.company.id,
                     'redirect_to': 'https://shell.example.com/login/callback',
+                    'code_challenge': 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM',
+                    'code_challenge_method': 'S256',
                 },
             )
         self.assertEqual(response.status_code, 502)

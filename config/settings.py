@@ -536,6 +536,30 @@ SECURE_HSTS_PRELOAD = _env_bool('SECURE_HSTS_PRELOAD', False)
 SESSION_COOKIE_SECURE = _env_bool('SESSION_COOKIE_SECURE', not DEBUG)
 CSRF_COOKIE_SECURE = _env_bool('CSRF_COOKIE_SECURE', not DEBUG)
 
+
+def secure_cookie_name(base_name: str, *, secure: bool) -> str:
+    """Use the ``__Host-`` prefix only when the cookie is Secure.
+
+    Browsers reject ``__Host-`` cookies that are not Secure, that set Domain,
+    or that use a Path other than ``/``. The prefix stops a sibling host from
+    planting a parent-domain cookie with the same name.
+    """
+    if secure:
+        return f'__Host-{base_name}'
+    return base_name
+
+
+# Host-only cookies. Do not set SESSION_COOKIE_DOMAIN or CSRF_COOKIE_DOMAIN.
+SESSION_COOKIE_NAME = secure_cookie_name('sessionid', secure=SESSION_COOKIE_SECURE)
+CSRF_COOKIE_NAME = secure_cookie_name('csrftoken', secure=CSRF_COOKIE_SECURE)
+SESSION_COOKIE_PATH = '/'
+CSRF_COOKIE_PATH = '/'
+SESSION_COOKIE_DOMAIN = None
+CSRF_COOKIE_DOMAIN = None
+# The CSRF token is embedded in forms ({% csrf_token %}). No script in this
+# service reads the cookie, including Django admin.
+CSRF_COOKIE_HTTPONLY = True
+
 # Cache-backed auth rate limits (see apps/authapi/throttling.py), logout denylist, OAuth
 # PKCE state and SAML replay protection. Required when DEBUG=false: the deploy check
 # authapi.E004 and the Docker entrypoint refuse to start without it.

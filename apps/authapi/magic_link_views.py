@@ -277,7 +277,7 @@ class ShellUIMagicLinkRequestView(APIView):
             code_challenge = parse_client_pkce(
                 serializer.validated_data.get('code_challenge'),
                 serializer.validated_data.get('code_challenge_method'),
-                required=is_custom_scheme_redirect(redirect_to),
+                required=True,
             )
         except PkceError as exc:
             return Response(

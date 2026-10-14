@@ -6,6 +6,12 @@ description: Steps to take when you upgrade identity-service, release by release
 
 This page lists what you must change when you move to a newer identity-service release. Releases not listed here need no action beyond deploying the new image, which runs the database migrations on start. The full list of changes is in the [changelog](../CHANGELOG.md).
 
+## Unreleased
+
+Web and desktop session codes both require S256 PKCE. An http(s) `POST /api/v1/oauth/session` also requires `Origin` to match `redirect_to`. Shells that omitted `code_challenge` on `/api/v1/authorize` or `code_verifier` on the exchange need that change before this build. See [OAuth login](oauth-login.md#pkce-for-every-session-code).
+
+With `DEBUG=false`, session and CSRF cookies use the `__Host-` prefix and the CSRF cookie is HttpOnly. Generate `SECRET_KEY` (at least 50 characters). `JWT_ACCEPT_HS256_LEGACY=true` does not start.
+
 ## Upgrade to 0.8.1
 
 0.8.1 moves desktop sign-in schemes from each OAuth application onto the company.

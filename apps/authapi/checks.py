@@ -1,7 +1,39 @@
 """Django system checks for authapi."""
 
 from django.conf import settings
-from django.core.checks import Error, Warning, register
+from django.core.checks import Error, register
+
+# Django's own insecure-key warning uses 50 characters. Match that floor.
+MIN_SECRET_KEY_LENGTH = 50
+
+# Values that have been published in this repo or in Django's own docs.
+_EXACT_PLACEHOLDER_SECRET_KEYS = frozenset(
+    {
+        'change-me-generate-a-strong-secret-key',
+        'build-only-not-for-runtime',
+        'your_secret_key_here',
+        'replace-with-generated-key',
+    }
+)
+_PLACEHOLDER_SECRET_KEY_PREFIXES = (
+    'django-insecure-',
+    'ci-only-not-for-production',
+    'smoke-test-only-',
+    'registry-verify-not-for-production',
+    'audit-only-not-for-production',
+)
+
+
+def secret_key_production_problem(secret_key: str) -> str | None:
+    """Return a short reason when ``secret_key`` must not be used with DEBUG=false."""
+    key = (secret_key or '').strip()
+    if not key:
+        return 'empty'
+    if key in _EXACT_PLACEHOLDER_SECRET_KEYS or key.startswith(_PLACEHOLDER_SECRET_KEY_PREFIXES):
+        return 'placeholder'
+    if len(key) < MIN_SECRET_KEY_LENGTH:
+        return 'short'
+    return None
 
 
 @register()
@@ -100,18 +132,36 @@ def redis_required_in_production(app_configs, **kwargs):
 
 
 @register(deploy=True, tags='security')
+def secret_key_refused_in_production(app_configs, **kwargs):
+    if settings.DEBUG:
+        return []
+    problem = secret_key_production_problem(getattr(settings, 'SECRET_KEY', ''))
+    if problem is None:
+        return []
+    return [
+        Error(
+            'SECRET_KEY is empty, shorter than 50 characters, or a known placeholder.',
+            hint=(
+                'Generate a key and set SECRET_KEY before DEBUG=false: '
+                'uv run python -c "from django.core.management.utils import '
+                'get_random_secret_key; print(get_random_secret_key())"'
+            ),
+            id='authapi.E005',
+        )
+    ]
+
+
+@register(deploy=True, tags='security')
 def jwt_hs256_legacy_disabled_in_production(app_configs, **kwargs):
     if settings.DEBUG or not getattr(settings, 'JWT_ACCEPT_HS256_LEGACY', False):
         return []
-    if not getattr(settings, 'JWKS_ENABLED', False):
-        return []
     return [
-        Warning(
-            'JWT_ACCEPT_HS256_LEGACY=true in production — SECRET_KEY can still forge JWTs.',
+        Error(
+            'JWT_ACCEPT_HS256_LEGACY=true is refused when DEBUG=false.',
             hint=(
-                'After RS256 migration and token expiry, set JWT_ACCEPT_HS256_LEGACY=false '
-                'so only RS256 tokens signed with JWT_PRIVATE_KEY are accepted.'
+                'HS256 tokens signed with SECRET_KEY must not be accepted in production. '
+                'Set JWT_ACCEPT_HS256_LEGACY=false and sign with JWT_PRIVATE_KEY (RS256).'
             ),
-            id='authapi.W001',
+            id='authapi.E006',
         )
     ]

@@ -15,6 +15,8 @@ from .models import OAuthSessionDeliveryCode
 
 OAUTH_SESSION_CODE_PARAM = 'shellui_auth_code'
 OAUTH_SESSION_CODE_TTL_SECONDS = 120
+ORIGIN_REQUIRED_ERROR = 'Origin is required for this redirect.'
+ORIGIN_MISMATCH_ERROR = 'Origin does not match redirect_to.'
 
 
 def oauth_session_code_ttl() -> timedelta:
@@ -76,24 +78,28 @@ def redeem_oauth_session_code(
         return None, 'redirect_to does not match auth code.'
 
     custom_scheme = is_custom_scheme_redirect(row.redirect_to)
+    # Every session code is bound to an S256 verifier, including http(s).
+    # A copied shellui_auth_code cannot be redeemed without it. Leave the
+    # code unused so the app can retry. The verifier is 43-128 characters.
     pkce_message, _pkce_code = verify_client_pkce(
         code_challenge=row.code_challenge,
         code_verifier=code_verifier,
-        required=custom_scheme,
+        required=True,
     )
     if pkce_message:
-        # Leave the code unredeemed so the app can retry with the verifier.
-        # A wrong verifier is not brute-forced: the verifier is 43-128 characters.
         return None, pkce_message
 
     # A desktop app has no browser origin that matches the custom scheme
     # (Tauri sends tauri://localhost, or no Origin). Skip the Origin check
     # only after PKCE has succeeded for that custom-scheme redirect.
-    # http(s) redirects keep the Origin check, including when PKCE was optional.
-    if not custom_scheme and request_origin:
+    # http(s) redirects require Origin, including when the header is absent.
+    if not custom_scheme:
         allowed_origin = origin_of_url(row.redirect_to)
-        if allowed_origin and request_origin.rstrip('/') != allowed_origin.rstrip('/'):
-            return None, 'Origin does not match redirect_to.'
+        presented = (request_origin or '').strip()
+        if not presented:
+            return None, ORIGIN_REQUIRED_ERROR
+        if not allowed_origin or presented.rstrip('/') != allowed_origin.rstrip('/'):
+            return None, ORIGIN_MISMATCH_ERROR
 
     row.redeemed_at = timezone.now()
     row.save(update_fields=['redeemed_at'])
