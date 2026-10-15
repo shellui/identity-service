@@ -18,10 +18,6 @@ This page is for maintainers: how to cut an identity-service release and publish
 
 The image contains the application code and collected static files only. Secrets and configuration come from environment variables at container start (see [Configuration](configuration.md)).
 
-## 0.8.2 at a glance
-
-0.8.2 accepts the `-dev` variant of each registered desktop scheme, for `shellui start --app`. It needs no upgrade step. 0.8.1 moves desktop sign-in schemes from each OAuth application to the company (`desktop_redirect_schemes`). An empty list turns desktop sign-in off. `CompanyOAuthClient.desktop_redirect_scheme` is removed. The steps are in [Upgrade to 0.8.1](upgrading.md#upgrade-to-081). 0.8.0 still removes the login-events API. See [Upgrade to 0.8.0](upgrading.md#upgrade-to-080). Earlier breaking changes, including Redis in production, stay in [Upgrade to 0.7.0](upgrading.md#upgrade-to-070). The full list is in `CHANGELOG.md`.
-
 ## Pre-release checklist
 
 Run the automated checklist, the same script as pull requests to `main`:
