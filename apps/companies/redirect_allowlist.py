@@ -102,6 +102,8 @@ _RFC3986_SCHEME_RE = re.compile(r'^[a-z][a-z0-9+.-]*$')
 _DESKTOP_URI_CONTROL_RE = re.compile(r'[\x00-\x20\x7f\\]')
 _ERROR_CODE_RE = re.compile(r'^[a-z][a-z0-9_]{0,63}$')
 UNREGISTERED_SCHEME_MESSAGE = 'Sign-in scheme is not registered for this company.'
+# `shellui start --app` signs in with `<scheme>-dev` so dev never takes an installed app's links.
+DESKTOP_DEV_SCHEME_SUFFIX = '-dev'
 
 SHELLUI_OAUTH_ERROR_PARAM = 'shellui_oauth_error'
 SHELLUI_OAUTH_ERROR_CODE_PARAM = 'shellui_oauth_error_code'
@@ -393,12 +395,20 @@ def redirect_url_allowed_for_company(company: Company, absolute_url: str, reques
     return False
 
 
+def desktop_scheme_registered(scheme: str, registered: set[str]) -> bool:
+    """True for a registered scheme, or its `-dev` variant."""
+    if scheme in registered:
+        return True
+    base = scheme.removesuffix(DESKTOP_DEV_SCHEME_SUFFIX)
+    return base != scheme and base in registered
+
+
 def _desktop_redirect_scheme_match(company: Company, candidate: str) -> bool:
-    """True when the URI scheme is on the company allowlist."""
+    """True when the URI scheme, or the scheme without `-dev`, is on the company allowlist."""
     exact, err = normalize_desktop_redirect_uri(candidate)
     if err or not exact:
         return False
-    return urlsplit(exact).scheme in company_desktop_schemes(company)
+    return desktop_scheme_registered(urlsplit(exact).scheme, company_desktop_schemes(company))
 
 
 def loopback_client_bounce_url_for_oauth_error(

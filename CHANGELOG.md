@@ -21,6 +21,12 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
 -->
 
+## [0.8.2] - 2026-10-15
+
+### 🛠 Improvements
+
+- **Desktop app sign-in:** a registered scheme also accepts its `-dev` variant (`shellui-playground` allows `shellui-playground-dev`). `shellui start --app` signs in with the `-dev` scheme, so a dev build needs no extra allowlist entry.
+
 ## [0.8.1] - 2026-10-13
 
 ### 🚨 Changed

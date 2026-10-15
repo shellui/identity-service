@@ -242,6 +242,34 @@ class RedirectAllowlistTests(TestCase):
             )
         )
 
+    def test_desktop_redirect_accepts_dev_variant_of_registered_scheme(self):
+        self.company.desktop_redirect_schemes = ['shellui-playground']
+        self.company.save(update_fields=['desktop_redirect_schemes'])
+        self.assertTrue(
+            redirect_url_allowed_for_company(
+                self.company,
+                'shellui-playground-dev://callback',
+                self.request,
+            )
+        )
+        for target in (
+            'shellui-playground-dev-dev://callback',
+            'shellui-dev://callback',
+            'shellui-playground-devx://callback',
+            'other-app-dev://callback',
+        ):
+            self.assertFalse(
+                redirect_url_allowed_for_company(self.company, target, self.request),
+                target,
+            )
+        url, err = validate_redirect_to_for_company(
+            company=self.company,
+            request=self.request,
+            redirect_to_raw='shellui-playground-dev://callback',
+        )
+        self.assertIsNone(err)
+        self.assertEqual(url, 'shellui-playground-dev://callback')
+
     def test_error_deep_link_carries_only_the_error_code(self):
         link = desktop_error_deep_link(
             'shellui-playground://callback?shellui_auth_code=secret',
