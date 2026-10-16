@@ -6,6 +6,12 @@ description: Steps to take when you upgrade identity-service, release by release
 
 This page lists what you must change when you move to a newer identity-service release. Releases not listed here need no action beyond deploying the new image, which runs the database migrations on start. The full list of changes is in the [changelog](../CHANGELOG.md).
 
+## Unreleased
+
+The implicit `-dev` desktop scheme is limited to `DEBUG=true`.
+
+1. **Production no longer accepts `<scheme>-dev` from a listed scheme.** `shellui-playground` no longer allows `shellui-playground-dev` when `DEBUG=false`. A local identity-service with `DEBUG=true` still does. To keep that redirect on a production company, add `shellui-playground-dev` to `desktop_redirect_schemes`.
+
 ## Upgrade to 0.8.1
 
 0.8.1 moves desktop sign-in schemes from each OAuth application onto the company.

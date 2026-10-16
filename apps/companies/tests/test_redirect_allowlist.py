@@ -242,6 +242,7 @@ class RedirectAllowlistTests(TestCase):
             )
         )
 
+    @override_settings(DEBUG=True)
     def test_desktop_redirect_accepts_dev_variant_of_registered_scheme(self):
         self.company.desktop_redirect_schemes = ['shellui-playground']
         self.company.save(update_fields=['desktop_redirect_schemes'])
@@ -269,6 +270,44 @@ class RedirectAllowlistTests(TestCase):
         )
         self.assertIsNone(err)
         self.assertEqual(url, 'shellui-playground-dev://callback')
+
+    @override_settings(DEBUG=False)
+    def test_desktop_redirect_rejects_dev_variant_when_debug_is_off(self):
+        self.company.desktop_redirect_schemes = ['shellui-playground']
+        self.company.save(update_fields=['desktop_redirect_schemes'])
+        self.assertFalse(
+            redirect_url_allowed_for_company(
+                self.company,
+                'shellui-playground-dev://callback',
+                self.request,
+            )
+        )
+        url, err = validate_redirect_to_for_company(
+            company=self.company,
+            request=self.request,
+            redirect_to_raw='shellui-playground-dev://callback',
+        )
+        self.assertIsNone(url)
+        self.assertIn('not registered', err or '')
+        self.assertTrue(
+            redirect_url_allowed_for_company(
+                self.company,
+                'shellui-playground://callback',
+                self.request,
+            )
+        )
+
+    @override_settings(DEBUG=False)
+    def test_desktop_redirect_accepts_dev_scheme_when_listed(self):
+        self.company.desktop_redirect_schemes = ['shellui-playground-dev']
+        self.company.save(update_fields=['desktop_redirect_schemes'])
+        self.assertTrue(
+            redirect_url_allowed_for_company(
+                self.company,
+                'shellui-playground-dev://callback',
+                self.request,
+            )
+        )
 
     def test_error_deep_link_carries_only_the_error_code(self):
         link = desktop_error_deep_link(

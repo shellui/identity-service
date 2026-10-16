@@ -102,7 +102,7 @@ _RFC3986_SCHEME_RE = re.compile(r'^[a-z][a-z0-9+.-]*$')
 _DESKTOP_URI_CONTROL_RE = re.compile(r'[\x00-\x20\x7f\\]')
 _ERROR_CODE_RE = re.compile(r'^[a-z][a-z0-9_]{0,63}$')
 UNREGISTERED_SCHEME_MESSAGE = 'Sign-in scheme is not registered for this company.'
-# `shellui start --app` signs in with `<scheme>-dev` so dev never takes an installed app's links.
+# `shellui start --app` signs in with `<scheme>-dev`. Accepted only when DEBUG is on.
 DESKTOP_DEV_SCHEME_SUFFIX = '-dev'
 
 SHELLUI_OAUTH_ERROR_PARAM = 'shellui_oauth_error'
@@ -395,16 +395,29 @@ def redirect_url_allowed_for_company(company: Company, absolute_url: str, reques
     return False
 
 
+def desktop_dev_schemes_allowed() -> bool:
+    """Implicit `<scheme>-dev` redirects are only for a local identity-service (`DEBUG=true`)."""
+    return bool(settings.DEBUG)
+
+
 def desktop_scheme_registered(scheme: str, registered: set[str]) -> bool:
-    """True for a registered scheme, or its `-dev` variant."""
+    """True for a registered scheme, or its `-dev` variant when `DEBUG` is on.
+
+    A scheme listed as-is is accepted in every environment, including one that ends in `-dev`.
+    """
     if scheme in registered:
         return True
+    if not desktop_dev_schemes_allowed():
+        return False
     base = scheme.removesuffix(DESKTOP_DEV_SCHEME_SUFFIX)
     return base != scheme and base in registered
 
 
 def _desktop_redirect_scheme_match(company: Company, candidate: str) -> bool:
-    """True when the URI scheme, or the scheme without `-dev`, is on the company allowlist."""
+    """True when the URI scheme is on the company allowlist.
+
+    With `DEBUG=true`, the scheme without a trailing `-dev` is enough.
+    """
     exact, err = normalize_desktop_redirect_uri(candidate)
     if err or not exact:
         return False

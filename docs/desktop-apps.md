@@ -24,7 +24,9 @@ shellui-playground://callback
 
 Set `desktop_redirect_schemes` on the company. Identity has no separate desktop-app record: a sign-in is for one company, named by `company_id` (or, for SAML, by the organization slug that belongs to that company). The scheme belongs to that company, not to Google, GitHub, or any other provider.
 
-The field is a list. An empty list keeps desktop sign-in off, so a custom-scheme `redirect_to` returns `unregistered_scheme`. A scheme in the list is accepted for every sign-in method of that company. So is its `-dev` variant: `shellui-playground` also accepts `shellui-playground-dev`, which `shellui start --app` uses so a dev build never takes an installed app's links. Any other scheme is refused.
+The field is a list. An empty list keeps desktop sign-in off, so a custom-scheme `redirect_to` returns `unregistered_scheme`. A scheme in the list is accepted for every sign-in method of that company. Any other scheme is refused.
+
+When `DEBUG=true`, a registered scheme also accepts its `-dev` variant: `shellui-playground` allows `shellui-playground-dev`. `shellui start --app` signs in with that variant so a dev build never takes an installed app's links. With `DEBUG=false`, that implicit variant is refused. A production company that must accept it lists `shellui-playground-dev` itself.
 
 Staff and company owners set it with the company:
 
