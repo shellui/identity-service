@@ -63,7 +63,7 @@ identity-service only sends codes or tokens to origins the company approved. Thi
 | --- | --- |
 | Loopback (`127.0.0.1`, `localhost`, `::1`) | Allowed when `DEBUG=true` or `OAUTH_ALLOW_LOOPBACK_REDIRECTS=true`, for the CLI and local shells |
 | Other http(s) origins | Must match an active `CompanyOAuthRedirect` row for the company |
-| Desktop app URI | Scheme must be in the company `desktop_redirect_schemes` list. An empty list turns desktop sign-in off. With `DEBUG=true`, a listed scheme also allows its `-dev` variant. See [Desktop apps](desktop-apps.md) |
+| Desktop app URI | Scheme must be in the company `desktop_redirect_schemes` list. An empty list turns desktop sign-in off. With `DEBUG=true`, or with `allow_desktop_dev_scheme`, a listed scheme also allows its `-dev` variant. See [Desktop apps](desktop-apps.md) |
 | Hosting previews (`{slug}.{HOSTING_APP_DOMAIN}`) | Added and removed by hosting-service (`source=hosting`) when a site is created or deleted |
 | Empty allowlist | Every non-loopback http(s) `redirect_to` is denied. A custom-scheme `redirect_to` is denied unless that scheme is in `desktop_redirect_schemes` |
 

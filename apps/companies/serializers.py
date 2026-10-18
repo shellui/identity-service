@@ -19,8 +19,9 @@ class CompanySerializer(serializers.ModelSerializer):
             'allowed_email_domains',
             'data_retention_days',
             'desktop_redirect_schemes',
+            'allow_desktop_dev_scheme',
         ]
-        read_only_fields = ['data_retention_days', 'desktop_redirect_schemes']
+        read_only_fields = ['data_retention_days', 'desktop_redirect_schemes', 'allow_desktop_dev_scheme']
 
 
 class CompanyUpdateSerializer(serializers.Serializer):
@@ -49,6 +50,7 @@ class CompanyUpdateSerializer(serializers.Serializer):
         required=False,
         allow_empty=True,
     )
+    allow_desktop_dev_scheme = serializers.BooleanField(required=False)
 
     def validate_allowed_email_domains(self, value):
         return normalize_allowed_domains(value)

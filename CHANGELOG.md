@@ -25,11 +25,11 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 ### 🔒 Security
 
-- **Desktop app sign-in:** the implicit `-dev` variant of a registered scheme is accepted only when `DEBUG=true`. Production accepts `shellui-playground-dev` only when that scheme is on `desktop_redirect_schemes`.
+- **Desktop sign-in:** A registered scheme also accepts its `-dev` variant when `DEBUG=true`.
 
 ### 🛠 Improvements
 
-- **Desktop app sign-in:** when `DEBUG=true`, a registered scheme also accepts its `-dev` variant (`shellui-playground` allows `shellui-playground-dev`). `shellui start --app` signs in with the `-dev` scheme, so a local dev build needs no extra allowlist entry.
+- **Desktop sign-in:** Owners and staff can allow the `-dev` variant per company in production.
 
 ## [0.8.1] - 2026-10-13
 
