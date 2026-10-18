@@ -62,6 +62,10 @@ Every event, and every sign-in, is also stored in the **event log** (`GET /api/v
 - `PATCH /api/v1/user` set the display name (`{"name": "Ada Lovelace"}`); sign-ins never overwrite a name once set
 - `DELETE /api/v1/user` self-service account deletion (`{"confirm": true}`; emits `identity.user.deleted` per company; see [docs/account-deletion.md](docs/account-deletion.md))
 
+## Instance roles
+
+Leave `SHELLUI_INSTANCE_ROLE` unset and this service stays standalone. Set it to `global` to be an OpenID Provider (`prompt=none`, discovery, `id_token`, userinfo, back-channel logout, provisioning out). Set it to `region` to trust one upstream provider (`GLOBAL_ISSUER_URL`, pinned `GLOBAL_JWKS`, `GLOBAL_CLIENT_ID`, `GLOBAL_CLIENT_SECRET`) and expose the provisioning API. The company sign-in page does not add a button for that provider. See [docs/instance-roles.md](docs/instance-roles.md).
+
 ## Staff admin endpoints
 
 These routes require a valid JWT whose user has `is_staff=true` (`user_metadata.is_staff` is set from Django when tokens are issued).

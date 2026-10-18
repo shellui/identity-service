@@ -63,20 +63,38 @@ def is_registered_event(event_id: str) -> bool:
 
 def is_webhook_event(event_id: str) -> bool:
     event = _REGISTRY.get(event_id)
-    return event is not None and event.webhook and not event.staff_only
+    return (
+        event is not None
+        and event.webhook
+        and not event.staff_only
+        and _listed_for_this_instance(event)
+    )
 
 
 def all_event_types() -> list[DomainEventType]:
     return sorted(_REGISTRY.values(), key=lambda e: e.id)
 
 
+def _listed_for_this_instance(event: DomainEventType) -> bool:
+    """Provider-only events stay out of the catalog on every other deployment."""
+    if not event.id.startswith('identity.federation.'):
+        return True
+    from django.conf import settings
+
+    return getattr(settings, 'SHELLUI_INSTANCE_ROLE', '') == 'global'
+
+
 def webhook_event_types() -> list[DomainEventType]:
-    return [e for e in all_event_types() if e.webhook and not e.staff_only]
+    return [
+        e
+        for e in all_event_types()
+        if e.webhook and not e.staff_only and _listed_for_this_instance(e)
+    ]
 
 
 def company_event_types() -> list[DomainEventType]:
     """Event types a company owner can see in the event log (no platform events)."""
-    return [e for e in all_event_types() if not e.staff_only]
+    return [e for e in all_event_types() if not e.staff_only and _listed_for_this_instance(e)]
 
 
 def staff_only_event_types() -> list[DomainEventType]:

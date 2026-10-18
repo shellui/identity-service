@@ -304,6 +304,70 @@ register_event(
 
 register_event(
     DomainEventType(
+        id='identity.federation.authorize.succeeded',
+        label='Upstream authorize succeeded',
+        description=(
+            'This instance, in the provider role, issued an authorization code for a silent sign-in. '
+            'Other instance roles do not emit or list this event.'
+        ),
+        payload_fields=(
+            EventFieldDoc('user_id', 'Internal user primary key', 42),
+            EventFieldDoc('email', 'Primary email when available', 'ada@acme.com'),
+            EventFieldDoc('client_id', 'Relying party client id', 'region-app'),
+            EventFieldDoc('source', 'Always federation', 'federation'),
+        ),
+    )
+)
+
+register_event(
+    DomainEventType(
+        id='identity.federation.provisioning.completed',
+        label='Company provisioning completed',
+        description=(
+            'This instance, in the provider role, created a company and its owner on a relying party. '
+            'Other instance roles do not emit or list this event.'
+        ),
+        payload_fields=(
+            EventFieldDoc('company_slug', 'Company slug sent to the relying party', 'acme'),
+            EventFieldDoc('target_host', 'Host that accepted the provisioning call', 'auth.eu.example.com'),
+        ),
+    )
+)
+
+register_event(
+    DomainEventType(
+        id='identity.federation.plan.pushed',
+        label='Plan limits pushed',
+        description=(
+            'This instance, in the provider role, pushed plan limits to a relying party. '
+            'Other instance roles do not emit or list this event.'
+        ),
+        payload_fields=(
+            EventFieldDoc('company_slug', 'Company slug on the relying party', 'acme'),
+            EventFieldDoc('target_host', 'Host that accepted the provisioning call', 'auth.eu.example.com'),
+        ),
+    )
+)
+
+register_event(
+    DomainEventType(
+        id='identity.federation.backchannel_logout.sent',
+        label='Back-channel logout sent',
+        description=(
+            'This instance, in the provider role, sent a logout token to a relying party. '
+            'Other instance roles do not emit or list this event.'
+        ),
+        payload_fields=(
+            EventFieldDoc('user_id', 'Internal user primary key', 42),
+            EventFieldDoc('email', 'Primary email when available', 'ada@acme.com'),
+            EventFieldDoc('client_id', 'Relying party client id', 'region-app'),
+            EventFieldDoc('source', 'Always federation', 'federation'),
+        ),
+    )
+)
+
+register_event(
+    DomainEventType(
         id='identity.scheduled_job.failed',
         label='Scheduled job failed',
         description='A scheduled job run raised an error. Platform event, staff only.',

@@ -10,6 +10,8 @@ This page lists what you must change when you move to a newer identity-service r
 
 The implicit `-dev` desktop scheme is limited to `DEBUG=true`.
 
+Instance roles are off unless you set `SHELLUI_INSTANCE_ROLE`. A standalone deployment needs no change. A relying party (`region`) in production must set its own email service URL and must not keep `email.shellui.com` or `admin.shellui.com` in `EMAIL_SERVICE_URL`, `ALLOWED_HOSTS`, or `CSRF_TRUSTED_ORIGINS`. See [Instance roles](instance-roles.md).
+
 1. **Production no longer accepts `<scheme>-dev` from a listed scheme.** `shellui-playground` no longer allows `shellui-playground-dev` when `DEBUG=false`. A local identity-service with `DEBUG=true` still does. To keep that redirect on a production company, add `shellui-playground-dev` to `desktop_redirect_schemes`.
 
 ## Upgrade to 0.8.1
