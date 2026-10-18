@@ -12,15 +12,11 @@ This page is for maintainers: how to cut an identity-service release and publish
 | --- | --- |
 | Registry | Docker Hub |
 | Repository | `shellui/identity-service` |
-| Recommended tags | `0.8.1`, `0.8`, `latest` (see [Tagging](#tagging)) |
+| Recommended tags | `0.8.2`, `0.8`, `latest` (see [Tagging](#tagging)) |
 | Listen port | `8000` |
 | Data volume | `/app/data` (SQLite default path: `/app/data/db.sqlite3`) |
 
 The image contains the application code and collected static files only. Secrets and configuration come from environment variables at container start (see [Configuration](configuration.md)).
-
-## 0.8.1 at a glance
-
-0.8.1 moves desktop sign-in schemes from each OAuth application to the company (`desktop_redirect_schemes`). An empty list turns desktop sign-in off. `CompanyOAuthClient.desktop_redirect_scheme` is removed. The steps are in [Upgrade to 0.8.1](upgrading.md#upgrade-to-081). 0.8.0 still removes the login-events API. See [Upgrade to 0.8.0](upgrading.md#upgrade-to-080). Earlier breaking changes, including Redis in production, stay in [Upgrade to 0.7.0](upgrading.md#upgrade-to-070). The full list is in `CHANGELOG.md`.
 
 ## Pre-release checklist
 
@@ -34,12 +30,12 @@ See [PUBLISH.md](https://github.com/shellui/identity-service/blob/main/PUBLISH.m
 
 ### 1. Version alignment
 
-These must match the release version (for example `0.8.1`):
+These must match the release version (for example `0.8.2`):
 
 - `version` in `pyproject.toml` (also the OpenAPI version, through `config.settings.VERSION`)
 - the `CHANGELOG.md` entry, with its date
 - green CI and pre-release workflows on the release commit
-- the Git tag `v0.8.1` (recommended, not checked by the script)
+- the Git tag `v0.8.2` (recommended, not checked by the script)
 
 The docs at [docs.shellui.com/identity](https://docs.shellui.com/identity) are built and published by [shellui/shellui](https://github.com/shellui/shellui), not by a tag in this repository. CI here only checks that `docs/` builds (the **Docs build** job in `.github/workflows/ci.yml`).
 
@@ -63,7 +59,7 @@ The script starts the image in production mode (`DEBUG=false`) next to a Redis c
 eval "$(uv run python manage.py generate_jwt_keys --shell)"
 export SECRET_KEY="$(python3 -c 'import secrets; print(secrets.token_urlsafe(50))')"
 
-docker build -t shellui/identity-service:0.8.1 .
+docker build -t shellui/identity-service:0.8.2 .
 docker network create identity-smoke
 docker run --rm -d --name identity-smoke-redis --network identity-smoke redis:8-alpine
 
@@ -75,7 +71,7 @@ docker run --rm -d --name identity-release-smoke --network identity-smoke -p 180
   -e REDIS_URL=redis://identity-smoke-redis:6379/0 \
   -e SECURE_SSL_REDIRECT=false \
   -e ALLOWED_HOSTS=localhost,127.0.0.1 \
-  shellui/identity-service:0.8.1
+  shellui/identity-service:0.8.2
 
 # 400 (missing company_id) proves gunicorn and Django are up
 curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:18000/api/v1/settings
@@ -99,17 +95,17 @@ docker buildx create --use --name multi 2>/dev/null || docker buildx use multi
 
 docker buildx build \
   --platform linux/amd64,linux/arm64 \
-  -t shellui/identity-service:0.8.1 \
+  -t shellui/identity-service:0.8.2 \
   --push .
 ```
 
 ## Tagging
 
-For release `0.8.1`, publish these tags:
+For release `0.8.2`, publish these tags:
 
 | Tag | Purpose |
 | --- | --- |
-| `0.8.1` | Exact release, pin it in production |
+| `0.8.2` | Exact release, pin it in production |
 | `0.8` | Latest patch of the 0.8 line |
 | `latest` | Newest release, use with care |
 
@@ -120,7 +116,7 @@ You need push access to the `shellui` organization on Docker Hub, `docker login`
 From the repository root, build and push all tags for both platforms:
 
 ```bash
-VERSION=0.8.1
+VERSION=0.8.2
 IMAGE=shellui/identity-service
 
 docker buildx build \
@@ -153,7 +149,7 @@ docker run -d \
   -e ALLOWED_HOSTS='auth.example.com' \
   -e CSRF_TRUSTED_ORIGINS='https://auth.example.com' \
   -e POSTGRES_DATABASE_URL='postgres://user:password@db:5432/identity' \
-  shellui/identity-service:0.8.1
+  shellui/identity-service:0.8.2
 ```
 
 OAuth credentials are stored per company in the database (Shellui admin, `POST /api/v1/oauth-social-apps`, or Django admin), not in environment variables. The entrypoint runs migrations on start, then starts gunicorn and the scheduled jobs as user `appuser`.

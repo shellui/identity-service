@@ -24,11 +24,15 @@ shellui-playground://callback
 
 Set `desktop_redirect_schemes` on the company. Identity has no separate desktop-app record: a sign-in is for one company, named by `company_id` (or, for SAML, by the organization slug that belongs to that company). The scheme belongs to that company, not to Google, GitHub, or any other provider.
 
-The field is a list. An empty list keeps desktop sign-in off, so a custom-scheme `redirect_to` returns `unregistered_scheme`. A scheme in the list is accepted for every sign-in method of that company. A scheme that is not in the list is refused.
+The field is a list. An empty list keeps desktop sign-in off, so a custom-scheme `redirect_to` returns `unregistered_scheme`. A scheme in the list is accepted for every sign-in method of that company. Any other scheme is refused.
 
-Staff and company owners set it with the company:
+When `DEBUG=true`, a registered scheme also accepts its `-dev` variant: `shellui-playground` allows `shellui-playground-dev`. `shellui start --app` signs in with that variant so a dev build never takes an installed app's links. With `DEBUG=false`, that variant is refused unless the company sets `allow_desktop_dev_scheme`.
 
-- **Django admin**: open the company and edit **Desktop redirect schemes**
+The flag only adds `-dev` to schemes already on the list. It does not accept another scheme, a second `-dev` (`shellui-playground-dev-dev`), or a lookalike such as `shellui-playground-devx`. You can still list `shellui-playground-dev` itself with the flag off.
+
+Staff and company owners set the list and the flag on the company. Members can read both fields. Only an owner, or staff (`is_staff` or `is_superuser`), can change them.
+
+- **Django admin**: open the company and edit **Desktop redirect schemes** and **Allow desktop dev scheme**
 - **REST API**: `PATCH /api/v1/companies/<id>/` (company owner or staff)
 
 ```bash
@@ -38,7 +42,9 @@ curl -s -X PATCH "https://auth.example.com/api/v1/companies/1/" \
   -d '{"desktop_redirect_schemes":["shellui-playground"]}'
 ```
 
-The company response includes the same field:
+Send `{"allow_desktop_dev_scheme":true}` on the same path to accept `shellui-playground-dev` when `DEBUG=false`.
+
+The company response includes the same fields:
 
 ```json
 {
@@ -49,7 +55,8 @@ The company response includes the same field:
   "access_mode": "public",
   "allowed_email_domains": [],
   "data_retention_days": 7,
-  "desktop_redirect_schemes": ["shellui-playground"]
+  "desktop_redirect_schemes": ["shellui-playground"],
+  "allow_desktop_dev_scheme": false
 }
 ```
 
@@ -160,10 +167,11 @@ SAML uses the same PKCE query parameters on `/api/v1/saml/<organization_slug>/lo
 **Shellui admin**
 
 - Edit `desktop_redirect_schemes` on the company. Leave the list empty until a desktop app has a scheme.
+- Turn on `allow_desktop_dev_scheme` when a dev build must sign in to this company with the `-dev` scheme and `DEBUG` is off.
 - Do not add a desktop row on the OAuth redirect allowlist. That list stays http(s) origins.
 - Do not require PKCE when an owner sends an invitation to a desktop URI.
 
-Migration `companies.0029_company_desktop_redirect_schemes` copies existing schemes onto the company and drops `CompanyOAuthClient.desktop_redirect_scheme`. Migration `authapi.0018_desktop_custom_scheme_redirect` stores the PKCE challenge. Web shells need no client change.
+Migration `companies.0029_company_desktop_redirect_schemes` copies existing schemes onto the company and drops `CompanyOAuthClient.desktop_redirect_scheme`. Migration `companies.0030_company_allow_desktop_dev_scheme` adds `allow_desktop_dev_scheme`, off by default. Migration `authapi.0018_desktop_custom_scheme_redirect` stores the PKCE challenge. Web shells need no client change.
 
 ## Related
 

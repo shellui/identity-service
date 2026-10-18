@@ -102,6 +102,9 @@ _RFC3986_SCHEME_RE = re.compile(r'^[a-z][a-z0-9+.-]*$')
 _DESKTOP_URI_CONTROL_RE = re.compile(r'[\x00-\x20\x7f\\]')
 _ERROR_CODE_RE = re.compile(r'^[a-z][a-z0-9_]{0,63}$')
 UNREGISTERED_SCHEME_MESSAGE = 'Sign-in scheme is not registered for this company.'
+# `shellui start --app` signs in with `<scheme>-dev`. Accepted when DEBUG is on,
+# or when the company sets allow_desktop_dev_scheme.
+DESKTOP_DEV_SCHEME_SUFFIX = '-dev'
 
 SHELLUI_OAUTH_ERROR_PARAM = 'shellui_oauth_error'
 SHELLUI_OAUTH_ERROR_CODE_PARAM = 'shellui_oauth_error_code'
@@ -393,12 +396,35 @@ def redirect_url_allowed_for_company(company: Company, absolute_url: str, reques
     return False
 
 
+def desktop_dev_schemes_allowed(company: Company) -> bool:
+    """Implicit `<scheme>-dev` when DEBUG is on, or this company allows it."""
+    return bool(settings.DEBUG or company.allow_desktop_dev_scheme)
+
+
+def desktop_scheme_registered(scheme: str, registered: set[str], company: Company) -> bool:
+    """True for a registered scheme, or its `-dev` variant when DEBUG or the company flag is on.
+
+    A scheme listed as-is is accepted in every environment, including one that ends in `-dev`.
+    The flag only adds `<scheme>-dev` for a scheme already in `registered`.
+    """
+    if scheme in registered:
+        return True
+    if not desktop_dev_schemes_allowed(company):
+        return False
+    base = scheme.removesuffix(DESKTOP_DEV_SCHEME_SUFFIX)
+    return base != scheme and base in registered
+
+
 def _desktop_redirect_scheme_match(company: Company, candidate: str) -> bool:
-    """True when the URI scheme is on the company allowlist."""
+    """True when the URI scheme is on the company allowlist.
+
+    The scheme without a trailing `-dev` is enough when DEBUG is on, or when the company
+    sets `allow_desktop_dev_scheme`.
+    """
     exact, err = normalize_desktop_redirect_uri(candidate)
     if err or not exact:
         return False
-    return urlsplit(exact).scheme in company_desktop_schemes(company)
+    return desktop_scheme_registered(urlsplit(exact).scheme, company_desktop_schemes(company), company)
 
 
 def loopback_client_bounce_url_for_oauth_error(

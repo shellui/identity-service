@@ -6,6 +6,12 @@ description: Steps to take when you upgrade identity-service, release by release
 
 This page lists what you must change when you move to a newer identity-service release. Releases not listed here need no action beyond deploying the new image, which runs the database migrations on start. The full list of changes is in the [changelog](../CHANGELOG.md).
 
+## Upgrade to 0.8.2
+
+0.8.2 accepts a registered scheme's `-dev` variant when `DEBUG=true`. Owners and staff can turn the same variant on per company when `DEBUG=false`.
+
+1. **Apply migration `companies.0030_company_allow_desktop_dev_scheme`.** It adds `allow_desktop_dev_scheme` (default false). With the flag off and `DEBUG=false`, `shellui-playground` does not allow `shellui-playground-dev`. To accept that redirect, an owner or a staff member sets the flag, or you add `shellui-playground-dev` to `desktop_redirect_schemes`. A local identity-service with `DEBUG=true` still accepts the variant without the flag. See [Desktop apps](desktop-apps.md).
+
 ## Upgrade to 0.8.1
 
 0.8.1 moves desktop sign-in schemes from each OAuth application onto the company.
