@@ -90,6 +90,7 @@ Pick the row that matches what you are doing today:
 | Let people sign in without a provider | [Magic link](magic-link.md) |
 | Sign in from a desktop app | [Desktop apps](desktop-apps.md) |
 | Connect a company's Okta or Entra ID | [SAML single sign-on](saml.md) and [SCIM provisioning](scim.md) |
+| Trust one upstream identity provider, or be that provider | [Instance roles](instance-roles.md) |
 | Restrict who can join a company | [Company access](company-access.md) |
 | Verify Shellui tokens in another service | [JWT and JWKS](jwks.md) |
 | Run automation when users join or leave | [Webhooks](actions.md) and [n8n](n8n.md) |

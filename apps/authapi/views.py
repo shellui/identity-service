@@ -220,6 +220,9 @@ def _notify_user_logged_in_for_oauth(request, user: User) -> None:
     """
     user_logged_in.send(sender=user.__class__, request=request, user=user)
     touch_user_last_seen(user)
+    from apps.federation.session import remember_provider_session
+
+    remember_provider_session(request, user)
 
 
 def _last_seen_at_for_user(user: User) -> str | None:
@@ -881,6 +884,10 @@ def _link_social_account(user: User, profile: OAuthProfile, userinfo: dict) -> N
             'extra_data': userinfo if isinstance(userinfo, dict) else {},
         },
     )
+    if profile.email_verified_for_link:
+        from apps.federation.session import remember_verified_email
+
+        remember_verified_email(user, profile.email)
 
 
 def _public_extra_settings_for_app(app: SocialApp) -> dict:
@@ -2932,6 +2939,10 @@ class ShellUILogoutView(APIView):
             except Exception:
                 pass
 
+        from apps.federation.backchannel import send_backchannel_logout
+
+        send_backchannel_logout(user=request.user)
+        request.federation_clear_op_session = True
         return Response({'success': True})
 
 
