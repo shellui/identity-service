@@ -35,6 +35,7 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 - **Region hosts:** A region with `DEBUG=false` refuses to start with default `shellui.com` hosts.
 - **Security:** Web sign-in requires PKCE (needs shellui 0.6.4 or later).
 - **Security:** Session and CSRF cookies use the `__Host-` prefix.
+- **PKCE:** Tokens are never sent in the URL fragment without PKCE.
 - **Dependencies:** Updated certifi to 2026.10.19.
 
 ### 🛠 Improvements
