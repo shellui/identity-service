@@ -30,6 +30,7 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 ### 🔒 Security
 
+- **Federation:** Silent sign-in and provisioning refuse to link or make an owner of an existing staff account.
 - **Region hosts:** A region with `DEBUG=false` refuses to start with default `shellui.com` hosts.
 - **Security:** Web sign-in requires PKCE (needs shellui 0.6.4 or later).
 - **Security:** Session and CSRF cookies use the `__Host-` prefix.

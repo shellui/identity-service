@@ -2942,7 +2942,9 @@ class ShellUILogoutView(APIView):
         from apps.federation.backchannel import send_backchannel_logout
 
         send_backchannel_logout(user=request.user)
-        request.federation_clear_op_session = True
+        from apps.federation.session import forget_provider_session
+
+        forget_provider_session(request)
         return Response({'success': True})
 
 
