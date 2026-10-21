@@ -170,8 +170,6 @@ Do not commit `.env` or real OAuth secrets. Do not pass secrets as Docker build 
 
 ## Known limitations
 
-- No `HEALTHCHECK` in the Dockerfile. Point your orchestrator at `GET /health/live`
-- No automated Docker Hub publish in CI
 - SQLite on a volume is fine for a single-node trial. Use `POSTGRES_DATABASE_URL` in production
 - Behind a TLS-terminating proxy, set `CSRF_TRUSTED_ORIGINS`; the app relies on `SECURE_PROXY_SSL_HEADER`
 

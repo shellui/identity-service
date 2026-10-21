@@ -128,7 +128,7 @@ The container command picks what runs: `web` (default: migrations, gunicorn, and
 
 SQLite runs in WAL mode for better concurrency on a single node. With PostgreSQL, connections that died while idle are replaced before the next request uses them.
 
-For load balancer health checks, use `GET /health/live`. It touches neither the session nor the database.
+For load balancer health checks, use `GET /health/live`. It touches neither the session nor the database. The Docker image already runs it as its `HEALTHCHECK`, so Coolify needs no health check config.
 
 ## Gunicorn (Docker entrypoint)
 
