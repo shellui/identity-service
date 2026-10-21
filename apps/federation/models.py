@@ -77,3 +77,32 @@ class CompanyPlan(models.Model):
 
     def __str__(self) -> str:
         return f'CompanyPlan(company_id={self.company_id})'
+
+
+class ProvisionedCompany(models.Model):
+    """A company the dashboard created on this region, keyed by its global id."""
+
+    STATUS_ACTIVE = 'active'
+    STATUS_SUSPENDED = 'suspended'
+    STATUS_DELETING = 'deleting'
+    STATUS_CHOICES = [
+        (STATUS_ACTIVE, 'Active'),
+        (STATUS_SUSPENDED, 'Suspended'),
+        (STATUS_DELETING, 'Deleting'),
+    ]
+
+    company = models.OneToOneField(
+        'companies.Company',
+        on_delete=models.CASCADE,
+        related_name='provisioned',
+    )
+    global_company_id = models.CharField(max_length=64, unique=True)
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=STATUS_ACTIVE)
+    plan = models.CharField(max_length=64, blank=True, default='')
+    limits_version = models.PositiveIntegerField(default=0)
+    deletion_requested_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self) -> str:
+        return f'ProvisionedCompany(company_id={self.company_id})'

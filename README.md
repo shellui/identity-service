@@ -64,7 +64,7 @@ Every event, and every sign-in, is also stored in the **event log** (`GET /api/v
 
 ## Instance roles
 
-Leave `SHELLUI_INSTANCE_ROLE` unset and this service stays standalone. Set it to `global` to be an OpenID Provider (`prompt=none`, discovery, `id_token`, userinfo, back-channel logout, provisioning out). Set it to `region` to trust one upstream provider (`GLOBAL_ISSUER_URL`, pinned `GLOBAL_JWKS`, `GLOBAL_CLIENT_ID`, `GLOBAL_CLIENT_SECRET`) and expose the provisioning API. The company sign-in page does not add a button for that provider. See [docs/instance-roles.md](docs/instance-roles.md).
+Leave `SHELLUI_INSTANCE_ROLE` unset and this service stays standalone. Set it to `global` to be an OpenID Provider (`prompt=none`, discovery, `id_token`, userinfo, back-channel logout). Set it to `region` to trust one upstream provider (`GLOBAL_ISSUER_URL`, pinned `GLOBAL_JWKS`, `GLOBAL_CLIENT_ID`, `GLOBAL_CLIENT_SECRET`) and expose the provisioning API the dashboard calls with its pinned key (`PROVISIONING_PUBLIC_KEY`). The company sign-in page does not add a button for that provider. See [docs/instance-roles.md](docs/instance-roles.md).
 
 ## Staff admin endpoints
 

@@ -15,26 +15,6 @@ def emit_authorize_succeeded(*, user, client_id: str) -> None:
         emit_event_if_rules('identity.federation.authorize.succeeded', company, payload)
 
 
-def emit_provisioning_completed(*, company: Company, client_slug: str, region_host: str) -> None:
-    if not is_global():
-        return
-    emit_event_if_rules(
-        'identity.federation.provisioning.completed',
-        company,
-        {'company_slug': client_slug, 'target_host': region_host},
-    )
-
-
-def emit_plan_pushed(*, company: Company, client_slug: str, region_host: str) -> None:
-    if not is_global():
-        return
-    emit_event_if_rules(
-        'identity.federation.plan.pushed',
-        company,
-        {'company_slug': client_slug, 'target_host': region_host},
-    )
-
-
 def emit_backchannel_logout_sent(*, user, client_id: str) -> None:
     if not is_global():
         return

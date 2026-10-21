@@ -195,6 +195,11 @@ Leave `SHELLUI_INSTANCE_ROLE` unset for a standalone deployment. `global` turns 
 | `GLOBAL_JWKS` | empty | Pinned upstream JWKS JSON |
 | `GLOBAL_CLIENT_ID`, `GLOBAL_CLIENT_SECRET` | empty | Upstream client credentials |
 | `GLOBAL_REDIRECT_URI` | `{JWT_ISSUER}/oauth/upstream-callback` | Upstream redirect URI when the public URL differs |
+| `PROVISIONING_PUBLIC_KEY` | empty | Dashboard provisioning public key (PEM), region role. Empty turns the provisioning API off |
+| `PROVISIONING_KEY_ID` | empty | Expected assertion `kid` when set |
+| `PROVISIONING_ISSUER` | empty | Expected assertion `iss` (the dashboard) |
+| `PROVISIONING_AUDIENCE` | host of `JWT_ISSUER` | Expected assertion `aud` |
+| `PROVISIONING_DEFAULT_REDIRECTS` | empty | Origins added to each provisioned company's redirect allowlist |
 
 ## Related
 

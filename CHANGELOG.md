@@ -26,7 +26,8 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 ### ✨ Feature
 
 - **Federation:** Identity can run as the global provider or as a region that trusts it (`SHELLUI_INSTANCE_ROLE`, [docs/instance-roles.md](docs/instance-roles.md)).
-- **Provisioning API:** A region creates a company and its owner from a signed, idempotent assertion.
+- **Provisioning API:** A region serves the dashboard's create, update, limits, delete and list calls, signed with its pinned key and bound to each request.
+- **Global tokens:** With the `global` role, access tokens carry `sub` and `email_verified`.
 
 ### 🔒 Security
 

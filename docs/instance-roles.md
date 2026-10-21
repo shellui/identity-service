@@ -25,10 +25,8 @@ The provider publishes an OpenID Connect discovery document and accepts silent s
 | `POST /oauth/token` | Code exchange. `client_secret_basic` or `client_secret_post` |
 | `GET` or `POST /oauth/userinfo` | Profile for the opaque access token |
 | `GET /.well-known/jwks.json` | Signing keys, the same document API tokens use |
-| `POST /api/v1/federation/provision` | Staff only. Create a company and its owner on a relying party |
-| `POST /api/v1/federation/plan` | Staff only. Push plan limits to a relying party |
 
-`id_token` and userinfo carry `sub`, `email`, and `email_verified`. `email_verified` is the boolean `true` only after a completed sign-in that proved the address (a magic link, or a provider that reported the address as verified). The tokens do not carry `is_staff` or `is_superuser`.
+`id_token` and userinfo carry `sub`, `email`, and `email_verified`. `email_verified` is the boolean `true` only after a completed sign-in that proved the address (a magic link, or a provider that reported the address as verified). The tokens do not carry `is_staff` or `is_superuser`. API access tokens issued in this role also carry `sub` (the same value as the `id_token`) and `email_verified`, which the dashboard reads before it lets an owner create a company.
 
 A successful sign-in on the provider sets a host-only cookie, `shellui_op_session`, on the path `/oauth/`. It is not the Django session cookie. `POST /api/v1/logout` sends a [back-channel logout](https://openid.net/specs/openid-connect-backchannel-1_0.html) token to each client's `backchannel_logout_uri`.
 
@@ -58,28 +56,9 @@ A successful sign-in on the provider sets a host-only cookie, `shellui_op_sessio
 | `OIDC_ID_TOKEN_TTL_SECONDS` | `300` | `id_token` lifetime |
 | `OIDC_BACKCHANNEL_TIMEOUT_SECONDS` | `3` | Logout POST timeout |
 
-### Provisioning out
-
-`POST /api/v1/federation/provision` is for a staff user. The body is JSON:
-
-| Field | Purpose |
-| --- | --- |
-| `region_base_url` | Relying party origin, `https` |
-| `audience` | That deployment's `JWT_ISSUER` |
-| `company_name` | Company name to create |
-| `company_slug` | Optional slug |
-| `owner_email` | Must already be verified on this provider |
-| `plan` | Optional limits object |
-| `idempotency_key` | 8 to 200 characters, `[A-Za-z0-9._:-]` |
-| `webhook_company_id` | Optional company that receives the webhook below |
-
-The provider signs a short-lived assertion with its JWT key and posts it to the relying party. The owner email is sent only when `email_verified` is true. `POST /api/v1/federation/plan` takes `region_base_url`, `audience`, `company_slug`, `plan`, and `idempotency_key`.
-
 These webhook events are registered on every deployment and emitted only when the role is `global`. Other roles omit them from `GET /api/v1/events/types` and from webhook rules:
 
 - `identity.federation.authorize.succeeded`
-- `identity.federation.provisioning.completed`
-- `identity.federation.plan.pushed`
 - `identity.federation.backchannel_logout.sent`
 
 Payloads do not include tokens, authorization codes, or sign-in links.
@@ -104,19 +83,43 @@ If the upstream redirect carries `error=login_required`, no account is created.
 
 ### Provisioning API
 
-`POST /api/v1/provisioning/companies` and `POST /api/v1/provisioning/plans` accept a signed assertion.
+The dashboard (shellui/saas-service) creates and manages regional companies here. Nothing else calls this API. It answers **404** unless the role is `region` and `PROVISIONING_PUBLIC_KEY`, `PROVISIONING_ISSUER` and `GLOBAL_ISSUER_URL` are set.
 
-```http
-POST /api/v1/provisioning/companies
-Authorization: Bearer <assertion>
-Idempotency-Key: <same value as the assertion claim>
+| Variable | Purpose |
+| --- | --- |
+| `PROVISIONING_PUBLIC_KEY` | Dashboard provisioning public key, PEM (literal `
+` accepted). `manage.py setup` on saas-service prints it |
+| `PROVISIONING_KEY_ID` | Optional. When set, the assertion `kid` must match (saas-service `PROVISIONING_KEY_ID`, default `dashboard-1`) |
+| `PROVISIONING_ISSUER` | Must equal saas-service `PROVISIONING_ASSERTION_ISSUER` |
+| `PROVISIONING_AUDIENCE` | Optional. Defaults to the host of `JWT_ISSUER`, for example `id.eu.shellui.com` |
+| `PROVISIONING_DEFAULT_REDIRECTS` | Comma-separated origins added to every new company's redirect allowlist, for example the regional admin |
+
+| Endpoint | Purpose |
+| --- | --- |
+| `POST /api/v1/provisioning/companies` | Create a company and its owner. **201** with the company, **409** with `id` when the `global_company_id` exists |
+| `GET /api/v1/provisioning/companies?linked=shellui` | `{ "results": [...], "next": url or null }`, 200 per page, ordered by id |
+| `GET /api/v1/provisioning/companies/{id}` | Company with `status`, `limits_version`, and owner subjects |
+| `PATCH /api/v1/provisioning/companies/{id}` | `name` and/or `status` (`active` or `suspended`) |
+| `PUT /api/v1/provisioning/companies/{id}/limits` | `{ "version", "limits" }`. An older version returns **409** `stale_version` |
+| `DELETE /api/v1/provisioning/companies/{id}` | **202**, status `deleting`. Data is kept; nothing is removed by this call |
+
+Every call sends `Authorization: Bearer <assertion>`, an RS256 JWT signed with the pinned key. Required claims: `iss`, `aud`, `sub`, `iat`, `exp` (at most 300 seconds after `iat`), `jti`, `scope` equal to `provisioning`, and a request binding: `htm` (method), `htu` (path with query) and `bh` (base64url SHA-256 of the exact body bytes). A reused `jti` returns **401** `assertion_replayed`. Writes need `Idempotency-Key`; the same key and request return the stored response, and the same key with a different request returns **409** `idempotency_conflict`. Errors are `{ "detail", "error_code" }`.
+
+Create body:
+
+```json
+{
+  "global_company_id": "uuid from the dashboard",
+  "name": "Acme",
+  "plan": "free",
+  "access_mode": "public",
+  "owner": {"subject": "global sub", "email": "ada@acme.com", "email_verified": true, "name": "Ada"}
+}
 ```
 
-The assertion is RS256, signed by a key in `GLOBAL_JWKS`. Required claims are `iss` (equal to `GLOBAL_ISSUER_URL`), `aud` (equal to this deployment's `JWT_ISSUER`), `iat`, `exp` (at most 120 seconds after `iat`), `jti`, and `idempotency_key` (equal to the header). A company assertion also needs `email_verified: true`, `company.name`, and `owner.email`.
+The owner is linked by the global subject (`GLOBAL_ISSUER_URL` and `owner.subject`). Without a link, an existing user with the same email is linked, and otherwise a new user is created. `owner.email_verified` must be the boolean `true` (**403** `email_not_verified` otherwise). An existing `is_staff` or `is_superuser` account is refused (**409** `user_is_staff`). This API never sets those flags.
 
-The same idempotency key and the same body return the stored response. The same key with a different body returns **409** `idempotency_conflict`. A reused `jti` on a different key returns **401** `assertion_replayed`. An unverified email returns **403** `email_not_verified` and writes nothing.
-
-`POST /api/v1/provisioning/plans` updates limits for an existing company slug. `GET /api/v1/companies/{id}/plan` returns `{ "company_id", "limits" }` to a member of that company. Unknown companies and non-members get **404**.
+`GET /api/v1/companies/{id}/plan` returns `{ "company_id", "limits", "limits_version", "status" }` to a member of that company, for regional services. Suspension keeps hosted sites online; services read `status` to lock the admin and deploys.
 
 ### Back-channel logout
 
