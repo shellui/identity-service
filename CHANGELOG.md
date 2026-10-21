@@ -21,26 +21,30 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
 -->
 
-## [Unreleased]
+## [0.9.0] - 2026-10-21
 
 ### ✨ Feature
 
-- **Instance role:** `SHELLUI_INSTANCE_ROLE` selects standalone (unset), an OpenID Provider (`global`), or a relying party (`region`). Unset keeps today's behavior ([docs/instance-roles.md](docs/instance-roles.md)).
-- **OpenID Provider:** discovery, `prompt=none` authorize, `id_token`, userinfo, and the existing JWKS endpoint when the role is `global`.
-- **Upstream sign-in:** a relying party trusts one provider via `GLOBAL_ISSUER_URL`, a pinned `GLOBAL_JWKS`, and `GLOBAL_CLIENT_ID` / `GLOBAL_CLIENT_SECRET`. Silent sign-in only. The company sign-in page does not offer that provider.
-- **Provisioning API:** a signed assertion and an idempotency key create a company and its owner. Plan limits are stored and served by the relying party.
-- **Back-channel logout:** the provider sends logout tokens on `POST /api/v1/logout`. The relying party revokes local refresh sessions.
+- **Federation:** Identity can run as the global provider or as a region that trusts it (`SHELLUI_INSTANCE_ROLE`, [docs/instance-roles.md](docs/instance-roles.md)).
+- **Provisioning API:** A region creates a company and its owner from a signed, idempotent assertion.
 
 ### 🔒 Security
 
-- **Relying party hosts:** with `SHELLUI_INSTANCE_ROLE=region` and `DEBUG=false`, startup fails if `email.shellui.com` or `admin.shellui.com` is still in the email, allowed-host, or CSRF settings.
-- **Desktop app sign-in:** the implicit `-dev` variant of a registered scheme is accepted only when `DEBUG=true`. Production accepts `shellui-playground-dev` only when that scheme is on `desktop_redirect_schemes`.
-
-## [0.8.2] - 2026-10-15
+- **Region hosts:** A region with `DEBUG=false` refuses to start with default `shellui.com` hosts.
 
 ### 🛠 Improvements
 
-- **Desktop app sign-in:** a registered scheme also accepts its `-dev` variant (`shellui-playground` allows `shellui-playground-dev`). `shellui start --app` signs in with the `-dev` scheme, so a dev build needs no extra allowlist entry.
+- **Deployment:** `DEBUG` defaults to false, so production no longer needs to set it.
+
+## [0.8.2] - 2026-10-18
+
+### 🔒 Security
+
+- **Desktop sign-in:** A registered scheme also accepts its `-dev` variant when `DEBUG=true`.
+
+### 🛠 Improvements
+
+- **Desktop sign-in:** Owners and staff can allow the `-dev` variant per company in production.
 
 ## [0.8.1] - 2026-10-13
 

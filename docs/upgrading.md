@@ -6,13 +6,15 @@ description: Steps to take when you upgrade identity-service, release by release
 
 This page lists what you must change when you move to a newer identity-service release. Releases not listed here need no action beyond deploying the new image, which runs the database migrations on start. The full list of changes is in the [changelog](../CHANGELOG.md).
 
-## Unreleased
+## Upgrade to 0.9.0
 
-The implicit `-dev` desktop scheme is limited to `DEBUG=true`.
+Instance roles are off unless you set `SHELLUI_INSTANCE_ROLE`. A standalone deployment needs no change. A region in production must set its own email service URL and must not keep `email.shellui.com` or `admin.shellui.com` in `EMAIL_SERVICE_URL`, `ALLOWED_HOSTS`, or `CSRF_TRUSTED_ORIGINS`. See [Instance roles](instance-roles.md).
 
-Instance roles are off unless you set `SHELLUI_INSTANCE_ROLE`. A standalone deployment needs no change. A relying party (`region`) in production must set its own email service URL and must not keep `email.shellui.com` or `admin.shellui.com` in `EMAIL_SERVICE_URL`, `ALLOWED_HOSTS`, or `CSRF_TRUSTED_ORIGINS`. See [Instance roles](instance-roles.md).
+## Upgrade to 0.8.2
 
-1. **Production no longer accepts `<scheme>-dev` from a listed scheme.** `shellui-playground` no longer allows `shellui-playground-dev` when `DEBUG=false`. A local identity-service with `DEBUG=true` still does. To keep that redirect on a production company, add `shellui-playground-dev` to `desktop_redirect_schemes`.
+0.8.2 accepts a registered scheme's `-dev` variant when `DEBUG=true`. Owners and staff can turn the same variant on per company when `DEBUG=false`.
+
+1. **Apply migration `companies.0030_company_allow_desktop_dev_scheme`.** It adds `allow_desktop_dev_scheme` (default false). With the flag off and `DEBUG=false`, `shellui-playground` does not allow `shellui-playground-dev`. To accept that redirect, an owner or a staff member sets the flag, or you add `shellui-playground-dev` to `desktop_redirect_schemes`. A local identity-service with `DEBUG=true` still accepts the variant without the flag. See [Desktop apps](desktop-apps.md).
 
 ## Upgrade to 0.8.1
 
