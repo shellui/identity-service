@@ -226,6 +226,16 @@ kid = keys[0].get("kid") or "?"
 print(f"OK: JWKS has {len(keys)} RSA key(s), kid={kid[:16]}…")
 '
 
+log 'Waiting for Docker HEALTHCHECK to report healthy'
+health=''
+for _ in $(seq 1 30); do
+  health="$(docker inspect -f '{{.State.Health.Status}}' "${CONTAINER_NAME}" 2>/dev/null || true)"
+  [[ "${health}" == 'healthy' ]] && break
+  sleep 2
+done
+[[ "${health}" == 'healthy' ]] || fail "container health is '${health}', expected healthy"
+printf 'OK: docker health is %s\n' "${health}"
+
 log 'Scheduled jobs worker smoke test'
 "$(dirname "$0")/image-smoke-test.sh" "${IMAGE_TAG}"
 

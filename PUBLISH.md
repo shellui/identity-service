@@ -196,9 +196,9 @@ The entrypoint runs migrations on start, then starts **Gunicorn** (`config.wsgi:
 
 **Concurrency:** with defaults after this release, up to `workers × threads` requests run at once (e.g. `4 × 4 = 16`). With `GUNICORN_WORKERS=2` and `GUNICORN_THREADS=2` you only get **four** concurrent handlers. OAuth callbacks and token refresh perform several DB writes and up to ~20s outbound HTTP each; when all handlers are busy, **even `GET /` queues** (session middleware + DB) until the client or reverse proxy times out - intermittent "hang then works again".
 
-**Liveness:** point health checks at `GET /health/live` (no session/DB). Do not use `/` or `/api/v1/settings` as the only probe if traffic is bursty.
+**Health check:** the image has a built-in Docker `HEALTHCHECK` (`tools/healthcheck.py`). It calls `GET /health/live` on `127.0.0.1:8000` every 30s, with a 60s start period for migrations. Coolify detects it automatically, so no health check config is needed: leave Coolify's own health check off, or if you turn it on, point it at `GET /health/live` on port `8000`. `/health/live` needs no auth, skips sessions and the database, and is never redirected to https, so a slow database or Redis does not restart the container (readiness of those is reported by the scheduled jobs monitoring and the errors in the logs). In `worker` mode the check passes as long as the Celery process runs, because Docker restarts the container when it exits. Do not use `/` or `/api/v1/settings` as a probe if traffic is bursty.
 
-**Immediate VPS tuning (no image change):** raise workers/threads (e.g. `GUNICORN_WORKERS=4`, `GUNICORN_THREADS=4`), use `POSTGRES_DATABASE_URL` for production load, and aim health checks at `/health/live`.
+**Immediate VPS tuning (no image change):** raise workers/threads (e.g. `GUNICORN_WORKERS=4`, `GUNICORN_THREADS=4`), use `POSTGRES_DATABASE_URL` for production load, and keep the built-in health check on `/health/live`.
 
 ### Post-deploy production config check
 

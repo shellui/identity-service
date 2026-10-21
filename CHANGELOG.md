@@ -42,6 +42,11 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 - **Deployment:** `check --deploy` rejects a weak `SECRET_KEY`.
 - **Deployment:** Releases publish the Docker image automatically.
 - **Errors:** Error pages use the Shellui design, and API errors always return JSON.
+- **Deployment:** The Docker image has a built-in health check that Coolify detects.
+
+### 🏗 Chore
+
+- **Settings:** Removed duplicated settings in `config/settings.py`.
 
 ## [0.8.2] - 2026-10-18
 

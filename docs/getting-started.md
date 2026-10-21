@@ -117,7 +117,7 @@ In a secret manager or the Coolify UI, paste only the PEM value, without the sur
 
 Then finish the deployment:
 
-1. Point the load balancer health check at `GET /health/live`. It does not touch the database.
+1. The image has a built-in health check on `GET /health/live` (port `8000`), which Coolify detects automatically. Leave Coolify's own health check off, or point it at the same path. It does not touch the database.
 2. Behind a reverse proxy, list the proxy addresses in `TRUSTED_PROXY_IPS` so rate limits see the real client IP.
 3. Create the first superuser with `python manage.py createsuperuser` in the container.
 4. Add each production shell origin to the company redirect allowlist.

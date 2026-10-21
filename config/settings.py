@@ -567,10 +567,6 @@ SECURE_HSTS_INCLUDE_SUBDOMAINS = _env_bool('SECURE_HSTS_INCLUDE_SUBDOMAINS', not
 SECURE_HSTS_PRELOAD = _env_bool('SECURE_HSTS_PRELOAD', False)
 SESSION_COOKIE_SECURE = _env_bool('SESSION_COOKIE_SECURE', not DEBUG)
 CSRF_COOKIE_SECURE = _env_bool('CSRF_COOKIE_SECURE', not DEBUG)
-# Host-only. A parent domain would send these cookies to every host under it.
-SESSION_COOKIE_DOMAIN = None
-CSRF_COOKIE_DOMAIN = None
-
 
 def secure_cookie_name(base_name: str, *, secure: bool) -> str:
     """Use the ``__Host-`` prefix only when the cookie is Secure.
