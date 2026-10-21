@@ -23,7 +23,7 @@ from apps.authapi.jwks import build_jwks_document, generate_rsa_key_pair, load_s
 from apps.authapi.models import RefreshTokenSession
 from apps.companies.models import Company, CompanyOAuthClient, CompanyOAuthRedirect
 from apps.federation.checks import region_production_config, session_cookies_stay_host_only
-from apps.federation.models import CompanyPlan, UpstreamAccount, VerifiedEmail
+from apps.federation.models import UpstreamAccount, VerifiedEmail
 from apps.federation.parsing import region_startup_errors
 from apps.federation.session import COOKIE, remember_provider_session, remember_verified_email, set_cookie
 from apps.federation.signing import unix_now
@@ -60,6 +60,7 @@ class StandalonePathTests(TestCase):
         self.assertEqual(self.client.post('/oauth/token', {}, format='json').status_code, 404)
         self.assertEqual(self.client.get('/oauth/silent-signin').status_code, 404)
         self.assertEqual(self.client.post('/api/v1/provisioning/companies', {}, format='json').status_code, 404)
+        self.assertEqual(self.client.post('/api/v1/federation/provision', {}, format='json').status_code, 404)
         self.assertEqual(self.client.post('/oauth/backchannel-logout', {}).status_code, 404)
 
     def test_verified_email_and_provider_cookie_stay_off(self):
@@ -162,6 +163,19 @@ class ProviderTests(_CryptoMixin, TestCase):
     def setUp(self):
         self._enable()
         self.client = APIClient()
+
+    def test_access_token_carries_sub_and_email_verified(self):
+        from apps.authapi.views import _issue_shellui_tokens
+
+        company = Company.objects.create(name='Acme', slug='acme')
+        user = self._user()
+        token = _issue_shellui_tokens(user, company=company)['access_token']
+        claims = jwt.decode(token, options={'verify_signature': False})
+        self.assertEqual(claims['sub'], str(user.pk))
+        self.assertIs(claims['email_verified'], True)
+        with override_settings(SHELLUI_INSTANCE_ROLE=''):
+            plain = jwt.decode(_issue_shellui_tokens(user, company=company)['access_token'], options={'verify_signature': False})
+        self.assertNotIn('email_verified', plain)
 
     def test_drf_request_flags_reach_the_middleware(self):
         from django.http import HttpRequest
@@ -470,156 +484,6 @@ class RelyingPartyTests(_CryptoMixin, TestCase):
         self.assertEqual(User.objects.count(), 0)
 
 
-class ProvisioningTests(_CryptoMixin, TestCase):
-    def setUp(self):
-        self._enable(SHELLUI_INSTANCE_ROLE='region', JWT_ISSUER=REGION)
-        self.client = APIClient()
-
-    def _assertion(self, **overrides):
-        now = unix_now()
-        key = overrides.pop('idempotency_key', 'idem-key-01')
-        claims = {
-            'iss': ISSUER,
-            'aud': REGION,
-            'iat': now,
-            'nbf': now,
-            'exp': now + 60,
-            'jti': uuid.uuid4().hex,
-            'idempotency_key': key,
-            'email_verified': True,
-            'company': {'name': 'Acme', 'slug': 'acme'},
-            'owner': {
-                'email': 'ada@acme.test',
-                'name': 'Ada Lovelace',
-                'is_staff': True,
-                'is_superuser': True,
-            },
-            'plan': {'max_members': 10},
-        }
-        claims.update(overrides)
-        return self._sign(claims), claims
-
-    def _post(self, token, key, path='/api/v1/provisioning/companies'):
-        return self.client.post(
-            path,
-            {},
-            format='json',
-            HTTP_AUTHORIZATION=f'Bearer {token}',
-            HTTP_IDEMPOTENCY_KEY=key,
-        )
-
-    def test_creates_company_owner_and_plan_without_staff(self):
-        token, claims = self._assertion()
-        response = self._post(token, claims['idempotency_key'])
-        self.assertEqual(response.status_code, 200, response.content)
-        user = User.objects.get(email='ada@acme.test')
-        self.assertFalse(user.is_staff)
-        self.assertFalse(user.is_superuser)
-        company = Company.objects.get(slug='acme')
-        self.assertTrue(company.owners.filter(pk=user.pk).exists())
-        self.assertTrue(company.memberships.filter(user=user, is_enabled=True).exists())
-        self.assertEqual(CompanyPlan.objects.get(company=company).limits, {'max_members': 10})
-        self.client.force_authenticate(user=user)
-        plan = self.client.get(f'/api/v1/companies/{company.pk}/plan')
-        self.assertEqual(plan.status_code, 200)
-        self.assertEqual(plan.json()['limits']['max_members'], 10)
-
-    def test_existing_superuser_is_not_made_owner(self):
-        User.objects.create_user(username='root', email='ada@acme.test', is_superuser=True)
-        token, claims = self._assertion()
-        response = self._post(token, claims['idempotency_key'])
-        self.assertEqual(response.status_code, 409, response.content)
-        self.assertEqual(response.json()['error_code'], 'user_is_staff')
-        self.assertFalse(Company.objects.filter(slug='acme').exists())
-
-    def test_unverified_email_creates_nothing(self):
-        for flag in (False, 'true', 1):
-            token, claims = self._assertion(email_verified=flag, idempotency_key=f'idem-key-{flag}')
-            response = self._post(token, claims['idempotency_key'])
-            self.assertEqual(response.status_code, 403, flag)
-            self.assertEqual(response.json()['error_code'], 'email_not_verified')
-        self.assertEqual(Company.objects.count(), 0)
-        self.assertEqual(User.objects.count(), 0)
-
-    def test_replayed_assertion_and_idempotency_key(self):
-        token, claims = self._assertion()
-        first = self._post(token, claims['idempotency_key'])
-        second = self._post(token, claims['idempotency_key'])
-        self.assertEqual(first.status_code, 200)
-        self.assertEqual(second.status_code, 200)
-        self.assertEqual(first.json(), second.json())
-        self.assertEqual(Company.objects.count(), 1)
-        other, other_claims = self._assertion(jti=claims['jti'], idempotency_key='idem-key-99')
-        replay = self._post(other, other_claims['idempotency_key'])
-        self.assertEqual(replay.status_code, 401)
-        self.assertEqual(replay.json()['error_code'], 'assertion_replayed')
-        self.assertEqual(Company.objects.count(), 1)
-        fresh, fresh_claims = self._assertion(
-            idempotency_key=claims['idempotency_key'],
-            company={'name': 'Other', 'slug': 'other'},
-        )
-        conflict = self._post(fresh, fresh_claims['idempotency_key'])
-        self.assertEqual(conflict.status_code, 409)
-        self.assertEqual(conflict.json()['error_code'], 'idempotency_conflict')
-        self.assertFalse(Company.objects.filter(slug='other').exists())
-
-    def test_wrong_issuer_and_audience(self):
-        bad_iss, claims = self._assertion(iss='https://evil.example', idempotency_key='idem-key-iss')
-        bad_aud, aud_claims = self._assertion(aud='https://other.example', idempotency_key='idem-key-aud')
-        self.assertEqual(self._post(bad_iss, claims['idempotency_key']).status_code, 401)
-        self.assertEqual(self._post(bad_aud, aud_claims['idempotency_key']).status_code, 401)
-        self.assertEqual(Company.objects.count(), 0)
-
-    def test_existing_staff_flag_is_not_changed(self):
-        staff = User.objects.create_user('ada', 'ada@acme.test', 'pw', is_staff=True)
-        token, claims = self._assertion()
-        self.assertEqual(self._post(token, claims['idempotency_key']).status_code, 409)
-        staff.refresh_from_db()
-        self.assertTrue(staff.is_staff)
-        plain = User.objects.create_user('grace', 'grace@acme.test', 'pw', is_staff=False)
-        token, claims = self._assertion(
-            idempotency_key='idem-key-grace',
-            company={'name': 'Globex', 'slug': 'globex'},
-            owner={'email': 'grace@acme.test', 'name': 'Grace', 'is_staff': True},
-        )
-        self.assertEqual(self._post(token, claims['idempotency_key']).status_code, 200)
-        plain.refresh_from_db()
-        self.assertFalse(plain.is_staff)
-        self.assertFalse(plain.is_superuser)
-
-    def test_plan_push_and_member_read(self):
-        token, claims = self._assertion()
-        claims.pop('plan')
-        token = self._sign(claims)
-        self.assertEqual(self._post(token, claims['idempotency_key']).status_code, 200)
-        now = unix_now()
-        plan_claims = {
-            'iss': ISSUER,
-            'aud': REGION,
-            'iat': now,
-            'nbf': now,
-            'exp': now + 60,
-            'jti': uuid.uuid4().hex,
-            'idempotency_key': 'idem-plan-01',
-            'company_slug': 'acme',
-            'plan': {'max_members': 25},
-        }
-        plan_token = self._sign(plan_claims)
-        pushed = self._post(plan_token, 'idem-plan-01', path='/api/v1/provisioning/plans')
-        self.assertEqual(pushed.status_code, 200, pushed.content)
-        self.assertEqual(CompanyPlan.objects.get(company__slug='acme').limits['max_members'], 25)
-        outsider = User.objects.create_user('outsider', 'out@acme.test', 'pw')
-        self.client.force_authenticate(user=outsider)
-        self.assertEqual(self.client.get(f"/api/v1/companies/{Company.objects.get(slug='acme').pk}/plan").status_code, 404)
-
-    def test_plan_endpoint_is_absent_when_standalone(self):
-        user = User.objects.create_user('ada', 'ada@acme.test', 'pw')
-        company = Company.objects.create(name='Acme', slug='acme')
-        company.members.add(user)
-        self.client.force_authenticate(user=user)
-        with override_settings(SHELLUI_INSTANCE_ROLE=''):
-            self.assertEqual(self.client.get(f'/api/v1/companies/{company.pk}/plan').status_code, 404)
-
 
 class BackchannelTests(_CryptoMixin, TestCase):
     def setUp(self):
@@ -670,61 +534,6 @@ class BackchannelTests(_CryptoMixin, TestCase):
         self.session.refresh_from_db()
         self.assertIsNone(self.session.revoked_at)
 
-
-class OutboundTests(_CryptoMixin, TestCase):
-    def setUp(self):
-        self._enable()
-        self.client = APIClient()
-        self.staff = User.objects.create_user('ops', 'ops@acme.test', 'pw', is_staff=True)
-        VerifiedEmail.objects.create(user=self.staff, email='ops@acme.test')
-        self.company = Company.objects.create(name='Ops', slug='ops')
-
-    def test_unverified_owner_is_not_sent(self):
-        owner = User.objects.create_user('ada', 'ada@acme.test', 'pw')
-        self.client.force_authenticate(user=self.staff)
-        with patch('apps.federation.outbound.requests.post') as post:
-            response = self.client.post(
-                '/api/v1/federation/provision',
-                {
-                    'region_base_url': 'https://region.example',
-                    'audience': REGION,
-                    'company_name': 'Acme',
-                    'owner_email': owner.email,
-                    'idempotency_key': 'idem-key-01',
-                },
-                format='json',
-            )
-        self.assertEqual(response.status_code, 403)
-        self.assertEqual(response.json()['error_code'], 'email_not_verified')
-        post.assert_not_called()
-
-    def test_staff_sends_a_signed_assertion(self):
-        owner = self.staff
-        self.client.force_authenticate(user=self.staff)
-        with patch('apps.federation.outbound.requests.post') as post, patch(
-            'apps.federation.outbound._reject_private'
-        ):
-            post.return_value.status_code = 200
-            post.return_value.json.return_value = {'company_id': 1}
-            response = self.client.post(
-                '/api/v1/federation/provision',
-                {
-                    'region_base_url': 'https://region.example',
-                    'audience': REGION,
-                    'company_name': 'Acme',
-                    'owner_email': owner.email,
-                    'idempotency_key': 'idem-key-01',
-                    'webhook_company_id': self.company.pk,
-                    'plan': {'max_members': 3},
-                },
-                format='json',
-            )
-        self.assertEqual(response.status_code, 200, response.content)
-        token = post.call_args.kwargs['headers']['Authorization'].split(' ', 1)[1]
-        claims = jwt.decode(token, self.signing.public_pem, algorithms=['RS256'], audience=REGION, issuer=ISSUER)
-        self.assertIs(claims['email_verified'], True)
-        self.assertNotIn('is_staff', claims['owner'])
-        self.assertEqual(post.call_args.kwargs['headers']['Idempotency-Key'], 'idem-key-01')
 
 
 class StartupCheckTests(TestCase):

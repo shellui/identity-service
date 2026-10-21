@@ -26,7 +26,7 @@ from drf_spectacular.views import (
 from apps.authapi.jwks_views import ShellUIJwksView
 from apps.federation.provider import OpenIdConfigurationView
 from apps.federation.provisioning import CompanyPlanView
-from apps.federation.urls import outbound_urlpatterns, provisioning_urlpatterns, urlpatterns as oauth_urlpatterns
+from apps.federation.urls import provisioning_urlpatterns, urlpatterns as oauth_urlpatterns
 
 from . import views
 
@@ -49,7 +49,6 @@ urlpatterns = [
     ),
     path('api/v1/companies/', include('apps.companies.urls')),
     path('api/v1/provisioning/', include(provisioning_urlpatterns)),
-    path('api/v1/federation/', include(outbound_urlpatterns)),
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
     path(
         'api/docs/',

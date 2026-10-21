@@ -1,9 +1,12 @@
 from django.urls import path
 
 from apps.federation.backchannel import BackchannelLogoutView
-from apps.federation.outbound import PlanOutboundView, ProvisionOutboundView
 from apps.federation.provider import AuthorizeView, TokenView, UserInfoView
-from apps.federation.provisioning import ProvisionCompanyView, ProvisionPlanView
+from apps.federation.provisioning import (
+    ProvisioningCompaniesView,
+    ProvisioningCompanyView,
+    ProvisioningLimitsView,
+)
 from apps.federation.relying import SilentSignInView, UpstreamCallbackView
 
 urlpatterns = [
@@ -16,11 +19,11 @@ urlpatterns = [
 ]
 
 provisioning_urlpatterns = [
-    path('companies', ProvisionCompanyView.as_view(), name='federation-provision-company'),
-    path('plans', ProvisionPlanView.as_view(), name='federation-provision-plan'),
-]
-
-outbound_urlpatterns = [
-    path('provision', ProvisionOutboundView.as_view(), name='federation-provision-outbound'),
-    path('plan', PlanOutboundView.as_view(), name='federation-plan-outbound'),
+    path('companies', ProvisioningCompaniesView.as_view(), name='federation-provisioning-companies'),
+    path('companies/<int:company_id>', ProvisioningCompanyView.as_view(), name='federation-provisioning-company'),
+    path(
+        'companies/<int:company_id>/limits',
+        ProvisioningLimitsView.as_view(),
+        name='federation-provisioning-limits',
+    ),
 ]

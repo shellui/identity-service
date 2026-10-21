@@ -458,6 +458,16 @@ GLOBAL_CLIENT_ID = (os.getenv('GLOBAL_CLIENT_ID', '') or '').strip()
 GLOBAL_CLIENT_SECRET = os.getenv('GLOBAL_CLIENT_SECRET', '') or ''
 GLOBAL_REDIRECT_URI = (os.getenv('GLOBAL_REDIRECT_URI', '') or '').strip()
 
+# Regional provisioning API (role region). The dashboard (saas-service) signs each call with its
+# provisioning key; pin the public key here. Unset key or issuer leaves the API answering 404.
+PROVISIONING_PUBLIC_KEY = (os.getenv('PROVISIONING_PUBLIC_KEY', '') or '').strip().replace('\\n', '\n')
+PROVISIONING_KEY_ID = (os.getenv('PROVISIONING_KEY_ID', '') or '').strip()
+PROVISIONING_ISSUER = (os.getenv('PROVISIONING_ISSUER', '') or '').strip()
+# Defaults to the host of JWT_ISSUER, which is what saas-service sends (for example id.eu.shellui.com).
+PROVISIONING_AUDIENCE = (os.getenv('PROVISIONING_AUDIENCE', '') or '').strip()
+# Origins added to the redirect allowlist of every provisioned company (the regional admin).
+PROVISIONING_DEFAULT_REDIRECTS = parse_origin_list(os.getenv('PROVISIONING_DEFAULT_REDIRECTS', ''))
+
 # OAuth token delivery after login: ``code`` (one-time exchange, default) or ``fragment`` (legacy).
 _oauth_delivery = os.getenv('OAUTH_TOKEN_DELIVERY', 'code').strip().lower()
 if _oauth_delivery not in {'code', 'fragment'}:

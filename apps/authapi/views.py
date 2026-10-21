@@ -804,6 +804,15 @@ def _issue_shellui_tokens(
     access['company_id'] = company.id
     access['user_metadata'] = user_metadata
     access['app_metadata'] = app_metadata
+    from apps.federation.role import is_global
+
+    if is_global():
+        from apps.federation.session import email_is_verified
+
+        # The dashboard (saas-service) reads the same subject as the id_token, and only lets a
+        # verified owner create a company.
+        access['sub'] = str(user.pk)
+        access['email_verified'] = email_is_verified(user)
     refresh['user_metadata'] = user_metadata
     refresh['company_id'] = company.id
     refresh['app_metadata'] = app_metadata
