@@ -16,7 +16,7 @@ cd identity-service
 cp .env.example .env
 ```
 
-Open `.env` and set `SECRET_KEY` to a long random value. Django uses it to sign sessions and CSRF tokens, and in local development it also signs the JWTs. To generate one:
+`.env.example` holds only the required settings, with `DEBUG=true` for local runs. Optional settings are commented out with their default, see [Configuration](configuration.md). Open `.env` and set `SECRET_KEY` to a long random value. Django uses it to sign sessions and CSRF tokens, and in local development it also signs the JWTs. To generate one:
 
 ```bash
 python3 -c "import secrets; print(secrets.token_urlsafe(50))"

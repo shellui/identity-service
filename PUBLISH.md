@@ -13,7 +13,7 @@ Publishing is automatic: publishing a GitHub release builds and pushes the image
 | Listen port | `8000`                                               |
 | Data volume | `/app/data` (SQLite default: `/app/data/db.sqlite3`) |
 
-The image contains application code and collected static files only. Secrets and runtime configuration are supplied via environment variables at container start (see `.env.example`).
+The image contains application code and collected static files only. Secrets and runtime configuration are supplied via environment variables at container start (see `.env.example` for the required ones and [docs/configuration.md](docs/configuration.md) for every setting and its default).
 
 ## Pre-release checklist
 
@@ -232,6 +232,8 @@ Full OAuth login (fragment vs code delivery) cannot be verified without a config
 | `REDIS_URL`            | Required when `DEBUG=false`, also with `SCHEDULER_ENABLED=false`; the container refuses to start without it. Shared cache (rate limits, logout denylist, OAuth and SAML state) and broker for the scheduled jobs. Example: `redis://redis:6379/0`. |
 
 ### Optional runtime env vars
+
+Every optional setting has a default in code. The full list with defaults is in [docs/configuration.md](docs/configuration.md); the most common ones:
 
 | Variable                                  | Notes                                                                                                                                                                                                                                                 |
 | ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

@@ -84,7 +84,8 @@ These routes require a valid JWT whose user has `is_staff=true` (`user_metadata.
 # Requires https://docs.astral.sh/uv/
 uv sync
 cp .env.example .env
-# Set SECRET_KEY; generate JWT keys for production (DEBUG=false)
+# Set SECRET_KEY. .env.example lists only required settings; optional ones are
+# commented out with their default (full list: docs/configuration.md)
 npm ci && npm run build:css   # first run only (or skip - runserver rebuilds when DEBUG=true)
 uv run python manage.py migrate
 uv run python manage.py runserver
