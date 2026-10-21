@@ -31,7 +31,8 @@ class PrometheusTextRenderer(BaseRenderer):
 class SignInPageRenderer(BaseRenderer):
     """Accepts ``text/html`` so browser sign-in errors can return their own page.
 
-    API clients still get JSON. This renderer does not build a browsable API.
+    API clients still get JSON. This renderer does not build a browsable API:
+    structured data (an API error body) is rendered as JSON.
     """
 
     media_type = 'text/html'
@@ -45,4 +46,9 @@ class SignInPageRenderer(BaseRenderer):
             return bytes(data)
         if isinstance(data, str):
             return data.encode(self.charset)
-        return b''
+        # A browser asked for HTML from an API view. Send the same JSON body an
+        # API client gets, labelled as JSON, never an empty or browsable page.
+        response = (renderer_context or {}).get('response')
+        if response is not None:
+            response['Content-Type'] = 'application/json'
+        return json.dumps(data).encode('utf-8')
