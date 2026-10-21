@@ -21,6 +21,16 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
 -->
 
+## [0.8.3] - 2026-10-21
+
+### 🛠 Improvements
+
+- **Deployment:** Releases publish the Docker image automatically.
+
+### 🔒 Security
+
+- **Dependencies:** Updated certifi to 2026.10.19.
+
 ## [0.8.2] - 2026-10-18
 
 ### 🔒 Security
