@@ -53,7 +53,7 @@ Every event, and every sign-in, is also stored in the **event log** (`GET /api/v
 - `POST /api/v1/oauth/confirm` complete sign-in after the confirmation screen (browser form)
 - `GET /api/v1/oauth/confirm?action=switch&confirm_token=…` restart OAuth with account picker (Google/Microsoft)
 - `POST /api/v1/oauth/exchange` deprecated SPA code exchange (older shells that still receive `?code=` on the frontend)
-- `GET/POST /api/v1/oauth-redirects` manage per-company http(s) post-login bounce targets (staff or company owner). Loopback http(s) redirects are allowed when `DEBUG=true` or `OAUTH_ALLOW_LOOPBACK_REDIRECTS=true`. An empty list denies other http(s) redirects. `source=hosting` rows are synced from hosting-service. Desktop sign-in uses each OAuth application's `desktop_redirect_scheme` (one lowercase custom scheme) and requires S256 PKCE. See [docs/desktop-apps.md](docs/desktop-apps.md)
+- `GET/POST /api/v1/oauth-redirects` manage per-company http(s) post-login bounce targets (staff or company owner). Loopback http(s) redirects are allowed when `DEBUG=true` or `OAUTH_ALLOW_LOOPBACK_REDIRECTS=true`. An empty list denies other http(s) redirects. `source=hosting` rows are synced from hosting-service. Desktop sign-in uses the company `desktop_redirect_schemes` list (lowercase custom schemes; empty turns it off) and requires S256 PKCE. `allow_desktop_dev_scheme` (owner or staff) accepts the `-dev` variant of a listed scheme when `DEBUG=false`. See [docs/desktop-apps.md](docs/desktop-apps.md)
 - `PUT/DELETE /api/v1/hosting-oauth-redirects` hosting-service sync using the caller's identity JWT (staff or company owner)
 - `POST /api/v1/token?grant_type=refresh_token` refresh session using `refresh_token` in the body (Bearer access token optional)
 - `POST /api/v1/logout` logout endpoint (revokes refresh session and denylists access token)
@@ -190,7 +190,7 @@ Pull requests **to `main`** also run the pre-release checklist ([`.github/workfl
 
 ## Releases (Docker Hub)
 
-Current release: `0.8.0` (`shellui/identity-service:0.8.0`).
+Current release: `0.8.2` (`shellui/identity-service:0.8.2`).
 
 See [PUBLISH.md](PUBLISH.md) for the pre-release checklist (automated via `./tools/pre-release-check.sh`), tagging conventions, and steps to build, push, and deploy `shellui/identity-service` on Docker Hub.
 

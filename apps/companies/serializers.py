@@ -2,6 +2,7 @@ from rest_framework import serializers
 
 from .access import normalize_allowed_domains
 from .models import Company
+from .redirect_allowlist import normalize_registered_schemes
 
 
 class CompanySerializer(serializers.ModelSerializer):
@@ -17,8 +18,10 @@ class CompanySerializer(serializers.ModelSerializer):
             'access_mode',
             'allowed_email_domains',
             'data_retention_days',
+            'desktop_redirect_schemes',
+            'allow_desktop_dev_scheme',
         ]
-        read_only_fields = ['data_retention_days']
+        read_only_fields = ['data_retention_days', 'desktop_redirect_schemes', 'allow_desktop_dev_scheme']
 
 
 class CompanyUpdateSerializer(serializers.Serializer):
@@ -42,6 +45,18 @@ class CompanyUpdateSerializer(serializers.Serializer):
         required=False,
         allow_empty=True,
     )
+    desktop_redirect_schemes = serializers.ListField(
+        child=serializers.CharField(allow_blank=True, max_length=64),
+        required=False,
+        allow_empty=True,
+    )
+    allow_desktop_dev_scheme = serializers.BooleanField(required=False)
 
     def validate_allowed_email_domains(self, value):
         return normalize_allowed_domains(value)
+
+    def validate_desktop_redirect_schemes(self, value):
+        schemes, err = normalize_registered_schemes(value)
+        if err:
+            raise serializers.ValidationError(err)
+        return schemes

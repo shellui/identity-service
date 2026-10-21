@@ -24,8 +24,11 @@ from .serializers import CompanySerializer, CompanyUpdateSerializer
         tags=['companies'],
         summary='Update company settings',
         description=(
-            'Only company owners can update company name, owners list, join access '
-            '(public / domain / invite).'
+            'Company owners can update the name, owners list, and join access '
+            '(public / domain / invite). Owners and staff can set '
+            'desktop_redirect_schemes and allow_desktop_dev_scheme. '
+            'An empty scheme list turns desktop sign-in off. '
+            'The flag accepts the -dev variant of each listed scheme when DEBUG is off.'
         ),
         request=CompanyUpdateSerializer,
     ),
@@ -33,8 +36,11 @@ from .serializers import CompanySerializer, CompanyUpdateSerializer
         tags=['companies'],
         summary='Replace company settings',
         description=(
-            'Only company owners can update company name, owners list, join access '
-            '(public / domain / invite).'
+            'Company owners can update the name, owners list, and join access '
+            '(public / domain / invite). Owners and staff can set '
+            'desktop_redirect_schemes and allow_desktop_dev_scheme. '
+            'An empty scheme list turns desktop sign-in off. '
+            'The flag accepts the -dev variant of each listed scheme when DEBUG is off.'
         ),
         request=CompanyUpdateSerializer,
     ),
@@ -52,9 +58,16 @@ class CompanyViewSet(
     def get_queryset(self):
         return Company.objects.filter(members=self.request.user)
 
+    def update(self, request, *args, **kwargs):
+        return self.partial_update(request, *args, **kwargs)
+
     def partial_update(self, request, *args, **kwargs):
         company = self.get_object()
-        if not company.owners.filter(pk=request.user.pk).exists():
+        is_owner = company.owners.filter(pk=request.user.pk).exists()
+        is_staff = bool(
+            getattr(request.user, 'is_staff', False) or getattr(request.user, 'is_superuser', False)
+        )
+        if not is_owner and not is_staff:
             return Response({'error': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
 
         if 'verified_email_domains' in request.data:
@@ -66,6 +79,11 @@ class CompanyViewSet(
         serializer = CompanyUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         validated = serializer.validated_data
+        if not is_owner and any(
+            key in validated for key in ('name', 'owner_ids', 'access_mode', 'allowed_email_domains')
+        ):
+            return Response({'error': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
+
         if 'owner_ids' in validated and not validated['owner_ids']:
             return Response(
                 {
@@ -85,6 +103,12 @@ class CompanyViewSet(
         if 'allowed_email_domains' in validated:
             company.allowed_email_domains = validated['allowed_email_domains']
             update_fields.append('allowed_email_domains')
+        if 'desktop_redirect_schemes' in validated:
+            company.desktop_redirect_schemes = validated['desktop_redirect_schemes']
+            update_fields.append('desktop_redirect_schemes')
+        if 'allow_desktop_dev_scheme' in validated:
+            company.allow_desktop_dev_scheme = validated['allow_desktop_dev_scheme']
+            update_fields.append('allow_desktop_dev_scheme')
         if update_fields:
             company.save(update_fields=update_fields)
 

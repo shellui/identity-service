@@ -21,6 +21,22 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
 -->
 
+## [0.8.2] - 2026-10-18
+
+### 🔒 Security
+
+- **Desktop sign-in:** A registered scheme also accepts its `-dev` variant when `DEBUG=true`.
+
+### 🛠 Improvements
+
+- **Desktop sign-in:** Owners and staff can allow the `-dev` variant per company in production.
+
+## [0.8.1] - 2026-10-13
+
+### 🚨 Changed
+
+- **Desktop app sign-in:** custom schemes are a company allowlist (`desktop_redirect_schemes`). An empty list turns desktop sign-in off. `CompanyOAuthClient.desktop_redirect_scheme` is removed.
+
 ## [0.8.0] - 2026-10-13
 
 ### ✨ Feature

@@ -9,7 +9,7 @@ from django.conf import settings
 from django.db.utils import OperationalError, ProgrammingError
 from django.http import HttpRequest
 
-from .models import Company, CompanyOAuthClient, CompanyOAuthRedirect
+from .models import Company, CompanyOAuthRedirect
 
 # Schemes that must never be a desktop redirect, even when the shape looks like an app id.
 _DENIED_REDIRECT_SCHEMES = frozenset(
@@ -101,7 +101,10 @@ _DENIED_REDIRECT_SCHEMES = frozenset(
 _RFC3986_SCHEME_RE = re.compile(r'^[a-z][a-z0-9+.-]*$')
 _DESKTOP_URI_CONTROL_RE = re.compile(r'[\x00-\x20\x7f\\]')
 _ERROR_CODE_RE = re.compile(r'^[a-z][a-z0-9_]{0,63}$')
-UNREGISTERED_SCHEME_MESSAGE = 'Sign-in scheme is not registered for this application.'
+UNREGISTERED_SCHEME_MESSAGE = 'Sign-in scheme is not registered for this company.'
+# `shellui start --app` signs in with `<scheme>-dev`. Accepted when DEBUG is on,
+# or when the company sets allow_desktop_dev_scheme.
+DESKTOP_DEV_SCHEME_SUFFIX = '-dev'
 
 SHELLUI_OAUTH_ERROR_PARAM = 'shellui_oauth_error'
 SHELLUI_OAUTH_ERROR_CODE_PARAM = 'shellui_oauth_error_code'
@@ -162,7 +165,7 @@ def is_allowed_app_scheme(scheme: str) -> bool:
 
 
 def normalize_registered_scheme(raw: str) -> tuple[str | None, str | None]:
-    """Scheme stored on the company. An empty value turns desktop sign-in off."""
+    """One scheme stored on the company. An empty value is skipped."""
     s = (raw or '').strip()
     if not s:
         return '', None
@@ -175,6 +178,41 @@ def normalize_registered_scheme(raw: str) -> tuple[str | None, str | None]:
     if s in _DENIED_REDIRECT_SCHEMES or s.startswith('web+'):
         return None, 'This scheme is not allowed.'
     return s, None
+
+
+def normalize_registered_schemes(raw) -> tuple[list[str] | None, str | None]:
+    """Allowlist stored on the company. An empty list turns desktop sign-in off."""
+    if raw is None:
+        return [], None
+    if isinstance(raw, str):
+        text = raw.strip()
+        parts = [] if not text else [part.strip() for part in text.split(',')]
+    elif isinstance(raw, list):
+        parts = raw
+    else:
+        return None, 'desktop_redirect_schemes must be a list of schemes.'
+    schemes: list[str] = []
+    seen: set[str] = set()
+    for part in parts:
+        if not isinstance(part, str):
+            return None, 'Each scheme must be a string.'
+        scheme, err = normalize_registered_scheme(part)
+        if err:
+            return None, err
+        if not scheme or scheme in seen:
+            continue
+        seen.add(scheme)
+        schemes.append(scheme)
+    return schemes, None
+
+
+def company_desktop_schemes(company: Company) -> set[str]:
+    """Lowercase schemes this company accepts. Empty means desktop sign-in is off."""
+    raw = getattr(company, 'desktop_redirect_schemes', None) or []
+    schemes, err = normalize_registered_schemes(raw if isinstance(raw, list) else [])
+    if err or not schemes:
+        return set()
+    return set(schemes)
 
 
 def is_custom_scheme_redirect(url: str) -> bool:
@@ -322,35 +360,18 @@ def loopback_oauth_redirects_allowed() -> bool:
     return bool(getattr(settings, 'OAUTH_ALLOW_LOOPBACK_REDIRECTS', settings.DEBUG))
 
 
-def bind_desktop_application(request: HttpRequest, oauth_client, *, restrict: bool) -> None:
-    """Remember which application this sign-in request belongs to.
-
-    When ``restrict`` is true, a custom-scheme redirect must match that
-    application's scheme. When it is false, any active application of the
-    company may own the scheme.
-    """
-    request.shellui_desktop_oauth_client = oauth_client
-    request.shellui_desktop_restrict = restrict
-
-
-def _request_desktop_application(request: HttpRequest):
-    client = getattr(request, 'shellui_desktop_oauth_client', None)
-    restrict = bool(getattr(request, 'shellui_desktop_restrict', False))
-    return client, restrict
-
-
 def redirect_url_allowed_for_company(company: Company, absolute_url: str, request: HttpRequest) -> bool:
     """
     Allow loopback when ``OAUTH_ALLOW_LOOPBACK_REDIRECTS`` (default: DEBUG). Otherwise require
     an active company allowlist origin match. Empty allowlist denies non-loopback.
-    A custom scheme must match the application bound on the request, or, when no
-    application is bound, an active application of this company.
+    A custom scheme must be listed on the company. An empty list denies every custom scheme.
     """
+    del request
     candidate = canonical_url_no_fragment(absolute_url)
     if not candidate:
         return False
     if is_custom_scheme_redirect(candidate):
-        return _desktop_redirect_scheme_match(company, candidate, request)
+        return _desktop_redirect_scheme_match(company, candidate)
     if is_loopback_redirect_url(candidate):
         return loopback_oauth_redirects_allowed()
     candidate_origin = origin_of_url(candidate)
@@ -375,32 +396,35 @@ def redirect_url_allowed_for_company(company: Company, absolute_url: str, reques
     return False
 
 
-def registered_desktop_scheme(oauth_client) -> str:
-    """Lowercase scheme for this application, or '' when desktop sign-in is off."""
-    return (getattr(oauth_client, 'desktop_redirect_scheme', '') or '').strip().lower()
+def desktop_dev_schemes_allowed(company: Company) -> bool:
+    """Implicit `<scheme>-dev` when DEBUG is on, or this company allows it."""
+    return bool(settings.DEBUG or company.allow_desktop_dev_scheme)
 
 
-def _scheme_matches_application(oauth_client, candidate: str) -> bool:
-    if oauth_client is None or not getattr(oauth_client, 'is_active', False):
+def desktop_scheme_registered(scheme: str, registered: set[str], company: Company) -> bool:
+    """True for a registered scheme, or its `-dev` variant when DEBUG or the company flag is on.
+
+    A scheme listed as-is is accepted in every environment, including one that ends in `-dev`.
+    The flag only adds `<scheme>-dev` for a scheme already in `registered`.
+    """
+    if scheme in registered:
+        return True
+    if not desktop_dev_schemes_allowed(company):
         return False
-    registered = registered_desktop_scheme(oauth_client)
-    if not registered or not is_allowed_app_scheme(registered):
-        return False
+    base = scheme.removesuffix(DESKTOP_DEV_SCHEME_SUFFIX)
+    return base != scheme and base in registered
+
+
+def _desktop_redirect_scheme_match(company: Company, candidate: str) -> bool:
+    """True when the URI scheme is on the company allowlist.
+
+    The scheme without a trailing `-dev` is enough when DEBUG is on, or when the company
+    sets `allow_desktop_dev_scheme`.
+    """
     exact, err = normalize_desktop_redirect_uri(candidate)
     if err or not exact:
         return False
-    return urlsplit(exact).scheme == registered
-
-
-def _desktop_redirect_scheme_match(company: Company, candidate: str, request: HttpRequest) -> bool:
-    """True when the URI scheme equals the application bound to this request."""
-    oauth_client, restrict = _request_desktop_application(request)
-    if restrict:
-        if oauth_client is None or int(oauth_client.company_id) != int(company.id):
-            return False
-        return _scheme_matches_application(oauth_client, candidate)
-    rows = CompanyOAuthClient.objects.filter(company_id=company.id, is_active=True)
-    return any(_scheme_matches_application(row, candidate) for row in rows)
+    return desktop_scheme_registered(urlsplit(exact).scheme, company_desktop_schemes(company), company)
 
 
 def loopback_client_bounce_url_for_oauth_error(
