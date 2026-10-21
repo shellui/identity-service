@@ -71,11 +71,11 @@ identity-service covers six areas. Each card opens the guide for that area.
 
 A Shellui shell never talks to a provider directly. identity-service runs the whole flow and returns tokens to the shell:
 
-1. The shell sends the browser to `GET /api/v1/authorize` with `company_id` and `redirect_to`.
+1. The shell sends the browser to `GET /api/v1/authorize` with `company_id`, `redirect_to`, and an S256 `code_challenge`.
 2. identity-service redirects to the provider named in `provider`, or shows the company's providers to pick from when it is not set.
 3. The provider returns to `/api/v1/oauth/callback`. identity-service exchanges the code server-side and applies the company access rules.
 4. identity-service redirects to `redirect_to?shellui_auth_code=…`. A web target is an origin on the company allowlist. A desktop target uses a scheme in the company list ([Desktop apps](desktop-apps.md)).
-5. The shell exchanges that one-time code at `POST /api/v1/oauth/session` for an access token and a refresh token.
+5. The shell exchanges that one-time code at `POST /api/v1/oauth/session` with `code_verifier` (and `Origin` on the web) for an access token and a refresh token.
 
 Your own APIs verify the access token with the public keys at `/.well-known/jwks.json`, without sharing any secret with identity-service. Details are in [OAuth login](oauth-login.md) and [JWT and JWKS](jwks.md).
 

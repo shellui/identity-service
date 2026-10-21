@@ -9,6 +9,7 @@ from django.urls import reverse
 
 from apps.authapi.saml.request_id import SAML_REQUEST_ID_PREFIX
 from apps.authapi.saml.views import SHELLUI_SAML_AUTHN_REQUEST_SESSION_KEY
+from apps.authapi.tests.pkce_constants import CHALLENGE
 from apps.authapi.tests.saml_test_crypto import generate_test_idp_credentials
 from apps.companies.models import Company, CompanyOAuthClient, CompanyOAuthRedirect
 
@@ -87,6 +88,8 @@ class SAMLLoginSecurityTests(TestCase):
             login_url,
             data={
                 'redirect_to': 'https://shell.example.com/callback',
+                'code_challenge': CHALLENGE,
+                'code_challenge_method': 'S256',
                 **params,
             },
             follow=False,

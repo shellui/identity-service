@@ -265,7 +265,7 @@ class DesktopRedirectApiTests(TestCase):
         self.assertEqual(off_magic.status_code, 400)
         self.assertIn('not registered', off_magic.data['error'])
 
-    def test_authorize_requires_s256_pkce_for_desktop_only(self):
+    def test_authorize_requires_s256_pkce_for_web_and_desktop(self):
         missing = self.client.get(
             '/api/v1/authorize',
             {'provider': 'github', 'company_id': self.company.id, 'redirect_to': DESKTOP},
@@ -290,7 +290,24 @@ class DesktopRedirectApiTests(TestCase):
             '/api/v1/authorize',
             {'provider': 'github', 'company_id': self.company.id, 'redirect_to': WEB},
         )
-        self.assertEqual(web.status_code, 302)
+        self.assertEqual(web.status_code, 400)
+        self.assertEqual(web.json()['error_code'], 'pkce_required')
+        web_ok = self.client.get(
+            '/api/v1/authorize',
+            {
+                'provider': 'github',
+                'company_id': self.company.id,
+                'redirect_to': WEB,
+                'code_challenge': CHALLENGE,
+                'code_challenge_method': 'S256',
+            },
+        )
+        self.assertEqual(web_ok.status_code, 302)
+        web_state = parse_qs(urlsplit(web_ok['Location']).query)['state'][0]
+        web_payload, web_err = parse_oauth_state(web_state)
+        self.assertIsNone(web_err)
+        assert web_payload is not None
+        self.assertEqual(web_payload['code_challenge'], CHALLENGE)
 
         desktop = self.client.get(
             '/api/v1/authorize',
@@ -486,16 +503,44 @@ class DesktopRedirectApiTests(TestCase):
         self.assertIn('shellui_auth_code=', href)
         self.assertNotIn('access_token', href)
 
-    def test_web_session_keeps_origin_check_and_does_not_require_pkce(self):
-        delivery = create_oauth_session_delivery_code(
+    def test_web_session_requires_pkce_and_origin(self):
+        unbound = create_oauth_session_delivery_code(
             user=self.member,
             company=self.company,
             redirect_to=WEB,
             token_payload={'access_token': 'web-access', 'refresh_token': 'web-refresh'},
         )
+        stolen = self.client.post(
+            '/api/v1/oauth/session',
+            {'auth_code': unbound.code, 'redirect_to': WEB},
+            format='json',
+            HTTP_ORIGIN='https://shell.example.com',
+        )
+        self.assertEqual(stolen.status_code, 400)
+        self.assertEqual(stolen.data['error_code'], 'pkce_required')
+        unbound.refresh_from_db()
+        self.assertIsNone(unbound.redeemed_at)
+
+        delivery = create_oauth_session_delivery_code(
+            user=self.member,
+            company=self.company,
+            redirect_to=WEB,
+            token_payload={'access_token': 'web-access', 'refresh_token': 'web-refresh'},
+            code_challenge=CHALLENGE,
+        )
+        missing_origin = self.client.post(
+            '/api/v1/oauth/session',
+            {'auth_code': delivery.code, 'redirect_to': WEB, 'code_verifier': VERIFIER},
+            format='json',
+        )
+        self.assertEqual(missing_origin.status_code, 400)
+        self.assertIn('Origin is required', missing_origin.data['error'])
+        delivery.refresh_from_db()
+        self.assertIsNone(delivery.redeemed_at)
+
         mismatch = self.client.post(
             '/api/v1/oauth/session',
-            {'auth_code': delivery.code, 'redirect_to': WEB},
+            {'auth_code': delivery.code, 'redirect_to': WEB, 'code_verifier': VERIFIER},
             format='json',
             HTTP_ORIGIN='https://evil.example.com',
         )
@@ -505,35 +550,26 @@ class DesktopRedirectApiTests(TestCase):
         delivery.refresh_from_db()
         self.assertIsNone(delivery.redeemed_at)
 
-        optional = create_oauth_session_delivery_code(
-            user=self.member,
-            company=self.company,
-            redirect_to=WEB,
-            token_payload={'access_token': 'web-access', 'refresh_token': 'web-refresh'},
-            code_challenge=CHALLENGE,
-        )
-        still_checked = self.client.post(
+        tauri_origin = self.client.post(
             '/api/v1/oauth/session',
-            {
-                'auth_code': optional.code,
-                'redirect_to': WEB,
-                'code_verifier': VERIFIER,
-            },
+            {'auth_code': delivery.code, 'redirect_to': WEB, 'code_verifier': VERIFIER},
             format='json',
             HTTP_ORIGIN='tauri://localhost',
         )
-        self.assertEqual(still_checked.status_code, 400)
-        self.assertIn('Origin', still_checked.data['error'])
-        optional.refresh_from_db()
-        self.assertIsNone(optional.redeemed_at)
+        self.assertEqual(tauri_origin.status_code, 400)
+        self.assertIn('Origin', tauri_origin.data['error'])
+        delivery.refresh_from_db()
+        self.assertIsNone(delivery.redeemed_at)
 
         ok = self.client.post(
             '/api/v1/oauth/session',
-            {'auth_code': delivery.code, 'redirect_to': WEB},
+            {'auth_code': delivery.code, 'redirect_to': WEB, 'code_verifier': VERIFIER},
             format='json',
             HTTP_ORIGIN='https://shell.example.com',
         )
         self.assertEqual(ok.status_code, 200, ok.data)
+        self.assertIn('access_token', ok.data)
+        self.assertIn('refresh_token', ok.data)
 
     def test_desktop_session_without_origin_succeeds_after_pkce(self):
         delivery = create_oauth_session_delivery_code(
@@ -689,7 +725,19 @@ class DesktopRedirectApiTests(TestCase):
         self.assertNotIn('magic-link/verify', rendered)
         self.assertNotIn(DESKTOP, rendered)
 
-    def test_web_magic_link_still_omits_pkce(self):
+    def test_web_magic_link_requires_pkce(self):
+        missing = self.client.post(
+            '/api/v1/magic-link/request',
+            {
+                'company_id': self.company.id,
+                'email': 'member@example.com',
+                'redirect_to': WEB,
+            },
+            format='json',
+        )
+        self.assertEqual(missing.status_code, 400)
+        self.assertEqual(missing.data['error_code'], 'pkce_required')
+
         with self.captureOnCommitCallbacks(execute=True):
             response = self.client.post(
                 '/api/v1/magic-link/request',
@@ -697,18 +745,65 @@ class DesktopRedirectApiTests(TestCase):
                     'company_id': self.company.id,
                     'email': 'member@example.com',
                     'redirect_to': WEB,
+                    'code_challenge': CHALLENGE,
+                    'code_challenge_method': 'S256',
                 },
                 format='json',
             )
         self.assertEqual(response.status_code, 200, getattr(response, 'data', None))
+        self.assertNotIn(VERIFIER, mail.outbox[0].body)
+        self.assertNotIn(CHALLENGE, mail.outbox[0].body)
         raw = re.search(r'token=([^&\s]+)', mail.outbox[0].body).group(1)
-        self.assertEqual(MagicLinkToken.objects.get().code_challenge, '')
-        consumed = self.client.post(
+        self.assertEqual(MagicLinkToken.objects.get().code_challenge, CHALLENGE)
+        without_verifier = self.client.post(
             '/api/v1/magic-link/verify',
             {'token': raw, 'company_id': self.company.id},
             format='json',
         )
+        self.assertEqual(without_verifier.status_code, 400)
+        self.assertEqual(without_verifier.data['error_code'], 'pkce_required')
+        consumed = self.client.post(
+            '/api/v1/magic-link/verify',
+            {'token': raw, 'company_id': self.company.id, 'code_verifier': VERIFIER},
+            format='json',
+        )
         self.assertEqual(consumed.status_code, 200, consumed.data)
+        self.assertIn('access_token', consumed.data)
+
+        mail.outbox.clear()
+        with self.captureOnCommitCallbacks(execute=True):
+            browser_request = self.client.post(
+                '/api/v1/magic-link/request',
+                {
+                    'company_id': self.company.id,
+                    'email': 'member@example.com',
+                    'redirect_to': WEB,
+                    'code_challenge': CHALLENGE,
+                    'code_challenge_method': 'S256',
+                },
+                format='json',
+            )
+        self.assertEqual(browser_request.status_code, 200, getattr(browser_request, 'data', None))
+        raw_browser = re.search(r'token=([^&\s]+)', mail.outbox[0].body).group(1)
+        browser = Client()
+        opened = browser.get(f'/api/v1/magic-link/verify?token={raw_browser}&company_id={self.company.id}')
+        self.assertEqual(opened.status_code, 200)
+        confirmed = browser.post(
+            f'/api/v1/magic-link/verify?company_id={self.company.id}',
+            {'token': raw_browser, 'company_id': self.company.id},
+        )
+        self.assertEqual(confirmed.status_code, 302)
+        location = confirmed['Location']
+        self.assertIn('shellui_auth_code=', location)
+        auth_code = parse_qs(urlsplit(location).query)['shellui_auth_code'][0]
+        session = self.client.post(
+            '/api/v1/oauth/session',
+            {'auth_code': auth_code, 'redirect_to': WEB, 'code_verifier': VERIFIER},
+            format='json',
+            HTTP_ORIGIN='https://shell.example.com',
+        )
+        self.assertEqual(session.status_code, 200, session.data)
+        self.assertIn('refresh_token', session.data)
 
     def test_invitation_accepts_a_registered_scheme(self):
         self.client.force_authenticate(user=self.owner)

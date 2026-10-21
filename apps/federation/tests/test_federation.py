@@ -88,7 +88,13 @@ class StandalonePathTests(TestCase):
         with override_settings(OAUTH_ALLOW_LOOPBACK_REDIRECTS=True, SHELLUI_INSTANCE_ROLE='region'):
             response = self.client.get(
                 '/api/v1/authorize',
-                {'company_id': company.id, 'redirect_to': 'http://127.0.0.1:8765/callback'},
+                {
+                    'company_id': company.id,
+                    'redirect_to': 'http://127.0.0.1:8765/callback',
+                    # Web sign-in requires S256 PKCE.
+                    'code_challenge': 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM',
+                    'code_challenge_method': 'S256',
+                },
             )
         self.assertEqual(response.status_code, 200)
         content = response.content.decode()

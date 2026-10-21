@@ -21,6 +21,7 @@ from apps.authapi.magic_link import (
     redeem_magic_link_token,
 )
 from apps.authapi.models import MagicLinkToken, UserPreference
+from apps.authapi.tests.pkce_constants import PKCE_BODY, VERIFIER
 from apps.companies.access import set_company_access
 from apps.companies.models import Company, CompanyOAuthRedirect
 
@@ -59,6 +60,7 @@ class MagicLinkAuthTests(TestCase):
             'company_id': company.id,
             'email': email,
             'redirect_to': self.redirect_to,
+            **PKCE_BODY,
         }
         if language is not None:
             body['language'] = language
@@ -95,7 +97,7 @@ class MagicLinkAuthTests(TestCase):
         raw = self._raw_token_from_email()
         payload = self.client.post(
             '/api/v1/magic-link/verify',
-            {'token': raw, 'company_id': self.company.id},
+            {'token': raw, 'company_id': self.company.id, 'code_verifier': VERIFIER},
             format='json',
         )
         self.assertEqual(payload.status_code, 200)
@@ -317,6 +319,7 @@ class MagicLinkAuthTests(TestCase):
                         'company_id': self.company.id,
                         'email': outsider.email,
                         'redirect_to': self.redirect_to,
+                        **PKCE_BODY,
                     },
                     format='json',
                 )

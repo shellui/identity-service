@@ -32,11 +32,14 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 - **Federation:** Silent sign-in and provisioning refuse to link or make an owner of an existing staff account.
 - **Region hosts:** A region with `DEBUG=false` refuses to start with default `shellui.com` hosts.
+- **Security:** Web sign-in requires PKCE (needs shellui 0.6.4 or later).
+- **Security:** Session and CSRF cookies use the `__Host-` prefix.
 - **Dependencies:** Updated certifi to 2026.10.19.
 
 ### 🛠 Improvements
 
 - **Deployment:** `DEBUG` defaults to false, so production no longer needs to set it.
+- **Deployment:** `check --deploy` rejects a weak `SECRET_KEY`.
 - **Deployment:** Releases publish the Docker image automatically.
 
 ## [0.8.2] - 2026-10-18

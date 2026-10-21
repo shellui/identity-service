@@ -939,6 +939,14 @@ def _build_oauth_login_redirect(
         token_delivery = 'code'
     if token_delivery == 'fragment':
         return _build_callback_redirect(redirect_to, payload, provider=provider)
+    # http(s) code delivery is bound the same way. Do not issue a code that
+    # can be redeemed with only the query string.
+    if not challenge:
+        return append_oauth_error_params(
+            redirect_to,
+            'code_challenge is required for this redirect.',
+            'pkce_required',
+        )
     delivery = create_oauth_session_delivery_code(
         user=user,
         company=company,
@@ -1993,7 +2001,7 @@ class ShellUIAuthorizeView(APIView):
             code_challenge = parse_client_pkce(
                 request.GET.get('code_challenge'),
                 request.GET.get('code_challenge_method'),
-                required=is_custom_scheme_redirect(redirect_to),
+                required=True,
             )
         except PkceError as exc:
             return _shellui_oauth_bounce_or_json(
@@ -2577,9 +2585,10 @@ class ShellUIOAuthConfirmView(APIView):
         description=(
             'Preferred token delivery after OAuth login (H-03). The browser is redirected to '
             f'`redirect_to?{OAUTH_SESSION_CODE_PARAM}=…` instead of a URL fragment. '
-            'POST the code with the same `redirect_to` URL. For an http(s) redirect, an Origin '
-            'header must match that origin when the header is present. For a custom-scheme '
-            'redirect, send `code_verifier` (S256). The Origin check is skipped only after that '
+            'POST the code with the same `redirect_to` URL and the S256 `code_verifier`. '
+            'Every redirect, including http(s), requires that verifier. For an http(s) redirect '
+            'the Origin header is required and must match the redirect origin. A missing Origin '
+            'is rejected. A custom-scheme redirect skips the Origin check only after the '
             'verifier matches, because a desktop app has no matching browser origin.'
         ),
         auth=[],

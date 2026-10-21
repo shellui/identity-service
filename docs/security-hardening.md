@@ -30,7 +30,7 @@ With `DEBUG=false`, these settings default to on. Each can be overridden with an
 | --- | --- |
 | `SECURE_SSL_REDIRECT` | `true`: redirects HTTP to HTTPS. Turn it off only behind a TLS proxy that already redirects |
 | `SECURE_HSTS_SECONDS` | `31536000` (one year), with `SECURE_HSTS_INCLUDE_SUBDOMAINS=true` |
-| `SESSION_COOKIE_SECURE`, `CSRF_COOKIE_SECURE` | `true` |
+| `SESSION_COOKIE_SECURE`, `CSRF_COOKIE_SECURE` | `true`. Cookie names are then `__Host-sessionid` and `__Host-csrftoken`. `CSRF_COOKIE_HTTPONLY` is `true`. Neither cookie sets `Domain`. On local HTTP (`DEBUG=true`) the names stay `sessionid` and `csrftoken`, because browsers reject the `__Host-` prefix without `Secure` |
 | `POSTGRES_SSL_REQUIRE` | `true` when `POSTGRES_DATABASE_URL` is set. Turn it off only for a local PostgreSQL without TLS |
 
 ## Trusted proxies and client IP
@@ -71,7 +71,7 @@ Loopback redirect targets (`127.0.0.1`, `localhost`, `::1`) are allowed only wit
 
 `GET /api/v1/settings` returns only provider slugs and feature flags to anonymous callers. OAuth client IDs and labels are included only for signed-in members of the company.
 
-A desktop deep link is accepted when its scheme is in the company `desktop_redirect_schemes` list. It is not an allowlist row. The implicit `-dev` variant of a listed scheme (`shellui-playground` allowing `shellui-playground-dev`) is accepted when `DEBUG=true`, or when that company has `allow_desktop_dev_scheme` on. Otherwise that name is accepted only if it is listed. `POST /api/v1/oauth/session` skips the `Origin` check only after S256 PKCE succeeds for that custom-scheme redirect. A missing or wrong `code_verifier` is rejected and the code stays unused. http(s) redirects keep the Origin check. See [Desktop apps](desktop-apps.md#origin-check).
+A desktop deep link is accepted when its scheme is in the company `desktop_redirect_schemes` list. It is not an allowlist row. The implicit `-dev` variant of a listed scheme (`shellui-playground` allowing `shellui-playground-dev`) is accepted when `DEBUG=true`, or when that company has `allow_desktop_dev_scheme` on. Otherwise that name is accepted only if it is listed. Every session code, including http(s), requires S256 PKCE. `POST /api/v1/oauth/session` skips the `Origin` check only after that verifier matches for a custom-scheme redirect. A missing or wrong `code_verifier` is rejected and the code stays unused. An http(s) redirect requires `Origin`, and that header must match the redirect origin. See [OAuth login](oauth-login.md#pkce-for-every-session-code) and [Desktop apps](desktop-apps.md#origin-check).
 
 ## Account deletion
 

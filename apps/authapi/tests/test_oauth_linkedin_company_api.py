@@ -8,6 +8,7 @@ from rest_framework.test import APIClient
 
 from apps.authapi.oauth_linkedin import LINKEDIN_OIDC_SERVER_URL
 from apps.authapi.oauth_state import OAUTH_STATE_NONCE_COOKIE, build_oauth_state, parse_oauth_state
+from apps.authapi.tests.pkce_constants import CHALLENGE
 from apps.authapi.provider_registry import validate_extra_settings
 from apps.authapi.tests.oauth_supported_provider_fixtures import supported_provider_fixture
 from apps.authapi.tests.oauth_strict_harness import (
@@ -130,6 +131,7 @@ class LinkedInCompanyOAuthApiTests(TestCase):
             redirect_to=redirect_to,
             company_id=self.company.id,
             company_oauth_client_id=oauth_client.id,
+            code_challenge=CHALLENGE,
         )
         payload, err = parse_oauth_state(state)
         self.assertIsNone(err)

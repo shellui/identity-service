@@ -12,7 +12,7 @@ With `DEBUG=false` (the Docker image default), identity-service refuses to start
 
 | Variable | Purpose |
 | --- | --- |
-| `SECRET_KEY` | Signs Django sessions and CSRF tokens. Required in every mode |
+| `SECRET_KEY` | Signs Django sessions and CSRF tokens. Required in every mode. With `DEBUG=false`, a key shorter than 50 characters or a known placeholder fails `manage.py check --deploy` (`authapi.E005`) |
 | `JWT_PRIVATE_KEY` | RS256 private key that signs tokens, see [JWT and JWKS](jwks.md#configure-signing) |
 | `JWT_ISSUER` | `iss` claim, the public identity URL, for example `https://auth.example.com` |
 | `JWT_AUDIENCE` | `aud` claim, for example `shellui` |
@@ -160,7 +160,7 @@ The entrypoint sets `--worker-tmp-dir /dev/shm` (the heartbeat file lives in mem
 | `CORS_ALLOWED_ORIGINS`, `CORS_ALLOWED_ORIGIN_REGEXES` | empty | Allowed origins when `CORS_ALLOW_ALL_ORIGINS=false` |
 | `AUTH_RATE_LIMIT_ENABLED` | `true` | Turn rate limits off, for debugging only |
 | `AUTH_RATE_LIMIT_*` | see link | One limit per scope: `OAUTH`, `TOKEN_REFRESH`, `SETTINGS`, `MAGIC_LINK`, `INVITATION`, `ADMIN_LOGIN`, `PAT` |
-| `SECURE_SSL_REDIRECT`, `SECURE_HSTS_SECONDS`, `SESSION_COOKIE_SECURE`, `CSRF_COOKIE_SECURE` | on with `DEBUG=false` | HTTPS defaults |
+| `SECURE_SSL_REDIRECT`, `SECURE_HSTS_SECONDS`, `SESSION_COOKIE_SECURE`, `CSRF_COOKIE_SECURE` | on with `DEBUG=false` | HTTPS defaults. Secure cookies are named `__Host-sessionid` and `__Host-csrftoken`, with no `Domain`. `CSRF_COOKIE_HTTPONLY` is always on |
 
 See [Security hardening](security-hardening.md) for the rate limit defaults, proxies, and CORS.
 
