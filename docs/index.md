@@ -113,7 +113,7 @@ These are the endpoints you meet first. The full, interactive reference is serve
 
 ## Release and source
 
-These docs describe identity-service **0.8.3**. Source, issues, and the changelog are on [GitHub](https://github.com/shellui/identity-service). Release tags and the Docker publish steps are in [Releases](RELEASES.md).
+These docs describe identity-service **0.9.0**. Source, issues, and the changelog are on [GitHub](https://github.com/shellui/identity-service). Release tags and the Docker publish steps are in [Releases](RELEASES.md).
 
 These pages are built from the `docs/` folder of the repository by [shellui/shellui](https://github.com/shellui/shellui) and published on [docs.shellui.com](https://docs.shellui.com). To preview an edit with live reload, clone `shellui` next to `identity-service` and run:
 

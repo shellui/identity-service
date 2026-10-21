@@ -12,7 +12,7 @@ This page is for maintainers: how to cut an identity-service release and publish
 | --- | --- |
 | Registry | Docker Hub |
 | Repository | `shellui/identity-service` |
-| Recommended tags | `0.8.3`, `0.8`, `latest` (see [Tagging](#tagging)) |
+| Recommended tags | `0.9.0`, `0.9`, `latest` (see [Tagging](#tagging)) |
 | Listen port | `8000` |
 | Data volume | `/app/data` (SQLite default path: `/app/data/db.sqlite3`) |
 
@@ -30,12 +30,12 @@ See [PUBLISH.md](https://github.com/shellui/identity-service/blob/main/PUBLISH.m
 
 ### 1. Version alignment
 
-These must match the release version (for example `0.8.3`):
+These must match the release version (for example `0.9.0`):
 
 - `version` in `pyproject.toml` (also the OpenAPI version, through `config.settings.VERSION`)
 - the `CHANGELOG.md` entry, with its date
 - green CI and pre-release workflows on the release commit
-- the Git tag `v0.8.3` (recommended, not checked by the script)
+- the Git tag `v0.9.0` (recommended, not checked by the script)
 
 The docs at [docs.shellui.com/identity](https://docs.shellui.com/identity) are built and published by [shellui/shellui](https://github.com/shellui/shellui), not by a tag in this repository. CI here only checks that `docs/` builds (the **Docs build** job in `.github/workflows/ci.yml`).
 
@@ -59,7 +59,7 @@ The script starts the image in production mode (`DEBUG=false`) next to a Redis c
 eval "$(uv run python manage.py generate_jwt_keys --shell)"
 export SECRET_KEY="$(python3 -c 'import secrets; print(secrets.token_urlsafe(50))')"
 
-docker build -t shellui/identity-service:0.8.3 .
+docker build -t shellui/identity-service:0.9.0 .
 docker network create identity-smoke
 docker run --rm -d --name identity-smoke-redis --network identity-smoke redis:8-alpine
 
@@ -71,7 +71,7 @@ docker run --rm -d --name identity-release-smoke --network identity-smoke -p 180
   -e REDIS_URL=redis://identity-smoke-redis:6379/0 \
   -e SECURE_SSL_REDIRECT=false \
   -e ALLOWED_HOSTS=localhost,127.0.0.1 \
-  shellui/identity-service:0.8.3
+  shellui/identity-service:0.9.0
 
 # 400 (missing company_id) proves gunicorn and Django are up
 curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:18000/api/v1/settings
@@ -95,18 +95,18 @@ docker buildx create --use --name multi 2>/dev/null || docker buildx use multi
 
 docker buildx build \
   --platform linux/amd64,linux/arm64 \
-  -t shellui/identity-service:0.8.3 \
+  -t shellui/identity-service:0.9.0 \
   --push .
 ```
 
 ## Tagging
 
-For release `0.8.3`, publish these tags:
+For release `0.9.0`, publish these tags:
 
 | Tag | Purpose |
 | --- | --- |
-| `0.8.3` | Exact release, pin it in production |
-| `0.8` | Latest patch of the 0.8 line |
+| `0.9.0` | Exact release, pin it in production |
+| `0.9` | Latest patch of the 0.9 line |
 | `latest` | Newest release, use with care |
 
 ## Publish to Docker Hub
@@ -116,13 +116,13 @@ You need push access to the `shellui` organization on Docker Hub, `docker login`
 From the repository root, build and push all tags for both platforms:
 
 ```bash
-VERSION=0.8.3
+VERSION=0.9.0
 IMAGE=shellui/identity-service
 
 docker buildx build \
   --platform linux/amd64,linux/arm64 \
   -t "${IMAGE}:${VERSION}" \
-  -t "${IMAGE}:0.8" \
+  -t "${IMAGE}:0.9" \
   -t "${IMAGE}:latest" \
   --push .
 
@@ -149,7 +149,7 @@ docker run -d \
   -e ALLOWED_HOSTS='auth.example.com' \
   -e CSRF_TRUSTED_ORIGINS='https://auth.example.com' \
   -e POSTGRES_DATABASE_URL='postgres://user:password@db:5432/identity' \
-  shellui/identity-service:0.8.3
+  shellui/identity-service:0.9.0
 ```
 
 OAuth credentials are stored per company in the database (Shellui admin, `POST /api/v1/oauth-social-apps`, or Django admin), not in environment variables. The entrypoint runs migrations on start, then starts gunicorn and the scheduled jobs as user `appuser`.
@@ -164,7 +164,7 @@ OAuth credentials are stored per company in the database (Shellui admin, `POST /
 | Build-time `SECRET_KEY` | Used only for `collectstatic` during `docker build`. It shows in the build history as `build-only-not-for-runtime` and is not used at runtime |
 | SQLite and database files | Excluded from the image. Use a volume or PostgreSQL |
 | Process user | gunicorn and the worker run as `appuser`. The entrypoint may run brief setup as root |
-| `DEBUG` | `false` in the Dockerfile. `docker-compose.yml` sets `true` for local runs |
+| `DEBUG` | Optional, `false` when unset (settings and Dockerfile). `docker-compose.yml` sets `true` for local runs |
 
 Do not commit `.env` or real OAuth secrets. Do not pass secrets as Docker build arguments: they can appear in the image history.
 
