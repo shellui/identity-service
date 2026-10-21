@@ -37,11 +37,11 @@ Manual equivalents (if you are not using the script):
 
 ### 1. Version alignment
 
-Ensure these match the release version (e.g. `0.8.2`):
+Ensure these match the release version (e.g. `0.9.0`):
 
 - `version` in `pyproject.toml` (OpenAPI / API metadata via `config.settings.VERSION`)
 - `CHANGELOG.md` entry with date
-- Git tag `v0.8.2` (optional but recommended; not enforced by the script)
+- Git tag `v0.9.0` (optional but recommended; not enforced by the script)
 - CI green on the release commit (`.github/workflows/ci.yml` + pre-release workflow)
 
 ### 2. No secrets in the build context
@@ -65,7 +65,7 @@ Covered by `./tools/pre-release-check.sh`. Manual form:
 export SECRET_KEY="$(uv run python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())")"
 eval "$(uv run python manage.py generate_jwt_keys --shell)"
 
-VERSION=0.8.2
+VERSION=0.9.0
 docker build -t "shellui/identity-service:${VERSION}" .
 
 docker run --rm -d --name identity-release-smoke -p 18000:8000 \
@@ -95,12 +95,12 @@ docker login
 
 ### Tagging
 
-For semver release `0.8.2`, typical Docker Hub tags:
+For semver release `0.9.0`, typical Docker Hub tags:
 
 | Tag      | Purpose                                  |
 | -------- | ---------------------------------------- |
-| `0.8.2`  | Exact release (pin in production)        |
-| `0.8`    | Latest patch in the 0.8 line             |
+| `0.9.0`  | Exact release (pin in production)        |
+| `0.9`    | Latest patch in the 0.9 line             |
 | `latest` | Newest published release (use with care) |
 
 ### Option A - single platform (fastest, not recommended, see option B)
@@ -108,16 +108,16 @@ For semver release `0.8.2`, typical Docker Hub tags:
 From the repository root:
 
 ```bash
-VERSION=0.8.2
+VERSION=0.9.0
 IMAGE=shellui/identity-service
 
 docker build -t "${IMAGE}:${VERSION}" .
 docker push "${IMAGE}:${VERSION}"
 
 # Optional extra tags
-docker tag "${IMAGE}:${VERSION}" "${IMAGE}:0.8"
+docker tag "${IMAGE}:${VERSION}" "${IMAGE}:0.9"
 docker tag "${IMAGE}:${VERSION}" "${IMAGE}:latest"
-docker push "${IMAGE}:0.8"
+docker push "${IMAGE}:0.9"
 docker push "${IMAGE}:latest"
 ```
 
@@ -126,7 +126,7 @@ docker push "${IMAGE}:latest"
 If you build on Apple Silicon, a plain `docker build` may produce `linux/arm64` only. Most cloud VMs expect `linux/amd64`. Publish both with buildx:
 
 ```bash
-VERSION=0.8.2
+VERSION=0.9.0
 IMAGE=shellui/identity-service
 
 docker buildx create --use --name multi 2>/dev/null || docker buildx use multi
@@ -134,7 +134,7 @@ docker buildx create --use --name multi 2>/dev/null || docker buildx use multi
 docker buildx build \
   --platform linux/amd64,linux/arm64 \
   -t "${IMAGE}:${VERSION}" \
-  -t "${IMAGE}:0.8" \
+  -t "${IMAGE}:0.9" \
   -t "${IMAGE}:latest" \
   --push .
 ```
@@ -142,7 +142,7 @@ docker buildx build \
 ### Git tag (recommended)
 
 ```bash
-VERSION=0.8.2
+VERSION=0.9.0
 git tag -a "v${VERSION}" -m "Release ${VERSION}"
 git push origin "v${VERSION}"
 ```
@@ -163,7 +163,7 @@ docker run -d \
   -e ALLOWED_HOSTS='auth.example.com' \
   -e CSRF_TRUSTED_ORIGINS='https://auth.example.com,https://app.example.com' \
   -e REDIS_URL='redis://redis:6379/0' \
-  shellui/identity-service:0.8.2
+  shellui/identity-service:0.9.0
 ```
 
 `REDIS_URL` is required: with `DEBUG=false` (the image default) the container logs `REDIS_URL is required when DEBUG is false (example: redis://redis:6379/0)` and exits with status 1 when it is missing. The container also runs the scheduled jobs (`retry_webhooks` every minute, `purge_expired_data` every hour) in a Celery worker next to gunicorn. There is no cron to set up. See [docs/scheduled-jobs.md](docs/scheduled-jobs.md) for a dedicated worker container (`worker` command) or `SCHEDULER_ENABLED=false`.
@@ -180,7 +180,7 @@ The entrypoint runs migrations on start, then starts **Gunicorn** (`config.wsgi:
 
 ### Post-deploy production config check
 
-After deploying a release (e.g. `0.8.2`), run the smoke script against the live HTTPS URL:
+After deploying a release (e.g. `0.9.0`), run the smoke script against the live HTTPS URL:
 
 ```bash
 ./tools/prod-config-check.sh https://id.shellui.com
@@ -259,7 +259,7 @@ Only local development with `DEBUG=true` can leave `REDIS_URL` unset: the contai
 | JWKS endpoint             | `/.well-known/jwks.json` exposes public keys only      |
 | Build-time `SECRET_KEY`   | Used only for `collectstatic` during `docker build`    |
 | SQLite / DB files         | Excluded from image; use volume or Postgres            |
-| `DEBUG`                   | Defaults to `false` in Dockerfile                      |
+| `DEBUG`                   | Optional; defaults to `false` when unset (settings and Dockerfile) |
 
 Do not commit `.env` or real OAuth secrets to git. Do not pass secrets as Docker build args unless you accept they may appear in image history.
 
