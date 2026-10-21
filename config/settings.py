@@ -38,6 +38,11 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / '.env')
 
 
+def _env_str(name, default: str) -> str:
+    """Read a string setting. Unset or empty falls back to the default."""
+    return os.getenv(name, '').strip() or default
+
+
 def _env_csv(name, default):
     raw = os.getenv(name, '').strip()
     if not raw:
@@ -401,17 +406,17 @@ SOCIALACCOUNT_ADAPTER = 'apps.authapi.social_account_adapter.ShellUISocialAccoun
 
 # Transactional email (company access requests / enable notifications).
 # Local default: print to console. Production: set EMAIL_HOST / EMAIL_BACKEND.
-EMAIL_BACKEND = os.getenv(
+EMAIL_BACKEND = _env_str(
     'EMAIL_BACKEND',
     'config.email_backends.ConsoleEmailBackend' if DEBUG else 'django.core.mail.backends.smtp.EmailBackend',
 )
-EMAIL_HOST = os.getenv('EMAIL_HOST', 'localhost')
-EMAIL_PORT = int(os.getenv('EMAIL_PORT', '25') or '25')
+EMAIL_HOST = _env_str('EMAIL_HOST', 'localhost')
+EMAIL_PORT = _env_int('EMAIL_PORT', 25)
 EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
 EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
-EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'false').strip().lower() in {'1', 'true', 'yes', 'on'}
-EMAIL_USE_SSL = os.getenv('EMAIL_USE_SSL', 'false').strip().lower() in {'1', 'true', 'yes', 'on'}
-DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@localhost')
+EMAIL_USE_TLS = _env_bool('EMAIL_USE_TLS', False)
+EMAIL_USE_SSL = _env_bool('EMAIL_USE_SSL', False)
+DEFAULT_FROM_EMAIL = _env_str('DEFAULT_FROM_EMAIL', 'noreply@localhost')
 # Seconds before an SMTP connect, read or write gives up. Django's default is no timeout,
 # so an unreachable mail server could hold a login request forever.
 EMAIL_TIMEOUT = _env_positive_float('EMAIL_TIMEOUT', 10.0)
@@ -469,7 +474,7 @@ PROVISIONING_AUDIENCE = (os.getenv('PROVISIONING_AUDIENCE', '') or '').strip()
 PROVISIONING_DEFAULT_REDIRECTS = parse_origin_list(os.getenv('PROVISIONING_DEFAULT_REDIRECTS', ''))
 
 # OAuth token delivery after login: ``code`` (one-time exchange, default) or ``fragment`` (legacy).
-_oauth_delivery = os.getenv('OAUTH_TOKEN_DELIVERY', 'code').strip().lower()
+_oauth_delivery = _env_str('OAUTH_TOKEN_DELIVERY', 'code').lower()
 if _oauth_delivery not in {'code', 'fragment'}:
     raise ImproperlyConfigured(
         'OAUTH_TOKEN_DELIVERY must be "code" or "fragment". '
@@ -675,7 +680,7 @@ else:
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',
-            'NAME': os.getenv('SQLITE_PATH', str(BASE_DIR / 'db.sqlite3')),
+            'NAME': _env_str('SQLITE_PATH', str(BASE_DIR / 'db.sqlite3')),
             # Wait for the lock instead of failing immediately under concurrent writes
             # (e.g. token refresh updating UserActivity.last_seen_at).
             'OPTIONS': {

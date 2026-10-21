@@ -4,7 +4,7 @@ description: Every environment variable of identity-service, grouped by topic, w
 
 # Configuration
 
-identity-service is configured with environment variables. Copy [`.env.example`](../.env.example) to `.env` for local runs, and pass the same variables to Docker, Coolify, or your orchestrator in production. Durations accept a bare number of seconds or a suffix: `s`, `m`, `h`, `d` (for example `5m` or `30d`).
+identity-service is configured with environment variables. This page is the full reference. [`.env.example`](../.env.example) lists only the required settings; every optional one appears there as a commented-out line with its default, so copy it to `.env` for local runs and uncomment only what you change. To start a production config, run `python manage.py generate_env --host auth.example.com`: it prints the required settings with fresh secrets, see [Run identity-service](getting-started.md#deploy-to-production). The variable list lives in `config/env_registry.py`, which renders `.env.example` (`generate_env --example`), and a test checks it against the code and this page. Pass the same variables to Docker, Coolify, or your orchestrator in production. Durations accept a bare number of seconds or a suffix: `s`, `m`, `h`, `d` (for example `5m` or `30d`).
 
 ## Required in production
 
@@ -17,7 +17,7 @@ With `DEBUG=false` (the Docker image default), identity-service refuses to start
 | `JWT_ISSUER` | `iss` claim, the public identity URL, for example `https://auth.example.com` |
 | `JWT_AUDIENCE` | `aud` claim, for example `shellui` |
 | `REDIS_URL` | Shared cache and job broker, see [Shared cache (Redis)](#shared-cache-redis) |
-| `ALLOWED_HOSTS` | Comma-separated host names, no scheme, for example `auth.example.com` |
+| `ALLOWED_HOSTS` | Comma-separated host names, no scheme, for example `auth.example.com`. Defaults to `localhost,127.0.0.1`, so a public host gets **400** until it is listed |
 
 Behind TLS, also set `CSRF_TRUSTED_ORIGINS` to the full HTTPS URL (for example `https://auth.example.com`) so Django admin and the OAuth confirmation page accept form posts.
 
@@ -77,6 +77,7 @@ email-service `EMAIL_AUTH_LINK_HOSTS` must include the host of `JWT_ISSUER`.
 | `ACTIONS_WEBHOOK_ALLOW_PRIVATE` | `false` | Allow webhooks to private IP addresses |
 | `ACTIONS_WEBHOOK_RETRY_LEASE_SECONDS` | `120` | How long a retry worker holds a delivery |
 | `ACTIONS_WEBHOOK_DISPATCH_WORKERS` | `4` | Threads that send webhooks after the database commit |
+| `ACTIONS_WEBHOOK_SYNC_DELIVERY` | `false` | Send webhooks inline in the request instead of in background threads. For tests only |
 
 See [Webhooks](actions.md).
 
@@ -112,6 +113,7 @@ The Docker image runs `retry_webhooks` every minute and `purge_expired_data` eve
 | `SCHEDULER_ENABLED` | `true` | Start the worker in the web container. Set `false` when a `worker` container or your own cron runs the jobs |
 | `CELERY_BROKER_URL` | `REDIS_URL` | A different broker for the jobs |
 | `CELERY_WORKER_CONCURRENCY` | `2` | Worker threads, so the hourly purge and a webhook retry can run together |
+| `CELERY_BEAT_SCHEDULE_FILE` | `/tmp/celerybeat-schedule` | Where Celery beat keeps its schedule state (Docker entrypoint) |
 
 The container command picks what runs: `web` (default: migrations, gunicorn, and the worker), `worker` (the worker only, no migrations), or any other command, run as `appuser`.
 
@@ -159,8 +161,17 @@ The entrypoint sets `--worker-tmp-dir /dev/shm` (the heartbeat file lives in mem
 | `CORS_ALLOW_CREDENTIALS` | `false` | Must stay `false` while `CORS_ALLOW_ALL_ORIGINS=true` |
 | `CORS_ALLOWED_ORIGINS`, `CORS_ALLOWED_ORIGIN_REGEXES` | empty | Allowed origins when `CORS_ALLOW_ALL_ORIGINS=false` |
 | `AUTH_RATE_LIMIT_ENABLED` | `true` | Turn rate limits off, for debugging only |
-| `AUTH_RATE_LIMIT_*` | see link | One limit per scope: `OAUTH`, `TOKEN_REFRESH`, `SETTINGS`, `MAGIC_LINK`, `INVITATION`, `ADMIN_LOGIN`, `PAT` |
-| `SECURE_SSL_REDIRECT`, `SECURE_HSTS_SECONDS`, `SESSION_COOKIE_SECURE`, `CSRF_COOKIE_SECURE` | on with `DEBUG=false` | HTTPS defaults. Secure cookies are named `__Host-sessionid` and `__Host-csrftoken`, with no `Domain`. `CSRF_COOKIE_HTTPONLY` is always on |
+| `AUTH_RATE_LIMIT_OAUTH` | `30` | OAuth requests per minute |
+| `AUTH_RATE_LIMIT_TOKEN_REFRESH` | `60` | Token refreshes per minute |
+| `AUTH_RATE_LIMIT_SETTINGS` | `30` | `GET /api/v1/settings` per minute |
+| `AUTH_RATE_LIMIT_MAGIC_LINK` | `10` | Magic link requests per minute |
+| `AUTH_RATE_LIMIT_PAT` | `30` | Personal access token requests per minute |
+| `AUTH_RATE_LIMIT_ADMIN_LOGIN` | `10` | Django admin sign-ins per 5 minutes |
+| `AUTH_RATE_LIMIT_INVITATION` | `30` | Invitations per 5 minutes per company |
+| `SECURE_SSL_REDIRECT`, `SESSION_COOKIE_SECURE`, `CSRF_COOKIE_SECURE` | `true` with `DEBUG=false`, `false` with `DEBUG=true` | HTTPS defaults. Secure cookies are named `__Host-sessionid` and `__Host-csrftoken`, with no `Domain`. `CSRF_COOKIE_HTTPONLY` is always on |
+| `SECURE_HSTS_SECONDS` | `31536000` with `DEBUG=false`, `0` with `DEBUG=true` | HSTS max-age |
+| `SECURE_HSTS_INCLUDE_SUBDOMAINS` | `true` with `DEBUG=false` | Add `includeSubDomains` to HSTS |
+| `SECURE_HSTS_PRELOAD` | `false` | Add `preload` to HSTS |
 
 See [Security hardening](security-hardening.md) for the rate limit defaults, proxies, and CORS.
 
@@ -168,13 +179,14 @@ See [Security hardening](security-hardening.md) for the rate limit defaults, pro
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `DEBUG` | `false` | Optional. Unset or empty means `false`, so production does not need to set it. Set `true` only for local development (`.env.example` and `docker-compose.yml` do) |
+| `DEBUG` | `false` | Optional. Unset or empty means `false`, so production does not need to set it. Set `true` only for local development (`.env.example` and `docker-compose.yml` do). Required in `.env.example` for local runs |
 | `SETUP_TOKEN` | empty | One-time token for the web form that creates the first superuser with `DEBUG=false`. Prefer `createsuperuser` |
-| `IDENTITY_SERVICE_PORT` | `8000` | Host port in Docker Compose |
+| `IDENTITY_SERVICE_PORT` | `8000` | Host port in `docker-compose.yml` only |
 | `LOG_LEVEL` | `INFO`, `DEBUG` with `DEBUG=true` | App log level on stdout. Django errors and warnings (500 errors, `DisallowedHost`, CSRF failures) are always printed |
 | `SLOW_REQUEST_THRESHOLD_SECONDS` | `2` | Log a warning for slower requests. `0` turns it off |
 | `SENTRY_DSN` | empty | Turns on Sentry error reporting. No personal data is sent |
-| `SENTRY_ENVIRONMENT`, `SENTRY_RELEASE` | empty | Sentry tags |
+| `SENTRY_ENVIRONMENT` | `production`, `development` with `DEBUG=true` | Sentry environment tag |
+| `SENTRY_RELEASE` | package version | Sentry release tag |
 | `SENTRY_TRACES_SAMPLE_RATE` | `0` | Share of requests traced. `0` reports errors only; `0.1` shows slow requests |
 | `SHELLUI_GEOIP_DATABASE_PATH` | empty | MaxMind GeoLite2 City file (`.mmdb`), adds country and city to sign-in events. Also needs the optional `geoip2` package, which the image does not include |
 

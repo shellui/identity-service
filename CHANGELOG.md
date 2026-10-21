@@ -44,6 +44,12 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 - **Deployment:** Releases publish the Docker image automatically.
 - **Errors:** Error pages use the Shellui design, and API errors always return JSON.
 - **Deployment:** The Docker image has a built-in health check that Coolify detects.
+- **Deployment:** `.env.example` lists only required settings, and optional ones have defaults in code.
+- **Deployment:** `manage.py generate_env` prints the required settings with fresh secrets.
+
+### 🗑 Removed
+
+- **Provisioning:** Removed the global-key `companies/plans` endpoint, the federation `provision` and `plan` endpoints, and their webhook events (`identity.federation.provisioning.completed`, `identity.federation.plan.pushed`).
 
 ### 🏗 Chore
 
