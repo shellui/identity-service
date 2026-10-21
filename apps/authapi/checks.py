@@ -1,7 +1,7 @@
 """Django system checks for authapi."""
 
 from django.conf import settings
-from django.core.checks import Error, register
+from django.core.checks import Error, Warning, register
 
 # Django's own insecure-key warning uses 50 characters. Match that floor.
 MIN_SECRET_KEY_LENGTH = 50
@@ -163,5 +163,18 @@ def jwt_hs256_legacy_disabled_in_production(app_configs, **kwargs):
                 'Set JWT_ACCEPT_HS256_LEGACY=false and sign with JWT_PRIVATE_KEY (RS256).'
             ),
             id='authapi.E006',
+        )
+    ]
+
+
+@register(deploy=True, tags='security')
+def oauth_fragment_delivery_ignored(app_configs, **kwargs):
+    if getattr(settings, 'OAUTH_TOKEN_DELIVERY', 'code') != 'fragment':
+        return []
+    return [
+        Warning(
+            'OAUTH_TOKEN_DELIVERY=fragment is ignored. Tokens are never sent in the URL fragment.',
+            hint='Remove OAUTH_TOKEN_DELIVERY. Sign-in always uses the one-time code with PKCE.',
+            id='authapi.W001',
         )
     ]

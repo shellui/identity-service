@@ -68,7 +68,7 @@ The first command lists the rows that still need a choice. The second stores the
 **Session code delivery.** After sign-in, identity-service now redirects with a one-time `shellui_auth_code` instead of tokens in the URL fragment:
 
 1. Update shells to read `shellui_auth_code` from the login callback query string and call `POST /api/v1/oauth/session` with `{"auth_code": "…", "redirect_to": "<same callback URL>"}`.
-2. Until every shell is updated, pass `token_delivery=fragment` on authorize, or set `OAUTH_TOKEN_DELIVERY=fragment` on identity-service.
+2. Since 0.9.0, `token_delivery=fragment` and `OAUTH_TOKEN_DELIVERY=fragment` are ignored and fall back to the one-time code with PKCE.
 
 **Refresh rotation.** Every refresh now returns a new refresh token and revokes the old one:
 

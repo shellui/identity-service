@@ -99,7 +99,7 @@ Exchange the one-time code with the verifier:
 
 An http(s) redirect requires the same S256 challenge and verifier. See [OAuth login](oauth-login.md#pkce-for-every-session-code). Older session errors that are not PKCE stay `{ "error": "…" }` with no `error_code`.
 
-Custom-scheme redirects always use the one-time code. `token_delivery=fragment` and `OAUTH_TOKEN_DELIVERY=fragment` do not put tokens in the deep link. If a custom-scheme redirect reaches the end of sign-in without a challenge, the deep link carries `shellui_oauth_error` and `shellui_oauth_error_code=pkce_required` instead of a code.
+Every redirect uses the one-time code. `token_delivery=fragment` and `OAUTH_TOKEN_DELIVERY=fragment` are ignored. If a custom-scheme redirect reaches the end of sign-in without a challenge, the deep link carries `shellui_oauth_error` and `shellui_oauth_error_code=pkce_required` instead of a code.
 
 `POST /api/v1/oauth/exchange` and `POST /api/v1/providers/<provider>/login/` are the older JSON token endpoints. For a custom-scheme `redirect_uri` they require `code_challenge`, `code_challenge_method=S256`, and `code_verifier` on that same request. Desktop apps should use `/api/v1/authorize` and `/api/v1/oauth/session`, which bind the verifier to the challenge stored at the start.
 
