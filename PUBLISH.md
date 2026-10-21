@@ -2,7 +2,7 @@
 
 How to build, publish, and run the `shellui/identity-service` Docker image on [Docker Hub](https://hub.docker.com/r/shellui/identity-service).
 
-Publishing is **manual** - there is no CI workflow for Docker Hub yet.
+Publishing is automatic: publishing a GitHub release builds and pushes the image. Manual steps remain as a fallback.
 
 ## Image overview
 
@@ -82,7 +82,29 @@ docker stop identity-release-smoke
 
 ## Publish to Docker Hub
 
-### Prerequisites
+### Automatic publish (GitHub Actions)
+
+[`.github/workflows/publish.yml`](.github/workflows/publish.yml) builds and pushes the image.
+
+- **Trigger:** publishing a GitHub release. You can also rerun it from **workflow_dispatch** with a release tag (for example `v0.9.0`). A manual rerun always moves `latest`, so only rerun the newest release.
+- **Build:** buildx multi-arch for `linux/amd64` and `linux/arm64`, same as Option B below.
+- **Tags:** `X.Y.Z`, `X.Y` and `latest`. Pre-releases do not get `latest`.
+- **Checks:** the pre-release check workflow runs on pull requests, so make sure it passes before you publish.
+
+Required secrets:
+
+| Secret               | Value                                                                                                 |
+| -------------------- | ----------------------------------------------------------------------------------------------------- |
+| `DOCKERHUB_USERNAME` | Docker Hub organization name, `shellui`                                                               |
+| `DOCKERHUB_TOKEN`    | Docker Hub organization access token with image push scope, limited to the service repos, with expiry |
+
+Store them as GitHub organization secrets shared only with the service repos (identity, storage, hosting, email), so you set them once.
+
+### Manual publish (fallback)
+
+Use these steps if the workflow is unavailable.
+
+#### Prerequisites
 
 1. Docker Hub account with push access to the `shellui` organization (or your namespace).
 2. Docker CLI logged in:
@@ -93,7 +115,7 @@ docker login
 
 3. Clean git tree at the commit you intend to release.
 
-### Tagging
+#### Tagging
 
 For semver release `0.8.0`, typical Docker Hub tags:
 
@@ -103,7 +125,7 @@ For semver release `0.8.0`, typical Docker Hub tags:
 | `0.8`    | Latest patch in the 0.8 line             |
 | `latest` | Newest published release (use with care) |
 
-### Option A - single platform (fastest, not recommended, see option B)
+#### Option A - single platform (fastest, not recommended, see option B)
 
 From the repository root:
 
@@ -121,7 +143,7 @@ docker push "${IMAGE}:0.8"
 docker push "${IMAGE}:latest"
 ```
 
-### Option B - multi-arch (recommended for production)
+#### Option B - multi-arch (recommended for production)
 
 If you build on Apple Silicon, a plain `docker build` may produce `linux/arm64` only. Most cloud VMs expect `linux/amd64`. Publish both with buildx:
 
@@ -139,7 +161,7 @@ docker buildx build \
   --push .
 ```
 
-### Git tag (recommended)
+#### Git tag (recommended)
 
 ```bash
 VERSION=0.8.0
@@ -191,41 +213,41 @@ The script prints explicit `PASS:` / `FAIL:` / `WARN:` / `INFO:` lines and exits
 
 Optional environment:
 
-| Variable               | Default                         |
-| ---------------------- | ------------------------------- |
-| `EXPECTED_JWT_ISSUER`  | Origin of the base URL          |
-| `EXPECTED_JWT_AUDIENCE`| `shellui`                       |
-| `COMPANY_ID`           | (none; use `--company-id` flag) |
+| Variable                | Default                         |
+| ----------------------- | ------------------------------- |
+| `EXPECTED_JWT_ISSUER`   | Origin of the base URL          |
+| `EXPECTED_JWT_AUDIENCE` | `shellui`                       |
+| `COMPANY_ID`            | (none; use `--company-id` flag) |
 
 Full OAuth login (fragment vs code delivery) cannot be verified without a configured IdP - the script prints guidance to set `OAUTH_TOKEN_DELIVERY=fragment` until Shellui #66.
 
 ### Required runtime env vars (production)
 
-| Variable               | Notes                                                                             |
-| ---------------------- | --------------------------------------------------------------------------------- |
-| `SECRET_KEY`           | Required; Django sessions/CSRF. Generate with `get_random_secret_key()`.          |
-| `JWT_PRIVATE_KEY`      | Required when `DEBUG=false`; RS256 JWT signing. See [docs/jwks.md](docs/jwks.md). |
-| `ALLOWED_HOSTS`        | Comma-separated hostnames, no scheme.                                             |
-| `CSRF_TRUSTED_ORIGINS` | Full URLs with scheme when using browser flows behind HTTPS.                      |
+| Variable               | Notes                                                                                                                                                                                                                                              |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SECRET_KEY`           | Required; Django sessions/CSRF. Generate with `get_random_secret_key()`.                                                                                                                                                                           |
+| `JWT_PRIVATE_KEY`      | Required when `DEBUG=false`; RS256 JWT signing. See [docs/jwks.md](docs/jwks.md).                                                                                                                                                                  |
+| `ALLOWED_HOSTS`        | Comma-separated hostnames, no scheme.                                                                                                                                                                                                              |
+| `CSRF_TRUSTED_ORIGINS` | Full URLs with scheme when using browser flows behind HTTPS.                                                                                                                                                                                       |
 | `REDIS_URL`            | Required when `DEBUG=false`, also with `SCHEDULER_ENABLED=false`; the container refuses to start without it. Shared cache (rate limits, logout denylist, OAuth and SAML state) and broker for the scheduled jobs. Example: `redis://redis:6379/0`. |
 
 ### Optional runtime env vars
 
-| Variable                     | Notes                                                                                          |
-| ---------------------------- | ---------------------------------------------------------------------------------------------- |
-| `JWT_ISSUER`, `JWT_AUDIENCE` | Required when `DEBUG=false`; issued tokens include `iss`/`aud`.                                |
-| `JWT_ACCEPT_HS256_LEGACY`    | Default `false` in production with RS256; set `true` only during HS256 migration.              |
-| `CORS_ALLOW_ALL_ORIGINS`     | Default `true` (permissive API CORS; Bearer JWT is the auth boundary). Set `false` to lock down. |
-| `CORS_ALLOWED_ORIGINS`       | Used when `CORS_ALLOW_ALL_ORIGINS=false`; Shellui / admin front-end origins.                   |
-| `CORS_ALLOW_CREDENTIALS`     | Default `false`; must stay `false` when allow-all is enabled.                                  |
-| `POSTGRES_DATABASE_URL`      | Use Postgres instead of SQLite.                                                                |
-| `SCHEDULER_ENABLED`          | Default `true`: the container runs the scheduled jobs next to gunicorn. Set `false` with a dedicated `worker` container or external cron. See [docs/scheduled-jobs.md](docs/scheduled-jobs.md). |
-| `SENTRY_DSN`                 | Sentry error reporting.                                                                        |
-| `SENTRY_ENVIRONMENT`         | e.g. `staging`, `production`.                                                                  |
-| `JWT_ACCESS_TOKEN_LIFETIME`  | Default `5m`.                                                                                  |
-| `JWT_REFRESH_TOKEN_LIFETIME` | Default `7d`.                                                                                  |
-| `TRUSTED_PROXY_IPS`          | Comma-separated proxy IPs/CIDRs. When `REMOTE_ADDR` matches, client IP for rate limits and audit is the rightmost untrusted hop in `X-Forwarded-For`. Set this for Coolify, Traefik, or nginx ingress so clients cannot spoof the leftmost XFF entry. |
-| `SELF_SERVICE_ACCOUNT_DELETE_MAX_IAT_AGE` | Default `5m`. Session access JWT `iat` window for `DELETE /api/v1/user`. |
+| Variable                                  | Notes                                                                                                                                                                                                                                                 |
+| ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `JWT_ISSUER`, `JWT_AUDIENCE`              | Required when `DEBUG=false`; issued tokens include `iss`/`aud`.                                                                                                                                                                                       |
+| `JWT_ACCEPT_HS256_LEGACY`                 | Default `false` in production with RS256; set `true` only during HS256 migration.                                                                                                                                                                     |
+| `CORS_ALLOW_ALL_ORIGINS`                  | Default `true` (permissive API CORS; Bearer JWT is the auth boundary). Set `false` to lock down.                                                                                                                                                      |
+| `CORS_ALLOWED_ORIGINS`                    | Used when `CORS_ALLOW_ALL_ORIGINS=false`; Shellui / admin front-end origins.                                                                                                                                                                          |
+| `CORS_ALLOW_CREDENTIALS`                  | Default `false`; must stay `false` when allow-all is enabled.                                                                                                                                                                                         |
+| `POSTGRES_DATABASE_URL`                   | Use Postgres instead of SQLite.                                                                                                                                                                                                                       |
+| `SCHEDULER_ENABLED`                       | Default `true`: the container runs the scheduled jobs next to gunicorn. Set `false` with a dedicated `worker` container or external cron. See [docs/scheduled-jobs.md](docs/scheduled-jobs.md).                                                       |
+| `SENTRY_DSN`                              | Sentry error reporting.                                                                                                                                                                                                                               |
+| `SENTRY_ENVIRONMENT`                      | e.g. `staging`, `production`.                                                                                                                                                                                                                         |
+| `JWT_ACCESS_TOKEN_LIFETIME`               | Default `5m`.                                                                                                                                                                                                                                         |
+| `JWT_REFRESH_TOKEN_LIFETIME`              | Default `7d`.                                                                                                                                                                                                                                         |
+| `TRUSTED_PROXY_IPS`                       | Comma-separated proxy IPs/CIDRs. When `REMOTE_ADDR` matches, client IP for rate limits and audit is the rightmost untrusted hop in `X-Forwarded-For`. Set this for Coolify, Traefik, or nginx ingress so clients cannot spoof the leftmost XFF entry. |
+| `SELF_SERVICE_ACCOUNT_DELETE_MAX_IAT_AGE` | Default `5m`. Session access JWT `iat` window for `DELETE /api/v1/user`.                                                                                                                                                                              |
 
 OAuth credentials are configured **per company** in the database (Shellui admin, Django admin, or `POST /api/v1/oauth-social-apps`), not via container environment variables.
 
