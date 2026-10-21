@@ -223,6 +223,8 @@ Full OAuth login (fragment vs code delivery) cannot be verified without a config
 
 ### Required runtime env vars (production)
 
+First deploy: run `docker run --rm shellui/identity-service:<tag> python manage.py generate_env --host auth.example.com`. It prints these settings with a fresh `SECRET_KEY` and `JWT_PRIVATE_KEY`, needs no env, database or Redis, and writes nothing. Replace every `change-me` before pasting it into Coolify.
+
 | Variable               | Notes                                                                                                                                                                                                                                              |
 | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `SECRET_KEY`           | Required; Django sessions/CSRF. Generate with `get_random_secret_key()`.                                                                                                                                                                           |

@@ -45,6 +45,7 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 - **Errors:** Error pages use the Shellui design, and API errors always return JSON.
 - **Deployment:** The Docker image has a built-in health check that Coolify detects.
 - **Deployment:** `.env.example` lists only required settings, and optional ones have defaults in code.
+- **Deployment:** `manage.py generate_env` prints the required settings with fresh secrets.
 
 ### 🗑 Removed
 

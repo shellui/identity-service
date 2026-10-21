@@ -103,6 +103,10 @@ Dependencies live in `pyproject.toml` and are locked in `uv.lock`. Add a package
 
 Configure OAuth credentials per company in Shellui admin **OAuth setup**, with `POST /api/v1/oauth-social-apps`, or in Django admin (Company → OAuth clients). The supported providers and their setup are listed in [docs/oauth-providers.md](docs/oauth-providers.md).
 
+## Production settings
+
+First deploy step: `python manage.py generate_env --host auth.example.com` (or `docker run --rm shellui/identity-service:<tag> python manage.py generate_env ...`) prints the required settings with a fresh `SECRET_KEY` and `JWT_PRIVATE_KEY`. It runs with zero env. Add `--role region|global` for role settings and `--optional` for every default. See [docs/configuration.md](docs/configuration.md).
+
 ## JWT private key (RS256)
 
 Production (`DEBUG=false`) requires an RSA private key for JWT signing. Local dev can skip this when `DEBUG=true` (HS256 with `SECRET_KEY`).

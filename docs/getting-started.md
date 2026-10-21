@@ -93,7 +93,16 @@ The Docker image defaults to `DEBUG=false` and refuses to start until the produc
 With `DEBUG=false`, the container exits at startup when `REDIS_URL` is unset. Redis backs rate limits, the logout denylist, OAuth and SAML state, and the scheduled jobs.
 :::
 
-Set these variables before the first start:
+Start by generating the settings with the image itself:
+
+```bash
+docker run --rm shellui/identity-service:0.9.0 \
+  python manage.py generate_env --host auth.example.com > identity.env
+```
+
+It needs no env, database or Redis. It prints the required settings with a fresh `SECRET_KEY` and `JWT_PRIVATE_KEY`, and the URLs derived from `--host`. Replace every `change-me`, then paste the block into Coolify or your secret manager and delete the file. `--role global` or `--role region` adds that role's required settings as placeholders. `--optional` also lists every optional setting with its default.
+
+The block holds these variables:
 
 | Variable | Value |
 | --- | --- |
@@ -106,7 +115,7 @@ Set these variables before the first start:
 | `REDIS_URL` | For example `redis://redis:6379/0` |
 | `POSTGRES_DATABASE_URL` | Recommended. Without it, SQLite is stored in the `/app/data` volume |
 
-Generate the signing key with the image itself. The command prints `JWT_PRIVATE_KEY` and `JWT_KEY_ID`:
+To generate only a new signing key, for example to rotate it, the image prints `JWT_PRIVATE_KEY` and `JWT_KEY_ID`:
 
 ```bash
 docker run --rm -e SECRET_KEY=temporary \

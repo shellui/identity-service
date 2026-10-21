@@ -4,7 +4,7 @@ description: Every environment variable of identity-service, grouped by topic, w
 
 # Configuration
 
-identity-service is configured with environment variables. This page is the full reference. [`.env.example`](../.env.example) lists only the required settings; every optional one appears there as a commented-out line with its default, so copy it to `.env` for local runs and uncomment only what you change. Pass the same variables to Docker, Coolify, or your orchestrator in production. Durations accept a bare number of seconds or a suffix: `s`, `m`, `h`, `d` (for example `5m` or `30d`).
+identity-service is configured with environment variables. This page is the full reference. [`.env.example`](../.env.example) lists only the required settings; every optional one appears there as a commented-out line with its default, so copy it to `.env` for local runs and uncomment only what you change. To start a production config, run `python manage.py generate_env --host auth.example.com`: it prints the required settings with fresh secrets, see [Run identity-service](getting-started.md#deploy-to-production). The variable list lives in `config/env_registry.py`, which renders `.env.example` (`generate_env --example`), and a test checks it against the code and this page. Pass the same variables to Docker, Coolify, or your orchestrator in production. Durations accept a bare number of seconds or a suffix: `s`, `m`, `h`, `d` (for example `5m` or `30d`).
 
 ## Required in production
 
