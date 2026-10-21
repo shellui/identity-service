@@ -71,11 +71,11 @@ identity-service covers six areas. Each card opens the guide for that area.
 
 A Shellui shell never talks to a provider directly. identity-service runs the whole flow and returns tokens to the shell:
 
-1. The shell sends the browser to `GET /api/v1/authorize` with `company_id` and `redirect_to`.
+1. The shell sends the browser to `GET /api/v1/authorize` with `company_id`, `redirect_to`, and an S256 `code_challenge`.
 2. identity-service redirects to the provider named in `provider`, or shows the company's providers to pick from when it is not set.
 3. The provider returns to `/api/v1/oauth/callback`. identity-service exchanges the code server-side and applies the company access rules.
 4. identity-service redirects to `redirect_to?shellui_auth_code=…`. A web target is an origin on the company allowlist. A desktop target uses a scheme in the company list ([Desktop apps](desktop-apps.md)).
-5. The shell exchanges that one-time code at `POST /api/v1/oauth/session` for an access token and a refresh token.
+5. The shell exchanges that one-time code at `POST /api/v1/oauth/session` with `code_verifier` (and `Origin` on the web) for an access token and a refresh token.
 
 Your own APIs verify the access token with the public keys at `/.well-known/jwks.json`, without sharing any secret with identity-service. Details are in [OAuth login](oauth-login.md) and [JWT and JWKS](jwks.md).
 
@@ -90,6 +90,7 @@ Pick the row that matches what you are doing today:
 | Let people sign in without a provider | [Magic link](magic-link.md) |
 | Sign in from a desktop app | [Desktop apps](desktop-apps.md) |
 | Connect a company's Okta or Entra ID | [SAML single sign-on](saml.md) and [SCIM provisioning](scim.md) |
+| Trust one upstream identity provider, or be that provider | [Instance roles](instance-roles.md) |
 | Restrict who can join a company | [Company access](company-access.md) |
 | Verify Shellui tokens in another service | [JWT and JWKS](jwks.md) |
 | Run automation when users join or leave | [Webhooks](actions.md) and [n8n](n8n.md) |
@@ -113,7 +114,7 @@ These are the endpoints you meet first. The full, interactive reference is serve
 
 ## Release and source
 
-These docs describe identity-service **0.8.2**. Source, issues, and the changelog are on [GitHub](https://github.com/shellui/identity-service). Release tags and the Docker publish steps are in [Releases](RELEASES.md).
+These docs describe identity-service **0.9.0**. Source, issues, and the changelog are on [GitHub](https://github.com/shellui/identity-service). Release tags and the Docker publish steps are in [Releases](RELEASES.md).
 
 These pages are built from the `docs/` folder of the repository by [shellui/shellui](https://github.com/shellui/shellui) and published on [docs.shellui.com](https://docs.shellui.com). To preview an edit with live reload, clone `shellui` next to `identity-service` and run:
 

@@ -77,6 +77,7 @@ jobs:
           source /tmp/jwt_keys.sh
           # REDIS_URL is required when DEBUG=false (authapi.E004). The check does not connect.
           DEBUG=false \
+          SECRET_KEY="$(uv run python -c 'from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())')" \
           REDIS_URL=redis://redis:6379/0 \
           JWT_ISSUER=https://auth.example.com \
           JWT_AUDIENCE=shellui \

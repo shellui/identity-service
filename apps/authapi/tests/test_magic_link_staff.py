@@ -27,6 +27,7 @@ from apps.actions.models import ActionOutbox, ActionRule, EventLog
 from apps.authapi.magic_link import create_magic_link_token, sign_in_page_url
 from apps.authapi.models import MagicLinkToken
 from apps.authapi.tests.test_oauth_google_id_token_callback import GoogleIdTokenCallbackTests, _google_mock_routes
+from apps.authapi.tests.pkce_constants import PKCE_BODY
 from apps.companies.access import set_company_access
 from apps.companies.models import Company, CompanyOAuthRedirect
 
@@ -88,7 +89,7 @@ class _Base(TestCase):
         )
 
     def _request(self, email, **extra):
-        body = {'company_id': self.company.id, 'email': email, 'redirect_to': REDIRECT_TO}
+        body = {'company_id': self.company.id, 'email': email, 'redirect_to': REDIRECT_TO, **PKCE_BODY}
         body.update(extra)
         with patch('apps.actions.emit.schedule_outbox_delivery'):
             with self.captureOnCommitCallbacks(execute=True):

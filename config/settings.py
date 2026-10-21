@@ -23,12 +23,24 @@ from dotenv import load_dotenv
 from django.core.exceptions import ImproperlyConfigured
 
 from apps.authapi.jwks import read_jwt_env, resolve_jwt_configuration
+from apps.federation.parsing import (
+    parse_instance_role,
+    parse_jwks,
+    parse_oidc_clients,
+    parse_origin_list,
+    region_startup_errors,
+)
 from config.allauth_provider_apps import ALLAUTH_SOCIALACCOUNT_PROVIDER_APPS
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 load_dotenv(BASE_DIR / '.env')
+
+
+def _env_str(name, default: str) -> str:
+    """Read a string setting. Unset or empty falls back to the default."""
+    return os.getenv(name, '').strip() or default
 
 
 def _env_csv(name, default):
@@ -208,6 +220,9 @@ SECRET_KEY = _secret_key
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DEBUG', 'false').strip().lower() in {'1', 'true', 'yes', 'on'}
 
+# Unset: this deployment only. ``global`` is an OpenID Provider. ``region`` trusts one upstream provider.
+SHELLUI_INSTANCE_ROLE = parse_instance_role(os.getenv('SHELLUI_INSTANCE_ROLE', ''))
+
 # One-time web bootstrap token for creating the first superuser when DEBUG=false.
 # When unset, use `manage.py createsuperuser` instead of the public form at `/`.
 SETUP_TOKEN = os.getenv('SETUP_TOKEN', '').strip()
@@ -215,18 +230,17 @@ SETUP_TOKEN = os.getenv('SETUP_TOKEN', '').strip()
 # Comma-separated; use * for all hosts only in trusted networks. Example: app.example.com,127.0.0.1
 ALLOWED_HOSTS = _env_csv('ALLOWED_HOSTS', ('localhost', '127.0.0.1'))
 # Full origins with scheme (required for cross-site POST / CSRF). Example: https://app.example.com
-CSRF_TRUSTED_ORIGINS = _env_csv(
-    'CSRF_TRUSTED_ORIGINS',
-    (
-        'http://localhost:8000',
-        'http://127.0.0.1:8000',
-        'http://localhost:4000',
-        'http://127.0.0.1:4000',
-        'http://localhost:5174',
-        'http://127.0.0.1:5174',
-        'https://admin.shellui.com',
-    ),
-)
+_csrf_defaults = [
+    'http://localhost:8000',
+    'http://127.0.0.1:8000',
+    'http://localhost:4000',
+    'http://127.0.0.1:4000',
+    'http://localhost:5174',
+    'http://127.0.0.1:5174',
+]
+if SHELLUI_INSTANCE_ROLE != 'region':
+    _csrf_defaults.append('https://admin.shellui.com')
+CSRF_TRUSTED_ORIGINS = _env_csv('CSRF_TRUSTED_ORIGINS', tuple(_csrf_defaults))
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
 # Trusted reverse proxies (comma-separated IPs/CIDRs). X-Forwarded-For is honored for audit IP
@@ -288,6 +302,7 @@ INSTALLED_APPS = [
     'apps.companies',
     'apps.scim',
     'apps.actions',
+    'apps.federation',
     'django_scim',
     'config.apps.ConfigConfig',
 ]
@@ -338,6 +353,7 @@ MIDDLEWARE = [
     'apps.authapi.middleware.LivenessMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
+    'apps.federation.middleware.FederationCorsMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -347,6 +363,7 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'apps.authapi.middleware.AdminLoginRateLimitMiddleware',
+    'apps.federation.middleware.OpenIdProviderSessionMiddleware',
 ]
 
 _auth_middleware_index = MIDDLEWARE.index('django.contrib.auth.middleware.AuthenticationMiddleware')
@@ -371,6 +388,9 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'config.wsgi.application'
 
+# Branded page for browsers, JSON under /api/ (config/errors.py).
+CSRF_FAILURE_VIEW = 'config.errors.csrf_failure'
+
 SITE_ID = 1
 
 AUTHENTICATION_BACKENDS = [
@@ -386,17 +406,17 @@ SOCIALACCOUNT_ADAPTER = 'apps.authapi.social_account_adapter.ShellUISocialAccoun
 
 # Transactional email (company access requests / enable notifications).
 # Local default: print to console. Production: set EMAIL_HOST / EMAIL_BACKEND.
-EMAIL_BACKEND = os.getenv(
+EMAIL_BACKEND = _env_str(
     'EMAIL_BACKEND',
     'config.email_backends.ConsoleEmailBackend' if DEBUG else 'django.core.mail.backends.smtp.EmailBackend',
 )
-EMAIL_HOST = os.getenv('EMAIL_HOST', 'localhost')
-EMAIL_PORT = int(os.getenv('EMAIL_PORT', '25') or '25')
+EMAIL_HOST = _env_str('EMAIL_HOST', 'localhost')
+EMAIL_PORT = _env_int('EMAIL_PORT', 25)
 EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
 EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
-EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'false').strip().lower() in {'1', 'true', 'yes', 'on'}
-EMAIL_USE_SSL = os.getenv('EMAIL_USE_SSL', 'false').strip().lower() in {'1', 'true', 'yes', 'on'}
-DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@localhost')
+EMAIL_USE_TLS = _env_bool('EMAIL_USE_TLS', False)
+EMAIL_USE_SSL = _env_bool('EMAIL_USE_SSL', False)
+DEFAULT_FROM_EMAIL = _env_str('DEFAULT_FROM_EMAIL', 'noreply@localhost')
 # Seconds before an SMTP connect, read or write gives up. Django's default is no timeout,
 # so an unreachable mail server could hold a login request forever.
 EMAIL_TIMEOUT = _env_positive_float('EMAIL_TIMEOUT', 10.0)
@@ -427,8 +447,34 @@ JWT_REFRESH_TOKEN_LIFETIME = _env_duration('JWT_REFRESH_TOKEN_LIFETIME', timedel
 JWT_ISSUER = os.getenv('JWT_ISSUER', '').strip() or None
 JWT_AUDIENCE = os.getenv('JWT_AUDIENCE', '').strip() or None
 
+# OpenID Provider clients (role global). JSON list of client_id, client_secret, redirect_uris,
+# and optional backchannel_logout_uri. Empty leaves the provider with no relying parties.
+OIDC_CLIENTS = parse_oidc_clients(os.getenv('OIDC_CLIENTS', ''), allow_http=DEBUG)
+OIDC_CORS_ALLOWED_ORIGINS = parse_origin_list(os.getenv('OIDC_CORS_ALLOWED_ORIGINS', ''))
+OIDC_SESSION_TTL_SECONDS = int(os.getenv('OIDC_SESSION_TTL_SECONDS', str(12 * 60 * 60)) or str(12 * 60 * 60))
+OIDC_CODE_TTL_SECONDS = int(os.getenv('OIDC_CODE_TTL_SECONDS', '60') or '60')
+OIDC_ID_TOKEN_TTL_SECONDS = int(os.getenv('OIDC_ID_TOKEN_TTL_SECONDS', '300') or '300')
+OIDC_BACKCHANNEL_TIMEOUT_SECONDS = _env_float('OIDC_BACKCHANNEL_TIMEOUT_SECONDS', 3.0)
+
+# Relying party (role region): one upstream provider, pinned keys, not a per-company OAuth app.
+GLOBAL_ISSUER_URL = (os.getenv('GLOBAL_ISSUER_URL', '') or '').strip().rstrip('/')
+GLOBAL_JWKS = parse_jwks(os.getenv('GLOBAL_JWKS', ''))
+GLOBAL_CLIENT_ID = (os.getenv('GLOBAL_CLIENT_ID', '') or '').strip()
+GLOBAL_CLIENT_SECRET = os.getenv('GLOBAL_CLIENT_SECRET', '') or ''
+GLOBAL_REDIRECT_URI = (os.getenv('GLOBAL_REDIRECT_URI', '') or '').strip()
+
+# Regional provisioning API (role region). The dashboard (saas-service) signs each call with its
+# provisioning key; pin the public key here. Unset key or issuer leaves the API answering 404.
+PROVISIONING_PUBLIC_KEY = (os.getenv('PROVISIONING_PUBLIC_KEY', '') or '').strip().replace('\\n', '\n')
+PROVISIONING_KEY_ID = (os.getenv('PROVISIONING_KEY_ID', '') or '').strip()
+PROVISIONING_ISSUER = (os.getenv('PROVISIONING_ISSUER', '') or '').strip()
+# Defaults to the host of JWT_ISSUER, which is what saas-service sends (for example id.eu.shellui.com).
+PROVISIONING_AUDIENCE = (os.getenv('PROVISIONING_AUDIENCE', '') or '').strip()
+# Origins added to the redirect allowlist of every provisioned company (the regional admin).
+PROVISIONING_DEFAULT_REDIRECTS = parse_origin_list(os.getenv('PROVISIONING_DEFAULT_REDIRECTS', ''))
+
 # OAuth token delivery after login: ``code`` (one-time exchange, default) or ``fragment`` (legacy).
-_oauth_delivery = os.getenv('OAUTH_TOKEN_DELIVERY', 'code').strip().lower()
+_oauth_delivery = _env_str('OAUTH_TOKEN_DELIVERY', 'code').lower()
 if _oauth_delivery not in {'code', 'fragment'}:
     raise ImproperlyConfigured(
         'OAUTH_TOKEN_DELIVERY must be "code" or "fragment". '
@@ -507,8 +553,9 @@ CORS_ALLOWED_ORIGINS = [
     'http://127.0.0.1:4000',
     'http://localhost:5174',
     'http://127.0.0.1:5174',
-    'https://admin.shellui.com',
 ]
+if SHELLUI_INSTANCE_ROLE != 'region':
+    CORS_ALLOWED_ORIGINS.append('https://admin.shellui.com')
 for _origin in os.getenv('CORS_ALLOWED_ORIGINS', '').split(','):
     _origin = _origin.strip()
     if _origin and _origin not in CORS_ALLOWED_ORIGINS:
@@ -535,6 +582,29 @@ SECURE_HSTS_INCLUDE_SUBDOMAINS = _env_bool('SECURE_HSTS_INCLUDE_SUBDOMAINS', not
 SECURE_HSTS_PRELOAD = _env_bool('SECURE_HSTS_PRELOAD', False)
 SESSION_COOKIE_SECURE = _env_bool('SESSION_COOKIE_SECURE', not DEBUG)
 CSRF_COOKIE_SECURE = _env_bool('CSRF_COOKIE_SECURE', not DEBUG)
+
+def secure_cookie_name(base_name: str, *, secure: bool) -> str:
+    """Use the ``__Host-`` prefix only when the cookie is Secure.
+
+    Browsers reject ``__Host-`` cookies that are not Secure, that set Domain,
+    or that use a Path other than ``/``. The prefix stops a sibling host from
+    planting a parent-domain cookie with the same name.
+    """
+    if secure:
+        return f'__Host-{base_name}'
+    return base_name
+
+
+# Host-only cookies. Do not set SESSION_COOKIE_DOMAIN or CSRF_COOKIE_DOMAIN.
+SESSION_COOKIE_NAME = secure_cookie_name('sessionid', secure=SESSION_COOKIE_SECURE)
+CSRF_COOKIE_NAME = secure_cookie_name('csrftoken', secure=CSRF_COOKIE_SECURE)
+SESSION_COOKIE_PATH = '/'
+CSRF_COOKIE_PATH = '/'
+SESSION_COOKIE_DOMAIN = None
+CSRF_COOKIE_DOMAIN = None
+# The CSRF token is embedded in forms ({% csrf_token %}). No script in this
+# service reads the cookie, including Django admin.
+CSRF_COOKIE_HTTPONLY = True
 
 # Cache-backed auth rate limits (see apps/authapi/throttling.py), logout denylist, OAuth
 # PKCE state and SAML replay protection. Required when DEBUG=false: the deploy check
@@ -610,7 +680,7 @@ else:
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',
-            'NAME': os.getenv('SQLITE_PATH', str(BASE_DIR / 'db.sqlite3')),
+            'NAME': _env_str('SQLITE_PATH', str(BASE_DIR / 'db.sqlite3')),
             # Wait for the lock instead of failing immediately under concurrent writes
             # (e.g. token refresh updating UserActivity.last_seen_at).
             'OPTIONS': {
@@ -693,6 +763,21 @@ if not DEBUG and not _skip_production_config_validation():
         _production_config_errors.append('JWT_AUDIENCE is required when DEBUG=false.')
     if _production_config_errors:
         raise ImproperlyConfigured('\n'.join(_production_config_errors))
+
+_region_errors = region_startup_errors(
+    role=SHELLUI_INSTANCE_ROLE,
+    debug=DEBUG,
+    email_service_url=EMAIL_SERVICE_URL,
+    csrf_trusted_origins=CSRF_TRUSTED_ORIGINS,
+    allowed_hosts=ALLOWED_HOSTS,
+    issuer_url=GLOBAL_ISSUER_URL,
+    jwks=GLOBAL_JWKS,
+    client_id=GLOBAL_CLIENT_ID,
+    client_secret=GLOBAL_CLIENT_SECRET,
+    jwt_issuer=JWT_ISSUER,
+)
+if _region_errors:
+    raise ImproperlyConfigured('\n'.join(_region_errors))
 
 from config.scim_settings import SCIM_SERVICE_PROVIDER
 

@@ -39,7 +39,6 @@ from apps.authapi.client_pkce import PkceError, parse_client_pkce
 from apps.authapi.signin_error import signin_error_response
 from apps.companies.redirect_allowlist import (
     client_redirect_error_code,
-    is_custom_scheme_redirect,
     validate_redirect_to_for_company,
 )
 
@@ -232,7 +231,7 @@ class ShellUISAMLLoginView(SAMLViewMixin, View):
             code_challenge = parse_client_pkce(
                 request.GET.get('code_challenge'),
                 request.GET.get('code_challenge_method'),
-                required=is_custom_scheme_redirect(redirect_to),
+                required=True,
             )
         except PkceError as exc:
             return _saml_browser_error(

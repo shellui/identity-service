@@ -34,6 +34,7 @@ const sidebars = {
       doc('oauth-providers', 'OAuth providers'),
       doc('magic-link', 'Magic link'),
       doc('saml', 'SAML single sign-on'),
+      doc('instance-roles', 'Instance roles'),
     ]),
     category('Companies and users', [
       doc('company-access', 'Company access'),

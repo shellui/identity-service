@@ -277,7 +277,7 @@ class ShellUIMagicLinkRequestView(APIView):
             code_challenge = parse_client_pkce(
                 serializer.validated_data.get('code_challenge'),
                 serializer.validated_data.get('code_challenge_method'),
-                required=is_custom_scheme_redirect(redirect_to),
+                required=True,
             )
         except PkceError as exc:
             return Response(
@@ -695,6 +695,9 @@ class ShellUIMagicLinkVerifyView(APIView):
                 return _join_denied_response(decision=join, redirect_to=redirect_to, request=request)
             return _join_denied_response(decision=join)
 
+        from apps.federation.session import remember_verified_email
+
+        remember_verified_email(user, row.email)
         _notify_user_logged_in_for_oauth(request, user)
         payload = _issue_shellui_tokens(user, company=company, oauth_provider=MAGIC_LINK_PROVIDER)
         auth_metrics.record_successful_login(MAGIC_LINK_PROVIDER, company_id=company.id)

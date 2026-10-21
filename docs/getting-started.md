@@ -16,7 +16,7 @@ cd identity-service
 cp .env.example .env
 ```
 
-Open `.env` and set `SECRET_KEY` to a long random value. Django uses it to sign sessions and CSRF tokens, and in local development it also signs the JWTs. To generate one:
+`.env.example` holds only the required settings, with `DEBUG=true` for local runs. Optional settings are commented out with their default, see [Configuration](configuration.md). Open `.env` and set `SECRET_KEY` to a long random value. Django uses it to sign sessions and CSRF tokens, and in local development it also signs the JWTs. To generate one:
 
 ```bash
 python3 -c "import secrets; print(secrets.token_urlsafe(50))"
@@ -87,13 +87,22 @@ The shell intersects that list with what the company has enabled, read from `GET
 
 ## Deploy to production
 
-The Docker image defaults to `DEBUG=false` and refuses to start until the production settings are in place. Use the `shellui/identity-service` image with a pinned tag, for example `shellui/identity-service:0.8.2`.
+The Docker image defaults to `DEBUG=false` and refuses to start until the production settings are in place. Use the `shellui/identity-service` image with a pinned tag, for example `shellui/identity-service:0.9.0`.
 
 :::warning Redis is required
 With `DEBUG=false`, the container exits at startup when `REDIS_URL` is unset. Redis backs rate limits, the logout denylist, OAuth and SAML state, and the scheduled jobs.
 :::
 
-Set these variables before the first start:
+Start by generating the settings with the image itself:
+
+```bash
+docker run --rm shellui/identity-service:0.9.0 \
+  python manage.py generate_env --host auth.example.com > identity.env
+```
+
+It needs no env, database or Redis. It prints the required settings with a fresh `SECRET_KEY` and `JWT_PRIVATE_KEY`, and the URLs derived from `--host`. Replace every `change-me`, then paste the block into Coolify or your secret manager and delete the file. `--role global` or `--role region` adds that role's required settings as placeholders. `--optional` also lists every optional setting with its default.
+
+The block holds these variables:
 
 | Variable | Value |
 | --- | --- |
@@ -106,18 +115,18 @@ Set these variables before the first start:
 | `REDIS_URL` | For example `redis://redis:6379/0` |
 | `POSTGRES_DATABASE_URL` | Recommended. Without it, SQLite is stored in the `/app/data` volume |
 
-Generate the signing key with the image itself. The command prints `JWT_PRIVATE_KEY` and `JWT_KEY_ID`:
+To generate only a new signing key, for example to rotate it, the image prints `JWT_PRIVATE_KEY` and `JWT_KEY_ID`:
 
 ```bash
 docker run --rm -e SECRET_KEY=temporary \
-  shellui/identity-service:0.8.2 python manage.py generate_jwt_keys
+  shellui/identity-service:0.9.0 python manage.py generate_jwt_keys
 ```
 
 In a secret manager or the Coolify UI, paste only the PEM value, without the surrounding quotes. [JWT and JWKS](jwks.md) explains key formats and rotation.
 
 Then finish the deployment:
 
-1. Point the load balancer health check at `GET /health/live`. It does not touch the database.
+1. The image has a built-in health check on `GET /health/live` (port `8000`), which Coolify detects automatically. Leave Coolify's own health check off, or point it at the same path. It does not touch the database.
 2. Behind a reverse proxy, list the proxy addresses in `TRUSTED_PROXY_IPS` so rate limits see the real client IP.
 3. Create the first superuser with `python manage.py createsuperuser` in the container.
 4. Add each production shell origin to the company redirect allowlist.

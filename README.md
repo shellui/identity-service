@@ -49,7 +49,7 @@ Every event, and every sign-in, is also stored in the **event log** (`GET /api/v
 - `GET /api/v1/settings` list enabled login methods/providers
 - `GET /api/v1/authorize?provider=github&redirect_to=…&company_id=…` start OAuth (provider `redirect_uri` is always this service's `/api/v1/oauth/callback`; `redirect_to` is the SPA/CLI bounce target and must be allowlisted or loopback)
 - `GET /api/v1/oauth/callback` provider callback (server-side code exchange + account confirmation + redirect to `redirect_to` with one-time `shellui_auth_code`)
-- `POST /api/v1/oauth/session` exchange `shellui_auth_code` for JWT JSON (default delivery; fragment legacy via `token_delivery=fragment`)
+- `POST /api/v1/oauth/session` exchange `shellui_auth_code` plus S256 `code_verifier` for JWT JSON (default delivery; fragment legacy via `token_delivery=fragment`)
 - `POST /api/v1/oauth/confirm` complete sign-in after the confirmation screen (browser form)
 - `GET /api/v1/oauth/confirm?action=switch&confirm_token=…` restart OAuth with account picker (Google/Microsoft)
 - `POST /api/v1/oauth/exchange` deprecated SPA code exchange (older shells that still receive `?code=` on the frontend)
@@ -61,6 +61,10 @@ Every event, and every sign-in, is also stored in the **event log** (`GET /api/v
 - `PUT /api/v1/user` update user metadata
 - `PATCH /api/v1/user` set the display name (`{"name": "Ada Lovelace"}`); sign-ins never overwrite a name once set
 - `DELETE /api/v1/user` self-service account deletion (`{"confirm": true}`; emits `identity.user.deleted` per company; see [docs/account-deletion.md](docs/account-deletion.md))
+
+## Instance roles
+
+Leave `SHELLUI_INSTANCE_ROLE` unset and this service stays standalone. Set it to `global` to be an OpenID Provider (`prompt=none`, discovery, `id_token`, userinfo, back-channel logout). Set it to `region` to trust one upstream provider (`GLOBAL_ISSUER_URL`, pinned `GLOBAL_JWKS`, `GLOBAL_CLIENT_ID`, `GLOBAL_CLIENT_SECRET`) and expose the provisioning API the dashboard calls with its pinned key (`PROVISIONING_PUBLIC_KEY`). The company sign-in page does not add a button for that provider. See [docs/instance-roles.md](docs/instance-roles.md).
 
 ## Staff admin endpoints
 
@@ -80,7 +84,8 @@ These routes require a valid JWT whose user has `is_staff=true` (`user_metadata.
 # Requires https://docs.astral.sh/uv/
 uv sync
 cp .env.example .env
-# Set SECRET_KEY; generate JWT keys for production (DEBUG=false)
+# Set SECRET_KEY. .env.example lists only required settings; optional ones are
+# commented out with their default (full list: docs/configuration.md)
 npm ci && npm run build:css   # first run only (or skip - runserver rebuilds when DEBUG=true)
 uv run python manage.py migrate
 uv run python manage.py runserver
@@ -97,6 +102,10 @@ uv run python manage.py createsuperuser
 Dependencies live in `pyproject.toml` and are locked in `uv.lock`. Add a package with `uv add <name>`; refresh the lock with `uv lock`.
 
 Configure OAuth credentials per company in Shellui admin **OAuth setup**, with `POST /api/v1/oauth-social-apps`, or in Django admin (Company → OAuth clients). The supported providers and their setup are listed in [docs/oauth-providers.md](docs/oauth-providers.md).
+
+## Production settings
+
+First deploy step: `python manage.py generate_env --host auth.example.com` (or `docker run --rm shellui/identity-service:<tag> python manage.py generate_env ...`) prints the required settings with a fresh `SECRET_KEY` and `JWT_PRIVATE_KEY`. It runs with zero env. Add `--role region|global` for role settings and `--optional` for every default. See [docs/configuration.md](docs/configuration.md).
 
 ## JWT private key (RS256)
 
@@ -190,7 +199,7 @@ Pull requests **to `main`** also run the pre-release checklist ([`.github/workfl
 
 ## Releases (Docker Hub)
 
-Current release: `0.8.2` (`shellui/identity-service:0.8.2`).
+Current release: `0.9.0` (`shellui/identity-service:0.9.0`).
 
 See [PUBLISH.md](PUBLISH.md) for the pre-release checklist (automated via `./tools/pre-release-check.sh`), tagging conventions, and steps to build, push, and deploy `shellui/identity-service` on Docker Hub.
 
@@ -246,7 +255,7 @@ Runtime env vars:
 - `JWT_ISSUER`, `JWT_AUDIENCE` (required in production; included on issued tokens)
 - `JWT_ACCESS_TOKEN_LIFETIME` (default `5m`; e.g. `30s`, `5m`, `2h` - bare integer = seconds)
 - `JWT_REFRESH_TOKEN_LIFETIME` (default `7d`)
-- `DEBUG` (default `false`)
+- `DEBUG` (optional, default `false` when unset or empty; set `true` only for local development)
 - `ALLOWED_HOSTS` (comma-separated hostnames; empty → `localhost,127.0.0.1`)
 - `CSRF_TRUSTED_ORIGINS` (comma-separated full URLs with scheme; empty → common local dev URLs including Shellui ports)
 - `CORS_ALLOW_ALL_ORIGINS` (default `true`; set `false` for lock-down installs)

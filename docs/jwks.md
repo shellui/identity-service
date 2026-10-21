@@ -99,7 +99,7 @@ With `DEBUG=false`, identity-service refuses to start without an RSA private key
 | `JWT_KEY_ID` | No | `kid`. Defaults to the RFC 7638 JWK thumbprint |
 | `JWT_PREVIOUS_PUBLIC_KEY` | No | Previous public key during a rotation, still published in JWKS |
 | `JWT_PREVIOUS_KEY_ID` | No | `kid` of the previous key. Derived when unset |
-| `JWT_ACCEPT_HS256_LEGACY` | No | `false` by default once RS256 is set. Set `true` only while moving from HS256, when old tokens may still be valid |
+| `JWT_ACCEPT_HS256_LEGACY` | No | `false` once RS256 is set. `true` with `DEBUG=false` fails startup (`authapi.E006`) |
 
 Generate a key with `uv run python manage.py generate_jwt_keys`, or with Docker as shown in [Run identity-service](getting-started.md#deploy-to-production). The key is 3072-bit RSA by default (2048 bits minimum).
 
@@ -128,14 +128,14 @@ With `DEBUG=true` and no `JWT_PRIVATE_KEY`, tokens are signed with HS256 and `SE
 3. Set the new private key as `JWT_PRIVATE_KEY`, and update `JWT_KEY_ID` if you use a custom `kid`.
 4. Deploy. New tokens use the new key, and JWKS lists both keys.
 5. Wait until every token signed with the old key has expired: the longest of `PERSONAL_ACCESS_TOKEN_LIFETIME` (30 days by default) and `JWT_REFRESH_TOKEN_LIFETIME` (7 days).
-6. Remove the `JWT_PREVIOUS_*` variables. If you moved from HS256, set `JWT_ACCEPT_HS256_LEGACY=false`.
+6. Remove the `JWT_PREVIOUS_*` variables. Leave `JWT_ACCEPT_HS256_LEGACY` unset or `false`. Production refuses `true`.
 
 ## Security notes
 
 - Keep `JWT_PRIVATE_KEY` in a secret manager or a mounted file, and never commit it
 - JWKS publishes public keys only, which is expected
 - Verifiers should always check `iss` and `aud`
-- Keep `JWT_ACCEPT_HS256_LEGACY=true` only for the duration of an HS256 migration
+- Do not set `JWT_ACCEPT_HS256_LEGACY=true` when `DEBUG=false`. The deploy check rejects it (`authapi.E006`)
 
 ## Related
 

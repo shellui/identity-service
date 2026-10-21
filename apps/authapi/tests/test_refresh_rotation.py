@@ -5,6 +5,7 @@ from rest_framework.test import APIClient
 from apps.authapi.models import RefreshTokenSession
 from apps.authapi.refresh_sessions import is_access_jti_denied
 from apps.authapi.tokens import ShellUIAccessToken, ShellUIRefreshToken
+from apps.authapi.tests.pkce_constants import CHALLENGE, VERIFIER
 from apps.authapi.views import _issue_shellui_tokens
 from apps.companies.access import set_company_access
 from apps.companies.models import Company
@@ -153,11 +154,13 @@ class OAuthSessionCodeDeliveryTests(TestCase):
             company=self.company,
             redirect_to=redirect_to,
             token_payload={**payload, 'provider': 'github'},
+            code_challenge=CHALLENGE,
         )
         redeemed, err = redeem_oauth_session_code(
             code=row.code,
             redirect_to=redirect_to,
             request_origin='http://127.0.0.1:4000',
+            code_verifier=VERIFIER,
         )
         self.assertIsNone(err)
         assert redeemed is not None
@@ -180,10 +183,11 @@ class OAuthSessionCodeDeliveryTests(TestCase):
             company=self.company,
             redirect_to=redirect_to,
             token_payload={**payload, 'provider': 'github'},
+            code_challenge=CHALLENGE,
         )
         response = self.client.post(
             '/api/v1/oauth/session',
-            {'auth_code': row.code, 'redirect_to': redirect_to},
+            {'auth_code': row.code, 'redirect_to': redirect_to, 'code_verifier': VERIFIER},
             format='json',
             HTTP_ORIGIN='http://127.0.0.1:5555',
         )

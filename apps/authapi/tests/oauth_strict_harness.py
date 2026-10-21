@@ -727,6 +727,7 @@ def run_strict_login_callback_round_trip(
     from rest_framework.test import APIClient
 
     from apps.authapi.oauth_state import OAUTH_STATE_NONCE_COOKIE, build_oauth_state, parse_oauth_state
+    from apps.authapi.tests.pkce_constants import CHALLENGE
     from apps.companies.models import CompanyOAuthClient, CompanyOAuthRedirect
 
     try:
@@ -754,6 +755,7 @@ def run_strict_login_callback_round_trip(
         redirect_to=redirect_to,
         company_id=company_id,
         company_oauth_client_id=client_row.id,
+        code_challenge=CHALLENGE,
     )
     payload, err = parse_oauth_state(state)
     if err:

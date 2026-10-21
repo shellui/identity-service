@@ -21,6 +21,40 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
 -->
 
+## [0.9.0] - 2026-10-21
+
+### ✨ Feature
+
+- **Federation:** Identity can run as the global provider or as a region that trusts it (`SHELLUI_INSTANCE_ROLE`, [docs/instance-roles.md](docs/instance-roles.md)).
+- **Provisioning API:** A region serves the dashboard's create, update, limits, delete and list calls, signed with its pinned key and bound to each request.
+- **Global tokens:** With the `global` role, access tokens carry `sub` and `email_verified`.
+
+### 🔒 Security
+
+- **Federation:** Silent sign-in and provisioning refuse to link or make an owner of an existing staff account.
+- **Region hosts:** A region with `DEBUG=false` refuses to start with default `shellui.com` hosts.
+- **Security:** Web sign-in requires PKCE (needs shellui 0.6.4 or later).
+- **Security:** Session and CSRF cookies use the `__Host-` prefix.
+- **Dependencies:** Updated certifi to 2026.10.19.
+
+### 🛠 Improvements
+
+- **Deployment:** `DEBUG` defaults to false, so production no longer needs to set it.
+- **Deployment:** `check --deploy` rejects a weak `SECRET_KEY`.
+- **Deployment:** Releases publish the Docker image automatically.
+- **Errors:** Error pages use the Shellui design, and API errors always return JSON.
+- **Deployment:** The Docker image has a built-in health check that Coolify detects.
+- **Deployment:** `.env.example` lists only required settings, and optional ones have defaults in code.
+- **Deployment:** `manage.py generate_env` prints the required settings with fresh secrets.
+
+### 🗑 Removed
+
+- **Provisioning:** Removed the global-key `companies/plans` endpoint, the federation `provision` and `plan` endpoints, and their webhook events (`identity.federation.provisioning.completed`, `identity.federation.plan.pushed`).
+
+### 🏗 Chore
+
+- **Settings:** Removed duplicated settings in `config/settings.py`.
+
 ## [0.8.2] - 2026-10-18
 
 ### 🔒 Security

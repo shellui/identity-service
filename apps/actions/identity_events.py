@@ -304,6 +304,40 @@ register_event(
 
 register_event(
     DomainEventType(
+        id='identity.federation.authorize.succeeded',
+        label='Upstream authorize succeeded',
+        description=(
+            'This instance, in the provider role, issued an authorization code for a silent sign-in. '
+            'Other instance roles do not emit or list this event.'
+        ),
+        payload_fields=(
+            EventFieldDoc('user_id', 'Internal user primary key', 42),
+            EventFieldDoc('email', 'Primary email when available', 'ada@acme.com'),
+            EventFieldDoc('client_id', 'Relying party client id', 'region-app'),
+            EventFieldDoc('source', 'Always federation', 'federation'),
+        ),
+    )
+)
+
+register_event(
+    DomainEventType(
+        id='identity.federation.backchannel_logout.sent',
+        label='Back-channel logout sent',
+        description=(
+            'This instance, in the provider role, sent a logout token to a relying party. '
+            'Other instance roles do not emit or list this event.'
+        ),
+        payload_fields=(
+            EventFieldDoc('user_id', 'Internal user primary key', 42),
+            EventFieldDoc('email', 'Primary email when available', 'ada@acme.com'),
+            EventFieldDoc('client_id', 'Relying party client id', 'region-app'),
+            EventFieldDoc('source', 'Always federation', 'federation'),
+        ),
+    )
+)
+
+register_event(
+    DomainEventType(
         id='identity.scheduled_job.failed',
         label='Scheduled job failed',
         description='A scheduled job run raised an error. Platform event, staff only.',

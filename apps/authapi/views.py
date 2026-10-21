@@ -220,6 +220,9 @@ def _notify_user_logged_in_for_oauth(request, user: User) -> None:
     """
     user_logged_in.send(sender=user.__class__, request=request, user=user)
     touch_user_last_seen(user)
+    from apps.federation.session import remember_provider_session
+
+    remember_provider_session(request, user)
 
 
 def _last_seen_at_for_user(user: User) -> str | None:
@@ -801,6 +804,15 @@ def _issue_shellui_tokens(
     access['company_id'] = company.id
     access['user_metadata'] = user_metadata
     access['app_metadata'] = app_metadata
+    from apps.federation.role import is_global
+
+    if is_global():
+        from apps.federation.session import email_is_verified
+
+        # The dashboard (saas-service) reads the same subject as the id_token, and only lets a
+        # verified owner create a company.
+        access['sub'] = str(user.pk)
+        access['email_verified'] = email_is_verified(user)
     refresh['user_metadata'] = user_metadata
     refresh['company_id'] = company.id
     refresh['app_metadata'] = app_metadata
@@ -881,6 +893,10 @@ def _link_social_account(user: User, profile: OAuthProfile, userinfo: dict) -> N
             'extra_data': userinfo if isinstance(userinfo, dict) else {},
         },
     )
+    if profile.email_verified_for_link:
+        from apps.federation.session import remember_verified_email
+
+        remember_verified_email(user, profile.email)
 
 
 def _public_extra_settings_for_app(app: SocialApp) -> dict:
@@ -932,6 +948,14 @@ def _build_oauth_login_redirect(
         token_delivery = 'code'
     if token_delivery == 'fragment':
         return _build_callback_redirect(redirect_to, payload, provider=provider)
+    # http(s) code delivery is bound the same way. Do not issue a code that
+    # can be redeemed with only the query string.
+    if not challenge:
+        return append_oauth_error_params(
+            redirect_to,
+            'code_challenge is required for this redirect.',
+            'pkce_required',
+        )
     delivery = create_oauth_session_delivery_code(
         user=user,
         company=company,
@@ -1986,7 +2010,7 @@ class ShellUIAuthorizeView(APIView):
             code_challenge = parse_client_pkce(
                 request.GET.get('code_challenge'),
                 request.GET.get('code_challenge_method'),
-                required=is_custom_scheme_redirect(redirect_to),
+                required=True,
             )
         except PkceError as exc:
             return _shellui_oauth_bounce_or_json(
@@ -2570,9 +2594,10 @@ class ShellUIOAuthConfirmView(APIView):
         description=(
             'Preferred token delivery after OAuth login (H-03). The browser is redirected to '
             f'`redirect_to?{OAUTH_SESSION_CODE_PARAM}=…` instead of a URL fragment. '
-            'POST the code with the same `redirect_to` URL. For an http(s) redirect, an Origin '
-            'header must match that origin when the header is present. For a custom-scheme '
-            'redirect, send `code_verifier` (S256). The Origin check is skipped only after that '
+            'POST the code with the same `redirect_to` URL and the S256 `code_verifier`. '
+            'Every redirect, including http(s), requires that verifier. For an http(s) redirect '
+            'the Origin header is required and must match the redirect origin. A missing Origin '
+            'is rejected. A custom-scheme redirect skips the Origin check only after the '
             'verifier matches, because a desktop app has no matching browser origin.'
         ),
         auth=[],
@@ -2923,6 +2948,12 @@ class ShellUILogoutView(APIView):
             except Exception:
                 pass
 
+        from apps.federation.backchannel import send_backchannel_logout
+
+        send_backchannel_logout(user=request.user)
+        from apps.federation.session import forget_provider_session
+
+        forget_provider_session(request)
         return Response({'success': True})
 
 

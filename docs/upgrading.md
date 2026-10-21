@@ -6,6 +6,16 @@ description: Steps to take when you upgrade identity-service, release by release
 
 This page lists what you must change when you move to a newer identity-service release. Releases not listed here need no action beyond deploying the new image, which runs the database migrations on start. The full list of changes is in the [changelog](../CHANGELOG.md).
 
+## Upgrade to 0.9.0
+
+Web and desktop session codes both require S256 PKCE. An http(s) `POST /api/v1/oauth/session` also requires `Origin` to match `redirect_to`. Shells that omitted `code_challenge` on `/api/v1/authorize` or `code_verifier` on the exchange need that change before this release (shellui 0.6.4 or later). See [OAuth login](oauth-login.md#pkce-for-every-session-code).
+
+With `DEBUG=false`, session and CSRF cookies use the `__Host-` prefix and the CSRF cookie is HttpOnly. Generate `SECRET_KEY` (at least 50 characters). `JWT_ACCEPT_HS256_LEGACY=true` does not start.
+
+Instance roles are off unless you set `SHELLUI_INSTANCE_ROLE`. A standalone deployment needs no change. A region in production must set its own email service URL and must not keep `email.shellui.com` or `admin.shellui.com` in `EMAIL_SERVICE_URL`, `ALLOWED_HOSTS`, or `CSRF_TRUSTED_ORIGINS`. See [Instance roles](instance-roles.md).
+
+A region that the dashboard provisions sets `PROVISIONING_PUBLIC_KEY` (the dashboard's provisioning public key), `PROVISIONING_ISSUER`, and usually `PROVISIONING_DEFAULT_REDIRECTS` with the regional admin origin.
+
 ## Upgrade to 0.8.2
 
 0.8.2 accepts a registered scheme's `-dev` variant when `DEBUG=true`. Owners and staff can turn the same variant on per company when `DEBUG=false`.
