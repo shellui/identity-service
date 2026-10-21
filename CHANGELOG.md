@@ -21,6 +21,12 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
 -->
 
+## [0.9.0] - 2026-10-21
+
+### 🛠 Improvements
+
+- **Deployment:** `DEBUG` defaults to false, so production no longer needs to set it.
+
 ## [0.8.2] - 2026-10-18
 
 ### 🔒 Security

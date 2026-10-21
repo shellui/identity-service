@@ -168,7 +168,7 @@ See [Security hardening](security-hardening.md) for the rate limit defaults, pro
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `DEBUG` | `false` in Docker | Development mode. Never `true` in production |
+| `DEBUG` | `false` | Optional. Unset or empty means `false`, so production does not need to set it. Set `true` only for local development (`.env.example` and `docker-compose.yml` do) |
 | `SETUP_TOKEN` | empty | One-time token for the web form that creates the first superuser with `DEBUG=false`. Prefer `createsuperuser` |
 | `IDENTITY_SERVICE_PORT` | `8000` | Host port in Docker Compose |
 | `LOG_LEVEL` | `INFO`, `DEBUG` with `DEBUG=true` | App log level on stdout. Django errors and warnings (500 errors, `DisallowedHost`, CSRF failures) are always printed |
