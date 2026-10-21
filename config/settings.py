@@ -23,6 +23,13 @@ from dotenv import load_dotenv
 from django.core.exceptions import ImproperlyConfigured
 
 from apps.authapi.jwks import read_jwt_env, resolve_jwt_configuration
+from apps.federation.parsing import (
+    parse_instance_role,
+    parse_jwks,
+    parse_oidc_clients,
+    parse_origin_list,
+    region_startup_errors,
+)
 from config.allauth_provider_apps import ALLAUTH_SOCIALACCOUNT_PROVIDER_APPS
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -208,6 +215,9 @@ SECRET_KEY = _secret_key
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DEBUG', 'false').strip().lower() in {'1', 'true', 'yes', 'on'}
 
+# Unset: this deployment only. ``global`` is an OpenID Provider. ``region`` trusts one upstream provider.
+SHELLUI_INSTANCE_ROLE = parse_instance_role(os.getenv('SHELLUI_INSTANCE_ROLE', ''))
+
 # One-time web bootstrap token for creating the first superuser when DEBUG=false.
 # When unset, use `manage.py createsuperuser` instead of the public form at `/`.
 SETUP_TOKEN = os.getenv('SETUP_TOKEN', '').strip()
@@ -215,18 +225,17 @@ SETUP_TOKEN = os.getenv('SETUP_TOKEN', '').strip()
 # Comma-separated; use * for all hosts only in trusted networks. Example: app.example.com,127.0.0.1
 ALLOWED_HOSTS = _env_csv('ALLOWED_HOSTS', ('localhost', '127.0.0.1'))
 # Full origins with scheme (required for cross-site POST / CSRF). Example: https://app.example.com
-CSRF_TRUSTED_ORIGINS = _env_csv(
-    'CSRF_TRUSTED_ORIGINS',
-    (
-        'http://localhost:8000',
-        'http://127.0.0.1:8000',
-        'http://localhost:4000',
-        'http://127.0.0.1:4000',
-        'http://localhost:5174',
-        'http://127.0.0.1:5174',
-        'https://admin.shellui.com',
-    ),
-)
+_csrf_defaults = [
+    'http://localhost:8000',
+    'http://127.0.0.1:8000',
+    'http://localhost:4000',
+    'http://127.0.0.1:4000',
+    'http://localhost:5174',
+    'http://127.0.0.1:5174',
+]
+if SHELLUI_INSTANCE_ROLE != 'region':
+    _csrf_defaults.append('https://admin.shellui.com')
+CSRF_TRUSTED_ORIGINS = _env_csv('CSRF_TRUSTED_ORIGINS', tuple(_csrf_defaults))
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
 # Trusted reverse proxies (comma-separated IPs/CIDRs). X-Forwarded-For is honored for audit IP
@@ -288,6 +297,7 @@ INSTALLED_APPS = [
     'apps.companies',
     'apps.scim',
     'apps.actions',
+    'apps.federation',
     'django_scim',
     'config.apps.ConfigConfig',
 ]
@@ -338,6 +348,7 @@ MIDDLEWARE = [
     'apps.authapi.middleware.LivenessMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
+    'apps.federation.middleware.FederationCorsMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -347,6 +358,7 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'apps.authapi.middleware.AdminLoginRateLimitMiddleware',
+    'apps.federation.middleware.OpenIdProviderSessionMiddleware',
 ]
 
 _auth_middleware_index = MIDDLEWARE.index('django.contrib.auth.middleware.AuthenticationMiddleware')
@@ -426,6 +438,22 @@ JWT_REFRESH_TOKEN_LIFETIME = _env_duration('JWT_REFRESH_TOKEN_LIFETIME', timedel
 
 JWT_ISSUER = os.getenv('JWT_ISSUER', '').strip() or None
 JWT_AUDIENCE = os.getenv('JWT_AUDIENCE', '').strip() or None
+
+# OpenID Provider clients (role global). JSON list of client_id, client_secret, redirect_uris,
+# and optional backchannel_logout_uri. Empty leaves the provider with no relying parties.
+OIDC_CLIENTS = parse_oidc_clients(os.getenv('OIDC_CLIENTS', ''), allow_http=DEBUG)
+OIDC_CORS_ALLOWED_ORIGINS = parse_origin_list(os.getenv('OIDC_CORS_ALLOWED_ORIGINS', ''))
+OIDC_SESSION_TTL_SECONDS = int(os.getenv('OIDC_SESSION_TTL_SECONDS', str(12 * 60 * 60)) or str(12 * 60 * 60))
+OIDC_CODE_TTL_SECONDS = int(os.getenv('OIDC_CODE_TTL_SECONDS', '60') or '60')
+OIDC_ID_TOKEN_TTL_SECONDS = int(os.getenv('OIDC_ID_TOKEN_TTL_SECONDS', '300') or '300')
+OIDC_BACKCHANNEL_TIMEOUT_SECONDS = _env_float('OIDC_BACKCHANNEL_TIMEOUT_SECONDS', 3.0)
+
+# Relying party (role region): one upstream provider, pinned keys, not a per-company OAuth app.
+GLOBAL_ISSUER_URL = (os.getenv('GLOBAL_ISSUER_URL', '') or '').strip().rstrip('/')
+GLOBAL_JWKS = parse_jwks(os.getenv('GLOBAL_JWKS', ''))
+GLOBAL_CLIENT_ID = (os.getenv('GLOBAL_CLIENT_ID', '') or '').strip()
+GLOBAL_CLIENT_SECRET = os.getenv('GLOBAL_CLIENT_SECRET', '') or ''
+GLOBAL_REDIRECT_URI = (os.getenv('GLOBAL_REDIRECT_URI', '') or '').strip()
 
 # OAuth token delivery after login: ``code`` (one-time exchange, default) or ``fragment`` (legacy).
 _oauth_delivery = os.getenv('OAUTH_TOKEN_DELIVERY', 'code').strip().lower()
@@ -507,8 +535,9 @@ CORS_ALLOWED_ORIGINS = [
     'http://127.0.0.1:4000',
     'http://localhost:5174',
     'http://127.0.0.1:5174',
-    'https://admin.shellui.com',
 ]
+if SHELLUI_INSTANCE_ROLE != 'region':
+    CORS_ALLOWED_ORIGINS.append('https://admin.shellui.com')
 for _origin in os.getenv('CORS_ALLOWED_ORIGINS', '').split(','):
     _origin = _origin.strip()
     if _origin and _origin not in CORS_ALLOWED_ORIGINS:
@@ -535,6 +564,9 @@ SECURE_HSTS_INCLUDE_SUBDOMAINS = _env_bool('SECURE_HSTS_INCLUDE_SUBDOMAINS', not
 SECURE_HSTS_PRELOAD = _env_bool('SECURE_HSTS_PRELOAD', False)
 SESSION_COOKIE_SECURE = _env_bool('SESSION_COOKIE_SECURE', not DEBUG)
 CSRF_COOKIE_SECURE = _env_bool('CSRF_COOKIE_SECURE', not DEBUG)
+# Host-only. A parent domain would send these cookies to every host under it.
+SESSION_COOKIE_DOMAIN = None
+CSRF_COOKIE_DOMAIN = None
 
 # Cache-backed auth rate limits (see apps/authapi/throttling.py), logout denylist, OAuth
 # PKCE state and SAML replay protection. Required when DEBUG=false: the deploy check
@@ -693,6 +725,21 @@ if not DEBUG and not _skip_production_config_validation():
         _production_config_errors.append('JWT_AUDIENCE is required when DEBUG=false.')
     if _production_config_errors:
         raise ImproperlyConfigured('\n'.join(_production_config_errors))
+
+_region_errors = region_startup_errors(
+    role=SHELLUI_INSTANCE_ROLE,
+    debug=DEBUG,
+    email_service_url=EMAIL_SERVICE_URL,
+    csrf_trusted_origins=CSRF_TRUSTED_ORIGINS,
+    allowed_hosts=ALLOWED_HOSTS,
+    issuer_url=GLOBAL_ISSUER_URL,
+    jwks=GLOBAL_JWKS,
+    client_id=GLOBAL_CLIENT_ID,
+    client_secret=GLOBAL_CLIENT_SECRET,
+    jwt_issuer=JWT_ISSUER,
+)
+if _region_errors:
+    raise ImproperlyConfigured('\n'.join(_region_errors))
 
 from config.scim_settings import SCIM_SERVICE_PROVIDER
 

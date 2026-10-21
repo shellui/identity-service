@@ -178,6 +178,24 @@ See [Security hardening](security-hardening.md) for the rate limit defaults, pro
 | `SENTRY_TRACES_SAMPLE_RATE` | `0` | Share of requests traced. `0` reports errors only; `0.1` shows slow requests |
 | `SHELLUI_GEOIP_DATABASE_PATH` | empty | MaxMind GeoLite2 City file (`.mmdb`), adds country and city to sign-in events. Also needs the optional `geoip2` package, which the image does not include |
 
+## Instance role
+
+Leave `SHELLUI_INSTANCE_ROLE` unset for a standalone deployment. `global` turns this process into an OpenID Provider. `region` trusts one upstream identity provider configured with `GLOBAL_ISSUER_URL`, a pinned `GLOBAL_JWKS`, and `GLOBAL_CLIENT_ID` / `GLOBAL_CLIENT_SECRET`. Endpoints, assertions, and the production host check are in [Instance roles](instance-roles.md).
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `SHELLUI_INSTANCE_ROLE` | unset | `global`, `region`, or unset |
+| `OIDC_CLIENTS` | empty | JSON list of confidential clients, provider role |
+| `OIDC_CORS_ALLOWED_ORIGINS` | empty | Origins allowed on the OpenID endpoints. The Bearer API is unchanged |
+| `OIDC_SESSION_TTL_SECONDS` | `43200` | Provider browser-session lifetime |
+| `OIDC_CODE_TTL_SECONDS` | `60` | Authorization code lifetime |
+| `OIDC_ID_TOKEN_TTL_SECONDS` | `300` | `id_token` lifetime |
+| `OIDC_BACKCHANNEL_TIMEOUT_SECONDS` | `3` | Back-channel logout POST timeout |
+| `GLOBAL_ISSUER_URL` | empty | Upstream issuer, relying party role |
+| `GLOBAL_JWKS` | empty | Pinned upstream JWKS JSON |
+| `GLOBAL_CLIENT_ID`, `GLOBAL_CLIENT_SECRET` | empty | Upstream client credentials |
+| `GLOBAL_REDIRECT_URI` | `{JWT_ISSUER}/oauth/upstream-callback` | Upstream redirect URI when the public URL differs |
+
 ## Related
 
 - [Run identity-service](getting-started.md): first start and production checklist

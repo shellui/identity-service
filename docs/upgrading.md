@@ -6,6 +6,10 @@ description: Steps to take when you upgrade identity-service, release by release
 
 This page lists what you must change when you move to a newer identity-service release. Releases not listed here need no action beyond deploying the new image, which runs the database migrations on start. The full list of changes is in the [changelog](../CHANGELOG.md).
 
+## Upgrade to 0.9.0
+
+Instance roles are off unless you set `SHELLUI_INSTANCE_ROLE`. A standalone deployment needs no change. A region in production must set its own email service URL and must not keep `email.shellui.com` or `admin.shellui.com` in `EMAIL_SERVICE_URL`, `ALLOWED_HOSTS`, or `CSRF_TRUSTED_ORIGINS`. See [Instance roles](instance-roles.md).
+
 ## Upgrade to 0.8.2
 
 0.8.2 accepts a registered scheme's `-dev` variant when `DEBUG=true`. Owners and staff can turn the same variant on per company when `DEBUG=false`.

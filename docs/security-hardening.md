@@ -61,6 +61,10 @@ Shellui shells run on many domains, and call public `/api/v1/*` endpoints from t
 
 CORS does not control where tokens go after sign-in. The company [redirect allowlist](oauth-login.md#redirect-allowlist) is the strict boundary for `redirect_to` and the one-time code exchange.
 
+OpenID and provisioning endpoints do not use that allow-all policy. Set `OIDC_CORS_ALLOWED_ORIGINS` to the browser origins that may call them. An origin that is not on the list receives no `Access-Control-Allow-Origin` header. See [Instance roles](instance-roles.md).
+
+`SESSION_COOKIE_DOMAIN` and `CSRF_COOKIE_DOMAIN` are unset. Do not set a parent domain: session and CSRF cookies stay on the host that set them. `manage.py check --deploy` reports `federation.E001` if either domain is set.
+
 ## OAuth redirects
 
 Loopback redirect targets (`127.0.0.1`, `localhost`, `::1`) are allowed only with `DEBUG=true` or `OAUTH_ALLOW_LOOPBACK_REDIRECTS=true`. In production, add the real shell origins to the company redirect allowlist.

@@ -23,6 +23,15 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 ## [0.9.0] - 2026-10-21
 
+### ✨ Feature
+
+- **Federation:** Identity can run as the global provider or as a region that trusts it (`SHELLUI_INSTANCE_ROLE`, [docs/instance-roles.md](docs/instance-roles.md)).
+- **Provisioning API:** A region creates a company and its owner from a signed, idempotent assertion.
+
+### 🔒 Security
+
+- **Region hosts:** A region with `DEBUG=false` refuses to start with default `shellui.com` hosts.
+
 ### 🛠 Improvements
 
 - **Deployment:** `DEBUG` defaults to false, so production no longer needs to set it.

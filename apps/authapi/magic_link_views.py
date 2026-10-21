@@ -695,6 +695,9 @@ class ShellUIMagicLinkVerifyView(APIView):
                 return _join_denied_response(decision=join, redirect_to=redirect_to, request=request)
             return _join_denied_response(decision=join)
 
+        from apps.federation.session import remember_verified_email
+
+        remember_verified_email(user, row.email)
         _notify_user_logged_in_for_oauth(request, user)
         payload = _issue_shellui_tokens(user, company=company, oauth_provider=MAGIC_LINK_PROVIDER)
         auth_metrics.record_successful_login(MAGIC_LINK_PROVIDER, company_id=company.id)
