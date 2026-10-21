@@ -296,7 +296,7 @@ class OAuthAuthorizeCallbackTests(TestCase):
         'apps.authapi.views.fetch_provider_userinfo',
         return_value={'id': 1, 'login': 'legacy', 'email': 'legacy@example.com', 'name': 'Legacy User'},
     )
-    def test_callback_fragment_delivery_legacy(self, _userinfo, exchange, _gh_email):
+    def test_callback_fragment_delivery_without_pkce_is_refused(self, _userinfo, exchange, _gh_email):
         redirect_to = 'https://shell.example.com/login/callback'
         state, _nonce = build_oauth_state(
             provider='github',
@@ -316,8 +316,11 @@ class OAuthAuthorizeCallbackTests(TestCase):
         confirmed = self.client.post('/api/v1/oauth/confirm', {'confirm_token': confirm_token})
         self.assertEqual(confirmed.status_code, 302)
         location = confirmed['Location']
-        self.assertTrue(location.startswith(redirect_to + '#'))
-        self.assertIn('access_token=', location)
+        # #99: fragment delivery without PKCE must not leak tokens in the URL.
+        self.assertNotIn('#', location)
+        self.assertNotIn('access_token', location)
+        self.assertNotIn('shellui_auth_code=', location)
+        self.assertIn('pkce_required', location)
         self.assertTrue(exchange.called)
 
     def test_confirm_switch_redirects_to_authorize_with_switch_account(self):

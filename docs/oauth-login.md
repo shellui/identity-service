@@ -49,11 +49,11 @@ By default, identity-service sends the shell a one-time code, not the tokens. Th
 | Mode | How the shell receives tokens | Status |
 | --- | --- | --- |
 | `code` (default) | `redirect_to?shellui_auth_code=…`, then `POST /api/v1/oauth/session` | Recommended |
-| `fragment` | `redirect_to#access_token=…&refresh_token=…` | Deprecated, will be removed |
+| `fragment` | Ignored since 0.9.0, falls back to `code` | Deprecated, will be removed |
 
-Choose the mode per request with `token_delivery=fragment` on `/api/v1/authorize`, or for the whole deployment with `OAUTH_TOKEN_DELIVERY`. `POST /api/v1/oauth/exchange` still serves older shells that receive the provider `?code=` themselves.
+Since 0.9.0 tokens are never sent in the URL fragment. `token_delivery=fragment` and `OAUTH_TOKEN_DELIVERY=fragment` fall back to the one-time code, which requires PKCE. `POST /api/v1/oauth/exchange` still serves older shells that receive the provider `?code=` themselves.
 
-A custom-scheme redirect always uses the one-time code, even when fragment delivery is selected. See [Desktop apps](desktop-apps.md).
+Custom-scheme redirects work the same way. See [Desktop apps](desktop-apps.md).
 
 ## PKCE for every session code
 
@@ -83,7 +83,7 @@ Exchange:
 
 A custom-scheme redirect still skips the Origin check, and only after the verifier matches. See [Desktop apps](desktop-apps.md#origin-check).
 
-`token_delivery=fragment` still puts the tokens in the URL fragment and does not use this code. That mode is deprecated.
+`token_delivery=fragment` no longer bypasses this: it falls back to the one-time code.
 
 `POST /api/v1/oauth/exchange` and `POST /api/v1/providers/<provider>/login/` are the older JSON endpoints. They require S256 PKCE only for a custom-scheme `redirect_uri`. New shells use `/api/v1/authorize` and `/api/v1/oauth/session`.
 

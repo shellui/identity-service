@@ -39,7 +39,7 @@ GET /api/v1/authorize?provider=saml&company_id=…&company_oauth_client_id=…&r
 
 identity-service redirects the user to the IdP, which posts back to the company ACS URL. The rest of the flow (confirmation page, token delivery) is the same as [OAuth login](oauth-login.md).
 
-The SP-initiated login URL `/api/v1/saml/organization_slug/login/` validates `redirect_to` the same way as `/api/v1/authorize`. `token_delivery` accepts `code` or `fragment` and ignores any other value; the default is `OAUTH_TOKEN_DELIVERY`. Every `redirect_to`, including http(s), requires `code_challenge` and `code_challenge_method=S256` on that URL. `GET /api/v1/authorize?provider=saml` forwards the challenge. The verifier is checked later, at `POST /api/v1/oauth/session`. See [OAuth login](oauth-login.md#pkce-for-every-session-code).
+The SP-initiated login URL `/api/v1/saml/organization_slug/login/` validates `redirect_to` the same way as `/api/v1/authorize`. Tokens always come back as a one-time code. `token_delivery=fragment` is ignored. Every `redirect_to`, including http(s), requires `code_challenge` and `code_challenge_method=S256` on that URL. `GET /api/v1/authorize?provider=saml` forwards the challenge. The verifier is checked later, at `POST /api/v1/oauth/session`. See [OAuth login](oauth-login.md#pkce-for-every-session-code).
 
 ### IdP-initiated sign-in
 

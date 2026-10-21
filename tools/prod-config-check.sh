@@ -478,8 +478,8 @@ rm -f "${sec_headers}"
 # ---------------------------------------------------------------------------
 # OAuth / JWT notes (cannot fully verify without IdP)
 # ---------------------------------------------------------------------------
-info "Full OAuth login flow (fragment vs authorization code) cannot be verified without a configured IdP and allowlisted redirect_to."
-info "After 0.5.0, production should set OAUTH_TOKEN_DELIVERY=fragment until Shellui issue #66 lands (code delivery for new shells)."
+info "Full OAuth login flow (one-time code with PKCE) cannot be verified without a configured IdP and allowlisted redirect_to."
+info "OAUTH_TOKEN_DELIVERY=fragment is ignored since 0.9.0. Tokens are never sent in the URL fragment, so leave it unset."
 info "Decode a post-login access_token JWT to confirm iss=${EXPECTED_JWT_ISSUER} and aud=${EXPECTED_JWT_AUDIENCE}."
 
 # ---------------------------------------------------------------------------

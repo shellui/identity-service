@@ -37,7 +37,7 @@ Behind TLS, also set `CSRF_TRUSTED_ORIGINS` to the full HTTPS URL (for example `
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `OAUTH_TOKEN_DELIVERY` | `code` | `code`: one-time `shellui_auth_code` exchanged with `POST /api/v1/oauth/session`. `fragment`: tokens in the URL fragment (legacy) |
+| `OAUTH_TOKEN_DELIVERY` | `code` | `code`: one-time `shellui_auth_code` exchanged with `POST /api/v1/oauth/session`. `fragment` is ignored since 0.9.0: tokens are never sent in the URL fragment |
 | `OAUTH_SESSION_CODE_TTL_SECONDS` | `120` | Lifetime of the one-time code |
 | `OAUTH_SKIP_CONFIRM_PROVIDERS` | `google` | Providers that skip the confirmation page, comma-separated. Set it empty to always show the page |
 | `OAUTH_ALLOW_LOOPBACK_REDIRECTS` | same as `DEBUG` | Allow `redirect_to` on `localhost`, `127.0.0.1`, and `::1` |

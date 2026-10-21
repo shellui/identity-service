@@ -937,17 +937,10 @@ def _build_oauth_login_redirect(
     code_challenge: str | None = None,
 ) -> str:
     challenge = (code_challenge or '').strip()
-    # A custom-scheme URI must not carry tokens in the fragment. Always use the one-time code.
-    if is_custom_scheme_redirect(redirect_to):
-        if not challenge:
-            return append_oauth_error_params(
-                redirect_to,
-                'code_challenge is required for this redirect.',
-                'pkce_required',
-            )
-        token_delivery = 'code'
-    if token_delivery == 'fragment':
-        return _build_callback_redirect(redirect_to, payload, provider=provider)
+    # Tokens are never put in the URL fragment. ``token_delivery=fragment`` and
+    # ``OAUTH_TOKEN_DELIVERY=fragment`` fall back to the one-time code, which
+    # needs PKCE. Otherwise fragment delivery would skip the PKCE check (#99).
+    del token_delivery
     # http(s) code delivery is bound the same way. Do not issue a code that
     # can be redeemed with only the query string.
     if not challenge:
