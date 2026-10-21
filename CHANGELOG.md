@@ -38,6 +38,7 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 - **Deployment:** `DEBUG` defaults to false, so production no longer needs to set it.
 - **Deployment:** Releases publish the Docker image automatically.
+- **Errors:** Error pages use the Shellui design, and API errors always return JSON.
 
 ## [0.8.2] - 2026-10-18
 

@@ -66,3 +66,8 @@ urlpatterns = [
         include(('apps.scim.urls', 'scim'), namespace='scim'),
     ),
 ]
+
+handler400 = 'config.errors.bad_request'
+handler403 = 'config.errors.permission_denied'
+handler404 = 'config.errors.page_not_found'
+handler500 = 'config.errors.server_error'

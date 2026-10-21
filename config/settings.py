@@ -383,6 +383,9 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'config.wsgi.application'
 
+# Branded page for browsers, JSON under /api/ (config/errors.py).
+CSRF_FAILURE_VIEW = 'config.errors.csrf_failure'
+
 SITE_ID = 1
 
 AUTHENTICATION_BACKENDS = [
