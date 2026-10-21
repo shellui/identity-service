@@ -143,6 +143,60 @@ class DesktopRedirectApiTests(TestCase):
         self.company.refresh_from_db()
         self.assertEqual(self.company.desktop_redirect_schemes, ['shellui-playground'])
 
+    def _patch_dev_flag(self, user, allowed: bool):
+        self.client.force_authenticate(user=user)
+        return self.client.patch(
+            f'/api/v1/companies/{self.company.id}/',
+            {'allow_desktop_dev_scheme': allowed},
+            format='json',
+        )
+
+    def test_member_can_read_desktop_dev_flag_but_cannot_change_it(self):
+        self.client.force_authenticate(user=self.member)
+        read = self.client.get(f'/api/v1/companies/{self.company.id}/')
+        self.assertEqual(read.status_code, 200, read.data)
+        self.assertIs(read.data['allow_desktop_dev_scheme'], False)
+        denied = self._patch_dev_flag(self.member, True)
+        self.assertEqual(denied.status_code, 403)
+        self.company.refresh_from_db()
+        self.assertFalse(self.company.allow_desktop_dev_scheme)
+
+    def test_owner_and_staff_can_toggle_desktop_dev_flag(self):
+        updated = self._patch_dev_flag(self.owner, True)
+        self.assertEqual(updated.status_code, 200, updated.data)
+        self.assertIs(updated.data['allow_desktop_dev_scheme'], True)
+        self.company.refresh_from_db()
+        self.assertTrue(self.company.allow_desktop_dev_scheme)
+
+        staff = User.objects.create_user(
+            username='dev-flag-staff',
+            email='dev-flag-staff@example.com',
+            password='x',
+            is_staff=True,
+        )
+        set_company_access(self.company, staff, enabled=True)
+        self.company.members.add(staff)
+        staff_updated = self._patch_dev_flag(staff, False)
+        self.assertEqual(staff_updated.status_code, 200, staff_updated.data)
+        self.assertIs(staff_updated.data['allow_desktop_dev_scheme'], False)
+        self.company.refresh_from_db()
+        self.assertFalse(self.company.allow_desktop_dev_scheme)
+
+        superuser = User.objects.create_user(
+            username='dev-flag-root',
+            email='dev-flag-root@example.com',
+            password='x',
+            is_staff=False,
+            is_superuser=True,
+        )
+        set_company_access(self.company, superuser, enabled=True)
+        self.company.members.add(superuser)
+        super_updated = self._patch_dev_flag(superuser, True)
+        self.assertEqual(super_updated.status_code, 200, super_updated.data)
+        self.assertIs(super_updated.data['allow_desktop_dev_scheme'], True)
+        self.company.refresh_from_db()
+        self.assertTrue(self.company.allow_desktop_dev_scheme)
+
     def test_one_scheme_serves_social_and_magic_link(self):
         params = {
             'company_id': self.company.id,

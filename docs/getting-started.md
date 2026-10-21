@@ -87,7 +87,7 @@ The shell intersects that list with what the company has enabled, read from `GET
 
 ## Deploy to production
 
-The Docker image defaults to `DEBUG=false` and refuses to start until the production settings are in place. Use the `shellui/identity-service` image with a pinned tag, for example `shellui/identity-service:0.8.1`.
+The Docker image defaults to `DEBUG=false` and refuses to start until the production settings are in place. Use the `shellui/identity-service` image with a pinned tag, for example `shellui/identity-service:0.9.0`.
 
 :::warning Redis is required
 With `DEBUG=false`, the container exits at startup when `REDIS_URL` is unset. Redis backs rate limits, the logout denylist, OAuth and SAML state, and the scheduled jobs.
@@ -110,7 +110,7 @@ Generate the signing key with the image itself. The command prints `JWT_PRIVATE_
 
 ```bash
 docker run --rm -e SECRET_KEY=temporary \
-  shellui/identity-service:0.8.1 python manage.py generate_jwt_keys
+  shellui/identity-service:0.9.0 python manage.py generate_jwt_keys
 ```
 
 In a secret manager or the Coolify UI, paste only the PEM value, without the surrounding quotes. [JWT and JWKS](jwks.md) explains key formats and rotation.

@@ -242,6 +242,133 @@ class RedirectAllowlistTests(TestCase):
             )
         )
 
+    @override_settings(DEBUG=True)
+    def test_desktop_redirect_accepts_dev_variant_of_registered_scheme(self):
+        self.company.desktop_redirect_schemes = ['shellui-playground']
+        self.company.save(update_fields=['desktop_redirect_schemes'])
+        self.assertTrue(
+            redirect_url_allowed_for_company(
+                self.company,
+                'shellui-playground-dev://callback',
+                self.request,
+            )
+        )
+        for target in (
+            'shellui-playground-dev-dev://callback',
+            'shellui-dev://callback',
+            'shellui-playground-devx://callback',
+            'other-app-dev://callback',
+        ):
+            self.assertFalse(
+                redirect_url_allowed_for_company(self.company, target, self.request),
+                target,
+            )
+        url, err = validate_redirect_to_for_company(
+            company=self.company,
+            request=self.request,
+            redirect_to_raw='shellui-playground-dev://callback',
+        )
+        self.assertIsNone(err)
+        self.assertEqual(url, 'shellui-playground-dev://callback')
+
+    @override_settings(DEBUG=False)
+    def test_desktop_redirect_rejects_dev_variant_when_debug_is_off(self):
+        self.company.desktop_redirect_schemes = ['shellui-playground']
+        self.company.save(update_fields=['desktop_redirect_schemes'])
+        self.assertFalse(
+            redirect_url_allowed_for_company(
+                self.company,
+                'shellui-playground-dev://callback',
+                self.request,
+            )
+        )
+        url, err = validate_redirect_to_for_company(
+            company=self.company,
+            request=self.request,
+            redirect_to_raw='shellui-playground-dev://callback',
+        )
+        self.assertIsNone(url)
+        self.assertIn('not registered', err or '')
+        self.assertTrue(
+            redirect_url_allowed_for_company(
+                self.company,
+                'shellui-playground://callback',
+                self.request,
+            )
+        )
+
+    @override_settings(DEBUG=False)
+    def test_desktop_redirect_rejects_dev_variant_when_flag_and_debug_are_off(self):
+        self.company.desktop_redirect_schemes = ['shellui-playground']
+        self.company.allow_desktop_dev_scheme = False
+        self.company.save(update_fields=['desktop_redirect_schemes', 'allow_desktop_dev_scheme'])
+        self.assertFalse(
+            redirect_url_allowed_for_company(
+                self.company,
+                'shellui-playground-dev://callback',
+                self.request,
+            )
+        )
+
+    @override_settings(DEBUG=False)
+    def test_company_flag_accepts_dev_variant_and_rejects_lookalikes(self):
+        self.company.desktop_redirect_schemes = ['shellui-playground']
+        self.company.allow_desktop_dev_scheme = True
+        self.company.save(update_fields=['desktop_redirect_schemes', 'allow_desktop_dev_scheme'])
+        self.assertTrue(
+            redirect_url_allowed_for_company(
+                self.company,
+                'shellui-playground://callback',
+                self.request,
+            )
+        )
+        self.assertTrue(
+            redirect_url_allowed_for_company(
+                self.company,
+                'shellui-playground-dev://callback',
+                self.request,
+            )
+        )
+        url, err = validate_redirect_to_for_company(
+            company=self.company,
+            request=self.request,
+            redirect_to_raw='shellui-playground-dev://callback',
+        )
+        self.assertIsNone(err)
+        self.assertEqual(url, 'shellui-playground-dev://callback')
+        for target in (
+            'shellui-playground-dev-dev://callback',
+            'shellui-dev://callback',
+            'shellui-playground-devx://callback',
+            'other-app-dev://callback',
+            'com.other.app://callback',
+        ):
+            self.assertFalse(
+                redirect_url_allowed_for_company(self.company, target, self.request),
+                target,
+            )
+        self.company.desktop_redirect_schemes = []
+        self.company.save(update_fields=['desktop_redirect_schemes'])
+        self.assertFalse(
+            redirect_url_allowed_for_company(
+                self.company,
+                'shellui-playground-dev://callback',
+                self.request,
+            )
+        )
+
+    @override_settings(DEBUG=False)
+    def test_desktop_redirect_accepts_dev_scheme_when_listed(self):
+        self.company.desktop_redirect_schemes = ['shellui-playground-dev']
+        self.company.save(update_fields=['desktop_redirect_schemes'])
+        self.assertTrue(
+            redirect_url_allowed_for_company(
+                self.company,
+                'shellui-playground-dev://callback',
+                self.request,
+            )
+        )
+
     def test_error_deep_link_carries_only_the_error_code(self):
         link = desktop_error_deep_link(
             'shellui-playground://callback?shellui_auth_code=secret',
@@ -297,3 +424,16 @@ class RedirectAllowlistTests(TestCase):
             accepted.cleaned_data['desktop_redirect_schemes'],
             ['shellui-playground', 'com.shellui.app'],
         )
+        self.assertIs(accepted.cleaned_data['allow_desktop_dev_scheme'], False)
+        enabled = CompanyAdminForm(
+            data={
+                **base,
+                'desktop_redirect_schemes': 'shellui-playground',
+                'allow_desktop_dev_scheme': True,
+            },
+            instance=self.company,
+        )
+        self.assertTrue(enabled.is_valid(), enabled.errors)
+        self.assertIs(enabled.cleaned_data['allow_desktop_dev_scheme'], True)
+        saved = enabled.save()
+        self.assertTrue(saved.allow_desktop_dev_scheme)

@@ -118,6 +118,13 @@ class Company(models.Model):
             'A redirect is accepted when its scheme is in this list.'
         ),
     )
+    allow_desktop_dev_scheme = models.BooleanField(
+        default=False,
+        help_text=(
+            'Accept the -dev variant of each scheme in Desktop redirect schemes when DEBUG is off. '
+            'For example, shellui-playground also allows shellui-playground-dev. Off by default.'
+        ),
+    )
     DEFAULT_DATA_RETENTION_DAYS = 7
     data_retention_days = models.PositiveSmallIntegerField(
         default=DEFAULT_DATA_RETENTION_DAYS,

@@ -26,7 +26,9 @@ from .serializers import CompanySerializer, CompanyUpdateSerializer
         description=(
             'Company owners can update the name, owners list, and join access '
             '(public / domain / invite). Owners and staff can set '
-            'desktop_redirect_schemes. An empty list turns desktop sign-in off.'
+            'desktop_redirect_schemes and allow_desktop_dev_scheme. '
+            'An empty scheme list turns desktop sign-in off. '
+            'The flag accepts the -dev variant of each listed scheme when DEBUG is off.'
         ),
         request=CompanyUpdateSerializer,
     ),
@@ -36,7 +38,9 @@ from .serializers import CompanySerializer, CompanyUpdateSerializer
         description=(
             'Company owners can update the name, owners list, and join access '
             '(public / domain / invite). Owners and staff can set '
-            'desktop_redirect_schemes. An empty list turns desktop sign-in off.'
+            'desktop_redirect_schemes and allow_desktop_dev_scheme. '
+            'An empty scheme list turns desktop sign-in off. '
+            'The flag accepts the -dev variant of each listed scheme when DEBUG is off.'
         ),
         request=CompanyUpdateSerializer,
     ),
@@ -60,7 +64,9 @@ class CompanyViewSet(
     def partial_update(self, request, *args, **kwargs):
         company = self.get_object()
         is_owner = company.owners.filter(pk=request.user.pk).exists()
-        is_staff = bool(getattr(request.user, 'is_staff', False))
+        is_staff = bool(
+            getattr(request.user, 'is_staff', False) or getattr(request.user, 'is_superuser', False)
+        )
         if not is_owner and not is_staff:
             return Response({'error': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
 
@@ -100,6 +106,9 @@ class CompanyViewSet(
         if 'desktop_redirect_schemes' in validated:
             company.desktop_redirect_schemes = validated['desktop_redirect_schemes']
             update_fields.append('desktop_redirect_schemes')
+        if 'allow_desktop_dev_scheme' in validated:
+            company.allow_desktop_dev_scheme = validated['allow_desktop_dev_scheme']
+            update_fields.append('allow_desktop_dev_scheme')
         if update_fields:
             company.save(update_fields=update_fields)
 

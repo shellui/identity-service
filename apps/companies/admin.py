@@ -122,6 +122,7 @@ class CompanyAdminForm(forms.ModelForm):
             'enable_magic_link',
             'data_retention_days',
             'desktop_redirect_schemes',
+            'allow_desktop_dev_scheme',
             'owners',
         )
 
@@ -200,10 +201,11 @@ class CompanyAdmin(admin.ModelAdmin):
         (
             'Desktop apps',
             {
-                'fields': ('desktop_redirect_schemes',),
+                'fields': ('desktop_redirect_schemes', 'allow_desktop_dev_scheme'),
                 'description': (
                     'Custom URI schemes for desktop apps that sign in to this company. '
-                    'Empty turns desktop sign-in off. The same list applies to OAuth, magic link, and SAML.'
+                    'Empty turns desktop sign-in off. The same list applies to OAuth, magic link, and SAML. '
+                    'Allow desktop dev scheme accepts the -dev variant of each listed scheme when DEBUG is off.'
                 ),
             },
         ),
