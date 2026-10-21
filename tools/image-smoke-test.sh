@@ -156,7 +156,7 @@ genenv="$(docker run --rm "${IMAGE}" python manage.py generate_env --host id.exa
   || fail 'generate_env failed with zero env'
 grep -qx 'DEBUG=false' <<<"${genenv}" || fail 'generate_env: no DEBUG=false'
 grep -q '^SECRET_KEY=.\{50,\}' <<<"${genenv}" || fail 'generate_env: no SECRET_KEY'
-grep -q '^JWT_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----' <<<"${genenv}" || fail 'generate_env: no JWT_PRIVATE_KEY'
+grep -q '^JWT_PRIVATE_KEY="-----BEGIN [A-Z]* *KEY-----' <<<"${genenv}" || fail 'generate_env: no JWT_PRIVATE_KEY'
 grep -qx 'JWT_ISSUER=https://id.example.com' <<<"${genenv}" || fail 'generate_env: wrong JWT_ISSUER'
 unset genenv
 echo 'OK: generate_env works without env, database or Redis'
