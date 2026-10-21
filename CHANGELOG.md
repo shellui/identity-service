@@ -30,16 +30,14 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 ### 🔒 Security
 
+- **Federation:** Silent sign-in and provisioning refuse to link or make an owner of an existing staff account.
 - **Region hosts:** A region with `DEBUG=false` refuses to start with default `shellui.com` hosts.
+- **Dependencies:** Updated certifi to 2026.10.19.
 
 ### 🛠 Improvements
 
 - **Deployment:** `DEBUG` defaults to false, so production no longer needs to set it.
 - **Deployment:** Releases publish the Docker image automatically.
-
-### 🔒 Security
-
-- **Dependencies:** Updated certifi to 2026.10.19.
 
 ## [0.8.2] - 2026-10-18
 

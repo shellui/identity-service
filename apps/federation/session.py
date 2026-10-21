@@ -23,7 +23,12 @@ def remember_provider_session(request, user) -> None:
     """Ask middleware to set the provider cookie after a completed sign-in."""
     if not is_global() or user is None or not getattr(user, 'is_active', False):
         return
-    request.federation_op_user_id = user.pk
+    getattr(request, '_request', request).federation_op_user_id = user.pk
+
+
+def forget_provider_session(request) -> None:
+    """Ask middleware to clear the provider cookie. Works for DRF and Django requests."""
+    getattr(request, '_request', request).federation_clear_op_session = True
 
 
 def remember_verified_email(user, email: str) -> None:

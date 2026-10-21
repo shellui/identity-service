@@ -16,6 +16,7 @@ from rest_framework.response import Response
 
 from apps.federation.http import FederationView
 
+from apps.authapi.magic_link import is_staff_account
 from apps.authapi.oauth_user import normalize_oauth_email
 from apps.companies.access import set_company_access
 from apps.companies.models import Company
@@ -128,6 +129,8 @@ def _create_company_and_owner(body: dict) -> dict:
         created = True
     elif not user.is_active:
         raise ValueError('user_inactive')
+    elif is_staff_account(user):
+        raise ValueError('user_is_staff')
     set_company_access(company, user, enabled=True)
     company.owners.add(user)
     if body['plan'] is not None:
@@ -177,6 +180,8 @@ def _apply(claims: dict, body: dict, work) -> Response:
         code = str(exc)
         if code == 'user_inactive':
             return _error('The user account is inactive.', 'user_inactive', 409)
+        if code == 'user_is_staff':
+            return _error('Staff accounts cannot be provisioned.', 'user_is_staff', 409)
         return _error('Could not provision the company.', 'invalid_assertion', 400)
     return Response(result, status=200)
 

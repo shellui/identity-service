@@ -20,6 +20,7 @@ from rest_framework.response import Response
 from apps.federation.http import FederationView
 
 from apps.authapi.desktop_return import client_redirect_reports_success, client_redirect_response
+from apps.authapi.magic_link import is_staff_account
 from apps.authapi.oauth_user import normalize_oauth_email
 from apps.companies.access import apply_company_join
 from apps.companies.models import Company
@@ -158,7 +159,7 @@ def link_verified_user(claims: dict):
             )
             if linked is not None:
                 user = linked.user
-                if not user.is_active:
+                if not user.is_active or is_staff_account(user):
                     return None, 'access_denied'
                 if linked.email != email and not User.objects.filter(email__iexact=email).exclude(pk=user.pk).exists():
                     user.email = email
@@ -171,7 +172,7 @@ def link_verified_user(claims: dict):
             if user is None:
                 user = create_unprivileged_user(email=email, full_name=name)
                 created = True
-            elif not user.is_active:
+            elif not user.is_active or is_staff_account(user):
                 return None, 'access_denied'
             elif UpstreamAccount.objects.filter(user=user, issuer=issuer).exclude(sub=sub).exists():
                 return None, 'subject_mismatch'
