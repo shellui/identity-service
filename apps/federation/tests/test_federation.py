@@ -157,6 +157,20 @@ class ProviderTests(_CryptoMixin, TestCase):
         self._enable()
         self.client = APIClient()
 
+    def test_drf_request_flags_reach_the_middleware(self):
+        from django.http import HttpRequest
+        from rest_framework.request import Request
+
+        from apps.federation.session import forget_provider_session
+
+        user = User.objects.create_user('ada', 'ada@acme.test', 'pw')
+        raw = HttpRequest()
+        wrapped = Request(raw)
+        remember_provider_session(wrapped, user)
+        forget_provider_session(wrapped)
+        self.assertEqual(raw.federation_op_user_id, user.pk)
+        self.assertTrue(raw.federation_clear_op_session)
+
     def _authorize(self, **extra):
         params = {
             'response_type': 'code',
