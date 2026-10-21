@@ -422,6 +422,15 @@ class RelyingPartyTests(_CryptoMixin, TestCase):
         self.assertEqual(link.sub, 'subject-1')
         self.assertEqual(finalize.call_args.kwargs['user'].pk, user.pk)
 
+    def test_existing_staff_account_is_not_linked(self):
+        User.objects.create_user(username='root', email='ada@acme.test', is_staff=True)
+        self._plant()
+        token = self._sign(self._claims())
+        with patch('apps.federation.relying._exchange', return_value=token):
+            response = self.client.get('/oauth/upstream-callback', {'code': 'c', 'state': 'state-1'})
+        self.assertIn('access_denied', response['Location'])
+        self.assertFalse(UpstreamAccount.objects.exists())
+
     def test_prompt_none_error_creates_nobody(self):
         self._plant()
         response = self.client.get(
@@ -495,6 +504,14 @@ class ProvisioningTests(_CryptoMixin, TestCase):
         self.assertEqual(plan.status_code, 200)
         self.assertEqual(plan.json()['limits']['max_members'], 10)
 
+    def test_existing_superuser_is_not_made_owner(self):
+        User.objects.create_user(username='root', email='ada@acme.test', is_superuser=True)
+        token, claims = self._assertion()
+        response = self._post(token, claims['idempotency_key'])
+        self.assertEqual(response.status_code, 409, response.content)
+        self.assertEqual(response.json()['error_code'], 'user_is_staff')
+        self.assertFalse(Company.objects.filter(slug='acme').exists())
+
     def test_unverified_email_creates_nothing(self):
         for flag in (False, 'true', 1):
             token, claims = self._assertion(email_verified=flag, idempotency_key=f'idem-key-{flag}')
@@ -536,7 +553,7 @@ class ProvisioningTests(_CryptoMixin, TestCase):
     def test_existing_staff_flag_is_not_changed(self):
         staff = User.objects.create_user('ada', 'ada@acme.test', 'pw', is_staff=True)
         token, claims = self._assertion()
-        self.assertEqual(self._post(token, claims['idempotency_key']).status_code, 200)
+        self.assertEqual(self._post(token, claims['idempotency_key']).status_code, 409)
         staff.refresh_from_db()
         self.assertTrue(staff.is_staff)
         plain = User.objects.create_user('grace', 'grace@acme.test', 'pw', is_staff=False)
