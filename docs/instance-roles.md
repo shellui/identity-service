@@ -81,6 +81,49 @@ A local user is created or linked only when `email_verified` is the boolean `tru
 
 If the upstream redirect carries `error=login_required`, no account is created.
 
+### Token exchange (region role)
+
+A shell signed in to the global server gets a regional session without a browser redirect, using OAuth 2.0 Token Exchange (RFC 8693). It answers **404** unless the role is `region` and `GLOBAL_ISSUER_URL`, `GLOBAL_JWKS` and `GLOBAL_ACCESS_TOKEN_AUDIENCE` are set.
+
+```
+POST /oauth/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=urn:ietf:params:oauth:grant-type:token-exchange
+&subject_token=<global access token>
+&subject_token_type=urn:ietf:params:oauth:token-type:access_token
+&company_id=<regional company id>
+```
+
+Success (200, `Cache-Control: no-store`):
+
+```json
+{
+  "access_token": "<regional access token>",
+  "issued_token_type": "urn:ietf:params:oauth:token-type:access_token",
+  "token_type": "Bearer",
+  "expires_in": 300,
+  "expires_at": 1793000000,
+  "refresh_token": "<regional refresh token>"
+}
+```
+
+The refresh token works with the usual `POST /api/v1/token?grant_type=refresh_token`.
+
+Checks on the subject token, all offline:
+
+- RS256 only, signed by a key in `GLOBAL_JWKS` (matched by `kid`)
+- `iss` equals `GLOBAL_ISSUER_URL`, `aud` equals `GLOBAL_ACCESS_TOKEN_AUDIENCE`, `exp` not passed
+- `token_type` is `access` and the token carries a session id (`sid`). Refresh tokens and personal access tokens are refused
+- `email_verified` is the boolean `true`
+- `user_metadata.is_staff` is the boolean `false`, and no `is_staff` or `is_superuser` flag is set. Global staff are refused with `invalid_grant`: staff use local accounts on the region
+
+The user is then linked exactly like the upstream silent sign-in (`iss` and `sub`, local staff accounts refused, new accounts never staff) and the company join rules apply as on any sign-in: an invite-only company refuses a user who has no membership.
+
+Errors follow RFC 6749: `invalid_request`, `invalid_target` (unknown `company_id`), `invalid_grant` (token or user refused, with `error_description`). An `Origin` that is not in `OIDC_CORS_ALLOWED_ORIGINS` gets **403**, and only those origins get CORS headers, so list every shell origin there (for example `https://dashboard.shellui.com`, and `http://localhost:4000` for local testing). Tokens are never logged.
+
+The global access token is not checked against global session revocation. It lives for `JWT_ACCESS_TOKEN_LIFETIME` (5 minutes by default) on the global server.
+
 ### Provisioning API
 
 The dashboard (shellui/saas-service) creates and manages regional companies here. Nothing else calls this API. It answers **404** unless the role is `region` and `PROVISIONING_PUBLIC_KEY`, `PROVISIONING_ISSUER` and `GLOBAL_ISSUER_URL` are set.
