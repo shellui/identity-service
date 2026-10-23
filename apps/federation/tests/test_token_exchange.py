@@ -45,7 +45,7 @@ class TokenExchangeTests(_CryptoMixin, TestCase):
             'email': 'ada@acme.test',
             'email_verified': True,
             'company_id': 1,
-            'user_metadata': {'full_name': 'Ada Lovelace', 'is_staff': True},
+            'user_metadata': {'full_name': 'Ada Lovelace', 'is_staff': False},
         }
         claims.update(extra)
         key = signing or self.signing
@@ -110,6 +110,23 @@ class TokenExchangeTests(_CryptoMixin, TestCase):
             response = self._post(token)
             self.assertEqual(response.status_code, 400, token)
             self.assertEqual(response.json()['error'], 'invalid_grant')
+
+    def test_global_staff_is_refused(self):
+        self._member()
+        for token in (
+            self._global_token(user_metadata={'full_name': 'Ada', 'is_staff': True}),
+            self._global_token(user_metadata={'full_name': 'Ada', 'is_staff': False, 'is_superuser': True}),
+            self._global_token(is_superuser=True),
+            self._global_token(is_staff='false'),
+            self._global_token(user_metadata={'full_name': 'Ada'}),
+            self._global_token(user_metadata=None),
+        ):
+            response = self._post(token)
+            self.assertEqual(response.status_code, 400, token)
+            body = response.json()
+            self.assertEqual(body['error'], 'invalid_grant')
+            self.assertIn('local account', body['error_description'])
+        self.assertFalse(RefreshTokenSession.objects.exists())
 
     def test_local_staff_account_is_not_linked(self):
         User.objects.create_user('root', 'ada@acme.test', is_staff=True)

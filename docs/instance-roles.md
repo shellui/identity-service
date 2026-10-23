@@ -116,6 +116,7 @@ Checks on the subject token, all offline:
 - `iss` equals `GLOBAL_ISSUER_URL`, `aud` equals `GLOBAL_ACCESS_TOKEN_AUDIENCE`, `exp` not passed
 - `token_type` is `access` and the token carries a session id (`sid`). Refresh tokens and personal access tokens are refused
 - `email_verified` is the boolean `true`
+- `user_metadata.is_staff` is the boolean `false`, and no `is_staff` or `is_superuser` flag is set. Global staff are refused with `invalid_grant`: staff use local accounts on the region
 
 The user is then linked exactly like the upstream silent sign-in (`iss` and `sub`, local staff accounts refused, new accounts never staff) and the company join rules apply as on any sign-in: an invite-only company refuses a user who has no membership.
 

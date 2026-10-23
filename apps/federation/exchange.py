@@ -82,6 +82,19 @@ def handle_token_exchange(request) -> Response:
         return _error('invalid_grant', 'The email address is not verified on the global server.')
 
     metadata = claims.get('user_metadata') if isinstance(claims.get('user_metadata'), dict) else {}
+    # Global access tokens carry user_metadata.is_staff. Fail closed when it is missing, and refuse
+    # any staff or superuser flag: staff use local regional accounts, never a federated one.
+    if not isinstance(metadata.get('is_staff'), bool) or any(
+        source.get(flag) is not False
+        for source in (metadata, claims)
+        for flag in ('is_staff', 'is_superuser')
+        if flag in source
+    ):
+        logger.info('token exchange: global staff refused company_id=%s', company.pk)
+        return _error(
+            'invalid_grant',
+            'Staff accounts cannot use token exchange. Sign in with a local account on this region.',
+        )
     link_claims = {
         'iss': claims.get('iss'),
         'sub': claims.get('sub'),

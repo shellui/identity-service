@@ -25,7 +25,7 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 ### ✨ Feature
 
-- **Token exchange:** A region trades a global access token for a regional session in one company (`POST /oauth/token`, RFC 8693, needs `GLOBAL_ACCESS_TOKEN_AUDIENCE`). Shells no longer need a hidden sign-in frame. See [docs/instance-roles.md](docs/instance-roles.md).
+- **Token exchange:** A region trades a global access token for a regional session in one company (`POST /oauth/token`, RFC 8693, needs `GLOBAL_ACCESS_TOKEN_AUDIENCE`). Shells no longer need a hidden sign-in frame. See [docs/instance-roles.md](docs/instance-roles.md). Global staff are refused.
 
 ## [0.9.0] - 2026-10-21
 
