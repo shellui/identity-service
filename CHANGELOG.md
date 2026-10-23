@@ -21,11 +21,16 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
 -->
 
-## [Unreleased]
+## [0.9.1] - 2026-10-23
 
 ### ✨ Feature
 
-- **Token exchange:** A region trades a global access token for a regional session in one company (`POST /oauth/token`, RFC 8693, needs `GLOBAL_ACCESS_TOKEN_AUDIENCE`). Shells no longer need a hidden sign-in frame. See [docs/instance-roles.md](docs/instance-roles.md). Global staff are refused.
+- **Token exchange:** Endpoint for regional sessions from a global access token (RFC 8693, `POST /oauth/token`). See [docs/instance-roles.md](docs/instance-roles.md).
+
+### 🔒 Security
+
+- **Token exchange:** Global staff are refused token exchange and must use local regional accounts.
+- **Dependencies:** Updated djangorestframework to 3.18.2.
 
 ## [0.9.0] - 2026-10-21
 
