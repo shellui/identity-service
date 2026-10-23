@@ -462,6 +462,9 @@ GLOBAL_JWKS = parse_jwks(os.getenv('GLOBAL_JWKS', ''))
 GLOBAL_CLIENT_ID = (os.getenv('GLOBAL_CLIENT_ID', '') or '').strip()
 GLOBAL_CLIENT_SECRET = os.getenv('GLOBAL_CLIENT_SECRET', '') or ''
 GLOBAL_REDIRECT_URI = (os.getenv('GLOBAL_REDIRECT_URI', '') or '').strip()
+# Token exchange (RFC 8693, role region): `aud` of global access tokens (the global JWT_AUDIENCE).
+# Unset leaves the exchange answering 404. Browser shells must be in OIDC_CORS_ALLOWED_ORIGINS.
+GLOBAL_ACCESS_TOKEN_AUDIENCE = (os.getenv('GLOBAL_ACCESS_TOKEN_AUDIENCE', '') or '').strip()
 
 # Regional provisioning API (role region). The dashboard (saas-service) signs each call with its
 # provisioning key; pin the public key here. Unset key or issuer leaves the API answering 404.
@@ -620,6 +623,7 @@ AUTH_RATE_LIMITS = {
     'admin_login': {'limit': _env_int('AUTH_RATE_LIMIT_ADMIN_LOGIN', 10), 'window': 300},
     'pat': {'limit': _env_int('AUTH_RATE_LIMIT_PAT', 30), 'window': 60},
     'magic_link': {'limit': _env_int('AUTH_RATE_LIMIT_MAGIC_LINK', 10), 'window': 60},
+    'token_exchange': {'limit': _env_int('AUTH_RATE_LIMIT_TOKEN_EXCHANGE', 30), 'window': 60},
     'invitation': {'limit': _env_int('AUTH_RATE_LIMIT_INVITATION', 30), 'window': 300},
 }
 
