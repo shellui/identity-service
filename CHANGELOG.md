@@ -21,6 +21,12 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
 -->
 
+## [Unreleased]
+
+### ✨ Feature
+
+- **Token exchange:** A region trades a global access token for a regional session in one company (`POST /oauth/token`, RFC 8693, needs `GLOBAL_ACCESS_TOKEN_AUDIENCE`). Shells no longer need a hidden sign-in frame. See [docs/instance-roles.md](docs/instance-roles.md).
+
 ## [0.9.0] - 2026-10-21
 
 ### ✨ Feature

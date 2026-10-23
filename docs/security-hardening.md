@@ -16,6 +16,7 @@ Abuse-prone endpoints are rate limited, with counters in the shared cache (Redis
 | `token_refresh` | 60 per minute per IP | `POST /api/v1/token?grant_type=refresh_token` | `AUTH_RATE_LIMIT_TOKEN_REFRESH` |
 | `auth_settings` | 30 per minute per IP | `GET /api/v1/settings` | `AUTH_RATE_LIMIT_SETTINGS` |
 | `magic_link` | 10 per minute | `POST /api/v1/magic-link/request`, per IP, per email, and per company | `AUTH_RATE_LIMIT_MAGIC_LINK` |
+| `token_exchange` | 30 per minute per IP | `POST /oauth/token` with the token exchange grant (region role) | `AUTH_RATE_LIMIT_TOKEN_EXCHANGE` |
 | `invitation` | 30 per 5 minutes per company | `POST /api/v1/invitations` | `AUTH_RATE_LIMIT_INVITATION` |
 | `admin_login` | 10 per 5 minutes per IP | `POST /admin/login/` | `AUTH_RATE_LIMIT_ADMIN_LOGIN` |
 | `pat` | 30 per minute per user | `GET` and `POST /api/v1/personal-access-tokens`, revoke | `AUTH_RATE_LIMIT_PAT` |

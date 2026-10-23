@@ -123,6 +123,10 @@ class TokenView(FederationView):
     permission_classes = [AllowAny]
 
     def post(self, request):
+        from apps.federation.exchange import GRANT_TYPE, handle_token_exchange
+
+        if request.data.get('grant_type') == GRANT_TYPE:
+            return handle_token_exchange(request)
         if not is_global():
             return _disabled()
         client_id, secret = _client_credentials(request)
