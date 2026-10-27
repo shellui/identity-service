@@ -6,26 +6,15 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
 <!---
-## [Unreleased] - yyyy-mm-dd
-
-### ✨ Feature – for new features
-### 🛠 Improvements – for general improvements
-### 🚨 Changed – for changes in existing functionality
-### ⚠️ Deprecated – for soon-to-be removed features
-### 📚 Documentation – for documentation update
-### 🗑 Removed – for removed features
-### 🐛 Bug Fixes – for any bug fixes
-### 🔒 Security – in case of vulnerabilities
-### 🏗 Chore – for tidying code
-
-See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
--->
-
-## [Unreleased]
+## [0.9.2] - 2026-10-27
 
 ### 🐛 Bug Fixes
 
-- **API docs:** ReDoc at `/api/docs/redoc/` loads again, and Swagger UI no longer depends on a CDN. Both now ship with the service (drf-spectacular-sidecar, plus a bundled copy of `@shellui/sdk` 0.2.0) instead of the CDN's `@latest` builds and esm.sh. `redoc@latest` moved to 3.x and broke the page.
+- **API docs:** ReDoc at `/api/docs/redoc/` loads again, served from the service's own static files.
+
+### 🛠 Improvements
+
+- **API docs:** Swagger UI and the Shellui SDK no longer load from a CDN.
 
 ## [0.9.1] - 2026-10-23
 
