@@ -21,6 +21,12 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
 -->
 
+## [Unreleased]
+
+### 🐛 Bug Fixes
+
+- **API docs:** ReDoc at `/api/docs/redoc/` loads again. Its script now ships with the service (drf-spectacular-sidecar) instead of the CDN's `redoc@latest`, which moved to 3.x and broke the page.
+
 ## [0.9.1] - 2026-10-23
 
 ### ✨ Feature
