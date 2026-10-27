@@ -21,6 +21,16 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
 -->
 
+## [0.9.2] - 2026-10-27
+
+### 🐛 Bug Fixes
+
+- **API docs:** ReDoc at `/api/docs/redoc/` loads again, served from the service's own static files.
+
+### 🛠 Improvements
+
+- **API docs:** Swagger UI and the Shellui SDK no longer load from a CDN.
+
 ## [0.9.1] - 2026-10-23
 
 ### ✨ Feature

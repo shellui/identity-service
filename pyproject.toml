@@ -1,6 +1,6 @@
 [project]
 name = "identity-service"
-version = "0.9.1"
+version = "0.9.2"
 description = "Authentication and identity service powering Shellui applications"
 readme = "README.md"
 requires-python = ">=3.14"
@@ -11,6 +11,7 @@ dependencies = [
     "djangorestframework==3.18.2",
     "djangorestframework-simplejwt==5.5.1",
     "drf-spectacular==0.29.0",
+    "drf-spectacular-sidecar==2026.10.1",
     "python-dotenv==1.2.2",
     "prometheus-client==0.21.1",
     "requests==2.33.0",

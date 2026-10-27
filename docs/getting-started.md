@@ -32,7 +32,7 @@ The container runs the database migrations, then serves on [http://localhost:800
 
 - **`/`**: on an empty database, a one-time form creates the first superuser (only while `DEBUG=true`)
 - **`/admin/`**: Django admin, where operators manage companies, users, and provider apps
-- **`/api/docs/`**: the interactive OpenAPI reference for every endpoint
+- **`/api/docs/`**: the interactive OpenAPI reference for every endpoint, also available as ReDoc at `/api/docs/redoc/`. Both pages are served from the service's own static files, with no CDN
 
 To create the superuser from the command line instead:
 
@@ -87,7 +87,7 @@ The shell intersects that list with what the company has enabled, read from `GET
 
 ## Deploy to production
 
-The Docker image defaults to `DEBUG=false` and refuses to start until the production settings are in place. Use the `shellui/identity-service` image with a pinned tag, for example `shellui/identity-service:0.9.1`.
+The Docker image defaults to `DEBUG=false` and refuses to start until the production settings are in place. Use the `shellui/identity-service` image with a pinned tag, for example `shellui/identity-service:0.9.2`.
 
 :::warning Redis is required
 With `DEBUG=false`, the container exits at startup when `REDIS_URL` is unset. Redis backs rate limits, the logout denylist, OAuth and SAML state, and the scheduled jobs.
@@ -96,7 +96,7 @@ With `DEBUG=false`, the container exits at startup when `REDIS_URL` is unset. Re
 Start by generating the settings with the image itself:
 
 ```bash
-docker run --rm shellui/identity-service:0.9.1 \
+docker run --rm shellui/identity-service:0.9.2 \
   python manage.py generate_env --host auth.example.com > identity.env
 ```
 
@@ -119,7 +119,7 @@ To generate only a new signing key, for example to rotate it, the image prints `
 
 ```bash
 docker run --rm -e SECRET_KEY=temporary \
-  shellui/identity-service:0.9.1 python manage.py generate_jwt_keys
+  shellui/identity-service:0.9.2 python manage.py generate_jwt_keys
 ```
 
 In a secret manager or the Coolify UI, paste only the PEM value, without the surrounding quotes. [JWT and JWKS](jwks.md) explains key formats and rotation.
