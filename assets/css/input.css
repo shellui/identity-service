@@ -4,6 +4,7 @@
 @source "../../templates/**/*.html";
 @source not "../../templates/authapi/signin_error.html";
 @source not "../../docs";
+@source not "../../static/vendor";
 @source not "../../tools";
 
 @custom-variant dark (&:where(.dark, .dark *));
