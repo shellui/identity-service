@@ -21,6 +21,12 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
 -->
 
+## [0.10.0] - 2026-11-01
+
+### ✨ Feature
+
+- Company deletion: deleting from the dashboard or Django admin flags the company, hides it, refuses its tokens, and a Celery job purges it every 60 seconds across storage, hosting and email, then sends `identity.company.deleted` (set `STORAGE_SERVICE_URL`, `HOSTING_SERVICE_URL`, `EMAIL_SERVICE_URL`).
+
 ## [0.9.2] - 2026-10-27
 
 ### 🐛 Bug Fixes

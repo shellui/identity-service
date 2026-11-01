@@ -214,6 +214,11 @@ Leave `SHELLUI_INSTANCE_ROLE` unset for a standalone deployment. `global` turns 
 | `PROVISIONING_ISSUER` | empty | Expected assertion `iss` (the dashboard) |
 | `PROVISIONING_AUDIENCE` | host of `JWT_ISSUER` | Expected assertion `aud` |
 | `PROVISIONING_DEFAULT_REDIRECTS` | empty | Origins added to each provisioned company's redirect allowlist |
+| `STORAGE_SERVICE_URL` | empty | storage-service origin, told to purge a deleted company. Unset: skipped with a warning. See [Company deletion](company-deletion.md) |
+| `HOSTING_SERVICE_URL` | empty | hosting-service origin, told to purge a deleted company. Unset: skipped with a warning |
+| `COMPANY_DELETION_TIMEOUT_SECONDS` | `10` | Timeout of each call to those services |
+| `DASHBOARD_WEBHOOK_URL` | empty | saas-service region webhook (`https://<dashboard>/api/v1/webhooks/<region>`) that receives `identity.company.deleted` |
+| `DASHBOARD_WEBHOOK_SECRET` | empty | Signing secret for that webhook. Same value as the region's webhook secret in saas-service |
 
 ## Related
 
