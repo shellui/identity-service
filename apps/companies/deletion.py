@@ -77,7 +77,7 @@ def deletion_services() -> list[tuple[str, str]]:
     services = [
         ('STORAGE_SERVICE_URL', getattr(settings, 'STORAGE_SERVICE_URL', '')),
         ('HOSTING_SERVICE_URL', getattr(settings, 'HOSTING_SERVICE_URL', '')),
-        ('EMAIL_SERVICE_URL', email),
+        ('EMAIL_SERVICE_URL' if getattr(settings, 'EMAIL_SERVICE_API_KEY', '') else 'EMAIL_SERVICE_API_KEY', email),
     ]
     return [(name, str(url or '').strip().rstrip('/')) for name, url in services]
 
@@ -120,13 +120,26 @@ def _notify_service(url: str, company_id: int) -> bool:
             json={'company_id': company_id},
             headers={'Authorization': f'Bearer {build_deletion_assertion(company_id, url)}'},
             timeout=float(getattr(settings, 'COMPANY_DELETION_TIMEOUT_SECONDS', 10)),
+            allow_redirects=False,
         )
     except requests.RequestException as exc:
         logger.warning('company deletion: %s unreachable for company=%s (%s)', url, company_id, type(exc).__name__)
         return False
     if response.status_code in (200, 202):
         return True
-    logger.warning('company deletion: %s answered %s for company=%s', url, response.status_code, company_id)
+    if 300 <= response.status_code < 400:
+        location = str(getattr(response, 'headers', {}).get('Location', '') or '').split('?')[0]
+        logger.warning(
+            'company deletion: %s redirected (%s to %s) for company=%s; set the service URL to an address '
+            'that does not redirect (https:// or a redirect-exempt internal name)',
+            url, response.status_code, location or '?', company_id,
+        )
+        return False
+    snippet = ' '.join(str(getattr(response, 'text', '') or '')[:200].split())
+    hint = ' (400 with an HTML body usually means DisallowedHost: add this host to ALLOWED_HOSTS on that service)' if response.status_code == 400 else ''
+    logger.warning(
+        'company deletion: %s answered %s for company=%s: %s%s', url, response.status_code, company_id, snippet or '-', hint
+    )
     return False
 
 
