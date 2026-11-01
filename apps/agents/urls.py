@@ -14,11 +14,6 @@ urlpatterns = [
     path('internal/mcp-revocations', internal_views.McpRevocationListView.as_view(), name='mcp-revocations'),
     path('internal/mcp-approval-requests', internal_views.McpInternalApprovalCreateView.as_view(), name='mcp-internal-approval'),
     path('internal/mcp-approval-state', internal_views.McpInternalApprovalStateView.as_view(), name='mcp-internal-approval-state'),
-    path(
-        'internal/mcp-approval-consume/<uuid:approval_id>',
-        internal_views.McpInternalApprovalConsumeView.as_view(),
-        name='mcp-internal-approval-consume-id',
-    ),
     path('internal/mcp-approval-consume', internal_views.McpInternalApprovalConsumeView.as_view(), name='mcp-internal-approval-consume'),
     path('internal/mcp-call-logs', internal_views.McpInternalCallLogView.as_view(), name='mcp-internal-call-log'),
 ]

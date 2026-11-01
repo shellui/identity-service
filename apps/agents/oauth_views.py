@@ -210,7 +210,6 @@ def _complete_authorize(request, *, user, client, redirect_uri, state, challenge
     _resource_url, service_id = resolve_mcp_resource(resource)
     if not _resource_url or not service_id or service_id not in services:
         return HttpResponse('Resource is not included in selected services.', status=400)
-    project_scope = (request.POST.get('project_scope') or '')[:255]
     agent = Agent.objects.create(
         company=company,
         name=name,
@@ -220,7 +219,6 @@ def _complete_authorize(request, *, user, client, redirect_uri, state, challenge
         allow_destructive_without_asking=destructive,
         read_level=read_level,
         services_allowed=services,
-        project_scope=project_scope,
     )
     code, code_digest = issue_mcp_authorization_code()
     McpAuthorizationCode.objects.create(

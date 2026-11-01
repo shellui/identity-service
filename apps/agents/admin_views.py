@@ -1,4 +1,4 @@
-"""REST admin APIs for MCP agents (company owners and staff)."""
+"""REST admin APIs for MCP agents (company owners; human tokens only)."""
 
 from __future__ import annotations
 
@@ -21,7 +21,6 @@ def _agent_row(agent: Agent) -> dict:
         'read_level': agent.read_level,
         'allow_destructive_without_asking': agent.allow_destructive_without_asking,
         'services_allowed': agent.services_allowed,
-        'project_scope': agent.project_scope,
         'expires_at': agent.expires_at.isoformat() if agent.expires_at else None,
         'paused_at': agent.paused_at.isoformat() if agent.paused_at else None,
         'revoked_at': agent.revoked_at.isoformat() if agent.revoked_at else None,
@@ -32,15 +31,14 @@ def _agent_row(agent: Agent) -> dict:
 
 @extend_schema_view(
     get=extend_schema(
-        tags=['mcp-tools'],
+        tags=['mcp-admin'],
         summary='List MCP agents',
         responses={200: OpenApiResponse(description='Agents for the token company')},
     ),
 )
 class McpAgentListView(APIView):
-    @mcp_expose_tool(name='list_mcp_agents', description='List MCP agents for the company.')
     def get(self, request):
-        actor, company, err = require_company_admin(request)
+        actor, company, err = require_company_admin(request, allow_agent_token=False)
         if err:
             return err
         qs = Agent.objects.filter(company=company).order_by('-created_at')[:200]
@@ -49,14 +47,13 @@ class McpAgentListView(APIView):
 
 @extend_schema_view(
     post=extend_schema(
-        tags=['mcp-tools'],
+        tags=['mcp-admin'],
         summary='Pause an MCP agent',
     ),
 )
 class McpAgentPauseView(APIView):
-    @mcp_expose_tool(name='pause_mcp_agent')
     def post(self, request, agent_id):
-        actor, company, err = require_company_admin(request)
+        actor, company, err = require_company_admin(request, allow_agent_token=False)
         if err:
             return err
         try:
@@ -72,14 +69,13 @@ class McpAgentPauseView(APIView):
 
 @extend_schema_view(
     post=extend_schema(
-        tags=['mcp-tools'],
+        tags=['mcp-admin'],
         summary='Revoke an MCP agent',
     ),
 )
 class McpAgentRevokeView(APIView):
-    @mcp_expose_tool(name='revoke_mcp_agent')
     def post(self, request, agent_id):
-        actor, company, err = require_company_admin(request)
+        actor, company, err = require_company_admin(request, allow_agent_token=False)
         if err:
             return err
         try:
@@ -98,12 +94,11 @@ class McpAgentRevokeView(APIView):
 
 @extend_schema_view(
     get=extend_schema(
-        tags=['mcp-tools'],
+        tags=['mcp-admin'],
         summary='List pending MCP approval requests',
     ),
 )
 class McpApprovalListView(APIView):
-    @mcp_expose_tool(name='list_mcp_approvals')
     def get(self, request):
         actor, company, err = require_company_admin(request, allow_agent_token=False)
         if err:
@@ -132,12 +127,11 @@ class McpApprovalListView(APIView):
 
 @extend_schema_view(
     post=extend_schema(
-        tags=['mcp-tools'],
+        tags=['mcp-admin'],
         summary='Approve an MCP approval request',
     ),
 )
 class McpApprovalApproveView(APIView):
-    @mcp_expose_tool(name='approve_mcp_request')
     def post(self, request, approval_id):
         actor, company, err = require_company_admin(request, allow_agent_token=False)
         if err:
@@ -157,12 +151,11 @@ class McpApprovalApproveView(APIView):
 
 @extend_schema_view(
     post=extend_schema(
-        tags=['mcp-tools'],
+        tags=['mcp-admin'],
         summary='Reject an MCP approval request',
     ),
 )
 class McpApprovalRejectView(APIView):
-    @mcp_expose_tool(name='reject_mcp_request')
     def post(self, request, approval_id):
         actor, company, err = require_company_admin(request, allow_agent_token=False)
         if err:
@@ -182,14 +175,13 @@ class McpApprovalRejectView(APIView):
 
 @extend_schema_view(
     get=extend_schema(
-        tags=['mcp-tools'],
+        tags=['mcp-admin'],
         summary='List MCP call log entries',
     ),
 )
 class McpCallLogListView(APIView):
-    @mcp_expose_tool(name='list_mcp_call_logs')
     def get(self, request):
-        actor, company, err = require_company_admin(request)
+        actor, company, err = require_company_admin(request, allow_agent_token=False)
         if err:
             return err
         qs = McpCallLog.objects.filter(company=company).select_related('agent').order_by('-created_at')[:200]

@@ -20,7 +20,7 @@ Staff accounts (`is_staff`, `is_superuser`, and global staff) cannot authorize M
 
 | Mode | Value | Behavior |
 | --- | --- | --- |
-| Read only | `read_only` | Safe HTTP methods only |
+| Read only | `read_only` | Safe HTTP methods and tools tagged `x-mcp.read_only` |
 | Ask before changes | `ask` (default) | Writes create a pending approval |
 | Full access | `full` | Writes run immediately unless the tool is marked destructive |
 
@@ -37,12 +37,14 @@ Staff accounts (`is_staff`, `is_superuser`, and global staff) cannot authorize M
 
 When a write needs human confirmation, the service creates an approval through Identity:
 
-- `POST /api/v1/mcp/internal/mcp-approval-requests` with a short-lived assertion (audience `shellui-mcp-approval`, scope `mcp.approval.create`), same pattern as [company deletion](company-deletion.md).
-- `POST` or `GET /api/v1/mcp/internal/mcp-approval-state` with the same approval assertion. Identity returns `pending`, `approved`, `denied`, or `expired` for the agent, service, tool (`action`), and arguments hash bound in the assertion. `404` when no row exists. Approved responses include `id` for consume.
-- `POST /api/v1/mcp/internal/mcp-approval-consume` (or `POST …/mcp-approval-consume/{id}`) with a call-log assertion (audience `shellui-mcp-call-log`, scope `mcp.call_log.create`). Consumption is atomic and single use; `{ "consumed": true }` only while the row is approved and younger than 10 minutes.
+- `POST /api/v1/mcp/internal/mcp-approval-requests` with a short-lived assertion (audience `shellui-mcp-approval`, scope `mcp.approval.create`), same pattern as [company deletion](company-deletion.md). The assertion JWT carries `agent_id`, `company_id`, `service`, `action`, and `arguments_hash`. The JSON body only carries redacted `arguments`.
+- `POST /api/v1/mcp/internal/mcp-approval-state` with the same approval assertion (no GET). Identity looks up the latest row matching all assertion fields and returns `pending`, `approved`, `denied`, or `expired`. `404` when no row exists. Approved responses include `id` (approval uuid) for consume.
+- `POST /api/v1/mcp/internal/mcp-approval-consume` with the same approval assertion. JSON body: `{ "approval_id": "<uuid>" }`. Identity loads the row with `id`, `company_id`, `agent_id`, `service`, and `arguments_hash` from the assertion; any mismatch returns `404`. Consumption is atomic (`select_for_update`) and single use; `{ "consumed": true }` only while the row is approved and younger than 10 minutes.
 - One pending row per agent and arguments hash, **expires after 10 minutes**, runs once, never standing.
 
-Company owners approve or reject in Shellui admin or via:
+Storage, hosting, and email must use this contract exactly (assertion fields on state and consume, `approval_id` in the consume body).
+
+Company owners approve or reject in Shellui admin or via human user tokens only:
 
 - `GET /api/v1/mcp/approvals`
 - `POST /api/v1/mcp/approvals/{id}/approve`
@@ -55,7 +57,7 @@ Pause or revoke agents with:
 - `POST /api/v1/mcp/agents/{id}/pause`
 - `POST /api/v1/mcp/agents/{id}/revoke`
 
-Services poll `GET /api/v1/mcp/internal/mcp-revocations` with a signed assertion (audience `shellui-mcp-revocation`, scope `mcp.revocation.read`, cache **30 seconds** on the consumer) so revocation is effective almost immediately.
+Services poll `GET /api/v1/mcp/internal/mcp-revocations` with a signed assertion (audience `shellui-mcp-revocation`, scope `mcp.revocation.read`, cache **30 seconds** on the consumer) so revocation is effective almost immediately. Optional `?company_id=` filters the list to one tenant. Identity signs each response (`revocation_assertion`, scope `mcp.revocation.list`, short `exp`) including `revoked_agent_ids`, `agents` (`agent_id`, `company_id`, `is_active`, `paused`), and `cache_seconds`. Services must verify with `shellui_mcp.internal.parse_trusted_revocation_poll_response` and cross-check `company_id` against the agent token before treating an agent as blocked.
 
 ## Call logs
 
@@ -88,9 +90,12 @@ Access tokens include:
 | `mcp_access` | `read_only`, `ask`, or `full` |
 | `mcp_read` | `safe` or `sensitive` |
 | `mcp_destructive` | Allow destructive without asking |
-| `project_scope` | Optional project label from consent |
 
 Refresh tokens use `grant_type=refresh_token` at `/oauth/mcp/token` with the same `resource` parameter. Each refresh token is bound to one resource.
+
+Regional Identity deployments scope agents to the company only (no `project_scope` in consent or JWT). Project binding for SaaS is enforced in saas-service.
+
+Agent bearer tokens cannot pause, revoke, approve, list call logs, or change agent settings. Those admin routes require a human company owner token (`allow_agent_token=false`) and are not exported as MCP tools. Identity `/mcp` exposes only non-admin tools such as `list_services`.
 
 Staff accounts cannot call `/api/v1/mcp/*` company admin APIs (same refusal as MCP OAuth).
 

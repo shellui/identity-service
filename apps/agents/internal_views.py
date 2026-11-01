@@ -18,14 +18,20 @@ from shellui_mcp.internal import (
     REVOCATION_AUDIENCE,
     REVOCATION_SCOPE,
     InternalAssertionError,
+    build_mcp_revocation_list_response_assertion,
     verify_mcp_internal_assertion,
 )
 from shellui_mcp.masking import redact_mapping
 
 from apps.actions.event_log import record_event
 from apps.actions.registry import get_event_type
+from apps.agents.approval_internal import (
+    approval_binding_from_claims,
+    lookup_approval_row,
+    public_approval_status,
+)
 from apps.agents.models import Agent, McpApprovalRequest, McpCallLog
-from apps.agents.revocation import REVOCATION_CACHE_SECONDS, blocked_agent_ids
+from apps.agents.revocation import REVOCATION_CACHE_SECONDS, blocked_agent_ids, blocked_agent_snapshots
 
 
 def _identity_origin() -> str:
@@ -49,84 +55,10 @@ def _approval_assertion_claims(request) -> tuple[dict | None, Response | None]:
         )
     except InternalAssertionError as exc:
         return None, Response({'error': exc.message}, status=exc.status)
-    agent_id = str(claims.get('agent_id') or '')
-    company_id = claims.get('company_id')
-    service = str(claims.get('service') or '')
-    action = str(claims.get('action') or '')
-    arguments_hash = str(claims.get('arguments_hash') or '')
-    if not agent_id or company_id is None or not service or not action or not arguments_hash:
+    binding = approval_binding_from_claims(claims)
+    if binding is None:
         return None, Response({'error': 'Invalid assertion claims.'}, status=status.HTTP_400_BAD_REQUEST)
     return claims, None
-
-
-def _approval_binding_from_request(request, claims: dict) -> tuple[dict | None, Response | None]:
-    """Merge assertion claims with optional body/query fields; reject mismatches."""
-    if request.method == 'GET':
-        source = request.query_params
-    else:
-        body = request.data if isinstance(request.data, dict) else {}
-        source = body
-    agent_id = str(claims.get('agent_id') or '')
-    company_id = claims.get('company_id')
-    service = str(claims.get('service') or '')
-    action = str(claims.get('action') or '')
-    arguments_hash = str(claims.get('arguments_hash') or '')
-    for key, expected in (
-        ('agent_id', agent_id),
-        ('company_id', company_id),
-        ('service', service),
-        ('action', action),
-        ('arguments_hash', arguments_hash),
-    ):
-        if key not in source or source.get(key) in (None, ''):
-            continue
-        provided = source.get(key)
-        if key == 'company_id':
-            try:
-                provided_norm = int(provided)
-                expected_norm = int(expected)
-            except (TypeError, ValueError):
-                return None, Response({'error': 'Invalid company_id.'}, status=status.HTTP_400_BAD_REQUEST)
-            if provided_norm != expected_norm:
-                return None, Response({'error': 'Request does not match assertion.'}, status=status.HTTP_400_BAD_REQUEST)
-            continue
-        if str(provided) != str(expected):
-            return None, Response({'error': 'Request does not match assertion.'}, status=status.HTTP_400_BAD_REQUEST)
-    return {
-        'agent_id': agent_id,
-        'company_id': company_id,
-        'service': service,
-        'action': action,
-        'arguments_hash': arguments_hash,
-    }, None
-
-
-def _public_approval_status(row: McpApprovalRequest, *, now) -> str:
-    if row.status == McpApprovalRequest.STATUS_REJECTED:
-        return 'denied'
-    if row.status == McpApprovalRequest.STATUS_EXECUTED:
-        return 'expired'
-    if row.status == McpApprovalRequest.STATUS_EXPIRED or row.expires_at <= now:
-        return 'expired'
-    if row.status == McpApprovalRequest.STATUS_APPROVED:
-        return 'approved'
-    if row.status == McpApprovalRequest.STATUS_PENDING:
-        return 'pending'
-    return 'expired'
-
-
-def _lookup_approval_row(binding: dict) -> McpApprovalRequest | None:
-    return (
-        McpApprovalRequest.objects.filter(
-            agent_id=binding['agent_id'],
-            company_id=binding['company_id'],
-            service=binding['service'],
-            action=binding['action'],
-            arguments_hash=binding['arguments_hash'],
-        )
-        .order_by('-created_at')
-        .first()
-    )
 
 
 class McpRevocationListView(APIView):
@@ -145,9 +77,17 @@ class McpRevocationListView(APIView):
             return Response({'error': exc.message}, status=exc.status)
         company_id = request.query_params.get('company_id')
         cid = int(company_id) if company_id and str(company_id).isdigit() else None
+        revoked_ids = blocked_agent_ids(company_id=cid)
+        agents = blocked_agent_snapshots(company_id=cid)
         payload = {
-            'revoked_agent_ids': blocked_agent_ids(company_id=cid),
+            'revoked_agent_ids': revoked_ids,
+            'agents': agents,
             'cache_seconds': REVOCATION_CACHE_SECONDS,
+            'revocation_assertion': build_mcp_revocation_list_response_assertion(
+                revoked_agent_ids=revoked_ids,
+                agents=agents,
+                cache_seconds=REVOCATION_CACHE_SECONDS,
+            ),
         }
         response = Response(payload)
         response['Cache-Control'] = f'private, max-age={REVOCATION_CACHE_SECONDS}'
@@ -168,15 +108,11 @@ class McpInternalApprovalCreateView(APIView):
             )
         except InternalAssertionError as exc:
             return Response({'error': exc.message}, status=exc.status)
-        agent_id = str(claims.get('agent_id') or '')
-        company_id = claims.get('company_id')
-        service = str(claims.get('service') or '')
-        action = str(claims.get('action') or '')
-        arguments_hash = str(claims.get('arguments_hash') or '')
-        if not agent_id or not company_id or not service or not action or not arguments_hash:
+        binding = approval_binding_from_claims(claims)
+        if binding is None:
             return Response({'error': 'Invalid assertion claims.'}, status=status.HTTP_400_BAD_REQUEST)
         try:
-            agent = Agent.objects.get(pk=agent_id, company_id=company_id)
+            agent = Agent.objects.get(pk=binding['agent_id'], company_id=binding['company_id'])
         except Agent.DoesNotExist:
             return Response({'error': 'Agent not found.'}, status=status.HTTP_404_NOT_FOUND)
         if not agent.is_active:
@@ -187,12 +123,12 @@ class McpInternalApprovalCreateView(APIView):
         expires_at = timezone.now() + timedelta(minutes=10)
         row, created = McpApprovalRequest.objects.get_or_create(
             agent=agent,
-            arguments_hash=arguments_hash,
+            arguments_hash=binding['arguments_hash'],
             status=McpApprovalRequest.STATUS_PENDING,
             defaults={
-                'company_id': company_id,
-                'service': service,
-                'action': action,
+                'company_id': binding['company_id'],
+                'service': binding['service'],
+                'action': binding['action'],
                 'arguments_redacted': redacted,
                 'expires_at': expires_at,
             },
@@ -208,24 +144,17 @@ class McpInternalApprovalStateView(APIView):
     authentication_classes = []
     permission_classes = []
 
-    def get(self, request):
-        return self._state(request)
-
     def post(self, request):
-        return self._state(request)
-
-    def _state(self, request):
         claims, err = _approval_assertion_claims(request)
         if err:
             return err
-        binding, err = _approval_binding_from_request(request, claims)
-        if err:
-            return err
-        row = _lookup_approval_row(binding)
+        binding = approval_binding_from_claims(claims)
+        assert binding is not None
+        row = lookup_approval_row(binding)
         if row is None:
             return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
         now = timezone.now()
-        public_status = _public_approval_status(row, now=now)
+        public_status = public_approval_status(row, now=now)
         payload = {'status': public_status}
         if public_status == 'approved':
             payload['id'] = str(row.id)
@@ -236,25 +165,30 @@ class McpInternalApprovalConsumeView(APIView):
     authentication_classes = []
     permission_classes = []
 
-    def post(self, request, approval_id=None):
-        try:
-            verify_mcp_internal_assertion(
-                _assertion_from_request(request),
-                expected_audience=CALL_LOG_AUDIENCE,
-                expected_scope=CALL_LOG_SCOPE,
-                expected_target=_identity_origin(),
-            )
-        except InternalAssertionError as exc:
-            return Response({'error': exc.message}, status=exc.status)
+    def post(self, request):
+        claims, err = _approval_assertion_claims(request)
+        if err:
+            return err
+        binding = approval_binding_from_claims(claims)
+        assert binding is not None
         body = request.data if isinstance(request.data, dict) else {}
-        raw_id = approval_id or body.get('approval_id') or body.get('id')
-        approval_id_str = str(raw_id or '').strip()
+        approval_id_str = str(body.get('approval_id') or '').strip()
         if not approval_id_str:
             return Response({'error': 'approval_id required.'}, status=status.HTTP_400_BAD_REQUEST)
         now = timezone.now()
         with transaction.atomic():
             try:
-                row = McpApprovalRequest.objects.select_for_update().get(pk=approval_id_str)
+                row = (
+                    McpApprovalRequest.objects.select_for_update()
+                    .filter(
+                        pk=approval_id_str,
+                        agent_id=binding['agent_id'],
+                        company_id=binding['company_id'],
+                        service=binding['service'],
+                        arguments_hash=binding['arguments_hash'],
+                    )
+                    .get()
+                )
             except McpApprovalRequest.DoesNotExist:
                 return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
             if row.status == McpApprovalRequest.STATUS_EXECUTED:

@@ -36,3 +36,22 @@ def blocked_agent_ids(*, company_id: int | None = None) -> list[str]:
     ids.update(paused_agent_ids(company_id=company_id))
     ids.update(expired_agent_ids(company_id=company_id))
     return sorted(ids)
+
+
+def blocked_agent_snapshots(*, company_id: int | None = None) -> list[dict]:
+    """Blocked agents with fields services use to cross-check tenant binding."""
+    ids = blocked_agent_ids(company_id=company_id)
+    if not ids:
+        return []
+    qs = Agent.objects.filter(pk__in=ids).order_by('id')
+    rows: list[dict] = []
+    for agent in qs:
+        rows.append(
+            {
+                'agent_id': str(agent.id),
+                'company_id': agent.company_id,
+                'is_active': agent.is_active,
+                'paused': agent.paused_at is not None,
+            }
+        )
+    return rows

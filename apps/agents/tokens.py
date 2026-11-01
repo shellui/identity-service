@@ -50,8 +50,6 @@ def build_agent_access_token(agent: Agent, *, resource: str) -> dict:
     }
     if api_settings.ISSUER:
         claims['iss'] = api_settings.ISSUER
-    if agent.project_scope:
-        claims['project_scope'] = agent.project_scope
     return claims
 
 
