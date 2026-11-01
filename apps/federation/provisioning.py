@@ -411,11 +411,11 @@ def _put_limits(row: ProvisionedCompany, data: dict) -> Response:
 
 
 def _schedule_deletion(row: ProvisionedCompany) -> Response:
-    """Mark for deletion. Data stays until a later purge job; nothing is removed here."""
-    if row.status != ProvisionedCompany.STATUS_DELETING:
-        row.status = ProvisionedCompany.STATUS_DELETING
-        row.deletion_requested_at = timezone.now()
-        row.save(update_fields=['status', 'deletion_requested_at', 'updated_at'])
+    """Flag for deletion. The purge job (every 60 seconds) removes the company and its data."""
+    from apps.companies.deletion import request_company_deletion
+
+    request_company_deletion(row.company)
+    row.refresh_from_db()
     return Response(_summary(row), status=202)
 
 

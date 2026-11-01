@@ -193,6 +193,18 @@ class CompanyAdmin(admin.ModelAdmin):
     list_filter = ('access_mode',)
     list_editable = ('access_mode',)
     search_fields = ('name', 'slug')
+
+    def delete_model(self, request, obj):
+        """Flag only. The purge job deletes the company and its data in every service."""
+        from apps.companies.deletion import request_company_deletion
+
+        request_company_deletion(obj)
+
+    def delete_queryset(self, request, queryset):
+        from apps.companies.deletion import request_company_deletion
+
+        for company in queryset:
+            request_company_deletion(company)
     filter_horizontal = ('owners',)
     inlines = [CompanyMembershipInline, CompanyOAuthClientInline]
     readonly_fields = ('retention_status_display',)

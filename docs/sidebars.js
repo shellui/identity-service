@@ -53,6 +53,7 @@ const sidebars = {
     ]),
     category('Operations', [
       doc('scheduled-jobs', 'Scheduled jobs'),
+      doc('company-deletion', 'Company deletion'),
       doc('security-hardening', 'Security hardening'),
       doc('upgrading', 'Upgrade notes'),
       doc('RELEASES', 'Releases'),

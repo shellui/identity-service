@@ -182,6 +182,11 @@ def scheduled_jobs_beat_schedule() -> dict:
             'schedule': timedelta(seconds=60),
             'options': {'expires': 55},
         },
+        'purge-deleted-companies': {
+            'task': 'companies.purge_deleted_companies',
+            'schedule': timedelta(seconds=60),
+            'options': {'expires': 55},
+        },
         'purge-expired-data': {
             'task': 'actions.purge_expired_data',
             # Hourly at minute 17: off the top of the hour, where many jobs start.
@@ -447,6 +452,15 @@ ACTIONS_WEBHOOK_SYNC_DELIVERY = _env_bool('ACTIONS_WEBHOOK_SYNC_DELIVERY', False
 MAGIC_LINK_EMAIL_DEFAULT_LANGUAGE = (
     os.getenv('MAGIC_LINK_EMAIL_DEFAULT_LANGUAGE', 'en').strip().lower() or 'en'
 )
+# Company deletion (docs/company-deletion.md). Origins of this region's services, each told to
+# purge a deleted company at DELETION_PATH. Unset: that service is skipped with a warning.
+# Email uses EMAIL_SERVICE_URL above when EMAIL_SERVICE_API_KEY is set.
+STORAGE_SERVICE_URL = os.getenv('STORAGE_SERVICE_URL', '').strip()
+HOSTING_SERVICE_URL = os.getenv('HOSTING_SERVICE_URL', '').strip()
+COMPANY_DELETION_TIMEOUT_SECONDS = float(os.getenv('COMPANY_DELETION_TIMEOUT_SECONDS', '10') or '10')
+# saas-service region webhook (``/api/v1/webhooks/<region>``) and its secret, for identity.company.deleted.
+DASHBOARD_WEBHOOK_URL = os.getenv('DASHBOARD_WEBHOOK_URL', '').strip()
+DASHBOARD_WEBHOOK_SECRET = os.getenv('DASHBOARD_WEBHOOK_SECRET', '').strip()
 
 JWT_ACCESS_TOKEN_LIFETIME = _env_duration('JWT_ACCESS_TOKEN_LIFETIME', timedelta(minutes=5))
 JWT_REFRESH_TOKEN_LIFETIME = _env_duration('JWT_REFRESH_TOKEN_LIFETIME', timedelta(days=7))
