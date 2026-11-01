@@ -25,6 +25,7 @@ from apps.authapi.throttling import check_rate_limit
 from apps.companies.models import Company
 from apps.agents.models import Agent, McpAuthorizationCode, McpOAuthClient
 from apps.agents.oauth_codes import hash_authorization_code, issue_mcp_authorization_code
+from apps.agents.mcp_resources import resolve_mcp_resource
 from apps.agents.oauth_redirect import normalize_mcp_redirect_uris, validate_mcp_redirect_uri
 from apps.agents.staff import is_mcp_oauth_refused_user
 from apps.agents.tokens import encode_access_token, issue_agent_refresh, refresh_agent_access
@@ -58,6 +59,7 @@ class OAuthAuthorizationServerMetadataView(APIView):
             'code_challenge_methods_supported': ['S256'],
             'token_endpoint_auth_methods_supported': ['none'],
             'scopes_supported': ['mcp'],
+            'resource_indicators_supported': True,
         }
         return JsonResponse(data)
 
@@ -136,6 +138,10 @@ def mcp_authorize(request):
     if rerr or not canonical_redirect or canonical_redirect not in (client.redirect_uris or []):
         return HttpResponse('Invalid redirect_uri.', status=400)
     redirect_uri = canonical_redirect
+    resource_raw = (request.GET.get('resource') or request.POST.get('resource') or '').strip()
+    resource_url, _service_id = resolve_mcp_resource(resource_raw)
+    if not resource_url:
+        return HttpResponse('Invalid or missing resource.', status=400)
     if not request.user.is_authenticated:
         login_url = reverse('admin:login')
         next_url = request.get_full_path()
@@ -145,7 +151,15 @@ def mcp_authorize(request):
         return HttpResponse('Staff accounts cannot authorize MCP agents.', status=403)
     companies = Company.objects.filter(memberships__user=user, memberships__is_enabled=True).order_by('name')
     if request.method == 'POST':
-        return _complete_authorize(request, user=user, client=client, redirect_uri=redirect_uri, state=state, challenge=challenge)
+        return _complete_authorize(
+            request,
+            user=user,
+            client=client,
+            redirect_uri=redirect_uri,
+            state=state,
+            challenge=challenge,
+            resource=resource_url,
+        )
     return render(
         request,
         'agents/mcp_consent.html',
@@ -153,6 +167,7 @@ def mcp_authorize(request):
             'client': client,
             'companies': companies,
             'redirect_uri': redirect_uri,
+            'resource': resource_url,
             'state': state,
             'code_challenge': challenge,
             'services': [
@@ -165,7 +180,7 @@ def mcp_authorize(request):
     )
 
 
-def _complete_authorize(request, *, user, client, redirect_uri, state, challenge):
+def _complete_authorize(request, *, user, client, redirect_uri, state, challenge, resource):
     if request.method != 'POST':
         return HttpResponse('Confirm on the consent form.', status=400)
     company_id = request.POST.get('company_id')
@@ -192,6 +207,9 @@ def _complete_authorize(request, *, user, client, redirect_uri, state, challenge
     services = [s for s in services if s in allowed_services]
     if not services:
         return HttpResponse('Choose at least one service.', status=400)
+    _resource_url, service_id = resolve_mcp_resource(resource)
+    if not _resource_url or not service_id or service_id not in services:
+        return HttpResponse('Resource is not included in selected services.', status=400)
     project_scope = (request.POST.get('project_scope') or '')[:255]
     agent = Agent.objects.create(
         company=company,
@@ -213,6 +231,7 @@ def _complete_authorize(request, *, user, client, redirect_uri, state, challenge
         agent=agent,
         redirect_uri=redirect_uri,
         code_challenge=challenge,
+        resource=_resource_url,
         expires_at=timezone.now() + timedelta(minutes=10),
     )
     params = {'code': code}
@@ -235,7 +254,10 @@ def mcp_token(request):
     grant = body.get('grant_type')
     if grant == 'refresh_token':
         refresh = str(body.get('refresh_token') or '')
-        pair = refresh_agent_access(refresh)
+        resource_url, _service_id = resolve_mcp_resource(str(body.get('resource') or ''))
+        if not resource_url:
+            return JsonResponse({'error': 'invalid_target'}, status=400)
+        pair = refresh_agent_access(refresh, resource=resource_url)
         if not pair:
             return JsonResponse({'error': 'invalid_grant'}, status=400)
         access, new_refresh = pair
@@ -275,6 +297,12 @@ def mcp_token(request):
             return JsonResponse({'error': 'invalid_grant'}, status=400)
         if row.redirect_uri != redirect_uri:
             return JsonResponse({'error': 'invalid_grant'}, status=400)
+        agent = row.agent
+        resource_url, service_id = resolve_mcp_resource(str(body.get('resource') or ''))
+        if not resource_url or row.resource != resource_url:
+            return JsonResponse({'error': 'invalid_target'}, status=400)
+        if not service_id or service_id not in (agent.services_allowed or []):
+            return JsonResponse({'error': 'access_denied'}, status=403)
         message, _code = verify_client_pkce(
             code_challenge=row.code_challenge,
             code_verifier=verifier,
@@ -284,13 +312,13 @@ def mcp_token(request):
             return JsonResponse({'error': 'invalid_grant', 'error_description': message}, status=400)
         if is_mcp_oauth_refused_user(row.user):
             return JsonResponse({'error': 'access_denied'}, status=403)
-        agent = row.agent
         if not agent.is_active:
             return JsonResponse({'error': 'access_denied'}, status=403)
         row.redeemed_at = timezone.now()
         row.save(update_fields=['redeemed_at'])
-    access = encode_access_token(agent)
-    refresh, _session = issue_agent_refresh(agent)
+        bound_resource = row.resource
+    access = encode_access_token(agent, resource=bound_resource)
+    refresh, _session = issue_agent_refresh(agent, resource=bound_resource)
     return JsonResponse(
         {
             'access_token': access,

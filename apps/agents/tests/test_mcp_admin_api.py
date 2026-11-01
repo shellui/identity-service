@@ -43,3 +43,13 @@ class McpAdminApiTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.agent.refresh_from_db()
         self.assertIsNotNone(self.agent.paused_at)
+
+    def test_staff_refused_on_mcp_admin_api(self):
+        staff = User.objects.create_user(username='staff-mcp', password='unused', is_staff=True)
+        self.company.owners.add(staff)
+        set_company_access(self.company, staff, enabled=True)
+        from apps.authapi.views import _issue_shellui_tokens
+
+        token = _issue_shellui_tokens(staff, company=self.company)['access_token']
+        response = self.client.get('/api/v1/mcp/agents', HTTP_AUTHORIZATION=f'Bearer {token}')
+        self.assertEqual(response.status_code, 403)

@@ -94,15 +94,13 @@ class ShellUIJWTAuthentication(JWTAuthentication):
         import jwt
 
         issuer = getattr(settings, 'JWT_ISSUER', None)
-        audience = getattr(settings, 'JWT_AUDIENCE', None) or 'shellui-mcp'
         try:
             payload = jwt.decode(
                 raw_token,
                 api_settings.SIGNING_KEY,
                 algorithms=[api_settings.ALGORITHM],
-                audience=audience,
                 issuer=issuer or None,
-                options={'require': ['exp', 'sub', 'agent_id']},
+                options={'require': ['exp', 'sub', 'agent_id', 'aud'], 'verify_aud': False},
             )
         except jwt.PyJWTError:
             return None

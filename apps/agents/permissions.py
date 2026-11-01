@@ -7,6 +7,7 @@ from rest_framework.response import Response
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 
 from apps.authapi.authentication import ShellUIJWTAuthentication
+from apps.agents.staff import is_mcp_oauth_refused_user
 
 
 def _bearer_agent_id(request) -> str | None:
@@ -27,8 +28,28 @@ def _bearer_agent_id(request) -> str | None:
 
 
 def require_company_admin(request, *, allow_agent_token: bool = True):
-    from apps.authapi.views import _require_staff_or_company_owner
+    from apps.authapi.views import (
+        _authenticate_bearer_user,
+        _is_user_company_owner,
+        _required_company_from_request,
+    )
+    from apps.companies.access import is_company_access_enabled
 
     if not allow_agent_token and _bearer_agent_id(request):
         return None, None, Response({'error': 'Agents cannot perform this action.'}, status=status.HTTP_403_FORBIDDEN)
-    return _require_staff_or_company_owner(request)
+    user = _authenticate_bearer_user(request)
+    if not user:
+        return None, None, Response({'error': 'Unauthorized'}, status=status.HTTP_401_UNAUTHORIZED)
+    if is_mcp_oauth_refused_user(user):
+        return None, None, Response({'error': 'Staff accounts cannot use MCP company APIs.'}, status=status.HTTP_403_FORBIDDEN)
+    company, cerr = _required_company_from_request(request, user=user)
+    if cerr:
+        return None, None, cerr
+    if not _is_user_company_owner(user, company):
+        return None, None, Response({'error': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
+    if not is_company_access_enabled(company, user):
+        return None, None, Response(
+            {'error': 'Company access is disabled for this user.'},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    return user, company, None

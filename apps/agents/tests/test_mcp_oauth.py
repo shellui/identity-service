@@ -1,4 +1,5 @@
 import json
+from urllib.parse import quote, urlencode
 
 from django.contrib.auth import get_user_model
 from django.test import Client, TestCase, override_settings
@@ -11,6 +12,8 @@ from apps.agents.staff import is_mcp_oauth_refused_user
 from apps.agents.tokens import encode_access_token
 
 User = get_user_model()
+
+IDENTITY_MCP_RESOURCE = 'https://identity.test/mcp'
 
 
 @override_settings(
@@ -27,6 +30,7 @@ class McpOAuthMetadataTests(TestCase):
         self.assertEqual(data['issuer'], 'https://identity.test')
         self.assertIn('registration_endpoint', data)
         self.assertEqual(data['code_challenge_methods_supported'], ['S256'])
+        self.assertTrue(data.get('resource_indicators_supported'))
 
     def test_protected_resource_metadata(self):
         response = self.client.get('/.well-known/oauth-protected-resource')
@@ -39,6 +43,7 @@ class McpOAuthMetadataTests(TestCase):
     JWT_AUDIENCE='shellui-test',
     MCP_DYNAMIC_CLIENT_REGISTRATION=True,
     AUTH_RATE_LIMIT_ENABLED=False,
+    OAUTH_ALLOW_LOOPBACK_REDIRECTS=True,
 )
 class McpOAuthFlowTests(TestCase):
     def setUp(self):
@@ -61,11 +66,17 @@ class McpOAuthFlowTests(TestCase):
         self.assertTrue(is_mcp_oauth_refused_user(staff))
         client = Client()
         client.force_login(staff)
-        url = (
-            '/oauth/mcp/authorize?client_id=%s&redirect_uri=http://127.0.0.1/cb&response_type=code'
-            '&code_challenge=%s&code_challenge_method=S256'
-        ) % (client_id, self.challenge)
-        response = client.get(url)
+        query = urlencode(
+            {
+                'client_id': client_id,
+                'redirect_uri': 'http://127.0.0.1/cb',
+                'response_type': 'code',
+                'code_challenge': self.challenge,
+                'code_challenge_method': 'S256',
+                'resource': IDENTITY_MCP_RESOURCE,
+            }
+        )
+        response = client.get(f'/oauth/mcp/authorize?{query}')
         self.assertEqual(response.status_code, 403)
 
     def test_agent_access_token_and_revocation_list(self):
@@ -83,15 +94,29 @@ class McpOAuthFlowTests(TestCase):
             created_by=self.owner,
             services_allowed=['identity'],
         )
-        access = encode_access_token(agent)
+        access = encode_access_token(agent, resource=IDENTITY_MCP_RESOURCE)
         import jwt
 
         payload = jwt.decode(access, options={'verify_signature': False})
         self.assertEqual(payload['agent_id'], str(agent.id))
-        revoked = self.client.get('/api/v1/mcp/internal/mcp-revocations')
+        self.assertEqual(payload['aud'], IDENTITY_MCP_RESOURCE)
+        from shellui_mcp.internal import build_mcp_revocation_assertion
+
+        assertion = build_mcp_revocation_assertion(audience_url='https://identity.test')
+        revoked = self.client.get(
+            '/api/v1/mcp/internal/mcp-revocations',
+            HTTP_AUTHORIZATION=f'Bearer {assertion}',
+        )
         self.assertEqual(revoked.status_code, 200)
         self.assertEqual(revoked.json()['cache_seconds'], 30)
         agent.revoked_at = agent.created_at
         agent.save(update_fields=['revoked_at'])
-        revoked2 = self.client.get('/api/v1/mcp/internal/mcp-revocations')
+        revoked2 = self.client.get(
+            '/api/v1/mcp/internal/mcp-revocations',
+            HTTP_AUTHORIZATION=f'Bearer {assertion}',
+        )
         self.assertIn(str(agent.id), revoked2.json()['revoked_agent_ids'])
+
+    def test_revocation_list_requires_assertion(self):
+        response = self.client.get('/api/v1/mcp/internal/mcp-revocations')
+        self.assertEqual(response.status_code, 401)

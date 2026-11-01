@@ -11,6 +11,7 @@ from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from drf_spectacular.generators import SchemaGenerator
 from rest_framework.request import Request
+from shellui_mcp.resources import access_token_audience_matches, mcp_resource_from_origin
 from shellui_mcp.server import McpServer
 
 from apps.agents.models import Agent, McpApprovalRequest
@@ -141,8 +142,12 @@ def _agent_claims(request: HttpRequest) -> dict | None:
     _user, token = result
     if not token.get('agent_id'):
         return None
+    expected = mcp_resource_from_origin(getattr(settings, 'JWT_ISSUER', '') or '')
+    claims = dict(token.payload)
+    if not access_token_audience_matches(claims, expected):
+        return None
     request.user = _user
-    return dict(token)
+    return claims
 
 
 @csrf_exempt

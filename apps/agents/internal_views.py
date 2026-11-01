@@ -14,6 +14,8 @@ from shellui_mcp.internal import (
     APPROVAL_SCOPE,
     CALL_LOG_AUDIENCE,
     CALL_LOG_SCOPE,
+    REVOCATION_AUDIENCE,
+    REVOCATION_SCOPE,
     InternalAssertionError,
     verify_mcp_internal_assertion,
 )
@@ -41,6 +43,15 @@ class McpRevocationListView(APIView):
     permission_classes = []
 
     def get(self, request):
+        try:
+            verify_mcp_internal_assertion(
+                _assertion_from_request(request),
+                expected_audience=REVOCATION_AUDIENCE,
+                expected_scope=REVOCATION_SCOPE,
+                expected_target=_identity_origin(),
+            )
+        except InternalAssertionError as exc:
+            return Response({'error': exc.message}, status=exc.status)
         company_id = request.query_params.get('company_id')
         cid = int(company_id) if company_id and str(company_id).isdigit() else None
         payload = {
@@ -48,7 +59,7 @@ class McpRevocationListView(APIView):
             'cache_seconds': REVOCATION_CACHE_SECONDS,
         }
         response = Response(payload)
-        response['Cache-Control'] = f'public, max-age={REVOCATION_CACHE_SECONDS}'
+        response['Cache-Control'] = f'private, max-age={REVOCATION_CACHE_SECONDS}'
         return response
 
 

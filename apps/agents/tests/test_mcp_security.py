@@ -13,6 +13,8 @@ from apps.agents.tokens import encode_access_token, issue_agent_refresh, refresh
 
 User = get_user_model()
 
+IDENTITY_MCP_RESOURCE = 'https://identity.test/mcp'
+
 
 @override_settings(
     JWT_ISSUER='https://identity.test',
@@ -53,10 +55,10 @@ class McpRefreshReuseTests(TestCase):
         self.agent = Agent.objects.create(company=self.company, name='A', created_by=self.owner)
 
     def test_reused_refresh_revokes_all_agent_sessions(self):
-        first_refresh, session = issue_agent_refresh(self.agent)
-        rotated = refresh_agent_access(first_refresh)
+        first_refresh, session = issue_agent_refresh(self.agent, resource=IDENTITY_MCP_RESOURCE)
+        rotated = refresh_agent_access(first_refresh, resource=IDENTITY_MCP_RESOURCE)
         self.assertIsNotNone(rotated)
-        reuse = refresh_agent_access(first_refresh)
+        reuse = refresh_agent_access(first_refresh, resource=IDENTITY_MCP_RESOURCE)
         self.assertIsNone(reuse)
         active = AgentRefreshSession.objects.filter(agent=self.agent, revoked_at__isnull=True).count()
         self.assertEqual(active, 0)
@@ -105,7 +107,7 @@ class McpAgentApprovalGuardTests(TestCase):
             arguments_hash='abc',
             expires_at=timezone.now() + timedelta(minutes=10),
         )
-        access = encode_access_token(self.agent)
+        access = encode_access_token(self.agent, resource=IDENTITY_MCP_RESOURCE)
         response = self.client.post(
             f'/api/v1/mcp/approvals/{row.id}/approve',
             HTTP_AUTHORIZATION=f'Bearer {access}',

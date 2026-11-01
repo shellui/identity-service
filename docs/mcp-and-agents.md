@@ -11,8 +11,8 @@ Shellui Identity is the OAuth authorization server for MCP clients. Each connect
 1. Point the MCP client at your identity origin (for example `https://auth.example.com`).
 2. The client loads OAuth authorization server metadata at `/.well-known/oauth-authorization-server` and protected resource metadata at `/.well-known/oauth-protected-resource` (resource `/mcp`).
 3. The client registers with **dynamic client registration** (`POST /oauth/mcp/register`) unless an operator disabled it (`MCP_DYNAMIC_CLIENT_REGISTRATION=false` or `Company.mcp_allow_dynamic_registration=false`).
-4. The user signs in and approves company, services, access level, and read level on the consent screen (`GET/POST /oauth/mcp/authorize` with PKCE S256).
-5. The client exchanges the authorization code at `POST /oauth/mcp/token` and calls `POST /mcp` on each allowed service with `Authorization: Bearer <access_token>`.
+4. The user signs in and approves company, services, access level, and read level on the consent screen (`GET/POST /oauth/mcp/authorize` with PKCE S256 and RFC 8707 `resource=<service>/mcp`).
+5. The client exchanges the authorization code at `POST /oauth/mcp/token` with the same `resource`, then calls `POST /mcp` on that service with `Authorization: Bearer <access_token>`. Repeat for each service using a separate token per resource.
 
 Staff accounts (`is_staff`, `is_superuser`, and global staff) cannot authorize MCP agents.
 
@@ -53,7 +53,7 @@ Pause or revoke agents with:
 - `POST /api/v1/mcp/agents/{id}/pause`
 - `POST /api/v1/mcp/agents/{id}/revoke`
 
-Services poll `GET /api/v1/mcp/internal/mcp-revocations` (cache **30 seconds** on the consumer) so revocation is effective almost immediately.
+Services poll `GET /api/v1/mcp/internal/mcp-revocations` with a signed assertion (audience `shellui-mcp-revocation`, scope `mcp.revocation.read`, cache **30 seconds** on the consumer) so revocation is effective almost immediately.
 
 ## Call logs
 
@@ -78,6 +78,7 @@ Access tokens include:
 
 | Claim | Meaning |
 | --- | --- |
+| `aud` | RFC 8707 resource URL for one service (`{origin}/mcp`) |
 | `sub` | `agent:{uuid}` |
 | `agent_id` | Agent uuid |
 | `company_id` | Company id |
@@ -87,7 +88,9 @@ Access tokens include:
 | `mcp_destructive` | Allow destructive without asking |
 | `project_scope` | Optional project label from consent |
 
-Refresh tokens use `grant_type=refresh_token` at `/oauth/mcp/token`.
+Refresh tokens use `grant_type=refresh_token` at `/oauth/mcp/token` with the same `resource` parameter. Each refresh token is bound to one resource.
+
+Staff accounts cannot call `/api/v1/mcp/*` company admin APIs (same refusal as MCP OAuth).
 
 ## shellui_mcp package (other services)
 
