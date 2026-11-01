@@ -38,6 +38,19 @@ def _identity_origin() -> str:
     return (getattr(settings, 'JWT_ISSUER', '') or '').rstrip('/')
 
 
+def _approval_target_from_body(body: dict) -> str:
+    target = str(body.get('target') or '').strip()
+    if target:
+        return target[:500]
+    method = str(body.get('method') or '').strip().upper()
+    path = str(body.get('path') or '').strip()
+    if method and path:
+        return f'{method} {path}'[:500]
+    if path:
+        return path[:500]
+    return ''
+
+
 def _assertion_from_request(request) -> str:
     auth = request.headers.get('Authorization') or ''
     if auth.lower().startswith('bearer '):
@@ -126,6 +139,7 @@ class McpInternalApprovalCreateView(APIView):
         body = request.data if isinstance(request.data, dict) else {}
         args = body.get('arguments') if isinstance(body.get('arguments'), dict) else {}
         redacted = redact_mapping(args, read_sensitive=False)
+        target = _approval_target_from_body(body)
         expires_at = timezone.now() + timedelta(minutes=10)
         row, created = McpApprovalRequest.objects.get_or_create(
             agent=agent,
@@ -135,6 +149,7 @@ class McpInternalApprovalCreateView(APIView):
                 'company_id': binding['company_id'],
                 'service': binding['service'],
                 'action': binding['action'],
+                'target': target,
                 'arguments_redacted': redacted,
                 'expires_at': expires_at,
             },
@@ -142,7 +157,8 @@ class McpInternalApprovalCreateView(APIView):
         if not created and row.expires_at <= timezone.now():
             row.expires_at = expires_at
             row.arguments_redacted = redacted
-            row.save(update_fields=['expires_at', 'arguments_redacted'])
+            row.target = target or row.target
+            row.save(update_fields=['expires_at', 'arguments_redacted', 'target'])
         return Response({'id': str(row.id), 'status': row.status, 'expires_at': row.expires_at.isoformat()})
 
 

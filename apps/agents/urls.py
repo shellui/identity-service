@@ -7,6 +7,7 @@ urlpatterns = [
     path('agents/<uuid:agent_id>/pause', admin_views.McpAgentPauseView.as_view(), name='mcp-agent-pause'),
     path('agents/<uuid:agent_id>/revoke', admin_views.McpAgentRevokeView.as_view(), name='mcp-agent-revoke'),
     path('approvals', admin_views.McpApprovalListView.as_view(), name='mcp-approvals-list'),
+    path('approvals/<uuid:approval_id>', admin_views.McpApprovalDetailView.as_view(), name='mcp-approval-detail'),
     path('approvals/<uuid:approval_id>/approve', admin_views.McpApprovalApproveView.as_view(), name='mcp-approval-approve'),
     path('approvals/<uuid:approval_id>/reject', admin_views.McpApprovalRejectView.as_view(), name='mcp-approval-reject'),
     path('call-logs', admin_views.McpCallLogListView.as_view(), name='mcp-call-logs'),

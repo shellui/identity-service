@@ -8,9 +8,25 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from shellui_mcp.decorators import mcp_expose_tool
+from shellui_mcp.masking import redact_mapping
 
 from apps.agents.models import Agent, McpApprovalRequest, McpCallLog
 from apps.agents.permissions import require_company_admin
+
+
+def _approval_row(row: McpApprovalRequest) -> dict:
+    return {
+        'id': str(row.id),
+        'agent_id': str(row.agent_id),
+        'agent_name': row.agent.name,
+        'service': row.service,
+        'action': row.action,
+        'target': row.target,
+        'arguments_hash': row.arguments_hash,
+        'arguments_redacted': redact_mapping(row.arguments_redacted or {}, read_sensitive=False),
+        'status': row.status,
+        'expires_at': row.expires_at.isoformat(),
+    }
 
 
 def _agent_row(agent: Agent) -> dict:
@@ -109,20 +125,25 @@ class McpApprovalListView(APIView):
             status=McpApprovalRequest.STATUS_PENDING,
             expires_at__gt=now,
         ).select_related('agent')[:100]
-        rows = []
-        for row in qs:
-            rows.append(
-                {
-                    'id': str(row.id),
-                    'agent_id': str(row.agent_id),
-                    'agent_name': row.agent.name,
-                    'service': row.service,
-                    'action': row.action,
-                    'arguments_hash': row.arguments_hash,
-                    'expires_at': row.expires_at.isoformat(),
-                }
-            )
-        return Response({'approvals': rows})
+        return Response({'approvals': [_approval_row(row) for row in qs]})
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=['mcp-admin'],
+        summary='Get one MCP approval request',
+    ),
+)
+class McpApprovalDetailView(APIView):
+    def get(self, request, approval_id):
+        actor, company, err = require_company_admin(request, allow_agent_token=False)
+        if err:
+            return err
+        try:
+            row = McpApprovalRequest.objects.select_related('agent').get(pk=approval_id, company=company)
+        except McpApprovalRequest.DoesNotExist:
+            return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        return Response({'approval': _approval_row(row)})
 
 
 @extend_schema_view(
@@ -146,7 +167,7 @@ class McpApprovalApproveView(APIView):
         row.decided_at = timezone.now()
         row.decided_by = actor
         row.save(update_fields=['status', 'decided_at', 'decided_by'])
-        return Response({'id': str(row.id), 'status': row.status})
+        return Response({'approval': _approval_row(row)})
 
 
 @extend_schema_view(
@@ -170,7 +191,7 @@ class McpApprovalRejectView(APIView):
         row.decided_at = timezone.now()
         row.decided_by = actor
         row.save(update_fields=['status', 'decided_at', 'decided_by'])
-        return Response({'id': str(row.id), 'status': row.status})
+        return Response({'approval': _approval_row(row)})
 
 
 @extend_schema_view(

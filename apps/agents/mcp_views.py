@@ -140,11 +140,18 @@ def _maybe_create_approval(payload: dict) -> dict | None:
     except Agent.DoesNotExist:
         return None
 
+    method = str(payload.get('method') or '').strip().upper()
+    path = str(payload.get('path') or '').strip()
+    if method and path:
+        target = f'{method} {path}'[:500]
+    else:
+        target = path[:500]
     row = McpApprovalRequest.objects.create(
         agent=agent,
         company_id=company_id,
         service=str(payload.get('service') or ''),
         action=str(payload.get('action') or ''),
+        target=target,
         arguments_hash=str(payload.get('arguments_hash') or ''),
         arguments_redacted=redact_mapping(payload.get('arguments') or {}, read_sensitive=False),
         expires_at=timezone.now() + timedelta(minutes=10),

@@ -151,6 +151,7 @@ class McpApprovalRequest(models.Model):
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='mcp_approval_requests')
     service = models.CharField(max_length=32)
     action = models.CharField(max_length=255)
+    target = models.CharField(max_length=500, blank=True)
     arguments_hash = models.CharField(max_length=64)
     arguments_redacted = models.JSONField(default=dict, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING)

@@ -37,7 +37,7 @@ Staff accounts (`is_staff`, `is_superuser`, and global staff) cannot authorize M
 
 When a write needs human confirmation, the service creates an approval through Identity:
 
-- `POST /api/v1/mcp/internal/mcp-approval-requests` with a short-lived assertion (audience `shellui-mcp-approval`, scope `mcp.approval.create`), same pattern as [company deletion](company-deletion.md). The assertion JWT carries `agent_id`, `company_id`, `service`, `action`, and `arguments_hash`. The JSON body only carries redacted `arguments`.
+- `POST /api/v1/mcp/internal/mcp-approval-requests` with a short-lived assertion (audience `shellui-mcp-approval`, scope `mcp.approval.create`), same pattern as [company deletion](company-deletion.md). The assertion JWT carries `agent_id`, `company_id`, `service`, `action`, and `arguments_hash`. The JSON body carries tool `arguments` (Identity stores `arguments_redacted` with the same `shellui_mcp` masking) and optional `target`, or `method` plus `path` to derive `target`.
 - `POST /api/v1/mcp/internal/mcp-approval-state` with the same approval assertion (no GET). Identity looks up the latest row matching all assertion fields and returns `pending`, `approved`, `denied`, or `expired`. `404` when no row exists. Approved responses include `id` (approval uuid) for consume.
 - `POST /api/v1/mcp/internal/mcp-approval-consume` with the same approval assertion. JSON body: `{ "approval_id": "<uuid>" }`. Identity loads the row with `id`, `company_id`, `agent_id`, `service`, and `arguments_hash` from the assertion; any mismatch returns `404`. Consumption is atomic (`select_for_update`) and single use; `{ "consumed": true }` only while the row is approved and younger than 10 minutes.
 - One pending row per agent and arguments hash, **expires after 10 minutes**, runs once, never standing.
@@ -46,7 +46,8 @@ Storage, hosting, and email must use this contract exactly (assertion fields on 
 
 Company owners approve or reject in Shellui admin or via human user tokens only:
 
-- `GET /api/v1/mcp/approvals`
+- `GET /api/v1/mcp/approvals` (pending rows include `service`, `action`, `target`, and `arguments_redacted`; secrets stay masked)
+- `GET /api/v1/mcp/approvals/{id}`
 - `POST /api/v1/mcp/approvals/{id}/approve`
 - `POST /api/v1/mcp/approvals/{id}/reject`
 
