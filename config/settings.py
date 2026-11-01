@@ -434,14 +434,6 @@ DEFAULT_FROM_EMAIL = _env_str('DEFAULT_FROM_EMAIL', 'noreply@localhost')
 EMAIL_TIMEOUT = _env_positive_float('EMAIL_TIMEOUT', 10.0)
 
 # Shellui email-service. Unset EMAIL_SERVICE_API_KEY keeps the SMTP / console backend.
-# Company deletion (docs/company-deletion.md). Comma-separated storage, hosting and email
-# service origins told to purge a deleted company. Empty: identity only purges its own rows.
-COMPANY_DELETION_SERVICE_URLS = os.getenv('COMPANY_DELETION_SERVICE_URLS', '').strip()
-COMPANY_DELETION_TIMEOUT_SECONDS = float(os.getenv('COMPANY_DELETION_TIMEOUT_SECONDS', '10') or '10')
-# saas-service region webhook (``/api/v1/webhooks/<region>``) and its secret, for identity.company.deleted.
-DASHBOARD_WEBHOOK_URL = os.getenv('DASHBOARD_WEBHOOK_URL', '').strip()
-DASHBOARD_WEBHOOK_SECRET = os.getenv('DASHBOARD_WEBHOOK_SECRET', '').strip()
-
 EMAIL_SERVICE_URL = (
     os.getenv('EMAIL_SERVICE_URL', 'https://email.shellui.com').strip() or 'https://email.shellui.com'
 ).rstrip('/')
@@ -460,6 +452,15 @@ ACTIONS_WEBHOOK_SYNC_DELIVERY = _env_bool('ACTIONS_WEBHOOK_SYNC_DELIVERY', False
 MAGIC_LINK_EMAIL_DEFAULT_LANGUAGE = (
     os.getenv('MAGIC_LINK_EMAIL_DEFAULT_LANGUAGE', 'en').strip().lower() or 'en'
 )
+# Company deletion (docs/company-deletion.md). Origins of this region's services, each told to
+# purge a deleted company at DELETION_PATH. Unset: that service is skipped with a warning.
+# Email uses EMAIL_SERVICE_URL above when EMAIL_SERVICE_API_KEY is set.
+STORAGE_SERVICE_URL = os.getenv('STORAGE_SERVICE_URL', '').strip()
+HOSTING_SERVICE_URL = os.getenv('HOSTING_SERVICE_URL', '').strip()
+COMPANY_DELETION_TIMEOUT_SECONDS = float(os.getenv('COMPANY_DELETION_TIMEOUT_SECONDS', '10') or '10')
+# saas-service region webhook (``/api/v1/webhooks/<region>``) and its secret, for identity.company.deleted.
+DASHBOARD_WEBHOOK_URL = os.getenv('DASHBOARD_WEBHOOK_URL', '').strip()
+DASHBOARD_WEBHOOK_SECRET = os.getenv('DASHBOARD_WEBHOOK_SECRET', '').strip()
 
 JWT_ACCESS_TOKEN_LIFETIME = _env_duration('JWT_ACCESS_TOKEN_LIFETIME', timedelta(minutes=5))
 JWT_REFRESH_TOKEN_LIFETIME = _env_duration('JWT_REFRESH_TOKEN_LIFETIME', timedelta(days=7))

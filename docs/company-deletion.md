@@ -17,7 +17,7 @@ Both set `Company.deletion_requested_at`. From then on the company:
 
 Celery beat runs `companies.purge_deleted_companies` every 60 seconds (`manage.py purge_deleted_companies` does the same run by hand). For each flagged company it:
 
-1. Posts `/api/v1/internal/company-deletions` to each origin in `COMPANY_DELETION_SERVICE_URLS` (storage, hosting and email). The request carries an assertion signed with this server's JWT key: audience `shellui-company-deletion`, scope `company.delete`, 60 second lifetime. Services refuse it as a user token, and refuse a user token here. A service that does not answer is asked again on the next run.
+1. Posts `/api/v1/internal/company-deletions` (fixed in code) to storage at `STORAGE_SERVICE_URL`, hosting at `HOSTING_SERVICE_URL` and email at `EMAIL_SERVICE_URL`. Email is called only when `EMAIL_SERVICE_API_KEY` is set. A service whose URL is unset is skipped, and each run that has companies to purge logs a warning naming it. The request carries an assertion signed with this server's JWT key: audience `shellui-company-deletion`, scope `company.delete`, 60 second lifetime. Services refuse it as a user token, and refuse a user token here. A service that does not answer is asked again on the next run.
 2. Once every service answered, deletes the company and every row tied to it. User accounts stay.
 3. Sends `identity.company.deleted` to `DASHBOARD_WEBHOOK_URL`, signed with `DASHBOARD_WEBHOOK_SECRET`, and retries it each run. An undelivered notice is dropped after 7 days. saas-service also notices the company is gone from the region list.
 
@@ -26,4 +26,4 @@ Each service then purges its own rows and files (S3 or disk) with its own Celery
 ## Production
 
 - Run a Celery worker with beat (the Docker entrypoint does) on identity, storage, hosting, email and saas.
-- Set `COMPANY_DELETION_SERVICE_URLS`, `DASHBOARD_WEBHOOK_URL` and `DASHBOARD_WEBHOOK_SECRET` on each region.
+- Set `STORAGE_SERVICE_URL`, `HOSTING_SERVICE_URL`, `EMAIL_SERVICE_URL`, `DASHBOARD_WEBHOOK_URL` and `DASHBOARD_WEBHOOK_SECRET` on each region.

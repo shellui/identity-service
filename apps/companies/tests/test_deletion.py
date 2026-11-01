@@ -66,6 +66,29 @@ class CompanyDeletionTests(TestCase):
         self.assertEqual(Company.all_objects.filter(deletion_requested_at__isnull=False).count(), 2)
         self.assertEqual(Company.objects.count(), 0)
 
+    @override_settings(
+        STORAGE_SERVICE_URL=STORAGE,
+        HOSTING_SERVICE_URL='',
+        EMAIL_SERVICE_URL='https://email.eu.example',
+        EMAIL_SERVICE_API_KEY='esk_test',  # gitleaks:allow
+    )
+    def test_unset_service_is_skipped_with_a_warning(self):
+        deletion.request_company_deletion(self.company)
+        with mock.patch.object(deletion.requests, 'post', return_value=_response(202)) as post:
+            with self.assertLogs('apps.companies.deletion', 'WARNING') as logs:
+                self.assertEqual(deletion.purge_deleted_companies()['purged'], 1)
+        called = [c.args[0] for c in post.call_args_list]
+        self.assertEqual(
+            called,
+            [f'{STORAGE}{deletion.DELETION_PATH}', f'https://email.eu.example{deletion.DELETION_PATH}'],
+        )
+        self.assertIn('HOSTING_SERVICE_URL', ''.join(logs.output))
+        self.assertNotIn('esk_test', ''.join(logs.output))
+
+    @override_settings(EMAIL_SERVICE_API_KEY='')
+    def test_email_skipped_without_email_service_key(self):
+        self.assertNotIn('EMAIL_SERVICE_URL', [n for n, u in deletion.deletion_services() if u])
+
     def test_purge_without_services_deletes_immediately(self):
         deletion.request_company_deletion(self.company)
         stats = deletion.purge_deleted_companies()
@@ -73,7 +96,7 @@ class CompanyDeletionTests(TestCase):
         self.assertFalse(Company.all_objects.filter(pk=self.company.pk).exists())
         self.assertTrue(User.objects.filter(pk=self.user.pk).exists())
 
-    @override_settings(COMPANY_DELETION_SERVICE_URLS=f'{STORAGE}, {HOSTING}')
+    @override_settings(STORAGE_SERVICE_URL=STORAGE, HOSTING_SERVICE_URL=HOSTING + '/')
     def test_purge_waits_for_every_service_and_retries(self):
         deletion.request_company_deletion(self.company)
         with mock.patch.object(deletion.requests, 'post', side_effect=[_response(202), _response(503)]) as post:

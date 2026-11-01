@@ -63,9 +63,33 @@ def is_company_deleting(company: Company | None) -> bool:
     return Company.all_objects.filter(pk=company.pk, deletion_requested_at__isnull=False).exists()
 
 
+# Fixed path every service exposes for identity's deletion call.
+DELETION_PATH = '/api/v1/internal/company-deletions'
+
+
+def deletion_services() -> list[tuple[str, str]]:
+    """``(setting name, origin)`` of each service told to purge a company. Empty origin: skipped.
+
+    Email takes part only when identity actually uses email-service (``EMAIL_SERVICE_API_KEY`` set),
+    since ``EMAIL_SERVICE_URL`` always has a default.
+    """
+    email = getattr(settings, 'EMAIL_SERVICE_URL', '') if getattr(settings, 'EMAIL_SERVICE_API_KEY', '') else ''
+    services = [
+        ('STORAGE_SERVICE_URL', getattr(settings, 'STORAGE_SERVICE_URL', '')),
+        ('HOSTING_SERVICE_URL', getattr(settings, 'HOSTING_SERVICE_URL', '')),
+        ('EMAIL_SERVICE_URL', email),
+    ]
+    return [(name, str(url or '').strip().rstrip('/')) for name, url in services]
+
+
 def deletion_service_urls() -> list[str]:
-    raw = getattr(settings, 'COMPANY_DELETION_SERVICE_URLS', '') or ''
-    return [u.strip().rstrip('/') for u in raw.split(',') if u.strip()]
+    return [url for _, url in deletion_services() if url]
+
+
+def _warn_skipped_services() -> None:
+    skipped = [name for name, url in deletion_services() if not url]
+    if skipped:
+        logger.warning('company deletion: %s not set, those services are skipped', ', '.join(skipped))
 
 
 def build_deletion_assertion(company_id: int, audience_url: str) -> str:
@@ -92,7 +116,7 @@ def build_deletion_assertion(company_id: int, audience_url: str) -> str:
 def _notify_service(url: str, company_id: int) -> bool:
     try:
         response = requests.post(
-            f'{url}/api/v1/internal/company-deletions',
+            f'{url}{DELETION_PATH}',
             json={'company_id': company_id},
             headers={'Authorization': f'Bearer {build_deletion_assertion(company_id, url)}'},
             timeout=float(getattr(settings, 'COMPANY_DELETION_TIMEOUT_SECONDS', 10)),
@@ -162,6 +186,8 @@ def _send_notice(notice: CompanyDeletionNotice) -> bool:
 def purge_deleted_companies(*, max_seconds: float = 50) -> dict:
     deadline = time.monotonic() + max_seconds
     purged = pending = sent = dropped = 0
+    if Company.all_objects.filter(deletion_requested_at__isnull=False).exists():
+        _warn_skipped_services()
     for company in Company.all_objects.filter(deletion_requested_at__isnull=False).order_by('deletion_requested_at'):
         if time.monotonic() > deadline:
             break

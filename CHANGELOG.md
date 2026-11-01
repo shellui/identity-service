@@ -25,7 +25,7 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 ### ✨ Feature
 
-- Company deletion: deleting from the dashboard or Django admin flags the company, hides it, refuses its tokens, and a Celery job purges it every 60 seconds across storage, hosting and email, then sends `identity.company.deleted`.
+- Company deletion: deleting from the dashboard or Django admin flags the company, hides it, refuses its tokens, and a Celery job purges it every 60 seconds across storage, hosting and email, then sends `identity.company.deleted` (set `STORAGE_SERVICE_URL`, `HOSTING_SERVICE_URL`, `EMAIL_SERVICE_URL`).
 
 ## [0.9.2] - 2026-10-27
 
