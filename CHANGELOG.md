@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 - MCP: OAuth authorization server for MCP clients (metadata, dynamic registration, PKCE, consent, agent JWTs and refresh), company agents with access and read levels, approvals, revocation list, call logs, shared `shellui_mcp/` package, Identity `/mcp` with `list_services`, and admin REST under `/api/v1/mcp/`.
 - Docs: [MCP and agents](docs/mcp-and-agents.md) and MCP links on the service homepage.
 
+### 🔒 Security
+
+- OAuth session exchange: `POST /api/v1/oauth/session` is covered by the `token_exchange` rate limit.
+
 <!---
 ## [Unreleased] - yyyy-mm-dd
 

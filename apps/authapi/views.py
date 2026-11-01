@@ -2613,6 +2613,7 @@ class ShellUIOAuthConfirmView(APIView):
         },
     ),
 )
+@rate_limit('token_exchange')
 class ShellUIOAuthSessionView(APIView):
     permission_classes = [AllowAny]
     authentication_classes = []
