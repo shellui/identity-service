@@ -38,6 +38,8 @@ Staff accounts (`is_staff`, `is_superuser`, and global staff) cannot authorize M
 When a write needs human confirmation, the service creates an approval through Identity:
 
 - `POST /api/v1/mcp/internal/mcp-approval-requests` with a short-lived assertion (audience `shellui-mcp-approval`, scope `mcp.approval.create`), same pattern as [company deletion](company-deletion.md).
+- `POST` or `GET /api/v1/mcp/internal/mcp-approval-state` with the same approval assertion. Identity returns `pending`, `approved`, `denied`, or `expired` for the agent, service, tool (`action`), and arguments hash bound in the assertion. `404` when no row exists. Approved responses include `id` for consume.
+- `POST /api/v1/mcp/internal/mcp-approval-consume` (or `POST …/mcp-approval-consume/{id}`) with a call-log assertion (audience `shellui-mcp-call-log`, scope `mcp.call_log.create`). Consumption is atomic and single use; `{ "consumed": true }` only while the row is approved and younger than 10 minutes.
 - One pending row per agent and arguments hash, **expires after 10 minutes**, runs once, never standing.
 
 Company owners approve or reject in Shellui admin or via:

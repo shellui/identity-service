@@ -63,6 +63,8 @@ All use Identity as issuer, short TTL (~60s), and `target` set to the Identity o
 | Revocation poll | `GET /api/v1/mcp/internal/mcp-revocations` | `shellui-mcp-revocation` | `mcp.revocation.read` |
 | Call log ingest | `POST /api/v1/mcp/internal/mcp-call-logs` | `shellui-mcp-call-log` | `mcp.call_log.create` |
 | Approval create | `POST /api/v1/mcp/internal/mcp-approval-requests` | `shellui-mcp-approval` | `mcp.approval.create` |
+| Approval state | `POST` or `GET /api/v1/mcp/internal/mcp-approval-state` | `shellui-mcp-approval` | `mcp.approval.create` |
+| Approval consume | `POST /api/v1/mcp/internal/mcp-approval-consume` | `shellui-mcp-call-log` | `mcp.call_log.create` |
 
 Builders in `shellui_mcp.internal`:
 
