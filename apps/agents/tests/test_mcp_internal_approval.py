@@ -130,6 +130,42 @@ class McpInternalApprovalStateTests(TestCase):
         response = self._state(service='hosting')
         self.assertEqual(response.status_code, 404)
 
+    def test_state_wrong_agent_id_in_assertion(self):
+        other_client = McpOAuthClient.objects.create(
+            client_id='cid-state-other',
+            redirect_uris=['http://127.0.0.1/cb'],
+        )
+        other_agent = Agent.objects.create(
+            company=self.company,
+            name='Other',
+            oauth_client=other_client,
+            created_by=self.owner,
+            services_allowed=['storage'],
+        )
+        McpApprovalRequest.objects.create(
+            agent=self.agent,
+            company=self.company,
+            service='storage',
+            action='write_tool',
+            arguments_hash=self.args_hash,
+            expires_at=timezone.now() + timedelta(minutes=10),
+        )
+        assertion = build_mcp_approval_assertion(
+            company_id=self.company.id,
+            agent_id=str(other_agent.id),
+            service='storage',
+            action='write_tool',
+            arguments_hash=self.args_hash,
+            audience_url=IDENTITY_ORIGIN,
+        )
+        response = self.client.post(
+            '/api/v1/mcp/internal/mcp-approval-state',
+            data=json.dumps({}),
+            content_type='application/json',
+            HTTP_AUTHORIZATION=f'Bearer {assertion}',
+        )
+        self.assertEqual(response.status_code, 404)
+
 
 @override_settings(
     JWT_ISSUER=IDENTITY_ORIGIN,
@@ -197,6 +233,43 @@ class McpInternalApprovalConsumeTests(TestCase):
             expires_at=timezone.now() + timedelta(minutes=10),
         )
         response = self._consume(row.id, args_hash='other')
+        self.assertEqual(response.status_code, 404)
+
+    def test_consume_wrong_agent_id_returns_404(self):
+        other_client = McpOAuthClient.objects.create(
+            client_id='cid-consume-other',
+            redirect_uris=['http://127.0.0.1/cb'],
+        )
+        other_agent = Agent.objects.create(
+            company=self.company,
+            name='Other consume',
+            oauth_client=other_client,
+            created_by=self.owner,
+            services_allowed=['storage'],
+        )
+        row = McpApprovalRequest.objects.create(
+            agent=self.agent,
+            company=self.company,
+            service='storage',
+            action='write_tool',
+            arguments_hash=self.args_hash,
+            status=McpApprovalRequest.STATUS_APPROVED,
+            expires_at=timezone.now() + timedelta(minutes=10),
+        )
+        assertion = build_mcp_approval_assertion(
+            company_id=self.company.id,
+            agent_id=str(other_agent.id),
+            service='storage',
+            action='write_tool',
+            arguments_hash=self.args_hash,
+            audience_url=IDENTITY_ORIGIN,
+        )
+        response = self.client.post(
+            '/api/v1/mcp/internal/mcp-approval-consume',
+            data=json.dumps({'approval_id': str(row.id)}),
+            content_type='application/json',
+            HTTP_AUTHORIZATION=f'Bearer {assertion}',
+        )
         self.assertEqual(response.status_code, 404)
 
     def test_consume_denied_or_expired_fails(self):
