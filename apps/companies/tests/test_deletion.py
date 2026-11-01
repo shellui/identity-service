@@ -109,6 +109,33 @@ class CompanyDeletionTests(TestCase):
         self.assertEqual(post.call_args.args[0], f'{HOSTING}/api/v1/internal/company-deletions')
         self.assertFalse(Company.all_objects.filter(pk=self.company.pk).exists())
 
+    @override_settings(EMAIL_SERVICE_URL='https://email.eu.example', EMAIL_SERVICE_API_KEY='')
+    def test_missing_email_key_is_named_in_warning(self):
+        self.assertIn(('EMAIL_SERVICE_API_KEY', ''), deletion.deletion_services())
+        with self.assertLogs('apps.companies.deletion', level='WARNING') as logs:
+            deletion._warn_skipped_services()
+        self.assertTrue(any('EMAIL_SERVICE_API_KEY' in line and 'EMAIL_SERVICE_URL' not in line for line in logs.output))
+
+    @override_settings(STORAGE_SERVICE_URL=STORAGE, HOSTING_SERVICE_URL='')
+    def test_error_body_snippet_is_logged(self):
+        deletion.request_company_deletion(self.company)
+        bad = mock.Mock(status_code=400, text='<h1>Bad Request (400)</h1>')
+        with mock.patch.object(deletion.requests, 'post', return_value=bad):
+            with self.assertLogs('apps.companies.deletion', level='WARNING') as logs:
+                deletion.purge_deleted_companies()
+        self.assertTrue(any('Bad Request (400)' in line and 'ALLOWED_HOSTS' in line for line in logs.output))
+
+    @override_settings(STORAGE_SERVICE_URL=STORAGE, HOSTING_SERVICE_URL=HOSTING)
+    def test_redirect_is_not_followed_and_is_logged(self):
+        deletion.request_company_deletion(self.company)
+        redirect = mock.Mock(status_code=301, headers={'Location': 'https://storage.eu.example/api/v1/internal/company-deletions'})
+        with mock.patch.object(deletion.requests, 'post', side_effect=[redirect, _response(202)]) as post:
+            with self.assertLogs('apps.companies.deletion', level='WARNING') as logs:
+                self.assertEqual(deletion.purge_deleted_companies()['pending'], 1)
+        self.assertFalse(post.call_args_list[0].kwargs['allow_redirects'])
+        self.assertTrue(any('redirected (301' in line for line in logs.output))
+        self.assertTrue(Company.all_objects.filter(pk=self.company.pk).exists())
+
     def test_assertion_is_not_a_user_token(self):
         token = deletion.build_deletion_assertion(self.company.pk, STORAGE)
         claims = jwt.decode(
