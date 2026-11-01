@@ -77,7 +77,7 @@ def deletion_services() -> list[tuple[str, str]]:
     services = [
         ('STORAGE_SERVICE_URL', getattr(settings, 'STORAGE_SERVICE_URL', '')),
         ('HOSTING_SERVICE_URL', getattr(settings, 'HOSTING_SERVICE_URL', '')),
-        ('EMAIL_SERVICE_URL', email),
+        ('EMAIL_SERVICE_URL' if getattr(settings, 'EMAIL_SERVICE_API_KEY', '') else 'EMAIL_SERVICE_API_KEY', email),
     ]
     return [(name, str(url or '').strip().rstrip('/')) for name, url in services]
 

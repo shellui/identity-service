@@ -109,6 +109,13 @@ class CompanyDeletionTests(TestCase):
         self.assertEqual(post.call_args.args[0], f'{HOSTING}/api/v1/internal/company-deletions')
         self.assertFalse(Company.all_objects.filter(pk=self.company.pk).exists())
 
+    @override_settings(EMAIL_SERVICE_URL='https://email.eu.example', EMAIL_SERVICE_API_KEY='')
+    def test_missing_email_key_is_named_in_warning(self):
+        self.assertIn(('EMAIL_SERVICE_API_KEY', ''), deletion.deletion_services())
+        with self.assertLogs('apps.companies.deletion', level='WARNING') as logs:
+            deletion._warn_skipped_services()
+        self.assertTrue(any('EMAIL_SERVICE_API_KEY' in line and 'EMAIL_SERVICE_URL' not in line for line in logs.output))
+
     @override_settings(STORAGE_SERVICE_URL=STORAGE, HOSTING_SERVICE_URL='')
     def test_error_body_snippet_is_logged(self):
         deletion.request_company_deletion(self.company)

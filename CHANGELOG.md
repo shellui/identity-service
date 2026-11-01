@@ -25,7 +25,7 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 ### 🐛 Bug Fixes
 
-- Company deletion: a service URL that redirects (for example `http://` to `https://`) is no longer followed, and a refused call logs its status, target and a short response snippet (with an ALLOWED_HOSTS hint on 400), so a stuck purge says why.
+- Company deletion: a service URL that redirects (for example `http://` to `https://`) is no longer followed, and a refused call logs its status, target and a short response snippet (with an ALLOWED_HOSTS hint on 400), so a stuck purge says why; the skipped-email warning now names `EMAIL_SERVICE_API_KEY` when that is what is missing.
 
 ## [0.10.0] - 2026-11-01
 
