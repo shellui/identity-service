@@ -109,6 +109,7 @@ class CompanyDeletionTests(TestCase):
         self.assertEqual(post.call_args.args[0], f'{HOSTING}/api/v1/internal/company-deletions')
         self.assertFalse(Company.all_objects.filter(pk=self.company.pk).exists())
 
+    @override_settings(STORAGE_SERVICE_URL=STORAGE, HOSTING_SERVICE_URL=HOSTING)
     def test_redirect_is_not_followed_and_is_logged(self):
         deletion.request_company_deletion(self.company)
         redirect = mock.Mock(status_code=301, headers={'Location': 'https://storage.eu.example/api/v1/internal/company-deletions'})
