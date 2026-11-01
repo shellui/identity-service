@@ -10,6 +10,8 @@ from rest_framework.views import APIView
 from shellui_mcp.decorators import mcp_expose_tool
 from shellui_mcp.masking import redact_mapping
 
+from apps.authapi.openapi_admin import ADMIN_API_ERRORS, admin_openapi_fields, mcp_extend_schema_kwargs
+from apps.authapi.serializers import ShellUIOpenAPISerializer
 from apps.agents.models import Agent, McpApprovalRequest, McpCallLog
 from apps.agents.permissions import require_company_admin
 
@@ -48,11 +50,18 @@ def _agent_row(agent: Agent) -> dict:
 @extend_schema_view(
     get=extend_schema(
         tags=['mcp-admin'],
-        summary='List MCP agents',
-        responses={200: OpenApiResponse(description='Agents for the token company')},
+        operation_id='api_v1_mcp_agents_list',
+        **admin_openapi_fields(
+            summary='List MCP agents',
+            lead='Returns MCP agents registered for the company, including pause and revoke state.',
+            side_effects='Read-only.',
+        ),
+        responses={200: OpenApiResponse(description='Agents for the token company'), **ADMIN_API_ERRORS},
     ),
 )
 class McpAgentListView(APIView):
+    serializer_class = ShellUIOpenAPISerializer
+
     def get(self, request):
         actor, company, err = require_company_admin(request, allow_agent_token=False)
         if err:
@@ -64,10 +73,18 @@ class McpAgentListView(APIView):
 @extend_schema_view(
     post=extend_schema(
         tags=['mcp-admin'],
-        summary='Pause an MCP agent',
+        operation_id='api_v1_mcp_agents_pause',
+        **admin_openapi_fields(
+            summary='Pause an MCP agent',
+            lead='Pauses an active agent so it cannot call tools until resumed manually.',
+            side_effects='Sets `paused_at` on the agent row.',
+        ),
+        responses={200: OpenApiResponse(description='Updated agent'), **ADMIN_API_ERRORS},
     ),
 )
 class McpAgentPauseView(APIView):
+    serializer_class = ShellUIOpenAPISerializer
+
     def post(self, request, agent_id):
         actor, company, err = require_company_admin(request, allow_agent_token=False)
         if err:
@@ -86,10 +103,19 @@ class McpAgentPauseView(APIView):
 @extend_schema_view(
     post=extend_schema(
         tags=['mcp-admin'],
-        summary='Revoke an MCP agent',
+        operation_id='api_v1_mcp_agents_revoke',
+        **admin_openapi_fields(
+            summary='Revoke an MCP agent',
+            lead='Permanently revokes an agent and its refresh sessions.',
+            side_effects='Sets `revoked_at`, pauses the agent, and revokes refresh sessions.',
+            destructive=True,
+        ),
+        responses={200: OpenApiResponse(description='Revoked agent'), **ADMIN_API_ERRORS},
     ),
 )
 class McpAgentRevokeView(APIView):
+    serializer_class = ShellUIOpenAPISerializer
+
     def post(self, request, agent_id):
         actor, company, err = require_company_admin(request, allow_agent_token=False)
         if err:
@@ -111,10 +137,19 @@ class McpAgentRevokeView(APIView):
 @extend_schema_view(
     get=extend_schema(
         tags=['mcp-admin'],
-        summary='List pending MCP approval requests',
+        operation_id='api_v1_mcp_approvals_list',
+        **admin_openapi_fields(
+            summary='List pending MCP approval requests',
+            lead='Returns pending human approvals for destructive MCP tool calls.',
+            side_effects='Read-only.',
+            sensitive=True,
+        ),
+        responses={200: OpenApiResponse(description='Pending approvals'), **ADMIN_API_ERRORS},
     ),
 )
 class McpApprovalListView(APIView):
+    serializer_class = ShellUIOpenAPISerializer
+
     def get(self, request):
         actor, company, err = require_company_admin(request, allow_agent_token=False)
         if err:
@@ -131,10 +166,19 @@ class McpApprovalListView(APIView):
 @extend_schema_view(
     get=extend_schema(
         tags=['mcp-admin'],
-        summary='Get one MCP approval request',
+        operation_id='api_v1_mcp_approvals_retrieve',
+        **admin_openapi_fields(
+            summary='Get one MCP approval request',
+            lead='Returns one pending or decided approval with redacted arguments.',
+            side_effects='Read-only.',
+            sensitive=True,
+        ),
+        responses={200: OpenApiResponse(description='Approval row'), **ADMIN_API_ERRORS},
     ),
 )
 class McpApprovalDetailView(APIView):
+    serializer_class = ShellUIOpenAPISerializer
+
     def get(self, request, approval_id):
         actor, company, err = require_company_admin(request, allow_agent_token=False)
         if err:
@@ -149,10 +193,18 @@ class McpApprovalDetailView(APIView):
 @extend_schema_view(
     post=extend_schema(
         tags=['mcp-admin'],
-        summary='Approve an MCP approval request',
+        operation_id='api_v1_mcp_approvals_approve',
+        **admin_openapi_fields(
+            summary='Approve an MCP approval request',
+            lead='Allows the agent to retry the gated tool call once.',
+            side_effects='Marks the approval approved with auditor metadata.',
+        ),
+        responses={200: OpenApiResponse(description='Approved approval'), **ADMIN_API_ERRORS},
     ),
 )
 class McpApprovalApproveView(APIView):
+    serializer_class = ShellUIOpenAPISerializer
+
     def post(self, request, approval_id):
         actor, company, err = require_company_admin(request, allow_agent_token=False)
         if err:
@@ -173,10 +225,18 @@ class McpApprovalApproveView(APIView):
 @extend_schema_view(
     post=extend_schema(
         tags=['mcp-admin'],
-        summary='Reject an MCP approval request',
+        operation_id='api_v1_mcp_approvals_reject',
+        **admin_openapi_fields(
+            summary='Reject an MCP approval request',
+            lead='Blocks the gated MCP tool call for this approval id.',
+            side_effects='Marks the approval rejected with auditor metadata.',
+        ),
+        responses={200: OpenApiResponse(description='Rejected approval'), **ADMIN_API_ERRORS},
     ),
 )
 class McpApprovalRejectView(APIView):
+    serializer_class = ShellUIOpenAPISerializer
+
     def post(self, request, approval_id):
         actor, company, err = require_company_admin(request, allow_agent_token=False)
         if err:
@@ -197,10 +257,19 @@ class McpApprovalRejectView(APIView):
 @extend_schema_view(
     get=extend_schema(
         tags=['mcp-admin'],
-        summary='List MCP call log entries',
+        operation_id='api_v1_mcp_call_logs_list',
+        **admin_openapi_fields(
+            summary='List MCP call log entries',
+            lead='Returns recent MCP HTTP tool invocations with redacted arguments.',
+            side_effects='Read-only.',
+            sensitive=True,
+        ),
+        responses={200: OpenApiResponse(description='Call log rows'), **ADMIN_API_ERRORS},
     ),
 )
 class McpCallLogListView(APIView):
+    serializer_class = ShellUIOpenAPISerializer
+
     def get(self, request):
         actor, company, err = require_company_admin(request, allow_agent_token=False)
         if err:
@@ -229,10 +298,13 @@ class McpCallLogListView(APIView):
 @extend_schema_view(
     get=extend_schema(
         tags=['mcp-tools'],
-        summary='List Shellui MCP service URLs',
+        **mcp_extend_schema_kwargs('api_v1_mcp_services_list'),
+        responses={200: OpenApiResponse(description='Connected Shellui MCP services'), **ADMIN_API_ERRORS},
     ),
 )
 class McpListServicesView(APIView):
+    serializer_class = ShellUIOpenAPISerializer
+
     @mcp_expose_tool(name='list_services', description='Return MCP URLs for connected Shellui services.')
     def get(self, request):
         actor, company, err = require_company_admin(request)
