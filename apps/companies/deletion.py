@@ -120,12 +120,21 @@ def _notify_service(url: str, company_id: int) -> bool:
             json={'company_id': company_id},
             headers={'Authorization': f'Bearer {build_deletion_assertion(company_id, url)}'},
             timeout=float(getattr(settings, 'COMPANY_DELETION_TIMEOUT_SECONDS', 10)),
+            allow_redirects=False,
         )
     except requests.RequestException as exc:
         logger.warning('company deletion: %s unreachable for company=%s (%s)', url, company_id, type(exc).__name__)
         return False
     if response.status_code in (200, 202):
         return True
+    if 300 <= response.status_code < 400:
+        location = str(getattr(response, 'headers', {}).get('Location', '') or '').split('?')[0]
+        logger.warning(
+            'company deletion: %s redirected (%s to %s) for company=%s; set the service URL to an address '
+            'that does not redirect (https:// or a redirect-exempt internal name)',
+            url, response.status_code, location or '?', company_id,
+        )
+        return False
     logger.warning('company deletion: %s answered %s for company=%s', url, response.status_code, company_id)
     return False
 

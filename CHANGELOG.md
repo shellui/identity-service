@@ -21,6 +21,12 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
 -->
 
+## [Unreleased]
+
+### 🐛 Bug Fixes
+
+- Company deletion: a service URL that redirects (for example `http://` to `https://`) is no longer followed and is logged with its target, so a stuck purge says why.
+
 ## [0.10.0] - 2026-11-01
 
 ### ✨ Feature

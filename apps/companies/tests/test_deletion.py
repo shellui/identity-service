@@ -109,6 +109,16 @@ class CompanyDeletionTests(TestCase):
         self.assertEqual(post.call_args.args[0], f'{HOSTING}/api/v1/internal/company-deletions')
         self.assertFalse(Company.all_objects.filter(pk=self.company.pk).exists())
 
+    def test_redirect_is_not_followed_and_is_logged(self):
+        deletion.request_company_deletion(self.company)
+        redirect = mock.Mock(status_code=301, headers={'Location': 'https://storage.eu.example/api/v1/internal/company-deletions'})
+        with mock.patch.object(deletion.requests, 'post', side_effect=[redirect, _response(202)]) as post:
+            with self.assertLogs('apps.companies.deletion', level='WARNING') as logs:
+                self.assertEqual(deletion.purge_deleted_companies()['pending'], 1)
+        self.assertFalse(post.call_args_list[0].kwargs['allow_redirects'])
+        self.assertTrue(any('redirected (301' in line for line in logs.output))
+        self.assertTrue(Company.all_objects.filter(pk=self.company.pk).exists())
+
     def test_assertion_is_not_a_user_token(self):
         token = deletion.build_deletion_assertion(self.company.pk, STORAGE)
         claims = jwt.decode(
