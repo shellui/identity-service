@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## [Unreleased] - yyyy-mm-dd
+
+### ✨ Feature
+
+- MCP: OAuth authorization server for MCP clients (metadata, dynamic registration, PKCE, consent, agent JWTs and refresh), company agents with access and read levels, approvals, revocation list, call logs, shared `shellui_mcp/` package, Identity `/mcp` with `list_services`, and admin REST under `/api/v1/mcp/`.
+- Docs: [MCP and agents](docs/mcp-and-agents.md) and MCP links on the service homepage.
+
 <!---
 ## [Unreleased] - yyyy-mm-dd
 

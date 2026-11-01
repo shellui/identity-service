@@ -1,0 +1,97 @@
+import json
+
+from django.contrib.auth import get_user_model
+from django.test import Client, TestCase, override_settings
+
+from apps.authapi.client_pkce import s256_challenge
+from apps.companies.access import set_company_access
+from apps.companies.models import Company
+from apps.agents.models import Agent, McpOAuthClient
+from apps.agents.staff import is_mcp_oauth_refused_user
+from apps.agents.tokens import encode_access_token
+
+User = get_user_model()
+
+
+@override_settings(
+    JWT_ISSUER='https://identity.test',
+    JWT_AUDIENCE='shellui-test',
+    MCP_DYNAMIC_CLIENT_REGISTRATION=True,
+    AUTH_RATE_LIMIT_ENABLED=False,
+)
+class McpOAuthMetadataTests(TestCase):
+    def test_authorization_server_metadata(self):
+        response = self.client.get('/.well-known/oauth-authorization-server')
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data['issuer'], 'https://identity.test')
+        self.assertIn('registration_endpoint', data)
+        self.assertEqual(data['code_challenge_methods_supported'], ['S256'])
+
+    def test_protected_resource_metadata(self):
+        response = self.client.get('/.well-known/oauth-protected-resource')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['resource'], 'https://identity.test/mcp')
+
+
+@override_settings(
+    JWT_ISSUER='https://identity.test',
+    JWT_AUDIENCE='shellui-test',
+    MCP_DYNAMIC_CLIENT_REGISTRATION=True,
+    AUTH_RATE_LIMIT_ENABLED=False,
+)
+class McpOAuthFlowTests(TestCase):
+    def setUp(self):
+        self.company = Company.objects.create(name='Acme', slug='acme-mcp')
+        self.owner = User.objects.create_user(username='owner', email='owner@acme.com', password='unused')
+        self.company.owners.add(self.owner)
+        set_company_access(self.company, self.owner, enabled=True)
+        self.verifier = 'a' * 43
+        self.challenge = s256_challenge(self.verifier)
+
+    def test_dynamic_registration_and_token_refused_for_staff(self):
+        reg = self.client.post(
+            '/oauth/mcp/register',
+            data=json.dumps({'redirect_uris': ['http://127.0.0.1/cb'], 'client_name': 'Cursor'}),
+            content_type='application/json',
+        )
+        self.assertEqual(reg.status_code, 201)
+        client_id = reg.json()['client_id']
+        staff = User.objects.create_user(username='staff', password='unused', is_staff=True)
+        self.assertTrue(is_mcp_oauth_refused_user(staff))
+        client = Client()
+        client.force_login(staff)
+        url = (
+            '/oauth/mcp/authorize?client_id=%s&redirect_uri=http://127.0.0.1/cb&response_type=code'
+            '&code_challenge=%s&code_challenge_method=S256'
+        ) % (client_id, self.challenge)
+        response = client.get(url)
+        self.assertEqual(response.status_code, 403)
+
+    def test_agent_access_token_and_revocation_list(self):
+        reg = self.client.post(
+            '/oauth/mcp/register',
+            data=json.dumps({'redirect_uris': ['http://127.0.0.1/cb']}),
+            content_type='application/json',
+        )
+        client_id = reg.json()['client_id']
+        oauth_client = McpOAuthClient.objects.get(client_id=client_id)
+        agent = Agent.objects.create(
+            company=self.company,
+            name='Test agent',
+            oauth_client=oauth_client,
+            created_by=self.owner,
+            services_allowed=['identity'],
+        )
+        access = encode_access_token(agent)
+        import jwt
+
+        payload = jwt.decode(access, options={'verify_signature': False})
+        self.assertEqual(payload['agent_id'], str(agent.id))
+        revoked = self.client.get('/api/v1/mcp/internal/mcp-revocations')
+        self.assertEqual(revoked.status_code, 200)
+        self.assertEqual(revoked.json()['cache_seconds'], 30)
+        agent.revoked_at = agent.created_at
+        agent.save(update_fields=['revoked_at'])
+        revoked2 = self.client.get('/api/v1/mcp/internal/mcp-revocations')
+        self.assertIn(str(agent.id), revoked2.json()['revoked_agent_ids'])

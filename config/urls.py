@@ -23,6 +23,14 @@ from drf_spectacular.views import (
     SpectacularSwaggerView,
 )
 
+from apps.agents import mcp_views as agents_mcp_views
+from apps.agents.oauth_views import (
+    OAuthAuthorizationServerMetadataView,
+    OAuthProtectedResourceMetadataView,
+    mcp_authorize,
+    mcp_register,
+    mcp_token,
+)
 from apps.authapi.jwks_views import ShellUIJwksView
 from apps.federation.provider import OpenIdConfigurationView
 from apps.federation.provisioning import CompanyPlanView
@@ -36,12 +44,27 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('.well-known/jwks.json', ShellUIJwksView.as_view(), name='jwks'),
     path(
+        '.well-known/oauth-authorization-server',
+        OAuthAuthorizationServerMetadataView.as_view(),
+        name='mcp-oauth-authorization-server',
+    ),
+    path(
+        '.well-known/oauth-protected-resource',
+        OAuthProtectedResourceMetadataView.as_view(),
+        name='mcp-oauth-protected-resource',
+    ),
+    path('mcp', agents_mcp_views.mcp_endpoint, name='mcp'),
+    path(
         '.well-known/openid-configuration',
         OpenIdConfigurationView.as_view(),
         name='federation-openid-configuration',
     ),
     path('oauth/', include(oauth_urlpatterns)),
+    path('oauth/mcp/register', mcp_register, name='mcp-oauth-register'),
+    path('oauth/mcp/authorize', mcp_authorize, name='mcp-oauth-authorize'),
+    path('oauth/mcp/token', mcp_token, name='mcp-oauth-token'),
     path('api/v1/', include('apps.authapi.urls')),
+    path('api/v1/mcp/', include('apps.agents.urls')),
     path(
         'api/v1/companies/<int:company_id>/plan',
         CompanyPlanView.as_view(),

@@ -169,6 +169,10 @@ The entrypoint sets `--worker-tmp-dir /dev/shm` (the heartbeat file lives in mem
 | `AUTH_RATE_LIMIT_PAT` | `30` | Personal access token requests per minute |
 | `AUTH_RATE_LIMIT_ADMIN_LOGIN` | `10` | Django admin sign-ins per 5 minutes |
 | `AUTH_RATE_LIMIT_INVITATION` | `30` | Invitations per 5 minutes per company |
+| `MCP_DYNAMIC_CLIENT_REGISTRATION` | `true` | MCP OAuth dynamic client registration |
+| `MCP_ACCESS_TOKEN_LIFETIME` | `15m` | MCP agent access JWT lifetime |
+| `MCP_REFRESH_TOKEN_LIFETIME` | `30d` | MCP agent refresh token lifetime |
+| `MCP_RATE_LIMIT_AGENT` | `120` | MCP tool calls per minute per agent |
 | `SECURE_SSL_REDIRECT`, `SESSION_COOKIE_SECURE`, `CSRF_COOKIE_SECURE` | `true` with `DEBUG=false`, `false` with `DEBUG=true` | HTTPS defaults. Secure cookies are named `__Host-sessionid` and `__Host-csrftoken`, with no `Domain`. `CSRF_COOKIE_HTTPONLY` is always on |
 | `SECURE_HSTS_SECONDS` | `31536000` with `DEBUG=false`, `0` with `DEBUG=true` | HSTS max-age |
 | `SECURE_HSTS_INCLUDE_SUBDOMAINS` | `true` with `DEBUG=false` | Add `includeSubDomains` to HSTS |

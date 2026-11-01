@@ -309,6 +309,7 @@ INSTALLED_APPS = [
     'apps.scim',
     'apps.actions',
     'apps.federation',
+    'apps.agents',
     'django_scim',
     'config.apps.ConfigConfig',
 ]
@@ -357,7 +358,16 @@ SPECTACULAR_SETTINGS = {
         {'name': 'platform-metrics', 'description': 'Prometheus metrics endpoints.'},
         {'name': 'personal-access-tokens', 'description': 'User-personal JWT access tokens (read-only or read/write).'},
         {'name': 'companies', 'description': 'Company membership and company settings endpoints.'},
+        {'name': 'mcp-tools', 'description': 'Operations exposed to MCP agents (Shellui admin and list_services).'},
     ],
+}
+
+MCP_DYNAMIC_CLIENT_REGISTRATION = _env_bool('MCP_DYNAMIC_CLIENT_REGISTRATION', True)
+MCP_ACCESS_TOKEN_LIFETIME = _env_duration('MCP_ACCESS_TOKEN_LIFETIME', timedelta(minutes=15))
+MCP_REFRESH_TOKEN_LIFETIME = _env_duration('MCP_REFRESH_TOKEN_LIFETIME', timedelta(days=30))
+MCP_RATE_LIMITS = {
+    'default': {'limit': 120, 'window': 60},
+    'mcp_agent': {'limit': _env_int('MCP_RATE_LIMIT_AGENT', 120), 'window': 60},
 }
 
 MIDDLEWARE = [
