@@ -57,7 +57,7 @@ Pause or revoke agents with:
 - `POST /api/v1/mcp/agents/{id}/pause`
 - `POST /api/v1/mcp/agents/{id}/revoke`
 
-Services poll `GET /api/v1/mcp/internal/mcp-revocations` with a signed assertion (audience `shellui-mcp-revocation`, scope `mcp.revocation.read`, cache **30 seconds** on the consumer) so revocation is effective almost immediately. Optional `?company_id=` filters the list to one tenant. Identity signs each response (`revocation_assertion`, scope `mcp.revocation.list`, short `exp`) including `revoked_agent_ids`, `agents` (`agent_id`, `company_id`, `is_active`, `paused`), and `cache_seconds`. Services must verify with `shellui_mcp.internal.parse_trusted_revocation_poll_response` and cross-check `company_id` against the agent token before treating an agent as blocked.
+Services poll `GET /api/v1/mcp/internal/mcp-revocations` with a signed assertion (audience `shellui-mcp-revocation`, scope `mcp.revocation.read`, cache **30 seconds** on the consumer) so revocation is effective almost immediately. Optional `?company_id=` filters the list to one tenant. Identity signs each response (`revocation_assertion`, scope `mcp.revocation.list`, short `exp`) including `revoked_agent_ids`, `agents` (`agent_id`, `company_id`, `is_active`, `paused`), and `cache_seconds`. Services must verify with `shellui_mcp.internal.parse_trusted_revocation_poll_response` (RS256 against Identity `/.well-known/jwks.json`, no SimpleJWT settings) and cross-check `company_id` against the agent token before treating an agent as blocked. `McpServer` passes `(agent_id, company_id)` to `identity_revocation_check`.
 
 ## Call logs
 

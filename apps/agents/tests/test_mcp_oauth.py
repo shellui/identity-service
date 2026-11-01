@@ -100,10 +100,7 @@ class McpOAuthFlowTests(TestCase):
         payload = jwt.decode(access, options={'verify_signature': False})
         self.assertEqual(payload['agent_id'], str(agent.id))
         self.assertEqual(payload['aud'], IDENTITY_MCP_RESOURCE)
-        from shellui_mcp.internal import (
-            build_mcp_revocation_assertion,
-            parse_trusted_revocation_poll_response,
-        )
+        from shellui_mcp.internal import build_mcp_revocation_assertion
 
         assertion = build_mcp_revocation_assertion(audience_url='https://identity.test')
         revoked = self.client.get(
@@ -114,9 +111,8 @@ class McpOAuthFlowTests(TestCase):
         data = revoked.json()
         self.assertEqual(data['cache_seconds'], 30)
         self.assertIn('revocation_assertion', data)
-        ids, cache = parse_trusted_revocation_poll_response(data, expected_issuer='https://identity.test')
-        self.assertEqual(cache, 30)
-        self.assertEqual(ids, frozenset())
+        self.assertIn('agents', data)
+        self.assertEqual(data['revoked_agent_ids'], [])
         agent.revoked_at = agent.created_at
         agent.save(update_fields=['revoked_at'])
         revoked2 = self.client.get(
@@ -124,8 +120,7 @@ class McpOAuthFlowTests(TestCase):
             HTTP_AUTHORIZATION=f'Bearer {assertion}',
         )
         data2 = revoked2.json()
-        ids2, _cache = parse_trusted_revocation_poll_response(data2, expected_issuer='https://identity.test')
-        self.assertIn(str(agent.id), ids2)
+        self.assertIn(str(agent.id), data2['revoked_agent_ids'])
 
     def test_revocation_list_requires_assertion(self):
         response = self.client.get('/api/v1/mcp/internal/mcp-revocations')

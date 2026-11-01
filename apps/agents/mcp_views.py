@@ -39,7 +39,8 @@ def _get_server() -> McpServer:
             schema_provider=_schema,
             urlconf=settings.ROOT_URLCONF,
             service_name='identity',
-            identity_revocation_check=lambda agent_id: agent_id in set(blocked_agent_ids()),
+            identity_revocation_check=lambda agent_id, company_id: agent_id
+            in set(blocked_agent_ids(company_id=company_id)),
             on_call=_record_local_call,
             approval_handler=_maybe_create_approval,
             approval_state=_approval_state,
