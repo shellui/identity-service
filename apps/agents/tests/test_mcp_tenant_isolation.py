@@ -74,6 +74,14 @@ class McpTenantIsolationTests(TestCase):
         )
         self.assertEqual(response.status_code, 403)
 
+    def test_agent_cannot_revoke_own_or_other_agent(self):
+        for agent_id in (self.agent_a.id, self.agent_b.id):
+            response = self.client.post(
+                f'/api/v1/mcp/agents/{agent_id}/revoke',
+                HTTP_AUTHORIZATION=f'Bearer {self.agent_token_a}',
+            )
+            self.assertEqual(response.status_code, 403, agent_id)
+
     def test_agent_cannot_approve_company_b_request(self):
         row = McpApprovalRequest.objects.create(
             agent=self.agent_b,
