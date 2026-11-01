@@ -5,6 +5,7 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 from django.utils import timezone
 
+from apps.agents.tests.mcp_test_settings import rs256_identity_settings
 from apps.companies.access import set_company_access
 from apps.companies.models import Company
 from apps.agents.models import Agent, McpApprovalRequest, McpCallLog, McpOAuthClient
@@ -126,12 +127,13 @@ class McpTenantIsolationTests(TestCase):
         self.agent_b.revoked_at = timezone.now()
         self.agent_b.save(update_fields=['revoked_at'])
         assertion = build_mcp_revocation_assertion(audience_url=IDENTITY_ORIGIN)
-        response = self.client.get(
-            f'/api/v1/mcp/internal/mcp-revocations?company_id={self.company_a.id}',
-            HTTP_AUTHORIZATION=f'Bearer {assertion}',
-        )
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
-        self.assertNotIn(str(self.agent_b.id), data['revoked_agent_ids'])
-        agent_ids = {entry['agent_id'] for entry in data.get('agents') or []}
-        self.assertNotIn(str(self.agent_b.id), agent_ids)
+        with rs256_identity_settings():
+            response = self.client.get(
+                f'/api/v1/mcp/internal/mcp-revocations?company_id={self.company_a.id}',
+                HTTP_AUTHORIZATION=f'Bearer {assertion}',
+            )
+            self.assertEqual(response.status_code, 200)
+            data = response.json()
+            self.assertNotIn(str(self.agent_b.id), data['revoked_agent_ids'])
+            agent_ids = {entry['agent_id'] for entry in data.get('agents') or []}
+            self.assertNotIn(str(self.agent_b.id), agent_ids)

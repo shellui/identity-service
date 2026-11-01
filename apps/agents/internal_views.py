@@ -79,15 +79,21 @@ class McpRevocationListView(APIView):
         cid = int(company_id) if company_id and str(company_id).isdigit() else None
         revoked_ids = blocked_agent_ids(company_id=cid)
         agents = blocked_agent_snapshots(company_id=cid)
+        try:
+            revocation_assertion = build_mcp_revocation_list_response_assertion(
+                revoked_agent_ids=revoked_ids,
+                agents=agents,
+                cache_seconds=REVOCATION_CACHE_SECONDS,
+            )
+        except InternalAssertionError as exc:
+            if exc.status == status.HTTP_503_SERVICE_UNAVAILABLE:
+                return Response({'error': exc.message}, status=exc.status)
+            raise
         payload = {
             'revoked_agent_ids': revoked_ids,
             'agents': agents,
             'cache_seconds': REVOCATION_CACHE_SECONDS,
-            'revocation_assertion': build_mcp_revocation_list_response_assertion(
-                revoked_agent_ids=revoked_ids,
-                agents=agents,
-                cache_seconds=REVOCATION_CACHE_SECONDS,
-            ),
+            'revocation_assertion': revocation_assertion,
         }
         response = Response(payload)
         response['Cache-Control'] = f'private, max-age={REVOCATION_CACHE_SECONDS}'

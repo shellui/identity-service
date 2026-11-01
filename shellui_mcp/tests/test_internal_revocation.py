@@ -1,7 +1,13 @@
+import time
 import unittest
+import uuid
+
+import jwt
 
 from shellui_mcp.internal import (
+    REVOCATION_AUDIENCE,
     REVOCATION_CACHE_SECONDS,
+    REVOCATION_LIST_SCOPE,
     InternalAssertionError,
     parse_trusted_revocation_poll_response,
     verify_mcp_revocation_list_response,
@@ -68,3 +74,36 @@ class RevocationListJwksVerificationTests(unittest.TestCase):
                 expected_issuer=TEST_ISSUER,
                 jwks=self.jwks,
             )
+
+    def test_hs256_assertion_rejected(self):
+        now = int(time.time())
+        hs256_token = jwt.encode(
+            {
+                'iss': TEST_ISSUER,
+                'aud': REVOCATION_AUDIENCE,
+                'sub': 'identity',
+                'scope': REVOCATION_LIST_SCOPE,
+                'revoked_agent_ids': ['a'],
+                'agents': [],
+                'cache_seconds': REVOCATION_CACHE_SECONDS,
+                'iat': now,
+                'exp': now + REVOCATION_CACHE_SECONDS,
+                'jti': uuid.uuid4().hex,
+            },
+            'test-hs256-secret',
+            algorithm='HS256',
+        )
+        hs256_token = hs256_token.decode('utf-8') if isinstance(hs256_token, bytes) else hs256_token
+        payload = {
+            'revoked_agent_ids': ['a'],
+            'agents': [],
+            'cache_seconds': REVOCATION_CACHE_SECONDS,
+            'revocation_assertion': hs256_token,
+        }
+        with self.assertRaises(InternalAssertionError) as ctx:
+            verify_mcp_revocation_list_response(
+                payload,
+                expected_issuer=TEST_ISSUER,
+                jwks=self.jwks,
+            )
+        self.assertIn('RS256', str(ctx.exception))

@@ -4,6 +4,7 @@ from urllib.parse import quote, urlencode
 from django.contrib.auth import get_user_model
 from django.test import Client, TestCase, override_settings
 
+from apps.agents.tests.mcp_test_settings import rs256_identity_settings
 from apps.authapi.client_pkce import s256_challenge
 from apps.companies.access import set_company_access
 from apps.companies.models import Company
@@ -103,24 +104,51 @@ class McpOAuthFlowTests(TestCase):
         from shellui_mcp.internal import build_mcp_revocation_assertion
 
         assertion = build_mcp_revocation_assertion(audience_url='https://identity.test')
-        revoked = self.client.get(
+        with rs256_identity_settings() as (_signing, jwks):
+            from shellui_mcp.internal import parse_trusted_revocation_poll_response
+
+            revoked = self.client.get(
+                '/api/v1/mcp/internal/mcp-revocations',
+                HTTP_AUTHORIZATION=f'Bearer {assertion}',
+            )
+            self.assertEqual(revoked.status_code, 200)
+            data = revoked.json()
+            self.assertEqual(data['cache_seconds'], 30)
+            self.assertIn('revocation_assertion', data)
+            self.assertIn('agents', data)
+            self.assertEqual(data['revoked_agent_ids'], [])
+            ids, cache, _agents = parse_trusted_revocation_poll_response(
+                data,
+                expected_issuer='https://identity.test',
+                jwks=jwks,
+            )
+            self.assertEqual(ids, frozenset())
+            self.assertEqual(cache, 30)
+            agent.revoked_at = agent.created_at
+            agent.save(update_fields=['revoked_at'])
+            revoked2 = self.client.get(
+                '/api/v1/mcp/internal/mcp-revocations',
+                HTTP_AUTHORIZATION=f'Bearer {assertion}',
+            )
+            data2 = revoked2.json()
+            self.assertIn(str(agent.id), data2['revoked_agent_ids'])
+            ids2, _, _ = parse_trusted_revocation_poll_response(
+                data2,
+                expected_issuer='https://identity.test',
+                jwks=jwks,
+            )
+            self.assertIn(str(agent.id), ids2)
+
+    def test_revocation_list_unavailable_without_rs256_signing(self):
+        from shellui_mcp.internal import build_mcp_revocation_assertion
+
+        assertion = build_mcp_revocation_assertion(audience_url='https://identity.test')
+        response = self.client.get(
             '/api/v1/mcp/internal/mcp-revocations',
             HTTP_AUTHORIZATION=f'Bearer {assertion}',
         )
-        self.assertEqual(revoked.status_code, 200)
-        data = revoked.json()
-        self.assertEqual(data['cache_seconds'], 30)
-        self.assertIn('revocation_assertion', data)
-        self.assertIn('agents', data)
-        self.assertEqual(data['revoked_agent_ids'], [])
-        agent.revoked_at = agent.created_at
-        agent.save(update_fields=['revoked_at'])
-        revoked2 = self.client.get(
-            '/api/v1/mcp/internal/mcp-revocations',
-            HTTP_AUTHORIZATION=f'Bearer {assertion}',
-        )
-        data2 = revoked2.json()
-        self.assertIn(str(agent.id), data2['revoked_agent_ids'])
+        self.assertEqual(response.status_code, 503)
+        self.assertIn('error', response.json())
 
     def test_revocation_list_requires_assertion(self):
         response = self.client.get('/api/v1/mcp/internal/mcp-revocations')

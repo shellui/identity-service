@@ -106,9 +106,12 @@ def build_mcp_revocation_list_response_assertion(
         'jti': uuid.uuid4().hex,
     }
     rs256 = _encode_identity_issued_rs256(claims)
-    if rs256:
-        return rs256
-    return _encode_assertion(claims)
+    if not rs256:
+        raise InternalAssertionError(
+            'Revocation list signing is not configured.',
+            status=503,
+        )
+    return rs256
 
 
 def build_mcp_revocation_assertion(*, audience_url: str, lifetime_seconds: int = 60) -> str:

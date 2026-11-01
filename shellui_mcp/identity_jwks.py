@@ -91,6 +91,9 @@ def decode_identity_rs256_jwt(
     jwks: dict[str, Any] | None = None,
     timeout: float = 10.0,
 ) -> dict[str, Any]:
+    header = jwt.get_unverified_header(token)
+    if header.get('alg') != 'RS256':
+        raise IdentityJwksError('Identity JWT must use RS256.')
     document = get_jwks_document(jwks_url=jwks_url, jwks=jwks, timeout=timeout)
     key = resolve_verification_key(token, document)
     try:
