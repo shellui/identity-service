@@ -201,7 +201,7 @@ class ProvisioningApiTests(TestCase):
         deleted = self._call('DELETE', url, key='delete:g-1')
         self.assertEqual(deleted.status_code, 202)
         self.assertEqual(ProvisionedCompany.objects.get(company_id=company_id).status, 'deleting')
-        self.assertTrue(Company.objects.filter(pk=company_id).exists())
+        self.assertTrue(Company.all_objects.filter(pk=company_id, deletion_requested_at__isnull=False).exists())
         self.assertEqual(self._call('PATCH', url, {'status': 'active'}, key='a2').status_code, 409)
         self.assertEqual(self._call('GET', f'{BASE}/companies/999', key=None).status_code, 404)
 

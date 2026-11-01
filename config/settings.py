@@ -182,6 +182,11 @@ def scheduled_jobs_beat_schedule() -> dict:
             'schedule': timedelta(seconds=60),
             'options': {'expires': 55},
         },
+        'purge-deleted-companies': {
+            'task': 'companies.purge_deleted_companies',
+            'schedule': timedelta(seconds=60),
+            'options': {'expires': 55},
+        },
         'purge-expired-data': {
             'task': 'actions.purge_expired_data',
             # Hourly at minute 17: off the top of the hour, where many jobs start.
@@ -429,6 +434,14 @@ DEFAULT_FROM_EMAIL = _env_str('DEFAULT_FROM_EMAIL', 'noreply@localhost')
 EMAIL_TIMEOUT = _env_positive_float('EMAIL_TIMEOUT', 10.0)
 
 # Shellui email-service. Unset EMAIL_SERVICE_API_KEY keeps the SMTP / console backend.
+# Company deletion (docs/company-deletion.md). Comma-separated storage, hosting and email
+# service origins told to purge a deleted company. Empty: identity only purges its own rows.
+COMPANY_DELETION_SERVICE_URLS = os.getenv('COMPANY_DELETION_SERVICE_URLS', '').strip()
+COMPANY_DELETION_TIMEOUT_SECONDS = float(os.getenv('COMPANY_DELETION_TIMEOUT_SECONDS', '10') or '10')
+# saas-service region webhook (``/api/v1/webhooks/<region>``) and its secret, for identity.company.deleted.
+DASHBOARD_WEBHOOK_URL = os.getenv('DASHBOARD_WEBHOOK_URL', '').strip()
+DASHBOARD_WEBHOOK_SECRET = os.getenv('DASHBOARD_WEBHOOK_SECRET', '').strip()
+
 EMAIL_SERVICE_URL = (
     os.getenv('EMAIL_SERVICE_URL', 'https://email.shellui.com').strip() or 'https://email.shellui.com'
 ).rstrip('/')

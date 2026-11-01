@@ -150,6 +150,10 @@ OPTIONAL = (
     Var('PROVISIONING_ISSUER', ''),
     Var('PROVISIONING_AUDIENCE', ''),
     Var('PROVISIONING_DEFAULT_REDIRECTS', ''),
+    Var('COMPANY_DELETION_SERVICE_URLS', '', 'Company deletion (storage, hosting and email origins, comma-separated)'),
+    Var('COMPANY_DELETION_TIMEOUT_SECONDS', '10'),
+    Var('DASHBOARD_WEBHOOK_URL', ''),
+    Var('DASHBOARD_WEBHOOK_SECRET', ''),
 )
 
 ROLES = ('standalone', 'global', 'region')

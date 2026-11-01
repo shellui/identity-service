@@ -55,6 +55,13 @@ class CompanyMembership(models.Model):
             emit_user_updated_if_changed(self.company, self.user, source=source, before=before)
 
 
+class ActiveCompanyManager(models.Manager):
+    """Hide companies flagged for deletion. The purge job uses ``Company.all_objects``."""
+
+    def get_queryset(self):
+        return super().get_queryset().filter(deletion_requested_at__isnull=True)
+
+
 class Company(models.Model):
     ACCESS_PUBLIC = 'public'
     ACCESS_DOMAIN = 'domain'
@@ -135,8 +142,24 @@ class Company(models.Model):
         ),
     )
 
+    deletion_requested_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text='Set when the company is flagged for deletion. The purge job removes it and its data.',
+    )
+    deletion_acks = models.JSONField(
+        default=list,
+        blank=True,
+        help_text='Services that confirmed they flagged this company for deletion.',
+    )
+
+    objects = ActiveCompanyManager()
+    all_objects = models.Manager()
+
     class Meta:
         ordering = ['name']
+        base_manager_name = 'all_objects'
 
     def __str__(self) -> str:
         return self.name
@@ -146,7 +169,7 @@ class Company(models.Model):
             base_slug = slugify(self.name)
             candidate = base_slug
             suffix = 1
-            while Company.objects.filter(slug=candidate).exclude(pk=self.pk).exists():
+            while Company.all_objects.filter(slug=candidate).exclude(pk=self.pk).exists():
                 candidate = f'{base_slug}-{suffix}'
                 suffix += 1
             self.slug = candidate
@@ -416,3 +439,15 @@ class CompanyInvitation(models.Model):
     def save(self, *args, **kwargs):
         self.email = (self.email or '').strip().lower()
         super().save(*args, **kwargs)
+
+
+class CompanyDeletionNotice(models.Model):
+    """``identity.company.deleted`` waiting for the dashboard. Deleted once delivered."""
+
+    global_company_id = models.CharField(max_length=64, unique=True)
+    regional_company_id = models.CharField(max_length=32)
+    attempts = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self) -> str:
+        return f'CompanyDeletionNotice({self.global_company_id})'

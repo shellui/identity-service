@@ -24,6 +24,7 @@ from rest_framework import status
 from rest_framework.permissions import AllowAny
 
 from .permissions import ShellUIPermission
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
@@ -533,7 +534,16 @@ def _resolve_token_delivery(*, request=None, stored: str | None = None) -> str:
     return settings.OAUTH_TOKEN_DELIVERY
 
 
+def _refuse_deleting_company(company: Company) -> None:
+    """No new tokens for a company flagged for deletion."""
+    from apps.companies.deletion import is_company_deleting
+
+    if is_company_deleting(company):
+        raise PermissionDenied('This company is being deleted.')
+
+
 def _issue_tokens(user: User, company: Company, *, family_id: uuid.UUID | None = None) -> dict:
+    _refuse_deleting_company(company)
     user_payload = {
         'id': user.id,
         'email': user.email,
@@ -779,6 +789,7 @@ def _issue_shellui_tokens(
     prior_auth_time: int | None = None,
     family_id: uuid.UUID | None = None,
 ) -> dict:
+    _refuse_deleting_company(company)
     refresh = ShellUIRefreshToken.for_user(user)
     preferences = _user_preferences_payload(user)
     resolved_avatar = _resolve_avatar_url_for_jwt(user, avatar_url)
@@ -850,6 +861,7 @@ def _issue_personal_access_token(
     access_global_metrics: bool = False,
     name: str = '',
 ) -> tuple[PersonalAccessToken, str]:
+    _refuse_deleting_company(company)
     pat_id = uuid.uuid4()
     access = ShellUIAccessToken.for_user(user)
     preferences = _user_preferences_payload(user)
