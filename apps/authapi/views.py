@@ -4711,9 +4711,13 @@ class ShellUIAdminAuthMethodsView(APIView):
 
 @extend_schema_view(
     get=extend_schema(
-        **mcp_extend_schema_kwargs('api_v1_metrics_retrieve'),
         tags=['platform-metrics'],
-        responses={**ADMIN_API_ERRORS, 
+        summary='Prometheus metrics for one company (staff or company owner)',
+        description=(
+            'Company-scoped Prometheus text exposition. Requires a Django staff user or a company '
+            'owner JWT with `company_id`. Not exposed as an MCP tool.'
+        ),
+        responses={
             200: OpenApiResponse(description='text/plain Prometheus exposition'),
             400: OpenApiResponse(
                 description='Missing company_id in token, or company_id was sent in the query string'

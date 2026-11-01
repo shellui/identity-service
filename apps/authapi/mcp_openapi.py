@@ -78,7 +78,6 @@ MCP_REQUIRED_OPERATION_IDS: frozenset[str] = frozenset(
         'api_v1_invitations_list',
         'api_v1_invitations_revoke',
         'api_v1_mcp_services_list',
-        'api_v1_metrics_retrieve',
         'api_v1_oauth_clients_create',
         'api_v1_oauth_clients_destroy',
         'api_v1_oauth_clients_list',

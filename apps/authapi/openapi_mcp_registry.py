@@ -362,11 +362,6 @@ MCP_SPECS: dict[str, _McpSpec] = {
         'Updates outbox status.',
         read_only=False,
     ),
-    'api_v1_metrics_retrieve': _McpSpec(
-        'Read company Prometheus metrics',
-        'Returns Prometheus text exposition for the token company only.',
-        'Read-only metrics scrape.',
-    ),
     'api_v1_mcp_services_list': _McpSpec(
         'List Shellui MCP service URLs',
         'Returns connected Shellui service MCP endpoints for agents.',
