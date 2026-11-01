@@ -81,8 +81,12 @@ def issue_agent_refresh(agent: Agent) -> tuple[str, AgentRefreshSession]:
     return str(refresh), session
 
 
+def revoke_all_agent_refresh_sessions(agent: Agent) -> None:
+    now = timezone.now()
+    AgentRefreshSession.objects.filter(agent=agent, revoked_at__isnull=True).update(revoked_at=now)
+
+
 def refresh_agent_access(refresh_token: str) -> tuple[str, str] | None:
-    import jwt
     from rest_framework_simplejwt.exceptions import TokenError
 
     try:
@@ -97,9 +101,12 @@ def refresh_agent_access(refresh_token: str) -> tuple[str, str] | None:
         session = AgentRefreshSession.objects.select_related('agent').get(jti=jti, agent_id=agent_id)
     except AgentRefreshSession.DoesNotExist:
         return None
-    if session.revoked_at is not None or session.expires_at <= timezone.now():
-        return None
     agent = session.agent
+    if session.revoked_at is not None:
+        revoke_all_agent_refresh_sessions(agent)
+        return None
+    if session.expires_at <= timezone.now():
+        return None
     if not agent.is_active:
         return None
     access = encode_access_token(agent)

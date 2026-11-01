@@ -28,6 +28,8 @@ class McpServer:
         identity_revocation_check: Callable[[str], bool] | None = None,
         on_call: Callable[[dict[str, Any]], None] | None = None,
         approval_handler: Callable[[dict[str, Any]], dict[str, Any] | None] | None = None,
+        approval_state: Callable[[dict[str, Any]], str | None] | None = None,
+        approval_consume: Callable[[str], bool] | None = None,
     ):
         self.schema_provider = schema_provider
         self.urlconf = urlconf
@@ -35,6 +37,8 @@ class McpServer:
         self.identity_revocation_check = identity_revocation_check
         self.on_call = on_call
         self.approval_handler = approval_handler
+        self.approval_state = approval_state
+        self.approval_consume = approval_consume
         self._factory = APIRequestFactory()
 
     def handle(self, request: HttpRequest, *, agent_claims: dict[str, Any] | None) -> JsonResponse:
@@ -49,6 +53,8 @@ class McpServer:
             return JsonResponse({'error': 'rate_limited'}, status=429)
         if self.identity_revocation_check and self.identity_revocation_check(agent_id):
             return JsonResponse({'error': 'agent_revoked'}, status=403)
+        if not self._service_allowed(agent_claims, self.service_name):
+            return JsonResponse({'error': 'forbidden'}, status=403)
         try:
             payload = json.loads(request.body.decode('utf-8') or '{}')
         except json.JSONDecodeError:
@@ -95,29 +101,68 @@ class McpServer:
             destructive=destructive,
             allow_destructive_without_asking=bool(agent_claims.get('mcp_destructive')),
         )
-        if decision.needs_approval and self.approval_handler:
+        if decision.needs_approval:
             args_hash = hashlib.sha256(json.dumps(arguments, sort_keys=True, default=str).encode()).hexdigest()
-            pending = self.approval_handler(
-                {
-                    'agent_id': agent_claims.get('agent_id'),
-                    'company_id': agent_claims.get('company_id'),
-                    'service': self.service_name,
-                    'action': tool_name,
-                    'arguments': arguments,
-                    'arguments_hash': args_hash,
-                    'path': path,
-                    'method': method,
-                }
-            )
-            if pending:
+            approval_payload = {
+                'agent_id': agent_claims.get('agent_id'),
+                'company_id': agent_claims.get('company_id'),
+                'service': self.service_name,
+                'action': tool_name,
+                'arguments': arguments,
+                'arguments_hash': args_hash,
+                'path': path,
+                'method': method,
+            }
+            granted = False
+            if self.approval_state:
+                state = self.approval_state(approval_payload)
+                if state == 'executed':
+                    return JsonResponse(
+                        self._result(
+                            req_id,
+                            {'content': [{'type': 'text', 'text': 'Approval already used.'}], 'isError': True},
+                        )
+                    )
+                if state == 'approved':
+                    approval_id = approval_payload.get('approval_id')
+                    if approval_id and self.approval_consume and self.approval_consume(str(approval_id)):
+                        granted = True
+                    else:
+                        return JsonResponse(
+                            self._result(
+                                req_id,
+                                {'content': [{'type': 'text', 'text': 'Approval unavailable.'}], 'isError': True},
+                            )
+                        )
+                elif state == 'pending':
+                    return JsonResponse(
+                        self._result(
+                            req_id,
+                            {
+                                'content': [{'type': 'text', 'text': 'Approval pending.'}],
+                                'isError': True,
+                                'meta': {'status': 'pending'},
+                            },
+                        )
+                    )
+            if not granted and self.approval_handler:
+                pending = self.approval_handler(approval_payload)
+                if pending:
+                    return JsonResponse(
+                        self._result(
+                            req_id,
+                            {
+                                'content': [{'type': 'text', 'text': 'Approval required.'}],
+                                'isError': True,
+                                'meta': {'approval_id': pending.get('id'), 'status': 'pending'},
+                            },
+                        )
+                    )
+            if not granted:
                 return JsonResponse(
                     self._result(
                         req_id,
-                        {
-                            'content': [{'type': 'text', 'text': 'Approval required.'}],
-                            'isError': True,
-                            'meta': {'approval_id': pending.get('id'), 'status': 'pending'},
-                        },
+                        {'content': [{'type': 'text', 'text': decision.reason or 'Forbidden'}], 'isError': True},
                     )
                 )
         if not decision.allowed:
@@ -169,6 +214,13 @@ class McpServer:
                 },
             )
         )
+
+    @staticmethod
+    def _service_allowed(agent_claims: dict[str, Any], service_name: str) -> bool:
+        scope = [part for part in str(agent_claims.get('scope') or '').split() if part]
+        if not scope:
+            return False
+        return service_name in scope
 
     @staticmethod
     def _operation(schema: dict[str, Any], path: str, method: str) -> dict[str, Any] | None:

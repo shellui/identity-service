@@ -5,7 +5,9 @@ from __future__ import annotations
 from datetime import timedelta
 
 from django.conf import settings
+from django.db import transaction
 from django.http import HttpRequest, JsonResponse
+from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from drf_spectacular.generators import SchemaGenerator
 from rest_framework.request import Request
@@ -34,6 +36,8 @@ def _get_server() -> McpServer:
             identity_revocation_check=lambda agent_id: agent_id in set(blocked_agent_ids()),
             on_call=_record_local_call,
             approval_handler=_maybe_create_approval,
+            approval_state=_approval_state,
+            approval_consume=_consume_approval,
         )
     return _server
 
@@ -61,6 +65,48 @@ def _record_local_call(entry: dict) -> None:
     )
 
 
+def _approval_state(payload: dict) -> str | None:
+    agent_id = payload.get('agent_id')
+    company_id = payload.get('company_id')
+    args_hash = str(payload.get('arguments_hash') or '')
+    if not agent_id or company_id is None or not args_hash:
+        return None
+    now = timezone.now()
+    qs = McpApprovalRequest.objects.filter(
+        agent_id=agent_id,
+        company_id=company_id,
+        arguments_hash=args_hash,
+        service=str(payload.get('service') or ''),
+        action=str(payload.get('action') or ''),
+    ).order_by('-created_at')
+    executed = qs.filter(status=McpApprovalRequest.STATUS_EXECUTED).first()
+    if executed:
+        return 'executed'
+    approved = qs.filter(status=McpApprovalRequest.STATUS_APPROVED, expires_at__gt=now).first()
+    if approved:
+        payload['approval_id'] = str(approved.id)
+        return 'approved'
+    pending = qs.filter(status=McpApprovalRequest.STATUS_PENDING, expires_at__gt=now).first()
+    if pending:
+        return 'pending'
+    return None
+
+
+def _consume_approval(approval_id: str) -> bool:
+    now = timezone.now()
+    with transaction.atomic():
+        try:
+            row = McpApprovalRequest.objects.select_for_update().get(pk=approval_id)
+        except McpApprovalRequest.DoesNotExist:
+            return False
+        if row.status != McpApprovalRequest.STATUS_APPROVED or row.expires_at <= now:
+            return False
+        row.status = McpApprovalRequest.STATUS_EXECUTED
+        row.executed_at = now
+        row.save(update_fields=['status', 'executed_at'])
+    return True
+
+
 def _maybe_create_approval(payload: dict) -> dict | None:
     agent_id = payload.get('agent_id')
     company_id = payload.get('company_id')
@@ -70,7 +116,6 @@ def _maybe_create_approval(payload: dict) -> dict | None:
         agent = Agent.objects.get(pk=agent_id, company_id=company_id)
     except Agent.DoesNotExist:
         return None
-    from django.utils import timezone
 
     row = McpApprovalRequest.objects.create(
         agent=agent,

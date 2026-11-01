@@ -105,7 +105,7 @@ class McpAgentRevokeView(APIView):
 class McpApprovalListView(APIView):
     @mcp_expose_tool(name='list_mcp_approvals')
     def get(self, request):
-        actor, company, err = require_company_admin(request)
+        actor, company, err = require_company_admin(request, allow_agent_token=False)
         if err:
             return err
         now = timezone.now()
@@ -139,7 +139,7 @@ class McpApprovalListView(APIView):
 class McpApprovalApproveView(APIView):
     @mcp_expose_tool(name='approve_mcp_request')
     def post(self, request, approval_id):
-        actor, company, err = require_company_admin(request)
+        actor, company, err = require_company_admin(request, allow_agent_token=False)
         if err:
             return err
         try:
@@ -164,7 +164,7 @@ class McpApprovalApproveView(APIView):
 class McpApprovalRejectView(APIView):
     @mcp_expose_tool(name='reject_mcp_request')
     def post(self, request, approval_id):
-        actor, company, err = require_company_admin(request)
+        actor, company, err = require_company_admin(request, allow_agent_token=False)
         if err:
             return err
         try:

@@ -13,15 +13,19 @@ from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
 from django.shortcuts import render
 from django.urls import reverse
 from django.utils import timezone
+from django.db import transaction
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
+from django.views.decorators.clickjacking import xframe_options_deny
 from rest_framework import status
 from rest_framework.views import APIView
 
-from apps.authapi.client_pkce import parse_client_pkce, verify_client_pkce
+from apps.authapi.client_pkce import PkceError, parse_client_pkce, verify_client_pkce
 from apps.authapi.throttling import check_rate_limit
 from apps.companies.models import Company
 from apps.agents.models import Agent, McpAuthorizationCode, McpOAuthClient
+from apps.agents.oauth_codes import hash_authorization_code, issue_mcp_authorization_code
+from apps.agents.oauth_redirect import normalize_mcp_redirect_uris, validate_mcp_redirect_uri
 from apps.agents.staff import is_mcp_oauth_refused_user
 from apps.agents.tokens import encode_access_token, issue_agent_refresh, refresh_agent_access
 
@@ -85,14 +89,14 @@ def mcp_register(request):
         body = json.loads(request.body.decode('utf-8') or '{}')
     except json.JSONDecodeError:
         return JsonResponse({'error': 'invalid_json'}, status=400)
-    redirect_uris = body.get('redirect_uris') or []
-    if not isinstance(redirect_uris, list) or not redirect_uris:
-        return JsonResponse({'error': 'invalid_redirect_uris'}, status=400)
+    redirect_uris, rerr = normalize_mcp_redirect_uris(request, body.get('redirect_uris') or [])
+    if rerr:
+        return JsonResponse({'error': rerr}, status=400)
     client_id = secrets.token_urlsafe(24)
     row = McpOAuthClient.objects.create(
         client_id=client_id,
         client_name=str(body.get('client_name') or '')[:255],
-        redirect_uris=[str(u) for u in redirect_uris],
+        redirect_uris=redirect_uris,
     )
     return JsonResponse(
         {
@@ -105,12 +109,16 @@ def mcp_register(request):
     )
 
 
+@xframe_options_deny
 def mcp_authorize(request):
     if request.method not in {'GET', 'POST'}:
         return HttpResponse(status=405)
     limited = check_rate_limit(request, scope='oauth')
     if limited:
         return limited
+    response_type = (request.GET.get('response_type') or request.POST.get('response_type') or 'code').strip()
+    if response_type != 'code':
+        return HttpResponse('Unsupported response_type.', status=400)
     client_id = (request.GET.get('client_id') or request.POST.get('client_id') or '').strip()
     redirect_uri = (request.GET.get('redirect_uri') or request.POST.get('redirect_uri') or '').strip()
     state = (request.GET.get('state') or request.POST.get('state') or '').strip()
@@ -118,14 +126,16 @@ def mcp_authorize(request):
     code_challenge_method = request.GET.get('code_challenge_method') or request.POST.get('code_challenge_method')
     try:
         challenge = parse_client_pkce(code_challenge, code_challenge_method, required=True)
-    except Exception as exc:
-        return HttpResponse(str(exc), status=400)
+    except PkceError as exc:
+        return HttpResponse(exc.message, status=400)
     try:
         client = McpOAuthClient.objects.get(client_id=client_id)
     except McpOAuthClient.DoesNotExist:
         return HttpResponse('Unknown client.', status=400)
-    if redirect_uri not in (client.redirect_uris or []):
+    canonical_redirect, rerr = validate_mcp_redirect_uri(request, redirect_uri)
+    if rerr or not canonical_redirect or canonical_redirect not in (client.redirect_uris or []):
         return HttpResponse('Invalid redirect_uri.', status=400)
+    redirect_uri = canonical_redirect
     if not request.user.is_authenticated:
         login_url = reverse('admin:login')
         next_url = request.get_full_path()
@@ -175,7 +185,13 @@ def _complete_authorize(request, *, user, client, redirect_uri, state, challenge
     if read_level not in {Agent.READ_SAFE, Agent.READ_SENSITIVE}:
         read_level = Agent.READ_SAFE
     destructive = request.POST.get('allow_destructive') == 'on'
-    services = request.POST.getlist('services') or ['identity']
+    services = [s for s in request.POST.getlist('services') if s]
+    if not services:
+        services = [Agent.SERVICE_IDENTITY]
+    allowed_services = {choice[0] for choice in Agent.SERVICE_CHOICES}
+    services = [s for s in services if s in allowed_services]
+    if not services:
+        return HttpResponse('Choose at least one service.', status=400)
     project_scope = (request.POST.get('project_scope') or '')[:255]
     agent = Agent.objects.create(
         company=company,
@@ -188,9 +204,9 @@ def _complete_authorize(request, *, user, client, redirect_uri, state, challenge
         services_allowed=services,
         project_scope=project_scope,
     )
-    code = secrets.token_urlsafe(32)
+    code, code_digest = issue_mcp_authorization_code()
     McpAuthorizationCode.objects.create(
-        code=code,
+        code=code_digest,
         client=client,
         user=user,
         company=company,
@@ -241,28 +257,38 @@ def mcp_token(request):
         client = McpOAuthClient.objects.get(client_id=client_id)
     except McpOAuthClient.DoesNotExist:
         return JsonResponse({'error': 'invalid_client'}, status=401)
-    try:
-        row = McpAuthorizationCode.objects.select_related('agent', 'user').get(code=code, client=client)
-    except McpAuthorizationCode.DoesNotExist:
+    code_digest = hash_authorization_code(code)
+    canonical_redirect, rerr = validate_mcp_redirect_uri(request, redirect_uri)
+    if rerr or not canonical_redirect:
         return JsonResponse({'error': 'invalid_grant'}, status=400)
-    if row.redeemed_at is not None or row.expires_at <= timezone.now():
-        return JsonResponse({'error': 'invalid_grant'}, status=400)
-    if row.redirect_uri != redirect_uri:
-        return JsonResponse({'error': 'invalid_grant'}, status=400)
-    message, _code = verify_client_pkce(
-        code_challenge=row.code_challenge,
-        code_verifier=verifier,
-        required=True,
-    )
-    if message:
-        return JsonResponse({'error': 'invalid_grant', 'error_description': message}, status=400)
-    if is_mcp_oauth_refused_user(row.user):
-        return JsonResponse({'error': 'access_denied'}, status=403)
-    agent = row.agent
-    if not agent.is_active:
-        return JsonResponse({'error': 'access_denied'}, status=403)
-    row.redeemed_at = timezone.now()
-    row.save(update_fields=['redeemed_at'])
+    redirect_uri = canonical_redirect
+    with transaction.atomic():
+        try:
+            row = (
+                McpAuthorizationCode.objects.select_for_update()
+                .select_related('agent', 'user')
+                .get(code=code_digest, client=client)
+            )
+        except McpAuthorizationCode.DoesNotExist:
+            return JsonResponse({'error': 'invalid_grant'}, status=400)
+        if row.redeemed_at is not None or row.expires_at <= timezone.now():
+            return JsonResponse({'error': 'invalid_grant'}, status=400)
+        if row.redirect_uri != redirect_uri:
+            return JsonResponse({'error': 'invalid_grant'}, status=400)
+        message, _code = verify_client_pkce(
+            code_challenge=row.code_challenge,
+            code_verifier=verifier,
+            required=True,
+        )
+        if message:
+            return JsonResponse({'error': 'invalid_grant', 'error_description': message}, status=400)
+        if is_mcp_oauth_refused_user(row.user):
+            return JsonResponse({'error': 'access_denied'}, status=403)
+        agent = row.agent
+        if not agent.is_active:
+            return JsonResponse({'error': 'access_denied'}, status=403)
+        row.redeemed_at = timezone.now()
+        row.save(update_fields=['redeemed_at'])
     access = encode_access_token(agent)
     refresh, _session = issue_agent_refresh(agent)
     return JsonResponse(
