@@ -915,3 +915,6 @@ LOGGING = {
         },
     },
 }
+
+# A failing log call must never print its arguments (headers, tokens) to stderr.
+logging.raiseExceptions = False

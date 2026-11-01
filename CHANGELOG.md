@@ -21,6 +21,12 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
 -->
 
+## [Unreleased]
+
+### 🐛 Bug Fixes
+
+- Access log: every response carries `X-Request-ID`, access lines never include request headers, and a logging error no longer prints request headers or tokens to stderr.
+
 ## [0.10.0] - 2026-11-01
 
 ### ✨ Feature
