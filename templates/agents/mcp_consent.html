@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Authorize MCP agent · Shellui Identity</title>
+    {% load static %}
+    <link rel="stylesheet" href="{% static 'css/site.css' %}" />
+  </head>
+  <body class="bg-background text-foreground antialiased">
+    <main class="page-x page-top mx-auto max-w-lg">
+      <h1 class="text-xl font-semibold">Connect an MCP client</h1>
+      <p class="mt-2 text-sm text-muted-foreground">
+        Client <strong translate="no">{{ client.client_name|default:client.client_id }}</strong> wants access through Shellui Identity.
+      </p>
+      <form method="post" action="{{ request.get_full_path }}" class="mt-6 space-y-4">
+        {% csrf_token %}
+        <input type="hidden" name="client_id" value="{{ client.client_id }}" />
+        <input type="hidden" name="redirect_uri" value="{{ redirect_uri }}" />
+        <input type="hidden" name="resource" value="{{ resource }}" />
+        <input type="hidden" name="state" value="{{ state }}" />
+        <input type="hidden" name="code_challenge" value="{{ code_challenge }}" />
+        <input type="hidden" name="code_challenge_method" value="S256" />
+        <div>
+          <label class="text-sm font-medium" for="company_id">Company</label>
+          <select name="company_id" id="company_id" class="mt-1 w-full rounded-md border border-border bg-card p-2 text-sm" required>
+            {% for c in companies %}
+            <option value="{{ c.pk }}">{{ c.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="text-sm font-medium" for="agent_name">Agent name</label>
+          <input name="agent_name" id="agent_name" class="mt-1 w-full rounded-md border border-border bg-card p-2 text-sm" maxlength="255" placeholder="My assistant" />
+        </div>
+        <fieldset>
+          <legend class="text-sm font-medium">Services</legend>
+          <ul class="mt-2 space-y-1 text-sm">
+            {% for sid, label in services %}
+            <li>
+              <label><input type="checkbox" name="services" value="{{ sid }}" {% if sid == 'identity' %}checked{% endif %} /> {{ label }}</label>
+            </li>
+            {% endfor %}
+          </ul>
+        </fieldset>
+        <div>
+          <label class="text-sm font-medium" for="access_mode">Access</label>
+          <select name="access_mode" id="access_mode" class="mt-1 w-full rounded-md border border-border bg-card p-2 text-sm">
+            <option value="read_only">Read only</option>
+            <option value="ask" selected>Ask before changes</option>
+            <option value="full">Full access</option>
+          </select>
+        </div>
+        <div>
+          <label class="text-sm font-medium" for="read_level">Read level</label>
+          <select name="read_level" id="read_level" class="mt-1 w-full rounded-md border border-border bg-card p-2 text-sm">
+            <option value="safe" selected>Safe (mask personal data)</option>
+            <option value="sensitive">Sensitive data</option>
+          </select>
+        </div>
+        <div class="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm dark:border-amber-900 dark:bg-amber-950/40">
+          <label class="flex gap-2">
+            <input type="checkbox" name="allow_destructive" />
+            <span>Allow destructive changes without asking. This is dangerous: deletes and irreversible actions can run without a second prompt.</span>
+          </label>
+        </div>
+        <button type="submit" class="w-full rounded-md bg-foreground px-4 py-2.5 text-sm font-semibold text-background">Authorize</button>
+      </form>
+    </main>
+  </body>
+</html>

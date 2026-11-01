@@ -77,8 +77,8 @@ def generate_apple_test_signing_key(*, kid: str = 'apple-e2e-kid') -> AppleTestS
         'use': 'sig',
         'alg': 'ES256',
         'crv': 'P-256',
-        'x': _b64url_int(public.x),
-        'y': _b64url_int(public.y),
+        'x': _b64url_p256_coord(public.x),
+        'y': _b64url_p256_coord(public.y),
     }
     return AppleTestSigningKey(kid=kid, private_pem=private_pem, public_jwk=public_jwk)
 
@@ -86,6 +86,11 @@ def generate_apple_test_signing_key(*, kid: str = 'apple-e2e-kid') -> AppleTestS
 def _b64url_int(value: int) -> str:
     width = (value.bit_length() + 7) // 8
     return base64.urlsafe_b64encode(value.to_bytes(width, 'big')).decode('ascii').rstrip('=')
+
+
+def _b64url_p256_coord(value: int) -> str:
+    """RFC 7518: P-256 JWK coordinates are fixed 32-byte big-endian values."""
+    return base64.urlsafe_b64encode(value.to_bytes(32, 'big')).decode('ascii').rstrip('=')
 
 
 def generate_oauth_test_signing_key(*, kid: str = 'oauth-e2e-kid') -> OAuthTestSigningKey:

@@ -132,6 +132,10 @@ class Company(models.Model):
             'For example, shellui-playground also allows shellui-playground-dev. Off by default.'
         ),
     )
+    mcp_allow_dynamic_registration = models.BooleanField(
+        default=True,
+        help_text='When false, MCP OAuth dynamic client registration is refused for this company.',
+    )
     DEFAULT_DATA_RETENTION_DAYS = 7
     data_retention_days = models.PositiveSmallIntegerField(
         default=DEFAULT_DATA_RETENTION_DAYS,

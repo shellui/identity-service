@@ -338,6 +338,21 @@ register_event(
 
 register_event(
     DomainEventType(
+        id='identity.mcp.call',
+        label='MCP tool call',
+        description='An MCP agent invoked a tool (arguments are redacted in the event log).',
+        payload_fields=(
+            EventFieldDoc('agent_id', 'Agent uuid', '00000000-0000-0000-0000-000000000001'),
+            EventFieldDoc('service', 'Service id', 'identity'),
+            EventFieldDoc('tool', 'Tool name', 'list_services'),
+            EventFieldDoc('status_code', 'HTTP status from the underlying API call', 200),
+        ),
+        webhook=False,
+    )
+)
+
+register_event(
+    DomainEventType(
         id='identity.scheduled_job.failed',
         label='Scheduled job failed',
         description='A scheduled job run raised an error. Platform event, staff only.',

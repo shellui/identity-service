@@ -15,4 +15,7 @@ class ShellUIPermission(IsAuthenticated):
         pat_ro = auth.get('pat_ro') if hasattr(auth, 'get') else None
         if pat_ro is True and request.method not in SAFE_METHODS:
             return False
+        mcp_access = auth.get('mcp_access') if hasattr(auth, 'get') else None
+        if mcp_access == 'read_only' and request.method not in SAFE_METHODS:
+            return False
         return True
