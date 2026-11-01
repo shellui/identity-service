@@ -135,7 +135,11 @@ def _notify_service(url: str, company_id: int) -> bool:
             url, response.status_code, location or '?', company_id,
         )
         return False
-    logger.warning('company deletion: %s answered %s for company=%s', url, response.status_code, company_id)
+    snippet = ' '.join(str(getattr(response, 'text', '') or '')[:200].split())
+    hint = ' (400 with an HTML body usually means DisallowedHost: add this host to ALLOWED_HOSTS on that service)' if response.status_code == 400 else ''
+    logger.warning(
+        'company deletion: %s answered %s for company=%s: %s%s', url, response.status_code, company_id, snippet or '-', hint
+    )
     return False
 
 

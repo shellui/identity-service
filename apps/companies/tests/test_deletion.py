@@ -109,6 +109,15 @@ class CompanyDeletionTests(TestCase):
         self.assertEqual(post.call_args.args[0], f'{HOSTING}/api/v1/internal/company-deletions')
         self.assertFalse(Company.all_objects.filter(pk=self.company.pk).exists())
 
+    @override_settings(STORAGE_SERVICE_URL=STORAGE, HOSTING_SERVICE_URL='')
+    def test_error_body_snippet_is_logged(self):
+        deletion.request_company_deletion(self.company)
+        bad = mock.Mock(status_code=400, text='<h1>Bad Request (400)</h1>')
+        with mock.patch.object(deletion.requests, 'post', return_value=bad):
+            with self.assertLogs('apps.companies.deletion', level='WARNING') as logs:
+                deletion.purge_deleted_companies()
+        self.assertTrue(any('Bad Request (400)' in line and 'ALLOWED_HOSTS' in line for line in logs.output))
+
     @override_settings(STORAGE_SERVICE_URL=STORAGE, HOSTING_SERVICE_URL=HOSTING)
     def test_redirect_is_not_followed_and_is_logged(self):
         deletion.request_company_deletion(self.company)
