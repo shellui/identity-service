@@ -1,4 +1,5 @@
 from drf_spectacular.utils import extend_schema, extend_schema_view
+from apps.authapi.openapi_admin import ADMIN_API_ERRORS, mcp_extend_schema_kwargs
 from rest_framework import mixins, status, viewsets
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -12,37 +13,25 @@ from .serializers import CompanySerializer, CompanyUpdateSerializer
 @extend_schema_view(
     list=extend_schema(
         tags=['companies'],
-        summary='List user companies',
-        description='Return companies where the authenticated user is a member.',
+        **mcp_extend_schema_kwargs('api_v1_companies_list'),
+        responses={200: CompanySerializer(many=True), **ADMIN_API_ERRORS},
     ),
     retrieve=extend_schema(
         tags=['companies'],
-        summary='Get company details',
-        description='Return company details only if the authenticated user is a member.',
+        **mcp_extend_schema_kwargs('api_v1_companies_retrieve'),
+        responses={200: CompanySerializer, **ADMIN_API_ERRORS},
     ),
     partial_update=extend_schema(
         tags=['companies'],
-        summary='Update company settings',
-        description=(
-            'Company owners can update the name, owners list, and join access '
-            '(public / domain / invite). Owners and staff can set '
-            'desktop_redirect_schemes and allow_desktop_dev_scheme. '
-            'An empty scheme list turns desktop sign-in off. '
-            'The flag accepts the -dev variant of each listed scheme when DEBUG is off.'
-        ),
+        **mcp_extend_schema_kwargs('api_v1_companies_partial_update'),
         request=CompanyUpdateSerializer,
+        responses={200: CompanySerializer, **ADMIN_API_ERRORS},
     ),
     update=extend_schema(
         tags=['companies'],
-        summary='Replace company settings',
-        description=(
-            'Company owners can update the name, owners list, and join access '
-            '(public / domain / invite). Owners and staff can set '
-            'desktop_redirect_schemes and allow_desktop_dev_scheme. '
-            'An empty scheme list turns desktop sign-in off. '
-            'The flag accepts the -dev variant of each listed scheme when DEBUG is off.'
-        ),
+        **mcp_extend_schema_kwargs('api_v1_companies_update'),
         request=CompanyUpdateSerializer,
+        responses={200: CompanySerializer, **ADMIN_API_ERRORS},
     ),
 )
 class CompanyViewSet(

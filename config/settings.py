@@ -315,7 +315,7 @@ INSTALLED_APPS = [
 ]
 
 REST_FRAMEWORK = {
-    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+    'DEFAULT_SCHEMA_CLASS': 'apps.authapi.mcp_schema.McpAutoSchema',
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'apps.authapi.authentication.ShellUIJWTAuthentication',
     ],
@@ -359,6 +359,18 @@ SPECTACULAR_SETTINGS = {
         {'name': 'personal-access-tokens', 'description': 'User-personal JWT access tokens (read-only or read/write).'},
         {'name': 'companies', 'description': 'Company membership and company settings endpoints.'},
         {'name': 'mcp-tools', 'description': 'Operations exposed to MCP agents (Shellui admin and list_services).'},
+        {'name': 'mcp-admin', 'description': 'Human-only MCP agent administration (approvals, pause, revoke).'},
+        {'name': 'scim', 'description': 'SCIM provisioning configuration and bearer tokens.'},
+        {'name': 'auth-admin', 'description': 'Company auth method toggles and sign-in configuration.'},
+        {'name': 'oauth-redirects', 'description': 'OAuth redirect URI allowlist.'},
+        {'name': 'actions-admin', 'description': 'Shellui Actions webhook rules and deliveries.'},
+        {'name': 'scheduled-jobs', 'description': 'Internal scheduled job introspection (staff).'},
+    ],
+    'POSTPROCESSING_HOOKS': [
+        'apps.authapi.spectacular_hooks.postprocess_mcp_tool_tags',
+    ],
+    'PREPROCESSING_HOOKS': [
+        'apps.authapi.spectacular_hooks.preprocessing_exclude_internal_endpoints',
     ],
 }
 

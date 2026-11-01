@@ -19,6 +19,7 @@ from django.views.decorators.http import require_GET, require_POST
 from django.views.decorators.clickjacking import xframe_options_deny
 from rest_framework import status
 from rest_framework.views import APIView
+from drf_spectacular.utils import OpenApiResponse, extend_schema
 
 from apps.authapi.client_pkce import PkceError, parse_client_pkce, verify_client_pkce
 from apps.authapi.throttling import check_rate_limit
@@ -29,6 +30,7 @@ from apps.agents.mcp_resources import resolve_mcp_resource
 from apps.agents.oauth_redirect import normalize_mcp_redirect_uris, validate_mcp_redirect_uri
 from apps.agents.staff import is_mcp_oauth_refused_user
 from apps.agents.tokens import encode_access_token, issue_agent_refresh, refresh_agent_access
+from apps.authapi.serializers import ShellUIOpenAPISerializer
 
 
 def _issuer() -> str:
@@ -46,7 +48,13 @@ def _mcp_company_registration_allowed(company: Company | None) -> bool:
 class OAuthAuthorizationServerMetadataView(APIView):
     authentication_classes = []
     permission_classes = []
+    serializer_class = ShellUIOpenAPISerializer
 
+    @extend_schema(
+        tags=['.well-known'],
+        responses={200: OpenApiResponse(description='OAuth authorization server metadata JSON')},
+        auth=[],
+    )
     def get(self, request):
         base = _issuer() or request.build_absolute_uri('/').rstrip('/')
         data = {
@@ -67,7 +75,13 @@ class OAuthAuthorizationServerMetadataView(APIView):
 class OAuthProtectedResourceMetadataView(APIView):
     authentication_classes = []
     permission_classes = []
+    serializer_class = ShellUIOpenAPISerializer
 
+    @extend_schema(
+        tags=['.well-known'],
+        responses={200: OpenApiResponse(description='OAuth protected resource metadata JSON')},
+        auth=[],
+    )
     def get(self, request):
         base = _issuer() or request.build_absolute_uri('/').rstrip('/')
         return JsonResponse(

@@ -7,6 +7,7 @@ import logging
 from django.db import IntegrityError, transaction
 from django.db.models import Exists, OuterRef, Subquery
 from django.utils import timezone
+from apps.authapi.openapi_admin import ADMIN_API_ERRORS, mcp_extend_schema_kwargs
 from drf_spectacular.utils import OpenApiResponse, extend_schema, extend_schema_view
 from rest_framework import status
 from rest_framework.response import Response
@@ -86,31 +87,18 @@ def _open_invitations(company):
 
 @extend_schema_view(
     get=extend_schema(
+        **mcp_extend_schema_kwargs('api_v1_invitations_list'),
         tags=['directory-users'],
-        summary='List open invitations for this company (staff or company owner)',
-        description=(
-            'Pending invitations, plus revoked invitations that still block sign-in for that email. '
-            'Accepted invitations are not listed: those users appear in the users list.'
-        ),
-        responses={
+        responses={**ADMIN_API_ERRORS, 
             200: OpenApiResponse(description='`{"results": [invitation, …]}`'),
             403: OpenApiResponse(description='Not staff or company owner'),
         },
     ),
     post=extend_schema(
+        **mcp_extend_schema_kwargs('api_v1_invitations_create'),
         tags=['directory-users'],
-        summary='Invite someone to this company (staff or company owner)',
-        description=(
-            'Stores a pending invitation; no user account is created. The invitee gets access on their '
-            'first sign-in with that email (magic link, or OAuth/SAML with a verified email). Sends an '
-            'invitation email in `language` linking to `app_url` (or the identity landing page when '
-            '`app_url` is empty), or emits `identity.user.invited` '
-            'instead when the company has an enabled webhook rule for it. Returns 409 `already_member` '
-            'when someone with this email already has access, or `already_invited` when an invitation '
-            'is pending.'
-        ),
         request=ShellUIInvitationCreateSerializer,
-        responses={
+        responses={**ADMIN_API_ERRORS, 
             201: OpenApiResponse(description='Invitation created; body has `invitation`'),
             400: OpenApiResponse(description='Invalid email, language, or app_url, or `auth_link_missing` / `auth_link_host_not_allowed`'),
             403: OpenApiResponse(description='Not staff or company owner'),
@@ -278,14 +266,9 @@ def _locked_company_invitation(request, pk: int):
 
 @extend_schema_view(
     delete=extend_schema(
+        **mcp_extend_schema_kwargs('api_v1_invitations_destroy'),
         tags=['directory-users'],
-        summary='Delete a revoked invitation for good (staff or company owner)',
-        description=(
-            'Removes every revoked invitation for this email in the company from the database. This lifts '
-            'the sign-in block: the email is then treated as never invited. Pending invitations must be '
-            'revoked first (409 `invitation_not_revoked`).'
-        ),
-        responses={
+        responses={**ADMIN_API_ERRORS, 
             204: OpenApiResponse(description='Invitation deleted'),
             403: OpenApiResponse(description='Not staff or company owner'),
             404: OpenApiResponse(description='No invitation with this id in the company'),
@@ -317,15 +300,10 @@ class ShellUIAdminInvitationDetailView(APIView):
 
 @extend_schema_view(
     post=extend_schema(
+        **mcp_extend_schema_kwargs('api_v1_invitations_revoke'),
         tags=['directory-users'],
-        summary='Revoke a pending invitation (staff or company owner)',
-        description=(
-            'Marks the invitation revoked and emits `identity.user.invitation_revoked`. Sign-in with that '
-            'email is refused for this company (`invitation_revoked`) until a new invitation is sent or '
-            'the revoked invitation is deleted.'
-        ),
         request=None,
-        responses={
+        responses={**ADMIN_API_ERRORS, 
             200: OpenApiResponse(description='Invitation revoked; body has `invitation`'),
             403: OpenApiResponse(description='Not staff or company owner'),
             404: OpenApiResponse(description='No invitation with this id in the company'),
