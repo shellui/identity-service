@@ -8,7 +8,7 @@ from django.utils import timezone
 from apps.companies.access import set_company_access
 from apps.companies.models import Company
 from apps.agents.models import Agent, McpApprovalRequest, McpOAuthClient
-from shellui_mcp.internal import build_mcp_approval_assertion
+from shellui_django.mcp.internal import build_mcp_approval_assertion
 
 User = get_user_model()
 

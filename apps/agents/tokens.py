@@ -11,7 +11,7 @@ from rest_framework_simplejwt.settings import api_settings
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.agents.models import Agent, AgentRefreshSession
-from shellui_mcp.resources import normalize_resource_indicator
+from shellui_django.mcp.resources import normalize_resource_indicator
 
 
 def mcp_access_lifetime() -> timedelta:

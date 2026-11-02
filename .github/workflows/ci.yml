@@ -111,13 +111,14 @@ jobs:
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           version: '0.12.1'
+          python-version: '3.14'
           enable-cache: true
           cache-dependency-glob: 'uv.lock'
 
       - name: Dependency vulnerabilities (pip-audit)
         run: |
           uv export --frozen --no-dev --no-emit-project --no-hashes -o /tmp/requirements.txt
-          uvx pip-audit -r /tmp/requirements.txt
+          uvx --python 3.14 pip-audit -r /tmp/requirements.txt
 
       - name: Repo hygiene
         run: |

@@ -10,7 +10,7 @@ from apps.companies.access import set_company_access
 from apps.companies.models import Company
 from apps.agents.models import Agent, McpApprovalRequest, McpCallLog, McpOAuthClient
 from apps.agents.tokens import encode_access_token
-from shellui_mcp.internal import build_mcp_approval_assertion, build_mcp_revocation_assertion
+from shellui_django.mcp.internal import build_mcp_approval_assertion, build_mcp_revocation_assertion
 
 User = get_user_model()
 
