@@ -95,7 +95,7 @@ def _parse_optional_bool(value) -> bool | None:
 
 def handle_agent_token_exchange(request, *, data: dict[str, Any] | None = None) -> JsonResponse:
     if not agent_exchange_enabled():
-        return JsonResponse(status=404)
+        return JsonResponse({}, status=404)
     limited = check_rate_limit(request, scope='token_exchange')
     if limited is not None:
         return limited

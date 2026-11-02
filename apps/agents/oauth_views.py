@@ -263,7 +263,7 @@ def mcp_token(request):
     grant = body.get('grant_type')
     if grant == AGENT_EXCHANGE_GRANT:
         if not agent_exchange_enabled():
-            return JsonResponse(status=404)
+            return JsonResponse({}, status=404)
         return handle_agent_token_exchange(request, data=body)
     if grant == 'refresh_token':
         refresh = str(body.get('refresh_token') or '')
