@@ -101,11 +101,11 @@ class McpOAuthFlowTests(TestCase):
         payload = jwt.decode(access, options={'verify_signature': False})
         self.assertEqual(payload['agent_id'], str(agent.id))
         self.assertEqual(payload['aud'], IDENTITY_MCP_RESOURCE)
-        from shellui_mcp.internal import build_mcp_revocation_assertion
+        from shellui_django.mcp.internal import build_mcp_revocation_assertion
 
         assertion = build_mcp_revocation_assertion(audience_url='https://identity.test')
         with rs256_identity_settings() as (_signing, jwks):
-            from shellui_mcp.internal import parse_trusted_revocation_poll_response
+            from shellui_django.mcp.internal import parse_trusted_revocation_poll_response
 
             revoked = self.client.get(
                 '/api/v1/mcp/internal/mcp-revocations',
@@ -140,7 +140,7 @@ class McpOAuthFlowTests(TestCase):
             self.assertIn(str(agent.id), ids2)
 
     def test_revocation_list_unavailable_without_rs256_signing(self):
-        from shellui_mcp.internal import build_mcp_revocation_assertion
+        from shellui_django.mcp.internal import build_mcp_revocation_assertion
 
         assertion = build_mcp_revocation_assertion(audience_url='https://identity.test')
         response = self.client.get(

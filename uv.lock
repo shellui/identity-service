@@ -488,6 +488,7 @@ dependencies = [
     { name = "redis" },
     { name = "requests" },
     { name = "sentry-sdk" },
+    { name = "shellui-django", extra = ["mcp"] },
     { name = "whitenoise" },
 ]
 
@@ -514,6 +515,7 @@ requires-dist = [
     { name = "redis", specifier = "==8.1.0" },
     { name = "requests", specifier = "==2.33.0" },
     { name = "sentry-sdk", specifier = "==2.63.0" },
+    { name = "shellui-django", extras = ["mcp"], specifier = "==0.1.0" },
     { name = "whitenoise", specifier = "==6.12.0" },
 ]
 
@@ -942,6 +944,26 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/ba/c8/b3c970a5b186722d276cd40a05b3254e03bccc0208560aff20f612e018e8/sentry_sdk-2.63.0.tar.gz", hash = "sha256:2a1502bf864769275dbc8c2c9fc7a0f7f5e18358180b615d262d13a31ffba216", size = 912449, upload-time = "2026-06-16T12:45:57.553Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/7b/57/cb205f7d93373120f666b9c5736dc0815524d96a9b278e7a728f018dc22a/sentry_sdk-2.63.0-py3-none-any.whl", hash = "sha256:3a9b5ddd403f79eb73bd670f75f04485819db53d28f76ced7bc09041cb0dfd6a", size = 495950, upload-time = "2026-06-16T12:45:55.819Z" },
+]
+
+[[package]]
+name = "shellui-django"
+version = "0.1.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "django" },
+    { name = "djangorestframework" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/b6/ee/ac8340b9e5a63ec882649a1df6d5e729ed4c66fd2dfd0730bc40456cca81/shellui_django-0.1.0.tar.gz", hash = "sha256:a1a92e0c0fc1bd89f162802b1ea9bd8d25cf2d2479d543dfc5f1b7822d6ab230", size = 19882, upload-time = "2026-11-02T09:20:54.589Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4d/07/5b12886d583d3b3d8db2f439e7fa6d70b5dda679d5516ef06f4a0bfc1628/shellui_django-0.1.0-py3-none-any.whl", hash = "sha256:85c21ea96d2ea36f3924da53fc70704df0242756e1acaadf44c62f13b2185dbe", size = 19376, upload-time = "2026-11-02T09:20:53.288Z" },
+]
+
+[package.optional-dependencies]
+mcp = [
+    { name = "cryptography" },
+    { name = "djangorestframework-simplejwt" },
+    { name = "pyjwt" },
 ]
 
 [[package]]

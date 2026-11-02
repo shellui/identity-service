@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [0.11.0] - 2026-11-01
 
+### 🏗 Chore
+
+- Use the shared shellui-django package for MCP instead of a vendored copy.
+
 ### ✨ Feature
 
 - MCP endpoint and OAuth for company agents (`/mcp`, authorization server, consent, agent JWTs).

@@ -10,7 +10,7 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from shellui_mcp.internal import (
+from shellui_django.mcp.internal import (
     APPROVAL_AUDIENCE,
     APPROVAL_SCOPE,
     CALL_LOG_AUDIENCE,
@@ -21,7 +21,7 @@ from shellui_mcp.internal import (
     build_mcp_revocation_list_response_assertion,
     verify_mcp_internal_assertion,
 )
-from shellui_mcp.masking import redact_mapping
+from shellui_django.mcp.masking import redact_mapping
 
 from apps.actions.event_log import record_event
 from apps.actions.registry import get_event_type

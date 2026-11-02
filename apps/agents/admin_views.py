@@ -7,8 +7,8 @@ from drf_spectacular.utils import OpenApiResponse, extend_schema, extend_schema_
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from shellui_mcp.decorators import mcp_expose_tool
-from shellui_mcp.masking import redact_mapping
+from shellui_django.mcp.decorators import mcp_expose_tool
+from shellui_django.mcp.masking import redact_mapping
 
 from apps.authapi.openapi_admin import ADMIN_API_ERRORS, admin_openapi_fields, mcp_extend_schema_kwargs
 from apps.authapi.serializers import ShellUIOpenAPISerializer

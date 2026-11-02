@@ -5,7 +5,7 @@ from __future__ import annotations
 from django.conf import settings
 
 from apps.agents.services import list_mcp_services
-from shellui_mcp.resources import mcp_resource_from_origin, normalize_resource_indicator
+from shellui_django.mcp.resources import mcp_resource_from_origin, normalize_resource_indicator
 
 
 def catalog_resources_by_url() -> dict[str, str]:
