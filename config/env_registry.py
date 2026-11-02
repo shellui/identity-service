@@ -149,6 +149,7 @@ OPTIONAL = (
     Var('GLOBAL_CLIENT_SECRET', ''),
     Var('GLOBAL_REDIRECT_URI', ''),
     Var('GLOBAL_ACCESS_TOKEN_AUDIENCE', ''),
+    Var('GLOBAL_AGENT_ACCESS_TOKEN_AUDIENCE', ''),
     Var('PROVISIONING_PUBLIC_KEY', '', 'Provisioning API (region role; empty PROVISIONING_PUBLIC_KEY turns it off)'),
     Var('PROVISIONING_KEY_ID', ''),
     Var('PROVISIONING_ISSUER', ''),

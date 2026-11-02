@@ -9,6 +9,16 @@ from django.utils import timezone
 from apps.companies.models import Company
 
 
+class GlobalAgentRevocation(models.Model):
+    """Global MCP agent ids revoked by saas-service (blocks further token exchange)."""
+
+    global_agent_id = models.UUIDField(primary_key=True)
+    revoked_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-revoked_at']
+
+
 class McpOAuthClient(models.Model):
     """Dynamically registered MCP OAuth client (public, PKCE-only)."""
 
@@ -56,6 +66,12 @@ class Agent(models.Model):
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    global_agent_id = models.UUIDField(
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text='Global MCP agent id when this row was created by token exchange.',
+    )
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='mcp_agents')
     name = models.CharField(max_length=255)
     oauth_client = models.ForeignKey(
@@ -95,6 +111,13 @@ class Agent(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['company', 'global_agent_id'],
+                condition=models.Q(global_agent_id__isnull=False),
+                name='agents_company_global_agent_unique',
+            ),
+        ]
 
     def __str__(self) -> str:
         return f'{self.company_id}:{self.name}'

@@ -29,6 +29,8 @@ from apps.agents.oauth_codes import hash_authorization_code, issue_mcp_authoriza
 from apps.agents.mcp_resources import resolve_mcp_resource
 from apps.agents.oauth_redirect import normalize_mcp_redirect_uris, validate_mcp_redirect_uri
 from apps.agents.staff import is_mcp_oauth_refused_user
+from apps.agents.exchange import GRANT_TYPE as AGENT_EXCHANGE_GRANT
+from apps.agents.exchange import agent_exchange_enabled, handle_agent_token_exchange
 from apps.agents.tokens import encode_access_token, issue_agent_refresh, refresh_agent_access
 from apps.authapi.serializers import ShellUIOpenAPISerializer
 
@@ -63,7 +65,7 @@ class OAuthAuthorizationServerMetadataView(APIView):
             'token_endpoint': f'{base}/oauth/mcp/token',
             'registration_endpoint': f'{base}/oauth/mcp/register',
             'response_types_supported': ['code'],
-            'grant_types_supported': ['authorization_code', 'refresh_token'],
+            'grant_types_supported': ['authorization_code', 'refresh_token', AGENT_EXCHANGE_GRANT],
             'code_challenge_methods_supported': ['S256'],
             'token_endpoint_auth_methods_supported': ['none'],
             'scopes_supported': ['mcp'],
@@ -259,6 +261,10 @@ def mcp_token(request):
     except json.JSONDecodeError:
         return JsonResponse({'error': 'invalid_json'}, status=400)
     grant = body.get('grant_type')
+    if grant == AGENT_EXCHANGE_GRANT:
+        if not agent_exchange_enabled():
+            return JsonResponse({}, status=404)
+        return handle_agent_token_exchange(request, data=body)
     if grant == 'refresh_token':
         refresh = str(body.get('refresh_token') or '')
         resource_url, _service_id = resolve_mcp_resource(str(body.get('resource') or ''))

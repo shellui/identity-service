@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 - Agents admin APIs for approvals, call logs, and revocation (`/api/v1/mcp/`).
 - OpenAPI descriptions for MCP registry and agent-friendly admin APIs.
 - Aggregated Identity MCP gateway (multi-service `tools/list` / `tools/call`) and SaaS in agent service consent.
+- **Agent token exchange:** Regional `POST /oauth/mcp/token` (RFC 8693) exchanges a global MCP agent JWT for a company-scoped regional agent token; provisioning `POST /api/v1/provisioning/global-agents/revoke` revokes linked regional agents.
 
 <!---
 ## [Unreleased] - yyyy-mm-dd

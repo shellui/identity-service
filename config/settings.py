@@ -511,6 +511,8 @@ GLOBAL_REDIRECT_URI = (os.getenv('GLOBAL_REDIRECT_URI', '') or '').strip()
 # Token exchange (RFC 8693, role region): `aud` of global access tokens (the global JWT_AUDIENCE).
 # Unset leaves the exchange answering 404. Browser shells must be in OIDC_CORS_ALLOWED_ORIGINS.
 GLOBAL_ACCESS_TOKEN_AUDIENCE = (os.getenv('GLOBAL_ACCESS_TOKEN_AUDIENCE', '') or '').strip()
+# Agent token exchange (RFC 8693, role region): `aud` of global MCP agent access tokens.
+GLOBAL_AGENT_ACCESS_TOKEN_AUDIENCE = (os.getenv('GLOBAL_AGENT_ACCESS_TOKEN_AUDIENCE', '') or '').strip()
 
 # Regional provisioning API (role region). The dashboard (saas-service) signs each call with its
 # provisioning key; pin the public key here. Unset key or issuer leaves the API answering 404.
