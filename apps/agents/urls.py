@@ -1,6 +1,6 @@
 from django.urls import path
 
-from apps.agents import admin_views, internal_views
+from apps.agents import admin_views, downstream_internal, internal_views
 
 urlpatterns = [
     path('agents', admin_views.McpAgentListView.as_view(), name='mcp-agents-list'),
@@ -17,4 +17,9 @@ urlpatterns = [
     path('internal/mcp-approval-state', internal_views.McpInternalApprovalStateView.as_view(), name='mcp-internal-approval-state'),
     path('internal/mcp-approval-consume', internal_views.McpInternalApprovalConsumeView.as_view(), name='mcp-internal-approval-consume'),
     path('internal/mcp-call-logs', internal_views.McpInternalCallLogView.as_view(), name='mcp-internal-call-log'),
+    path(
+        'internal/mcp-downstream-access-token',
+        downstream_internal.McpDownstreamAccessTokenView.as_view(),
+        name='mcp-downstream-access-token',
+    ),
 ]

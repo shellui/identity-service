@@ -4,9 +4,9 @@ description: Connect MCP clients to Shellui with OAuth, agent access levels, app
 
 # MCP and agents
 
-Shellui Identity is the OAuth authorization server for MCP clients. Each connected client receives a company-scoped **agent** with explicit access rules. Storage, hosting, email, SaaS, and other services reuse the same MCP layer from the [shellui-django](https://github.com/shellui/django-commons) package (`shellui_django.mcp`) for their `/mcp` endpoint.
+Shellui Identity is the OAuth authorization server for MCP clients. Each connected client receives a company-scoped **agent** with explicit access rules. Storage, hosting, email, SaaS, AI, and other services reuse the same MCP layer from the [shellui-django](https://github.com/shellui/django-commons) package (`shellui_django.mcp`) for their `/mcp` endpoint.
 
-Identity also exposes an **aggregated MCP gateway** at `POST /mcp` on the identity origin. With one identity-scoped access token, `tools/list` returns Identity tools plus tools from every downstream service in the agent's `services_allowed` (fetched from each service's `/mcp`). `tools/call` on a downstream tool forwards to that service with a short-lived access token for the same agent (same claims, audience narrowed to that service's `/mcp`). Downstream services still enforce write gates, approvals, revocation, and call logs; the gateway does not bypass them.
+Identity exposes its **own** MCP tools at `POST /mcp` on the identity origin (for example `list_services`). Multi-service MCP clients connect through **ai-service**, which holds one OAuth session per agent and requests short-lived downstream access tokens from Identity when calling another service's `/mcp`. Identity never holds an ai-service secret; ai-service never holds Identity's signing key.
 
 ## Connect a client (one URL and sign-in)
 
@@ -14,7 +14,7 @@ Identity also exposes an **aggregated MCP gateway** at `POST /mcp` on the identi
 2. The client loads OAuth authorization server metadata at `/.well-known/oauth-authorization-server` and protected resource metadata at `/.well-known/oauth-protected-resource` (resource `/mcp`).
 3. The client registers with **dynamic client registration** (`POST /oauth/mcp/register`) unless an operator disabled it (`MCP_DYNAMIC_CLIENT_REGISTRATION=false` or `Company.mcp_allow_dynamic_registration=false`).
 4. The user signs in and approves company, services, access level, and read level on the consent screen (`GET/POST /oauth/mcp/authorize` with PKCE S256 and RFC 8707 `resource=<service>/mcp`).
-5. The client exchanges the authorization code at `POST /oauth/mcp/token` with the same `resource`, then calls `POST /mcp` on that service with `Authorization: Bearer <access_token>`. Repeat for each service using a separate token per resource, or point the client at Identity `/mcp` with a token whose `resource` is Identity `/mcp` to use the aggregated gateway (one connection, many services).
+5. The client exchanges the authorization code at `POST /oauth/mcp/token` with the same `resource`, then calls `POST /mcp` on that service with `Authorization: Bearer <access_token>`. Repeat for each service using a separate token per resource, or authorize `resource={AI_SERVICE_URL}/mcp` with `ai` in `services` to use the ai-service connector (one MCP URL, many services).
 
 Staff accounts (`is_staff`, `is_superuser`, and global staff) cannot authorize MCP agents.
 
@@ -114,6 +114,16 @@ Services forward redacted MCP call rows to `POST /api/v1/mcp/internal/mcp-call-l
 
 Owners read logs with `GET /api/v1/mcp/call-logs`.
 
+## Downstream access tokens (ai-service)
+
+When ai-service forwards `tools/call` to storage, hosting, email, SaaS, or Identity, it asks Identity to mint a regional agent access token for that downstream `/mcp` URL.
+
+- **Endpoint:** `POST /api/v1/mcp/internal/mcp-downstream-access-token` (answers **404** unless `AI_SERVICE_URL`, `AI_SERVICE_ISSUER`, and pinned `AI_SERVICE_JWKS` or `AI_SERVICE_JWKS_URL` are set).
+- **Authorization:** `Bearer` RS256 delegation JWT signed by ai-service (`shellui_django.mcp.delegation.sign_downstream_token_request` on the caller). Identity verifies with `verify_downstream_token_request` against ai-service JWKS and expected issuer `AI_SERVICE_ISSUER`. Audience `shellui-mcp-downstream-token`, scope `mcp.downstream_token.mint`. Claims include `agent_id`, `company_id`, `resource`, and single-use `jti` (cached on Identity).
+- **JSON body:** `{ "agent_id": "<uuid>", "company_id": <int>, "resource": "<canonical /mcp URL>" }` must match the JWT claims.
+- **Response:** `{ "access_token": "<Identity RS256 agent JWT>" }` with the same agent claims as OAuth, `aud` narrowed to `resource`.
+- **Checks:** agent exists, active, not revoked, belongs to `company_id`; `resource` is exactly one configured service `/mcp` URL and allowed in the agent's `services_allowed`. Per-agent and global rate limits apply. Identity never logs minted tokens.
+
 ## list_services
 
 On Identity `/mcp`, the `list_services` tool returns MCP URLs discovered from existing settings:
@@ -123,8 +133,9 @@ On Identity `/mcp`, the `list_services` tool returns MCP URLs discovered from ex
 - Hosting: `HOSTING_SERVICE_URL` + `/mcp`
 - Email: `EMAIL_SERVICE_URL` + `/mcp` when `EMAIL_SERVICE_API_KEY` is set
 - SaaS: `SAAS_SERVICE_URL` + `/mcp`
+- AI: `AI_SERVICE_URL` + `/mcp`
 
-Gateway forwarding uses only these configured origins (never a URL from the client). Remote tool catalogs are cached briefly (`MCP_GATEWAY_TOOLS_CACHE_TTL_SECONDS`, default 30). A downstream timeout or error drops that service's tools from `tools/list` or returns an error on `tools/call` without affecting other services.
+Downstream minting uses only these configured origins (never a URL from the client).
 
 ## Agent JWT claims
 
@@ -145,19 +156,16 @@ Refresh tokens use `grant_type=refresh_token` at `/oauth/mcp/token` with the sam
 
 Regional Identity deployments scope agents to the company only (no `project_scope` in consent or JWT). Project binding for SaaS is enforced in saas-service.
 
-Agent bearer tokens cannot pause, revoke, approve, list call logs, or change agent settings. Those admin routes require a human company owner token (`allow_agent_token=false`) and are not exported as MCP tools. Identity `/mcp` exposes only non-admin tools such as `list_services`, plus downstream tools when the agent is allowed for those services.
-
-Tool names from downstream services are usually already prefixed (for example `storage_v1_*`). If two services expose the same name, the gateway namespaces the later one as `{service_id}__{name}`.
+Agent bearer tokens cannot pause, revoke, approve, list call logs, or change agent settings. Those admin routes require a human company owner token (`allow_agent_token=false`) and are not exported as MCP tools. Identity `/mcp` exposes only non-admin tools such as `list_services`.
 
 Staff accounts cannot call `/api/v1/mcp/*` company admin APIs (same refusal as MCP OAuth).
 
 ## shellui-django MCP (other services)
 
-Add the PyPI package `shellui-django[mcp]` (source: [django-commons](https://github.com/shellui/django-commons)) to storage, hosting, email, and saas. Wire:
-
-Generic gateway forwarding currently lives in `apps/agents/mcp_gateway.py` on Identity; consider moving reusable pieces into `shellui_django.mcp` if other services need the same pattern.
+Add the PyPI package `shellui-django[mcp]` (source: [django-commons](https://github.com/shellui/django-commons)) to storage, hosting, email, saas, and ai-service. Wire:
 
 - `POST /mcp` using `shellui_django.mcp.server.McpServer`
+- ai-service: aggregated gateway in `shellui_django.mcp.gateway` plus downstream token delegation (`shellui_django.mcp.delegation`)
 - OpenAPI tools from operations tagged `mcp-tools` only (`@mcp_expose_tool`)
 - Protected resource metadata pointing at Identity
 - Revocation checks against Identity

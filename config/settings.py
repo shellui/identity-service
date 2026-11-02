@@ -380,6 +380,10 @@ MCP_REFRESH_TOKEN_LIFETIME = _env_duration('MCP_REFRESH_TOKEN_LIFETIME', timedel
 MCP_RATE_LIMITS = {
     'default': {'limit': 120, 'window': 60},
     'mcp_agent': {'limit': _env_int('MCP_RATE_LIMIT_AGENT', 120), 'window': 60},
+    'mcp_downstream_mint': {
+        'limit': _env_int('MCP_RATE_LIMIT_DOWNSTREAM_MINT', 300),
+        'window': 60,
+    },
 }
 
 MIDDLEWARE = [
@@ -480,8 +484,11 @@ MAGIC_LINK_EMAIL_DEFAULT_LANGUAGE = (
 STORAGE_SERVICE_URL = os.getenv('STORAGE_SERVICE_URL', '').strip()
 HOSTING_SERVICE_URL = os.getenv('HOSTING_SERVICE_URL', '').strip()
 SAAS_SERVICE_URL = os.getenv('SAAS_SERVICE_URL', '').strip()
-MCP_GATEWAY_TOOLS_CACHE_TTL_SECONDS = _env_int('MCP_GATEWAY_TOOLS_CACHE_TTL_SECONDS', 30)
-MCP_GATEWAY_DOWNSTREAM_TIMEOUT_SECONDS = _env_float('MCP_GATEWAY_DOWNSTREAM_TIMEOUT_SECONDS', 5.0)
+AI_SERVICE_URL = os.getenv('AI_SERVICE_URL', '').strip().rstrip('/')
+AI_SERVICE_ISSUER = (os.getenv('AI_SERVICE_ISSUER', '') or AI_SERVICE_URL).strip().rstrip('/')
+AI_SERVICE_JWKS = parse_jwks(os.getenv('AI_SERVICE_JWKS', ''))
+AI_SERVICE_JWKS_URL = os.getenv('AI_SERVICE_JWKS_URL', '').strip()
+AI_SERVICE_JWKS_TIMEOUT_SECONDS = _env_float('AI_SERVICE_JWKS_TIMEOUT_SECONDS', 10.0)
 COMPANY_DELETION_TIMEOUT_SECONDS = float(os.getenv('COMPANY_DELETION_TIMEOUT_SECONDS', '10') or '10')
 # saas-service region webhook (``/api/v1/webhooks/<region>``) and its secret, for identity.company.deleted.
 DASHBOARD_WEBHOOK_URL = os.getenv('DASHBOARD_WEBHOOK_URL', '').strip()

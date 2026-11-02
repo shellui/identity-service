@@ -515,7 +515,7 @@ requires-dist = [
     { name = "redis", specifier = "==8.1.0" },
     { name = "requests", specifier = "==2.33.0" },
     { name = "sentry-sdk", specifier = "==2.63.0" },
-    { name = "shellui-django", extras = ["mcp"], specifier = "==0.1.0" },
+    { name = "shellui-django", extras = ["mcp"], specifier = "==0.3.0" },
     { name = "whitenoise", specifier = "==6.12.0" },
 ]
 
@@ -948,15 +948,15 @@ wheels = [
 
 [[package]]
 name = "shellui-django"
-version = "0.1.0"
+version = "0.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "django" },
     { name = "djangorestframework" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b6/ee/ac8340b9e5a63ec882649a1df6d5e729ed4c66fd2dfd0730bc40456cca81/shellui_django-0.1.0.tar.gz", hash = "sha256:a1a92e0c0fc1bd89f162802b1ea9bd8d25cf2d2479d543dfc5f1b7822d6ab230", size = 19882, upload-time = "2026-11-02T09:20:54.589Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/18/32/954ba81991de324a1ce9c33d91fe73d079610e03db2664e40393bbb724e3/shellui_django-0.3.0.tar.gz", hash = "sha256:ebd065aca042466d04c2449a2f2c37e1f4e529e6ef967f3d26a4d9b48a73d65d", size = 28257, upload-time = "2026-11-02T22:40:12.738Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/4d/07/5b12886d583d3b3d8db2f439e7fa6d70b5dda679d5516ef06f4a0bfc1628/shellui_django-0.1.0-py3-none-any.whl", hash = "sha256:85c21ea96d2ea36f3924da53fc70704df0242756e1acaadf44c62f13b2185dbe", size = 19376, upload-time = "2026-11-02T09:20:53.288Z" },
+    { url = "https://files.pythonhosted.org/packages/a1/c0/fedb4879da96f852faca94dcbbca22ff4d56d68191eeae79f1c92e1d495e/shellui_django-0.3.0-py3-none-any.whl", hash = "sha256:5756f9c761c27d8e2a82cee0c60bd67e9bfe5ca37ac8ddda730b7ba78bbc9c92", size = 25486, upload-time = "2026-11-02T22:40:11.108Z" },
 ]
 
 [package.optional-dependencies]
@@ -964,6 +964,7 @@ mcp = [
     { name = "cryptography" },
     { name = "djangorestframework-simplejwt" },
     { name = "pyjwt" },
+    { name = "requests" },
 ]
 
 [[package]]
