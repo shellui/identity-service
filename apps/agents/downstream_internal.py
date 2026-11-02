@@ -29,8 +29,6 @@ from apps.agents.services import service_allowed
 from apps.agents.tokens import encode_access_token
 from apps.authapi.throttling import check_rate_limit
 
-logger = logging.getLogger(__name__)
-
 _JTI_CACHE_PREFIX = 'mcp_downstream_jti:'
 
 
