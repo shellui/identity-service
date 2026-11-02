@@ -4,7 +4,7 @@ description: Connect MCP clients to Shellui with OAuth, agent access levels, app
 
 # MCP and agents
 
-Shellui Identity is the OAuth authorization server for MCP clients. Each connected client receives a company-scoped **agent** with explicit access rules. Storage, hosting, email, and other services reuse the same `shellui_mcp/` package for their `/mcp` endpoint.
+Shellui Identity is the OAuth authorization server for MCP clients. Each connected client receives a company-scoped **agent** with explicit access rules. Storage, hosting, email, and other services reuse the same MCP layer from the [shellui-django](https://github.com/shellui/django-commons) package (`shellui_django.mcp`) for their `/mcp` endpoint.
 
 ## Connect a client (one URL and sign-in)
 
@@ -37,7 +37,7 @@ Staff accounts (`is_staff`, `is_superuser`, and global staff) cannot authorize M
 
 When a write needs human confirmation, the service creates an approval through Identity:
 
-- `POST /api/v1/mcp/internal/mcp-approval-requests` with a short-lived assertion (audience `shellui-mcp-approval`, scope `mcp.approval.create`), same pattern as [company deletion](company-deletion.md). The assertion JWT carries `agent_id`, `company_id`, `service`, `action`, and `arguments_hash`. The JSON body carries tool `arguments` (Identity stores `arguments_redacted` with the same `shellui_mcp` masking) and optional `target`, or `method` plus `path` to derive `target`.
+- `POST /api/v1/mcp/internal/mcp-approval-requests` with a short-lived assertion (audience `shellui-mcp-approval`, scope `mcp.approval.create`), same pattern as [company deletion](company-deletion.md). The assertion JWT carries `agent_id`, `company_id`, `service`, `action`, and `arguments_hash`. The JSON body carries tool `arguments` (Identity stores `arguments_redacted` with the same `shellui_django.mcp` masking) and optional `target`, or `method` plus `path` to derive `target`.
 - `POST /api/v1/mcp/internal/mcp-approval-state` with the same approval assertion (no GET). Identity looks up the latest row matching all assertion fields and returns `pending`, `approved`, `denied`, or `expired`. `404` when no row exists. Approved responses include `id` (approval uuid) for consume.
 - `POST /api/v1/mcp/internal/mcp-approval-consume` with the same approval assertion. JSON body: `{ "approval_id": "<uuid>" }`. Identity loads the row with `id`, `company_id`, `agent_id`, `service`, and `arguments_hash` from the assertion; any mismatch returns `404`. Consumption is atomic (`select_for_update`) and single use; `{ "consumed": true }` only while the row is approved and younger than 10 minutes.
 - One pending row per agent and arguments hash, **expires after 10 minutes**, runs once, never standing.
@@ -58,7 +58,7 @@ Pause or revoke agents with:
 - `POST /api/v1/mcp/agents/{id}/pause`
 - `POST /api/v1/mcp/agents/{id}/revoke`
 
-Services poll `GET /api/v1/mcp/internal/mcp-revocations` with a signed assertion (audience `shellui-mcp-revocation`, scope `mcp.revocation.read`, cache **30 seconds** on the consumer) so revocation is effective almost immediately. Optional `?company_id=` filters the list to one tenant. Identity signs each response (`revocation_assertion`, scope `mcp.revocation.list`, short `exp`) including `revoked_agent_ids`, `agents` (`agent_id`, `company_id`, `is_active`, `paused`), and `cache_seconds`. Services must verify with `shellui_mcp.internal.parse_trusted_revocation_poll_response` (RS256 against Identity `/.well-known/jwks.json`, no SimpleJWT settings) and cross-check `company_id` against the agent token before treating an agent as blocked. `McpServer` passes `(agent_id, company_id)` to `identity_revocation_check`.
+Services poll `GET /api/v1/mcp/internal/mcp-revocations` with a signed assertion (audience `shellui-mcp-revocation`, scope `mcp.revocation.read`, cache **30 seconds** on the consumer) so revocation is effective almost immediately. Optional `?company_id=` filters the list to one tenant. Identity signs each response (`revocation_assertion`, scope `mcp.revocation.list`, short `exp`) including `revoked_agent_ids`, `agents` (`agent_id`, `company_id`, `is_active`, `paused`), and `cache_seconds`. Services must verify with `shellui_django.mcp.internal.parse_trusted_revocation_poll_response` (RS256 against Identity `/.well-known/jwks.json`, no SimpleJWT settings) and cross-check `company_id` against the agent token before treating an agent as blocked. `McpServer` passes `(agent_id, company_id)` to `identity_revocation_check`.
 
 ## Call logs
 
@@ -100,14 +100,14 @@ Agent bearer tokens cannot pause, revoke, approve, list call logs, or change age
 
 Staff accounts cannot call `/api/v1/mcp/*` company admin APIs (same refusal as MCP OAuth).
 
-## shellui_mcp package (other services)
+## shellui-django MCP (other services)
 
-Copy `shellui_mcp/` into storage, hosting, email, and saas. Wire:
+Add the PyPI package `shellui-django[mcp]` (source: [django-commons](https://github.com/shellui/django-commons)) to storage, hosting, email, and saas. Wire:
 
-- `POST /mcp` using `shellui_mcp.server.McpServer`
+- `POST /mcp` using `shellui_django.mcp.server.McpServer`
 - OpenAPI tools from operations tagged `mcp-tools` only (`@mcp_expose_tool`)
 - Protected resource metadata pointing at Identity
 - Revocation checks against Identity
 - Per-agent rate limits and call log forwarding
 
-See module docstrings in `shellui_mcp/internal.py` for assertion audiences and scopes.
+See module docstrings in `shellui_django.mcp.internal` for assertion audiences and scopes.
