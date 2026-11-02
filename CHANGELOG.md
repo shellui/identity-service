@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 - MCP endpoint and OAuth for company agents (`/mcp`, authorization server, consent, agent JWTs).
 - Agents admin APIs for approvals, call logs, and revocation (`/api/v1/mcp/`).
 - OpenAPI descriptions for MCP registry and agent-friendly admin APIs.
+- Aggregated Identity MCP gateway (multi-service `tools/list` / `tools/call`) and SaaS in agent service consent.
 
 <!---
 ## [Unreleased] - yyyy-mm-dd

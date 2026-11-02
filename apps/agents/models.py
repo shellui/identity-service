@@ -46,11 +46,13 @@ class Agent(models.Model):
     SERVICE_STORAGE = 'storage'
     SERVICE_HOSTING = 'hosting'
     SERVICE_EMAIL = 'email'
+    SERVICE_SAAS = 'saas'
     SERVICE_CHOICES = [
         (SERVICE_IDENTITY, 'Identity'),
         (SERVICE_STORAGE, 'Storage'),
         (SERVICE_HOSTING, 'Hosting'),
         (SERVICE_EMAIL, 'Email'),
+        (SERVICE_SAAS, 'SaaS'),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -78,7 +80,7 @@ class Agent(models.Model):
     read_level = models.CharField(max_length=20, choices=READ_CHOICES, default=READ_SAFE)
     services_allowed = models.JSONField(
         default=list,
-        help_text='List of service ids: identity, storage, hosting, email.',
+        help_text='List of service ids: identity, storage, hosting, email, saas.',
     )
     project_scope = models.CharField(
         max_length=255,

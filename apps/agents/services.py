@@ -24,6 +24,9 @@ def list_mcp_services() -> list[dict[str, str]]:
     email = _origin(getattr(settings, 'EMAIL_SERVICE_URL', ''))
     if email and getattr(settings, 'EMAIL_SERVICE_API_KEY', ''):
         items.append({'id': 'email', 'name': 'Email', 'mcp_url': f'{email}/mcp'})
+    saas = _origin(getattr(settings, 'SAAS_SERVICE_URL', ''))
+    if saas:
+        items.append({'id': 'saas', 'name': 'SaaS', 'mcp_url': f'{saas}/mcp'})
     return items
 
 

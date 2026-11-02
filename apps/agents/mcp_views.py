@@ -12,7 +12,7 @@ from django.views.decorators.csrf import csrf_exempt
 from drf_spectacular.generators import SchemaGenerator
 from rest_framework.request import Request
 from shellui_django.mcp.resources import access_token_audience_matches, mcp_resource_from_origin
-from shellui_django.mcp.server import McpServer
+from apps.agents.mcp_gateway import AggregatingMcpServer
 
 from apps.agents.approval_internal import (
     approval_binding_from_claims,
@@ -24,7 +24,7 @@ from apps.agents.revocation import blocked_agent_ids
 from apps.authapi.authentication import ShellUIJWTAuthentication
 from shellui_django.mcp.masking import redact_mapping
 
-_server: McpServer | None = None
+_server: AggregatingMcpServer | None = None
 
 
 def _schema() -> dict:
@@ -32,10 +32,10 @@ def _schema() -> dict:
     return generator.get_schema(request=None, public=True)
 
 
-def _get_server() -> McpServer:
+def _get_server() -> AggregatingMcpServer:
     global _server
     if _server is None:
-        _server = McpServer(
+        _server = AggregatingMcpServer(
             schema_provider=_schema,
             urlconf=settings.ROOT_URLCONF,
             service_name='identity',

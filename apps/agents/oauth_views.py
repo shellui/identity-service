@@ -184,12 +184,7 @@ def mcp_authorize(request):
             'resource': resource_url,
             'state': state,
             'code_challenge': challenge,
-            'services': [
-                ('identity', 'Identity'),
-                ('storage', 'Storage'),
-                ('hosting', 'Hosting'),
-                ('email', 'Email'),
-            ],
+            'services': Agent.SERVICE_CHOICES,
         },
     )
 

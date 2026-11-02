@@ -479,6 +479,9 @@ MAGIC_LINK_EMAIL_DEFAULT_LANGUAGE = (
 # Email uses EMAIL_SERVICE_URL above when EMAIL_SERVICE_API_KEY is set.
 STORAGE_SERVICE_URL = os.getenv('STORAGE_SERVICE_URL', '').strip()
 HOSTING_SERVICE_URL = os.getenv('HOSTING_SERVICE_URL', '').strip()
+SAAS_SERVICE_URL = os.getenv('SAAS_SERVICE_URL', '').strip()
+MCP_GATEWAY_TOOLS_CACHE_TTL_SECONDS = _env_int('MCP_GATEWAY_TOOLS_CACHE_TTL_SECONDS', 30)
+MCP_GATEWAY_DOWNSTREAM_TIMEOUT_SECONDS = _env_float('MCP_GATEWAY_DOWNSTREAM_TIMEOUT_SECONDS', 5.0)
 COMPANY_DELETION_TIMEOUT_SECONDS = float(os.getenv('COMPANY_DELETION_TIMEOUT_SECONDS', '10') or '10')
 # saas-service region webhook (``/api/v1/webhooks/<region>``) and its secret, for identity.company.deleted.
 DASHBOARD_WEBHOOK_URL = os.getenv('DASHBOARD_WEBHOOK_URL', '').strip()
