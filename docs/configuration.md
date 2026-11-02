@@ -213,6 +213,7 @@ Leave `SHELLUI_INSTANCE_ROLE` unset for a standalone deployment. `global` turns 
 | `GLOBAL_CLIENT_ID`, `GLOBAL_CLIENT_SECRET` | empty | Upstream client credentials |
 | `GLOBAL_REDIRECT_URI` | `{JWT_ISSUER}/oauth/upstream-callback` | Upstream redirect URI when the public URL differs |
 | `GLOBAL_ACCESS_TOKEN_AUDIENCE` | empty | `aud` of global access tokens (the global server's `JWT_AUDIENCE`). Turns on token exchange at `POST /oauth/token`. Empty answers 404 |
+| `GLOBAL_AGENT_ACCESS_TOKEN_AUDIENCE` | empty | `aud` of global MCP agent access tokens. Turns on agent token exchange at `POST /oauth/mcp/token`. Empty answers 404 |
 | `PROVISIONING_PUBLIC_KEY` | empty | Dashboard provisioning public key (PEM), region role. Empty turns the provisioning API off |
 | `PROVISIONING_KEY_ID` | empty | Expected assertion `kid` when set |
 | `PROVISIONING_ISSUER` | empty | Expected assertion `iss` (the dashboard) |

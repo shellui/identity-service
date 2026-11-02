@@ -2,6 +2,7 @@ from django.urls import path
 
 from apps.federation.backchannel import BackchannelLogoutView
 from apps.federation.provider import AuthorizeView, TokenView, UserInfoView
+from apps.agents.provisioning_views import ProvisioningGlobalAgentRevokeView
 from apps.federation.provisioning import (
     ProvisioningCompaniesView,
     ProvisioningCompanyView,
@@ -25,5 +26,10 @@ provisioning_urlpatterns = [
         'companies/<int:company_id>/limits',
         ProvisioningLimitsView.as_view(),
         name='federation-provisioning-limits',
+    ),
+    path(
+        'global-agents/revoke',
+        ProvisioningGlobalAgentRevokeView.as_view(),
+        name='federation-provisioning-global-agent-revoke',
     ),
 ]

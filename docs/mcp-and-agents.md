@@ -18,6 +18,52 @@ Identity also exposes an **aggregated MCP gateway** at `POST /mcp` on the identi
 
 Staff accounts (`is_staff`, `is_superuser`, and global staff) cannot authorize MCP agents.
 
+## Global agent token exchange (region role)
+
+A user who authorized an MCP agent on the global console can exchange that **global agent access token** for a **regional agent access token** bound to one company in this region, without a second browser consent on the region. The flow uses OAuth 2.0 Token Exchange (RFC 8693) at `POST /oauth/mcp/token` on the regional identity server. The endpoint answers **404** unless the role is `region` and `GLOBAL_ISSUER_URL`, `GLOBAL_JWKS`, and `GLOBAL_AGENT_ACCESS_TOKEN_AUDIENCE` are set.
+
+```
+POST /oauth/mcp/token
+Content-Type: application/json
+
+{
+  "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+  "subject_token": "<global agent JWT>",
+  "subject_token_type": "urn:ietf:params:oauth:token-type:access_token",
+  "company_id": "<regional company id>",
+  "resource": "https://<regional-host>/mcp",
+  "access_mode": "read_only",
+  "read_level": "safe",
+  "allow_destructive": false,
+  "services": ["identity", "storage"]
+}
+```
+
+Optional `access_mode`, `read_level`, `allow_destructive`, and `services` may only **narrow** the global agent (never broaden). The `resource` must match a service still allowed after narrowing. The global user must already own or belong to `company_id` in this region (enabled membership). Global staff are refused, same as user token exchange.
+
+Identity verifies the subject token offline against `GLOBAL_JWKS` (`iss`, `aud`, `exp`, `jti` replay cache). It creates or reuses one regional `Agent` row per `(company_id, global_agent_id)` and issues the usual MCP access and refresh tokens for the requested `resource`. Paused or revoked regional agents cannot exchange again until an operator unpauses them.
+
+When a global agent is revoked on saas-service, saas must call `POST /api/v1/provisioning/global-agents/revoke` on each region with `{ "global_agent_id": "<uuid>" }` and the usual provisioning assertion. That records the global id as revoked, revokes every linked regional agent and its refresh sessions, and refuses further exchange for that id even when no regional row existed yet. Short-lived global agent JWTs limit exposure if the webhook is delayed.
+
+### Global agent access token claims (saas-service)
+
+Global agent tokens are RS256 JWTs from the global identity issuer. saas-service should mint them after global MCP OAuth consent (not implemented in saas yet). Required claims:
+
+| Claim | Meaning |
+| --- | --- |
+| `iss` | Global issuer (`GLOBAL_ISSUER_URL` on regions) |
+| `aud` | `GLOBAL_AGENT_ACCESS_TOKEN_AUDIENCE` on regions (separate from user `GLOBAL_ACCESS_TOKEN_AUDIENCE`) |
+| `sub` | Global user id (agent owner) |
+| `agent_id` | Global agent uuid |
+| `token_type` | `agent_access` (not `access`; no `sid` or `pat_id`) |
+| `email`, `email_verified` | Owner email; `email_verified` must be boolean `true` |
+| `user_metadata.is_staff` | Boolean `false` for non-staff; staff exchange is refused |
+| `scope` | Space-separated service ids (`identity`, `storage`, …) |
+| `mcp_access`, `mcp_read`, `mcp_destructive` | Same semantics as regional agent JWTs |
+| `jti`, `iat`, `exp` | Short lifetime (match global MCP access TTL) |
+
+Optional: `agent_name` for the regional agent display name.
+
 ## Access levels
 
 | Mode | Value | Behavior |
