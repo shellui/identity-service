@@ -27,6 +27,9 @@ def list_mcp_services() -> list[dict[str, str]]:
     saas = _origin(getattr(settings, 'SAAS_SERVICE_URL', ''))
     if saas:
         items.append({'id': 'saas', 'name': 'SaaS', 'mcp_url': f'{saas}/mcp'})
+    ai = _origin(getattr(settings, 'AI_SERVICE_URL', ''))
+    if ai:
+        items.append({'id': 'ai', 'name': 'AI', 'mcp_url': f'{ai}/mcp'})
     return items
 
 

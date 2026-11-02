@@ -10,14 +10,19 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 ### 🏗 Chore
 
 - Use the shared shellui-django package for MCP instead of a vendored copy.
+- Bump `shellui-django[mcp]` to 0.3.0 and use `shellui_django.mcp.delegation` for ai-service downstream token requests.
 
 ### ✨ Feature
 
 - MCP endpoint and OAuth for company agents (`/mcp`, authorization server, consent, agent JWTs).
 - Agents admin APIs for approvals, call logs, and revocation (`/api/v1/mcp/`).
 - OpenAPI descriptions for MCP registry and agent-friendly admin APIs.
-- Aggregated Identity MCP gateway (multi-service `tools/list` / `tools/call`) and SaaS in agent service consent.
+- SaaS and AI in agent service consent; `POST /api/v1/mcp/internal/mcp-downstream-access-token` mints downstream agent JWTs for ai-service (RS256 delegation, single-use `jti`, rate limits).
 - **Agent token exchange:** Regional `POST /oauth/mcp/token` (RFC 8693) exchanges a global MCP agent JWT for a company-scoped regional agent token; provisioning `POST /api/v1/provisioning/global-agents/revoke` revokes linked regional agents.
+
+### 🗑 Removed
+
+- Aggregated Identity MCP gateway at `POST /mcp` (multi-service `tools/list` / `tools/call`); use ai-service as the single MCP connector.
 
 <!---
 ## [Unreleased] - yyyy-mm-dd

@@ -57,12 +57,14 @@ class Agent(models.Model):
     SERVICE_HOSTING = 'hosting'
     SERVICE_EMAIL = 'email'
     SERVICE_SAAS = 'saas'
+    SERVICE_AI = 'ai'
     SERVICE_CHOICES = [
         (SERVICE_IDENTITY, 'Identity'),
         (SERVICE_STORAGE, 'Storage'),
         (SERVICE_HOSTING, 'Hosting'),
         (SERVICE_EMAIL, 'Email'),
         (SERVICE_SAAS, 'SaaS'),
+        (SERVICE_AI, 'AI'),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
