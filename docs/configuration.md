@@ -232,6 +232,16 @@ Leave `SHELLUI_INSTANCE_ROLE` unset for a standalone deployment. `global` turns 
 | `AI_SERVICE_JWKS` | empty | Pinned JWKS JSON for ai-service (alternative to fetching `AI_SERVICE_JWKS_URL`) |
 | `AI_SERVICE_JWKS_URL` | `{AI_SERVICE_URL}/.well-known/jwks.json` | JWKS URL when `AI_SERVICE_JWKS` is unset |
 | `AI_SERVICE_JWKS_TIMEOUT_SECONDS` | `10` | HTTP timeout when fetching ai-service JWKS |
+| `STORAGE_SERVICE_ISSUER` | empty | Expected `iss` on internal MCP assertions signed by storage-service. Unset means storage-service is not trusted |
+| `STORAGE_SERVICE_JWKS` | empty | Pinned JWKS JSON for storage-service (alternative to fetching `STORAGE_SERVICE_JWKS_URL`) |
+| `STORAGE_SERVICE_JWKS_URL` | `{STORAGE_SERVICE_INTERNAL_URL or STORAGE_SERVICE_URL}/.well-known/jwks.json` | JWKS URL when `STORAGE_SERVICE_JWKS` is unset |
+| `HOSTING_SERVICE_ISSUER` | empty | Expected `iss` on internal MCP assertions signed by hosting-service. Unset means hosting-service is not trusted |
+| `HOSTING_SERVICE_JWKS` | empty | Pinned JWKS JSON for hosting-service (alternative to fetching `HOSTING_SERVICE_JWKS_URL`) |
+| `HOSTING_SERVICE_JWKS_URL` | `{HOSTING_SERVICE_INTERNAL_URL or HOSTING_SERVICE_URL}/.well-known/jwks.json` | JWKS URL when `HOSTING_SERVICE_JWKS` is unset |
+| `EMAIL_SERVICE_ISSUER` | empty | Expected `iss` on internal MCP assertions signed by email-service. Unset means email-service is not trusted |
+| `EMAIL_SERVICE_JWKS` | empty | Pinned JWKS JSON for email-service (alternative to fetching `EMAIL_SERVICE_JWKS_URL`) |
+| `EMAIL_SERVICE_JWKS_URL` | `{EMAIL_SERVICE_INTERNAL_URL or EMAIL_SERVICE_URL}/.well-known/jwks.json` | JWKS URL when `EMAIL_SERVICE_JWKS` is unset |
+| `INTERNAL_CALLER_JWKS_TIMEOUT_SECONDS` | `10` | HTTP timeout when fetching a caller JWKS |
 | `MCP_RATE_LIMIT_DOWNSTREAM_MINT` | `300` | Global per-minute cap on downstream access token mint requests |
 | `COMPANY_DELETION_TIMEOUT_SECONDS` | `10` | Timeout of each call to those services |
 | `DASHBOARD_WEBHOOK_URL` | empty | saas-service region webhook (`https://<dashboard>/api/v1/webhooks/<region>`) that receives `identity.company.deleted` |

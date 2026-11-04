@@ -19,7 +19,6 @@ from shellui_django.mcp.internal import (
     REVOCATION_SCOPE,
     InternalAssertionError,
     build_mcp_revocation_list_response_assertion,
-    verify_mcp_internal_assertion,
 )
 from shellui_django.mcp.masking import redact_mapping
 
@@ -30,6 +29,7 @@ from apps.agents.approval_internal import (
     lookup_approval_row,
     public_approval_status,
 )
+from apps.agents.internal_callers import verify_caller_assertion
 from apps.agents.models import Agent, McpApprovalRequest, McpCallLog
 from apps.agents.revocation import REVOCATION_CACHE_SECONDS, blocked_agent_ids, blocked_agent_snapshots
 
@@ -60,11 +60,11 @@ def _assertion_from_request(request) -> str:
 
 def _approval_assertion_claims(request) -> tuple[dict | None, Response | None]:
     try:
-        claims = verify_mcp_internal_assertion(
+        claims = verify_caller_assertion(
             _assertion_from_request(request),
-            expected_audience=APPROVAL_AUDIENCE,
-            expected_scope=APPROVAL_SCOPE,
-            expected_target=_identity_origin(),
+            audience=APPROVAL_AUDIENCE,
+            scope=APPROVAL_SCOPE,
+            target=_identity_origin(),
         )
     except InternalAssertionError as exc:
         return None, Response({'error': exc.message}, status=exc.status)
@@ -80,11 +80,11 @@ class McpRevocationListView(APIView):
 
     def get(self, request):
         try:
-            verify_mcp_internal_assertion(
+            verify_caller_assertion(
                 _assertion_from_request(request),
-                expected_audience=REVOCATION_AUDIENCE,
-                expected_scope=REVOCATION_SCOPE,
-                expected_target=_identity_origin(),
+                audience=REVOCATION_AUDIENCE,
+                scope=REVOCATION_SCOPE,
+                target=_identity_origin(),
             )
         except InternalAssertionError as exc:
             return Response({'error': exc.message}, status=exc.status)
@@ -119,11 +119,11 @@ class McpInternalApprovalCreateView(APIView):
 
     def post(self, request):
         try:
-            claims = verify_mcp_internal_assertion(
+            claims = verify_caller_assertion(
                 _assertion_from_request(request),
-                expected_audience=APPROVAL_AUDIENCE,
-                expected_scope=APPROVAL_SCOPE,
-                expected_target=_identity_origin(),
+                audience=APPROVAL_AUDIENCE,
+                scope=APPROVAL_SCOPE,
+                target=_identity_origin(),
             )
         except InternalAssertionError as exc:
             return Response({'error': exc.message}, status=exc.status)
@@ -235,11 +235,11 @@ class McpInternalCallLogView(APIView):
 
     def post(self, request):
         try:
-            verify_mcp_internal_assertion(
+            verify_caller_assertion(
                 _assertion_from_request(request),
-                expected_audience=CALL_LOG_AUDIENCE,
-                expected_scope=CALL_LOG_SCOPE,
-                expected_target=_identity_origin(),
+                audience=CALL_LOG_AUDIENCE,
+                scope=CALL_LOG_SCOPE,
+                target=_identity_origin(),
             )
         except InternalAssertionError as exc:
             return Response({'error': exc.message}, status=exc.status)

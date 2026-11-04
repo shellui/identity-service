@@ -502,6 +502,18 @@ AI_SERVICE_ISSUER = (os.getenv('AI_SERVICE_ISSUER', '') or AI_SERVICE_URL).strip
 AI_SERVICE_JWKS = parse_jwks(os.getenv('AI_SERVICE_JWKS', ''))
 AI_SERVICE_JWKS_URL = os.getenv('AI_SERVICE_JWKS_URL', '').strip()
 AI_SERVICE_JWKS_TIMEOUT_SECONDS = _env_float('AI_SERVICE_JWKS_TIMEOUT_SECONDS', 10.0)
+# Internal MCP assertion callers (apps/agents/internal_callers.py). Each service signs RS256 with its
+# own key. A caller is trusted only when its issuer is set; its key comes from inline JWKS or JWKS URL.
+STORAGE_SERVICE_ISSUER = os.getenv('STORAGE_SERVICE_ISSUER', '').strip().rstrip('/')
+STORAGE_SERVICE_JWKS = parse_jwks(os.getenv('STORAGE_SERVICE_JWKS', ''))
+STORAGE_SERVICE_JWKS_URL = os.getenv('STORAGE_SERVICE_JWKS_URL', '').strip()
+HOSTING_SERVICE_ISSUER = os.getenv('HOSTING_SERVICE_ISSUER', '').strip().rstrip('/')
+HOSTING_SERVICE_JWKS = parse_jwks(os.getenv('HOSTING_SERVICE_JWKS', ''))
+HOSTING_SERVICE_JWKS_URL = os.getenv('HOSTING_SERVICE_JWKS_URL', '').strip()
+EMAIL_SERVICE_ISSUER = os.getenv('EMAIL_SERVICE_ISSUER', '').strip().rstrip('/')
+EMAIL_SERVICE_JWKS = parse_jwks(os.getenv('EMAIL_SERVICE_JWKS', ''))
+EMAIL_SERVICE_JWKS_URL = os.getenv('EMAIL_SERVICE_JWKS_URL', '').strip()
+INTERNAL_CALLER_JWKS_TIMEOUT_SECONDS = _env_float('INTERNAL_CALLER_JWKS_TIMEOUT_SECONDS', 10.0)
 COMPANY_DELETION_TIMEOUT_SECONDS = float(os.getenv('COMPANY_DELETION_TIMEOUT_SECONDS', '10') or '10')
 # saas-service region webhook (``/api/v1/webhooks/<region>``) and its secret, for identity.company.deleted.
 DASHBOARD_WEBHOOK_URL = os.getenv('DASHBOARD_WEBHOOK_URL', '').strip()

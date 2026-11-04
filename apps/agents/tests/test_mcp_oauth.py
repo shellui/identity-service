@@ -4,6 +4,7 @@ from urllib.parse import quote, urlencode
 from django.contrib.auth import get_user_model
 from django.test import Client, TestCase, override_settings
 
+from apps.agents.tests.mcp_test_settings import TEST_CALLER_SIGNING, TRUSTED_TEST_CALLER_SETTINGS
 from apps.agents.tests.mcp_test_settings import rs256_identity_settings
 from apps.authapi.client_pkce import s256_challenge
 from apps.companies.access import set_company_access
@@ -40,6 +41,7 @@ class McpOAuthMetadataTests(TestCase):
 
 
 @override_settings(
+    **TRUSTED_TEST_CALLER_SETTINGS,
     JWT_ISSUER='https://identity.test',
     JWT_AUDIENCE='shellui-test',
     MCP_DYNAMIC_CLIENT_REGISTRATION=True,
@@ -103,7 +105,7 @@ class McpOAuthFlowTests(TestCase):
         self.assertEqual(payload['aud'], IDENTITY_MCP_RESOURCE)
         from shellui_django.mcp.internal import build_mcp_revocation_assertion
 
-        assertion = build_mcp_revocation_assertion(audience_url='https://identity.test')
+        assertion = build_mcp_revocation_assertion(audience_url='https://identity.test', **TEST_CALLER_SIGNING)
         with rs256_identity_settings() as (_signing, jwks):
             from shellui_django.mcp.internal import parse_trusted_revocation_poll_response
 
@@ -126,6 +128,8 @@ class McpOAuthFlowTests(TestCase):
             self.assertEqual(cache, 30)
             agent.revoked_at = agent.created_at
             agent.save(update_fields=['revoked_at'])
+            # Each assertion is single use, so the second poll signs a fresh one.
+            assertion = build_mcp_revocation_assertion(audience_url='https://identity.test', **TEST_CALLER_SIGNING)
             revoked2 = self.client.get(
                 '/api/v1/mcp/internal/mcp-revocations',
                 HTTP_AUTHORIZATION=f'Bearer {assertion}',
@@ -142,7 +146,7 @@ class McpOAuthFlowTests(TestCase):
     def test_revocation_list_unavailable_without_rs256_signing(self):
         from shellui_django.mcp.internal import build_mcp_revocation_assertion
 
-        assertion = build_mcp_revocation_assertion(audience_url='https://identity.test')
+        assertion = build_mcp_revocation_assertion(audience_url='https://identity.test', **TEST_CALLER_SIGNING)
         response = self.client.get(
             '/api/v1/mcp/internal/mcp-revocations',
             HTTP_AUTHORIZATION=f'Bearer {assertion}',

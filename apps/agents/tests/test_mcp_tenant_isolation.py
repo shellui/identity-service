@@ -5,6 +5,7 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 from django.utils import timezone
 
+from apps.agents.tests.mcp_test_settings import TEST_CALLER_SIGNING, TRUSTED_TEST_CALLER_SETTINGS
 from apps.agents.tests.mcp_test_settings import rs256_identity_settings
 from apps.companies.access import set_company_access
 from apps.companies.models import Company
@@ -19,6 +20,7 @@ IDENTITY_MCP_RESOURCE = 'https://identity.test/mcp'
 
 
 @override_settings(
+    **TRUSTED_TEST_CALLER_SETTINGS,
     JWT_ISSUER=IDENTITY_ORIGIN,
     JWT_AUDIENCE='shellui-test',
     AUTH_RATE_LIMIT_ENABLED=False,
@@ -52,6 +54,7 @@ class McpTenantIsolationTests(TestCase):
 
     def _approval_assertion(self, agent, *, company_id=None, service='storage', args_hash='abc'):
         return build_mcp_approval_assertion(
+            **TEST_CALLER_SIGNING,
             company_id=company_id if company_id is not None else agent.company_id,
             agent_id=str(agent.id),
             service=service,
@@ -134,7 +137,7 @@ class McpTenantIsolationTests(TestCase):
     def test_revocation_company_filter_does_not_leak_other_tenant(self):
         self.agent_b.revoked_at = timezone.now()
         self.agent_b.save(update_fields=['revoked_at'])
-        assertion = build_mcp_revocation_assertion(audience_url=IDENTITY_ORIGIN)
+        assertion = build_mcp_revocation_assertion(audience_url=IDENTITY_ORIGIN, **TEST_CALLER_SIGNING)
         with rs256_identity_settings():
             response = self.client.get(
                 f'/api/v1/mcp/internal/mcp-revocations?company_id={self.company_a.id}',
