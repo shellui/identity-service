@@ -39,6 +39,8 @@ SIGNIN_COMPLETE_PATH = '/oauth/mcp/signin/complete'
 AUTHORIZE_PATH = '/oauth/mcp/authorize'
 SESSION_BACKEND = 'django.contrib.auth.backends.ModelBackend'
 CSP_HEADER = "frame-ancestors 'none'"
+# Cross-origin navigations send no Referer; same-origin form POSTs keep a valid Origin for CSRF.
+MCP_REFERRER_POLICY = 'same-origin'
 
 
 @dataclass
@@ -172,7 +174,7 @@ def protect_page(response: HttpResponse) -> HttpResponse:
     response['X-Frame-Options'] = 'DENY'
     response['Content-Security-Policy'] = CSP_HEADER
     response['Cache-Control'] = 'no-store'
-    response['Referrer-Policy'] = 'no-referrer'
+    response['Referrer-Policy'] = MCP_REFERRER_POLICY
     return response
 
 
