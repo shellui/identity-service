@@ -161,6 +161,9 @@ def mcp_authorize(request):
         parsed = parse_authorize_request(params)
     except AuthorizeError as exc:
         return render_error(request, exc.code, exc.status)
+    from apps.agents.mcp_saas_consent import remember_saas_offered_from_params
+
+    remember_saas_offered_from_params(request, params)
     if not request.user.is_authenticated:
         if request.method != 'GET':
             return render_error(request, 'invalid_request', 400)
@@ -182,7 +185,13 @@ def mcp_authorize(request):
     if request.method == 'POST':
         return _complete_authorize(request, user=user, parsed=parsed)
     client_name = parsed.client.client_name or parsed.client.client_id
-    services = [(sid, label) for sid, label in Agent.SERVICE_CHOICES if sid != Agent.SERVICE_AI]
+    services = [
+        (sid, label)
+        for sid, label in Agent.SERVICE_CHOICES
+        if sid not in {Agent.SERVICE_AI, Agent.SERVICE_SAAS}
+    ]
+    from apps.agents.mcp_saas_consent import saas_opt_in_offered
+
     response = render(
         request,
         'agents/mcp_consent.html',
@@ -200,38 +209,28 @@ def mcp_authorize(request):
             'state': parsed.state,
             'code_challenge': parsed.challenge,
             'services': services,
+            'saas_opt_in_offered': saas_opt_in_offered(request),
         },
     )
     return protect_page(response)
 
 
-def _complete_authorize(request, *, user, parsed):
+def _finalize_authorization(
+    request,
+    *,
+    user,
+    parsed,
+    name: str,
+    access_mode: str,
+    read_level: str,
+    destructive: bool,
+    services: list[str],
+):
     client = parsed.client
     company = parsed.company
     redirect_uri = parsed.redirect_uri
-    decision = request.POST.get('decision')
-    if decision == 'deny':
-        params = {'error': 'access_denied'}
-        if parsed.state:
-            params['state'] = parsed.state
-        return approval_redirect(redirect_uri, params)
-    if decision != 'approve':
-        return render_error(request, 'invalid_request', 400)
-    name = (request.POST.get('agent_name') or client.client_name or 'MCP agent')[:255]
-    access_mode = request.POST.get('access_mode') or Agent.ACCESS_ASK
-    if access_mode not in {Agent.ACCESS_READ_ONLY, Agent.ACCESS_ASK, Agent.ACCESS_FULL}:
-        access_mode = Agent.ACCESS_ASK
-    read_level = request.POST.get('read_level') or Agent.READ_SAFE
-    if read_level not in {Agent.READ_SAFE, Agent.READ_SENSITIVE}:
-        read_level = Agent.READ_SAFE
-    destructive = request.POST.get('allow_destructive') == 'on'
-    allowed_services = {choice[0] for choice in Agent.SERVICE_CHOICES}
-    services = [s for s in request.POST.getlist('services') if s in allowed_services and s != Agent.SERVICE_AI]
-    if not services:
-        return render_error(request, 'invalid_request', 400)
-    # The gateway resource is the connection itself; downstream services stay as chosen.
     if parsed.service_id not in services:
-        services.append(parsed.service_id)
+        services = [*services, parsed.service_id]
     with transaction.atomic():
         agent = Agent.objects.create(
             company=company,
@@ -279,6 +278,100 @@ def _complete_authorize(request, *, user, parsed):
     if parsed.state:
         params['state'] = parsed.state
     return approval_redirect(redirect_uri, params)
+
+
+def complete_pending_mcp_consent(request, *, user, company, pending: dict):
+    from apps.agents.mcp_signin import parse_authorize_request, safe_authorize_path
+    from urllib.parse import parse_qs, urlsplit
+
+    path = safe_authorize_path(pending.get('authorize_path'))
+    if not path:
+        return render_error(request, 'invalid_request', 400)
+    try:
+        parsed = parse_authorize_request(parse_qs(urlsplit(path).query))
+    except AuthorizeError:
+        return render_error(request, 'invalid_request', 400)
+    if parsed.company is None or parsed.company.id != company.id:
+        return render_error(request, 'invalid_request', 400)
+    services = list(pending.get('services') or [])
+    if pending.get('include_saas') and Agent.SERVICE_SAAS not in services:
+        services.append(Agent.SERVICE_SAAS)
+    return _finalize_authorization(
+        request,
+        user=user,
+        parsed=parsed,
+        name=str(pending.get('name') or '')[:255],
+        access_mode=pending.get('access_mode') or Agent.ACCESS_ASK,
+        read_level=pending.get('read_level') or Agent.READ_SAFE,
+        destructive=bool(pending.get('destructive')),
+        services=services,
+    )
+
+
+def _complete_authorize(request, *, user, parsed):
+    client = parsed.client
+    company = parsed.company
+    redirect_uri = parsed.redirect_uri
+    decision = request.POST.get('decision')
+    if decision == 'deny':
+        params = {'error': 'access_denied'}
+        if parsed.state:
+            params['state'] = parsed.state
+        return approval_redirect(redirect_uri, params)
+    if decision != 'approve':
+        return render_error(request, 'invalid_request', 400)
+    name = (request.POST.get('agent_name') or client.client_name or 'MCP agent')[:255]
+    access_mode = request.POST.get('access_mode') or Agent.ACCESS_ASK
+    if access_mode not in {Agent.ACCESS_READ_ONLY, Agent.ACCESS_ASK, Agent.ACCESS_FULL}:
+        access_mode = Agent.ACCESS_ASK
+    read_level = request.POST.get('read_level') or Agent.READ_SAFE
+    if read_level not in {Agent.READ_SAFE, Agent.READ_SENSITIVE}:
+        read_level = Agent.READ_SAFE
+    destructive = request.POST.get('allow_destructive') == 'on'
+    allowed_services = {choice[0] for choice in Agent.SERVICE_CHOICES}
+    services = [s for s in request.POST.getlist('services') if s in allowed_services and s != Agent.SERVICE_AI]
+    if not services:
+        return render_error(request, 'invalid_request', 400)
+    include_saas = request.POST.get('include_saas') == 'on'
+    from apps.agents.mcp_saas_consent import (
+        saas_opt_in_offered,
+        saas_opt_in_requires_global_signin,
+        start_global_identity_signin,
+        store_pending_consent,
+    )
+    from apps.agents.exchange import agent_exchange_enabled
+
+    if include_saas and saas_opt_in_offered(request):
+        if is_mcp_oauth_refused_user(user):
+            return render_message(request, copy_for(page_language(request, user))['staff_refused'], 403, user=user)
+        if agent_exchange_enabled() and saas_opt_in_requires_global_signin(include_saas=True, request=request):
+            from apps.agents.mcp_signin import build_authorize_path
+
+            store_pending_consent(
+                request,
+                {
+                    'authorize_path': build_authorize_path(parsed, saas_offered=True),
+                    'name': name,
+                    'access_mode': access_mode,
+                    'read_level': read_level,
+                    'destructive': destructive,
+                    'services': services,
+                    'include_saas': True,
+                },
+            )
+            return start_global_identity_signin(request, company_id=company.id)
+        if Agent.SERVICE_SAAS not in services:
+            services.append(Agent.SERVICE_SAAS)
+    return _finalize_authorization(
+        request,
+        user=user,
+        parsed=parsed,
+        name=name,
+        access_mode=access_mode,
+        read_level=read_level,
+        destructive=destructive,
+        services=services,
+    )
 
 
 @csrf_exempt

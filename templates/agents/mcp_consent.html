@@ -42,6 +42,10 @@
       <label for="agent_name">{{ copy.agent_name_label }}</label>
       <input type="text" name="agent_name" id="agent_name" maxlength="255" value="{{ client_name }}">
       <label class="check"><input type="checkbox" name="allow_destructive"> <span>{{ copy.destructive_label }}</span></label>
+      {% if saas_opt_in_offered %}
+      <label class="check"><input type="checkbox" name="include_saas"> <span>{{ copy.saas_opt_in_label }}</span></label>
+      <p class="note">{{ copy.saas_opt_in_note }}</p>
+      {% endif %}
       <div class="actions stack">
         <button type="submit" name="decision" value="approve" class="button">{{ copy.approve }}</button>
         <button type="submit" name="decision" value="deny" class="button button-secondary">{{ copy.deny }}</button>

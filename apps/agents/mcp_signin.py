@@ -81,6 +81,26 @@ def is_mcp_signin_redirect(url: str | None) -> bool:
     return bool(target and expected and target == expected)
 
 
+def build_authorize_path(parsed: AuthorizeRequest, *, saas_offered: bool = False) -> str:
+    params = {
+        'response_type': 'code',
+        'client_id': parsed.client.client_id,
+        'redirect_uri': parsed.redirect_uri,
+        'resource': parsed.resource,
+        'code_challenge': parsed.challenge,
+        'code_challenge_method': 'S256',
+    }
+    if parsed.state:
+        params['state'] = parsed.state
+    if saas_offered:
+        params['saas_offered'] = '1'
+    return f'{AUTHORIZE_PATH}?{urlencode(params)}'
+
+
+def saas_offered_in_params(params) -> bool:
+    return _first(params, 'saas_offered') in {'1', 'true', 'yes'}
+
+
 def safe_authorize_path(raw: str | None) -> str | None:
     """Only a same-origin relative path to the MCP authorize endpoint is ever stored or followed."""
     s = str(raw or '')

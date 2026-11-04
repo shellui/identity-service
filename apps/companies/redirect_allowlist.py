@@ -372,10 +372,13 @@ def redirect_url_allowed_for_company(company: Company, absolute_url: str, reques
         return False
     if is_custom_scheme_redirect(candidate):
         return _desktop_redirect_scheme_match(company, candidate)
+    from apps.agents.mcp_saas_consent import is_mcp_saas_return_redirect
     from apps.agents.mcp_signin import is_mcp_signin_redirect
 
     if is_mcp_signin_redirect(candidate):
         # Identity's own MCP sign-in landing. It issues no app tokens.
+        return True
+    if is_mcp_saas_return_redirect(candidate):
         return True
     if is_loopback_redirect_url(candidate):
         return loopback_oauth_redirects_allowed()

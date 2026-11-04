@@ -38,6 +38,7 @@ from apps.federation.urls import provisioning_urlpatterns, urlpatterns as oauth_
 
 from . import views
 
+from apps.agents.mcp_saas_return import mcp_saas_return  # noqa: E402
 from apps.agents.mcp_signin import mcp_signin, mcp_signin_complete  # noqa: E402
 
 urlpatterns = [
@@ -66,6 +67,7 @@ urlpatterns = [
     path('oauth/mcp/authorize', mcp_authorize, name='mcp-oauth-authorize'),
     path('oauth/mcp/signin', mcp_signin, name='mcp-oauth-signin'),
     path('oauth/mcp/signin/complete', mcp_signin_complete, name='mcp-oauth-signin-complete'),
+    path('oauth/mcp/saas-return', mcp_saas_return, name='mcp-oauth-saas-return'),
     path('oauth/mcp/token', mcp_token, name='mcp-oauth-token'),
     path('api/v1/', include('apps.authapi.urls')),
     path('api/v1/mcp/', include('apps.agents.urls')),
