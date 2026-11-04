@@ -180,6 +180,67 @@ class CompanySigninFlowTests(TestCase):
         response = csrf_client.post('/oauth/mcp/signin', {'email': 'ella@acme.com'})
         self.assertEqual(response.status_code, 403)
 
+    @staticmethod
+    def _csrf_from_page(response) -> str:
+        match = re.search(r'name="csrfmiddlewaretoken" value="([^"]+)"', response.content.decode())
+        assert match, 'csrf token missing from page'
+        return match.group(1)
+
+    def test_signin_post_https_after_authorize_redirect_accepts_same_origin_referer(self):
+        """MCP Inspector: authorize -> sign-in GET -> sign-in POST (HTTPS, same-origin Referer)."""
+        from unittest import mock
+
+        client = Client(enforce_csrf_checks=True)
+        client.get(self._query(), secure=True)
+        page = client.get('/oauth/mcp/signin', secure=True)
+        self.assertEqual(page['Referrer-Policy'], 'same-origin')
+        self.assertNotIn('name="referrer"', page.content.decode())
+        token = self._csrf_from_page(page)
+        referer = 'https://testserver/oauth/mcp/signin'
+        with mock.patch('apps.authapi.magic_link_views.deliver_magic_link_email'):
+            ok = client.post(
+                '/oauth/mcp/signin',
+                {'email': 'ella@acme.com', 'csrfmiddlewaretoken': token},
+                secure=True,
+                HTTP_REFERER=referer,
+            )
+        self.assertEqual(ok.status_code, 200)
+        rejected = client.post(
+            '/oauth/mcp/signin',
+            {'email': 'ella@acme.com', 'csrfmiddlewaretoken': token},
+            secure=True,
+            HTTP_ORIGIN='null',
+            HTTP_REFERER=referer,
+        )
+        self.assertEqual(rejected.status_code, 403)
+
+    def test_consent_post_https_accepts_same_origin_referer_rejects_null_origin(self):
+        client = Client(enforce_csrf_checks=True)
+        client.force_login(self.user)
+        page = client.get(self._query(), secure=True)
+        self.assertEqual(page.status_code, 200)
+        self.assertEqual(page['Referrer-Policy'], 'same-origin')
+        token = self._csrf_from_page(page)
+        referer = f'https://testserver{self._query()}'
+        approved = client.post(
+            self._query(),
+            {**self._form(), 'decision': 'approve', 'csrfmiddlewaretoken': token},
+            secure=True,
+            HTTP_REFERER=referer,
+        )
+        self.assertEqual(approved.status_code, 302)
+        client.force_login(self.user)
+        page2 = client.get(self._query(), secure=True)
+        token2 = self._csrf_from_page(page2)
+        rejected = client.post(
+            self._query(),
+            {**self._form(), 'decision': 'approve', 'csrfmiddlewaretoken': token2},
+            secure=True,
+            HTTP_ORIGIN='null',
+            HTTP_REFERER=referer,
+        )
+        self.assertEqual(rejected.status_code, 403)
+
     def test_magic_link_disabled_company_looks_the_same_and_sends_nothing(self):
         from unittest import mock
 
