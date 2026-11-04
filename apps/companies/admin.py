@@ -19,6 +19,7 @@ from apps.actions.scim_hooks import (
 )
 from apps.authapi.provider_registry import supported_oauth_provider_slugs
 from .access import normalize_allowed_domains
+from .domain_verification import shellui_verified_email_domains
 from .models import Company, CompanyGroup, CompanyMembership, CompanyOAuthClient, CompanyOAuthRedirect
 from .redirect_allowlist import normalize_allowlist_origin, normalize_registered_schemes
 
@@ -493,8 +494,39 @@ class CompanyGroupAdmin(admin.ModelAdmin):
         super().delete_queryset(request, queryset)
 
 
+class CompanyOAuthClientAdminForm(forms.ModelForm):
+    sso_verified_domains = VerifiedEmailDomainsField(
+        label='SSO verified domains (MCP home realm)',
+        required=False,
+    )
+
+    class Meta:
+        model = CompanyOAuthClient
+        fields = '__all__'
+
+    def clean_sso_verified_domains(self):
+        return normalize_allowed_domains(self.cleaned_data.get('sso_verified_domains'))
+
+    def clean(self):
+        cleaned = super().clean()
+        if self.errors:
+            return cleaned
+        company = cleaned.get('company') or getattr(self.instance, 'company', None)
+        idp_domains = normalize_allowed_domains(cleaned.get('sso_verified_domains') or [])
+        if company and idp_domains:
+            allowed = shellui_verified_email_domains(company)
+            extra = sorted(set(idp_domains) - allowed)
+            if extra:
+                self.add_error(
+                    'sso_verified_domains',
+                    f'Domains must be on the company verified email domains list: {", ".join(extra)}',
+                )
+        return cleaned
+
+
 @admin.register(CompanyOAuthClient)
 class CompanyOAuthClientAdmin(admin.ModelAdmin):
+    form = CompanyOAuthClientAdminForm
     list_display = (
         'id',
         'company',
@@ -507,6 +539,20 @@ class CompanyOAuthClientAdmin(admin.ModelAdmin):
     search_fields = ('social_app__name', 'social_app__client_id', 'company__name')
     autocomplete_fields = ('company',)
     raw_id_fields = ('social_app',)
+    fieldsets = (
+        (None, {'fields': ('company', 'social_app', 'dedupe_key', 'is_active')}),
+        (
+            'MCP home realm',
+            {
+                'fields': ('sso_verified_domains',),
+                'description': (
+                    'Optional. Domains this IdP handles for MCP email-first sign-in. '
+                    'Each domain must also appear on the company verified email domains (Company admin). '
+                    'Leave empty when this is the company only SSO/OAuth client.'
+                ),
+            },
+        ),
+    )
 
     @admin.display(ordering='social_app__provider')
     def provider(self, obj: CompanyOAuthClient) -> str:

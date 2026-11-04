@@ -250,14 +250,22 @@ def finish_mcp_signin(request: HttpRequest, *, user, company: Company) -> HttpRe
     return HttpResponseRedirect(path)
 
 
-def _send_magic_link(request: HttpRequest, *, company: Company, email: str, lang: str) -> HttpResponse | None:
+def _send_magic_link(
+    request: HttpRequest,
+    *,
+    company: Company,
+    email: str,
+    lang: str,
+    rate_limit: bool = True,
+) -> HttpResponse | None:
     """Reuse identity's magic link rules. Returns a response only when rate limited."""
     from apps.authapi import magic_link_views as mlv
     from apps.authapi.magic_link import create_magic_link_token, is_staff_account, staff_account_for_email
 
-    limited = mlv._magic_link_rate_limits(request, company_id=company.id, email=email)
-    if limited is not None:
-        return limited
+    if rate_limit:
+        limited = mlv._magic_link_rate_limits(request, company_id=company.id, email=email)
+        if limited is not None:
+            return limited
     existing = mlv.User.objects.filter(email__iexact=email).first()
     if mlv.is_login_blocked_by_revoked_invitation(company, email, existing):
         return None
@@ -314,17 +322,25 @@ def mcp_signin(request: HttpRequest) -> HttpResponse:
         email = str(request.POST.get('email') or '').strip().lower()
         if not email or '@' not in email or len(email) > 254:
             return render_error(request, 'invalid_request', 400)
-        if company is not None and magic_link_enabled_for_company(company):
-            limited = plain_response(_send_magic_link(request, company=company, email=email, lang=lang))
-        else:
+        if company is not None:
             from apps.authapi import magic_link_views as mlv
 
-            # Same rate-limit buckets as a real request, so the answer looks the same.
             limited = plain_response(
-                mlv._magic_link_rate_limits(request, company_id=parsed.company_id, email=email)
+                mlv._magic_link_rate_limits(request, company_id=company.id, email=email)
             )
-        if limited is not None:
-            return limited
+            if limited is not None:
+                return limited
+            from apps.agents.mcp_home_realm import home_realm_signin_redirect
+
+            realm_redirect = home_realm_signin_redirect(request, company=company, email=email)
+            if realm_redirect is not None:
+                return realm_redirect
+        if company is not None and magic_link_enabled_for_company(company):
+            limited = plain_response(
+                _send_magic_link(request, company=company, email=email, lang=lang, rate_limit=False)
+            )
+            if limited is not None:
+                return limited
         sent = True
     client_name = parsed.client.client_name or parsed.client.client_id
     response = render(

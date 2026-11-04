@@ -36,6 +36,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 - Identity `/mcp` accepts RS256 agent tokens, whose claims arrive as a dict, instead of failing with a 500.
 - MCP sign-in and consent pages use `Referrer-Policy: same-origin` instead of `no-referrer`, so same-origin form POSTs send a valid `Origin` header and Django CSRF no longer rejects MCP Inspector sign-in with `Origin: null`.
 - `POST /oauth/mcp/token` and `POST /oauth/mcp/register` accept `application/x-www-form-urlencoded` bodies (RFC 6749) as well as JSON, so MCP Inspector, ChatGPT, and Claude can exchange authorization codes after consent.
+- **MCP email-first sign-in:** the sign-in page routes verified email domains to the company SSO/OAuth IdP (home realm). Operators set company `verified_email_domains` and optional per-IdP `sso_verified_domains` on `CompanyOAuthClient` in Django admin. Other addresses keep the same generic magic-link response (no account enumeration).
 
 <!---
 ## [Unreleased] - yyyy-mm-dd
