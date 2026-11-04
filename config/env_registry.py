@@ -73,6 +73,7 @@ OPTIONAL = (
     Var('MAGIC_LINK_EMAIL_DEFAULT_LANGUAGE', 'en'),
     Var('SCIM_ENABLED', 'true'),
     Var('SETUP_TOKEN', ''),
+    Var('IDENTITY_DEV_SEED', 'false', 'Local dev only: manage.py seed_dev (needs DEBUG=true). Never set in production'),
     Var('EMAIL_SERVICE_API_KEY', '', 'Email: email-service when EMAIL_SERVICE_API_KEY is set, else SMTP (console with DEBUG=true)'),
     Var('EMAIL_SERVICE_URL', 'https://email.shellui.com'),
     Var('EMAIL_SERVICE_INTERNAL_URL', '', 'Server-to-server email-service origin (defaults to EMAIL_SERVICE_URL)'),
