@@ -64,6 +64,15 @@ def gateway_resource_for_company(company_id: int) -> str:
     return _normalize_company_resource(f'{origin}/c/{int(company_id)}/mcp') or ''
 
 
+def company_mcp_resource_url(company_id: int) -> str | None:
+    url = gateway_resource_for_company(company_id)
+    return url or None
+
+
+def mcp_enabled_for_company(company_id: int) -> bool:
+    return company_mcp_resource_url(company_id) is not None
+
+
 def catalog_resources_by_url() -> dict[str, str]:
     """Map canonical plain resource URL to service id (identity, storage, …)."""
     out: dict[str, str] = {}

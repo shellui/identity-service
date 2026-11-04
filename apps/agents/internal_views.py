@@ -253,6 +253,9 @@ class McpInternalCallLogView(APIView):
         except Agent.DoesNotExist:
             return Response({'error': 'Agent not found.'}, status=status.HTTP_404_NOT_FOUND)
         args = body.get('arguments') if isinstance(body.get('arguments'), dict) else {}
+        ip_raw = str(body.get('client_ip') or '').strip()
+        client_ip = ip_raw if ip_raw else None
+        result = str(body.get('result') or '')[:32]
         row = McpCallLog.objects.create(
             agent=agent,
             company_id=company_id,
@@ -262,6 +265,8 @@ class McpInternalCallLogView(APIView):
             path=str(body.get('path') or '')[:500],
             status_code=int(body.get('status') or 0),
             duration_ms=int(body.get('duration_ms') or 0),
+            result=result,
+            client_ip=client_ip,
             arguments_redacted=redact_mapping(args, read_sensitive=False),
         )
         event = get_event_type('identity.mcp.call')

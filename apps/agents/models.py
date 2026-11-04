@@ -198,6 +198,36 @@ class McpApprovalRequest(models.Model):
         ordering = ['-created_at']
 
 
+class PersonalAgentCredential(models.Model):
+    """Long-lived MCP agent bearer credential for a company member (show token once, store jti hash)."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    agent = models.OneToOneField(Agent, on_delete=models.CASCADE, related_name='personal_credential')
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='personal_agent_credentials')
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='personal_agent_credentials',
+    )
+    name = models.CharField(max_length=255)
+    token_jti_digest = models.CharField(max_length=64, db_index=True)
+    expires_at = models.DateTimeField()
+    revoked_at = models.DateTimeField(null=True, blank=True)
+    last_used_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    @property
+    def is_active(self) -> bool:
+        if self.revoked_at is not None:
+            return False
+        if self.expires_at <= timezone.now():
+            return False
+        return self.agent.is_active
+
+
 class McpCallLog(models.Model):
     id = models.BigAutoField(primary_key=True)
     agent = models.ForeignKey(Agent, on_delete=models.CASCADE, related_name='call_logs')
@@ -208,6 +238,8 @@ class McpCallLog(models.Model):
     path = models.CharField(max_length=500, blank=True)
     status_code = models.PositiveSmallIntegerField(default=0)
     duration_ms = models.PositiveIntegerField(default=0)
+    result = models.CharField(max_length=32, blank=True, default='')
+    client_ip = models.GenericIPAddressField(null=True, blank=True)
     arguments_redacted = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
 

@@ -384,6 +384,8 @@ SPECTACULAR_SETTINGS = {
 MCP_DYNAMIC_CLIENT_REGISTRATION = _env_bool('MCP_DYNAMIC_CLIENT_REGISTRATION', True)
 MCP_ACCESS_TOKEN_LIFETIME = _env_duration('MCP_ACCESS_TOKEN_LIFETIME', timedelta(minutes=15))
 MCP_REFRESH_TOKEN_LIFETIME = _env_duration('MCP_REFRESH_TOKEN_LIFETIME', timedelta(days=30))
+MCP_PERSONAL_AGENT_MAX_LIFETIME_DAYS = _env_int('MCP_PERSONAL_AGENT_MAX_LIFETIME_DAYS', 90)
+MCP_AGENT_ACTIVITY_RETENTION_DAYS = _env_int('MCP_AGENT_ACTIVITY_RETENTION_DAYS', 90)
 MCP_RATE_LIMITS = {
     'default': {'limit': 120, 'window': 60},
     'mcp_agent': {'limit': _env_int('MCP_RATE_LIMIT_AGENT', 120), 'window': 60},
@@ -714,6 +716,7 @@ AUTH_RATE_LIMITS = {
     'pat': {'limit': _env_int('AUTH_RATE_LIMIT_PAT', 30), 'window': 60},
     'magic_link': {'limit': _env_int('AUTH_RATE_LIMIT_MAGIC_LINK', 10), 'window': 60},
     'token_exchange': {'limit': _env_int('AUTH_RATE_LIMIT_TOKEN_EXCHANGE', 30), 'window': 60},
+    'mcp_personal_agent': {'limit': _env_int('AUTH_RATE_LIMIT_MCP_PERSONAL_AGENT', 10), 'window': 3600},
     'invitation': {'limit': _env_int('AUTH_RATE_LIMIT_INVITATION', 30), 'window': 300},
 }
 
