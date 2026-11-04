@@ -172,7 +172,8 @@ def _agent_claims(request: HttpRequest) -> dict | None:
     if not token.get('agent_id'):
         return None
     expected = mcp_resource_from_origin(getattr(settings, 'JWT_ISSUER', '') or '')
-    claims = dict(token.payload)
+    # simplejwt returns a token object; the RS256 agent path returns the decoded claims dict.
+    claims = dict(getattr(token, 'payload', token))
     if not access_token_audience_matches(claims, expected):
         return None
     request.user = _user
