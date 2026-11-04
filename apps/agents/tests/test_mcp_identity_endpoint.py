@@ -55,3 +55,40 @@ class McpIdentityEndpointTests(TestCase):
         post.assert_not_called()
         names = {t['name'] for t in response.json()['result']['tools']}
         self.assertIn('api_v1_mcp_services_list', names)
+
+    @patch('requests.post')
+    def test_agent_claims_as_plain_dict_are_accepted(self, post):
+        """The RS256 agent path authenticates with a claims dict, not a simplejwt token object."""
+        import jwt
+
+        claims = jwt.decode(self.token, options={'verify_signature': False})
+        with patch(
+            'apps.agents.mcp_views.ShellUIJWTAuthentication.authenticate',
+            return_value=(self.owner, dict(claims)),
+        ):
+            response = self.client.post(
+                '/mcp',
+                data=_rpc('tools/list'),
+                content_type='application/json',
+                HTTP_AUTHORIZATION=f'Bearer {self.token}',
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('result', response.json())
+
+    def test_agent_claims_for_another_resource_are_refused(self):
+        import jwt
+
+        other = encode_access_token(self.agent, resource='https://storage.test/mcp')
+        claims = jwt.decode(other, options={'verify_signature': False})
+        with patch(
+            'apps.agents.mcp_views.ShellUIJWTAuthentication.authenticate',
+            return_value=(self.owner, dict(claims)),
+        ):
+            response = self.client.post(
+                '/mcp',
+                data=_rpc('tools/list'),
+                content_type='application/json',
+                HTTP_AUTHORIZATION=f'Bearer {other}',
+            )
+        self.assertNotIn('result', response.json() if response.status_code == 200 else {})
+

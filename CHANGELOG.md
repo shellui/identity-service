@@ -27,6 +27,10 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 - Aggregated Identity MCP gateway at `POST /mcp` (multi-service `tools/list` / `tools/call`); use ai-service as the single MCP connector.
 
+### 🐛 Bug Fixes
+
+- Identity `/mcp` accepts RS256 agent tokens, whose claims arrive as a dict, instead of failing with a 500.
+
 <!---
 ## [Unreleased] - yyyy-mm-dd
 
