@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ### 🏗 Chore
 
+- Add a dev-only `seed_dev` command (company 1, `admin`/`admin`, `dev@localhost`), run by the dev entrypoint when `IDENTITY_DEV_SEED=true`.
 - Add a Dockerfile `dev` target and [local dev stack](docs/local-dev-stack.md) docs for shellui/shellui compose (env-driven settings, optional `*_INTERNAL_URL` for server-to-server calls).
 - Use the shared shellui-django package for MCP instead of a vendored copy.
 - Bump `shellui-django[mcp]` to 0.3.0 and use `shellui_django.mcp.delegation` for ai-service downstream token requests.
