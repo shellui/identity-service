@@ -28,6 +28,7 @@ from apps.agents.models import Agent, McpAuthorizationCode, McpCallLog, McpOAuth
 from apps.agents.oauth_codes import hash_authorization_code, issue_mcp_authorization_code
 from apps.agents.mcp_resources import resolve_mcp_resource
 from apps.agents.oauth_redirect import normalize_mcp_redirect_uris, validate_mcp_redirect_uri
+from apps.agents.oauth_request_body import oauth_error, parse_oauth_post_body, redirect_uris_from_body
 from apps.agents.mcp_copy import copy_for
 from apps.agents.mcp_signin import (
     AuthorizeError,
@@ -117,13 +118,11 @@ def mcp_register(request):
         return limited
     if not getattr(settings, 'MCP_DYNAMIC_CLIENT_REGISTRATION', True):
         return JsonResponse({'error': 'registration_disabled'}, status=403)
-    try:
-        body = json.loads(request.body.decode('utf-8') or '{}')
-    except json.JSONDecodeError:
-        return JsonResponse({'error': 'invalid_json'}, status=400)
-    if not isinstance(body, dict):
-        return JsonResponse({'error': 'invalid_client_metadata'}, status=400)
-    redirect_uris, rerr = normalize_mcp_redirect_uris(request, body.get('redirect_uris') or [])
+    body, parse_err = parse_oauth_post_body(request)
+    if parse_err is not None:
+        return parse_err
+    assert body is not None
+    redirect_uris, rerr = normalize_mcp_redirect_uris(request, redirect_uris_from_body(body))
     if rerr:
         return JsonResponse({'error': rerr}, status=400)
     client_id = secrets.token_urlsafe(24)
@@ -288,11 +287,13 @@ def mcp_token(request):
     limited = plain_response(check_rate_limit(request, scope='token_exchange'))
     if limited:
         return limited
-    try:
-        body = json.loads(request.body.decode('utf-8') or '{}')
-    except json.JSONDecodeError:
-        return JsonResponse({'error': 'invalid_json'}, status=400)
-    grant = body.get('grant_type')
+    body, parse_err = parse_oauth_post_body(request)
+    if parse_err is not None:
+        return parse_err
+    assert body is not None
+    grant = str(body.get('grant_type') or '').strip()
+    if not grant:
+        return oauth_error('invalid_request')
     if grant == AGENT_EXCHANGE_GRANT:
         if not agent_exchange_enabled():
             return JsonResponse({}, status=404)
@@ -315,7 +316,7 @@ def mcp_token(request):
             }
         )
     if grant != 'authorization_code':
-        return JsonResponse({'error': 'unsupported_grant_type'}, status=400)
+        return oauth_error('unsupported_grant_type')
     code = str(body.get('code') or '').strip()
     redirect_uri = str(body.get('redirect_uri') or '').strip()
     client_id = str(body.get('client_id') or '').strip()
