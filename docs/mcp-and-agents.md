@@ -23,7 +23,7 @@ Each company has its own MCP URL on ai-service: `{AI_SERVICE_URL}/c/<company_id>
 
 Both pages exist to stop phishing, so they show before anything else:
 
-- why the user is here: "<client> wants to access <company> through the Shellui MCP connector";
+- why the user is here: "`<client>` wants to access `<company>` through the Shellui MCP connector";
 - the client name, marked as chosen by the client and not verified;
 - the full host of the return address, before sign-in;
 - a warning not to continue if the user didn't start the connection.
