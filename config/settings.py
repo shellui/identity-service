@@ -706,6 +706,7 @@ AUTH_RATE_LIMIT_ENABLED = _env_bool('AUTH_RATE_LIMIT_ENABLED', True)
 AUTH_RATE_LIMITS = {
     'default': {'limit': 60, 'window': 60},
     'oauth': {'limit': _env_int('AUTH_RATE_LIMIT_OAUTH', 30), 'window': 60},
+    'mcp_register': {'limit': _env_int('AUTH_RATE_LIMIT_MCP_REGISTER', 10), 'window': 3600},
     'token_refresh': {'limit': _env_int('AUTH_RATE_LIMIT_TOKEN_REFRESH', 60), 'window': 60},
     'auth_settings': {'limit': _env_int('AUTH_RATE_LIMIT_SETTINGS', 30), 'window': 60},
     'admin_login': {'limit': _env_int('AUTH_RATE_LIMIT_ADMIN_LOGIN', 10), 'window': 300},

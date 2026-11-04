@@ -14,7 +14,7 @@ from django.shortcuts import render
 from django.urls import reverse
 from django.utils import timezone
 from django.db import transaction
-from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.csrf import csrf_exempt, csrf_protect
 from django.views.decorators.http import require_GET, require_POST
 from django.views.decorators.clickjacking import xframe_options_deny
 from rest_framework import status
@@ -24,10 +24,24 @@ from drf_spectacular.utils import OpenApiResponse, extend_schema
 from apps.authapi.client_pkce import PkceError, parse_client_pkce, verify_client_pkce
 from apps.authapi.throttling import check_rate_limit
 from apps.companies.models import Company
-from apps.agents.models import Agent, McpAuthorizationCode, McpOAuthClient
+from apps.agents.models import Agent, McpAuthorizationCode, McpCallLog, McpOAuthClient
 from apps.agents.oauth_codes import hash_authorization_code, issue_mcp_authorization_code
 from apps.agents.mcp_resources import resolve_mcp_resource
 from apps.agents.oauth_redirect import normalize_mcp_redirect_uris, validate_mcp_redirect_uri
+from apps.agents.mcp_copy import copy_for
+from apps.agents.mcp_signin import (
+    AuthorizeError,
+    approval_redirect,
+    is_company_member,
+    page_language,
+    parse_authorize_request,
+    plain_response,
+    protect_page,
+    render_error,
+    render_message,
+    safe_authorize_path,
+    signin_redirect,
+)
 from apps.agents.staff import is_mcp_oauth_refused_user
 from apps.agents.exchange import GRANT_TYPE as AGENT_EXCHANGE_GRANT
 from apps.agents.exchange import agent_exchange_enabled, handle_agent_token_exchange
@@ -98,7 +112,7 @@ class OAuthProtectedResourceMetadataView(APIView):
 @csrf_exempt
 @require_POST
 def mcp_register(request):
-    limited = check_rate_limit(request, scope='oauth')
+    limited = plain_response(check_rate_limit(request, scope='mcp_register'))
     if limited:
         return limited
     if not getattr(settings, 'MCP_DYNAMIC_CLIENT_REGISTRATION', True):
@@ -107,13 +121,15 @@ def mcp_register(request):
         body = json.loads(request.body.decode('utf-8') or '{}')
     except json.JSONDecodeError:
         return JsonResponse({'error': 'invalid_json'}, status=400)
+    if not isinstance(body, dict):
+        return JsonResponse({'error': 'invalid_client_metadata'}, status=400)
     redirect_uris, rerr = normalize_mcp_redirect_uris(request, body.get('redirect_uris') or [])
     if rerr:
         return JsonResponse({'error': rerr}, status=400)
     client_id = secrets.token_urlsafe(24)
     row = McpOAuthClient.objects.create(
         client_id=client_id,
-        client_name=str(body.get('client_name') or '')[:255],
+        client_name=' '.join(str(body.get('client_name') or '').split())[:120],
         redirect_uris=redirect_uris,
     )
     return JsonResponse(
@@ -128,81 +144,78 @@ def mcp_register(request):
 
 
 @xframe_options_deny
+@csrf_protect
 def mcp_authorize(request):
+    """Authorize an MCP client for the company in the per-company resource.
+
+    Every invalid client, redirect_uri, or resource gets an error page on identity. This view
+    only ever redirects to identity's own sign-in page or to a redirect_uri the client
+    registered, matched exactly.
+    """
     if request.method not in {'GET', 'POST'}:
         return HttpResponse(status=405)
-    limited = check_rate_limit(request, scope='oauth')
+    limited = plain_response(check_rate_limit(request, scope='oauth'))
     if limited:
         return limited
-    response_type = (request.GET.get('response_type') or request.POST.get('response_type') or 'code').strip()
-    if response_type != 'code':
-        return HttpResponse('Unsupported response_type.', status=400)
-    client_id = (request.GET.get('client_id') or request.POST.get('client_id') or '').strip()
-    redirect_uri = (request.GET.get('redirect_uri') or request.POST.get('redirect_uri') or '').strip()
-    state = (request.GET.get('state') or request.POST.get('state') or '').strip()
-    code_challenge = request.GET.get('code_challenge') or request.POST.get('code_challenge')
-    code_challenge_method = request.GET.get('code_challenge_method') or request.POST.get('code_challenge_method')
+    params = request.GET if request.method == 'GET' else request.POST
     try:
-        challenge = parse_client_pkce(code_challenge, code_challenge_method, required=True)
-    except PkceError as exc:
-        return HttpResponse(exc.message, status=400)
-    try:
-        client = McpOAuthClient.objects.get(client_id=client_id)
-    except McpOAuthClient.DoesNotExist:
-        return HttpResponse('Unknown client.', status=400)
-    canonical_redirect, rerr = validate_mcp_redirect_uri(request, redirect_uri)
-    if rerr or not canonical_redirect or canonical_redirect not in (client.redirect_uris or []):
-        return HttpResponse('Invalid redirect_uri.', status=400)
-    redirect_uri = canonical_redirect
-    resource_raw = (request.GET.get('resource') or request.POST.get('resource') or '').strip()
-    resource_url, _service_id = resolve_mcp_resource(resource_raw)
-    if not resource_url:
-        return HttpResponse('Invalid or missing resource.', status=400)
+        parsed = parse_authorize_request(params)
+    except AuthorizeError as exc:
+        return render_error(request, exc.code, exc.status)
+    if not _mcp_company_registration_allowed(parsed.company):
+        return render_error(request, 'registration_disabled', 403)
     if not request.user.is_authenticated:
-        login_url = reverse('admin:login')
-        next_url = request.get_full_path()
-        return HttpResponseRedirect(f'{login_url}?next={next_url}')
+        if request.method != 'GET':
+            return render_error(request, 'invalid_request', 400)
+        path = safe_authorize_path(request.get_full_path())
+        if not path:
+            return render_error(request, 'invalid_request', 400)
+        return signin_redirect(request, path, parsed.company.id)
     user = request.user
+    lang = page_language(request, user)
+    copy = copy_for(lang)
     if is_mcp_oauth_refused_user(user):
-        return HttpResponse('Staff accounts cannot authorize MCP agents.', status=403)
-    companies = Company.objects.filter(memberships__user=user, memberships__is_enabled=True).order_by('name')
+        return render_message(request, copy['staff_refused'], 403, user=user)
+    if not is_company_member(parsed.company, user):
+        return render_message(request, copy['not_member'].format(company=parsed.company.name), 403, user=user)
     if request.method == 'POST':
-        return _complete_authorize(
-            request,
-            user=user,
-            client=client,
-            redirect_uri=redirect_uri,
-            state=state,
-            challenge=challenge,
-            resource=resource_url,
-        )
-    return render(
+        return _complete_authorize(request, user=user, parsed=parsed)
+    client_name = parsed.client.client_name or parsed.client.client_id
+    services = [(sid, label) for sid, label in Agent.SERVICE_CHOICES if sid != Agent.SERVICE_AI]
+    response = render(
         request,
         'agents/mcp_consent.html',
         {
-            'client': client,
-            'companies': companies,
-            'redirect_uri': redirect_uri,
-            'resource': resource_url,
-            'state': state,
-            'code_challenge': challenge,
-            'services': Agent.SERVICE_CHOICES,
+            'page_language': lang,
+            'copy': copy,
+            'why': copy['why'].format(client=client_name, company=parsed.company.name),
+            'signed_in_as': copy['signed_in_as'].format(email=user.email or user.get_username()),
+            'client_name': client_name,
+            'client_id': parsed.client.client_id,
+            'company_name': parsed.company.name,
+            'redirect_host': parsed.redirect_host,
+            'redirect_uri': parsed.redirect_uri,
+            'resource': parsed.resource,
+            'state': parsed.state,
+            'code_challenge': parsed.challenge,
+            'services': services,
         },
     )
+    return protect_page(response)
 
 
-def _complete_authorize(request, *, user, client, redirect_uri, state, challenge, resource):
-    if request.method != 'POST':
-        return HttpResponse('Confirm on the consent form.', status=400)
-    company_id = request.POST.get('company_id')
-    try:
-        company = Company.objects.get(pk=int(company_id))
-    except (TypeError, ValueError, Company.DoesNotExist):
-        return HttpResponse('Choose a company.', status=400)
-    if not company.memberships.filter(user=user, is_enabled=True).exists():
-        return HttpResponse('Forbidden for this company.', status=403)
-    if not _mcp_company_registration_allowed(company):
-        return HttpResponse('Dynamic registration is disabled for this company.', status=403)
+def _complete_authorize(request, *, user, parsed):
+    client = parsed.client
+    company = parsed.company
+    redirect_uri = parsed.redirect_uri
+    decision = request.POST.get('decision')
+    if decision == 'deny':
+        params = {'error': 'access_denied'}
+        if parsed.state:
+            params['state'] = parsed.state
+        return approval_redirect(redirect_uri, params)
+    if decision != 'approve':
+        return render_error(request, 'invalid_request', 400)
     name = (request.POST.get('agent_name') or client.client_name or 'MCP agent')[:255]
     access_mode = request.POST.get('access_mode') or Agent.ACCESS_ASK
     if access_mode not in {Agent.ACCESS_READ_ONLY, Agent.ACCESS_ASK, Agent.ACCESS_FULL}:
@@ -211,49 +224,66 @@ def _complete_authorize(request, *, user, client, redirect_uri, state, challenge
     if read_level not in {Agent.READ_SAFE, Agent.READ_SENSITIVE}:
         read_level = Agent.READ_SAFE
     destructive = request.POST.get('allow_destructive') == 'on'
-    services = [s for s in request.POST.getlist('services') if s]
-    if not services:
-        services = [Agent.SERVICE_IDENTITY]
     allowed_services = {choice[0] for choice in Agent.SERVICE_CHOICES}
-    services = [s for s in services if s in allowed_services]
+    services = [s for s in request.POST.getlist('services') if s in allowed_services and s != Agent.SERVICE_AI]
     if not services:
-        return HttpResponse('Choose at least one service.', status=400)
-    _resource_url, service_id = resolve_mcp_resource(resource)
-    if not _resource_url or not service_id or service_id not in services:
-        return HttpResponse('Resource is not included in selected services.', status=400)
-    agent = Agent.objects.create(
-        company=company,
-        name=name,
-        oauth_client=client,
-        created_by=user,
-        access_mode=access_mode,
-        allow_destructive_without_asking=destructive,
-        read_level=read_level,
-        services_allowed=services,
-    )
-    code, code_digest = issue_mcp_authorization_code()
-    McpAuthorizationCode.objects.create(
-        code=code_digest,
-        client=client,
-        user=user,
-        company=company,
-        agent=agent,
-        redirect_uri=redirect_uri,
-        code_challenge=challenge,
-        resource=_resource_url,
-        expires_at=timezone.now() + timedelta(minutes=10),
-    )
+        return render_error(request, 'invalid_request', 400)
+    # The gateway resource is the connection itself; downstream services stay as chosen.
+    if parsed.service_id not in services:
+        services.append(parsed.service_id)
+    with transaction.atomic():
+        agent = Agent.objects.create(
+            company=company,
+            name=name,
+            oauth_client=client,
+            created_by=user,
+            access_mode=access_mode,
+            allow_destructive_without_asking=destructive,
+            read_level=read_level,
+            services_allowed=services,
+        )
+        code, code_digest = issue_mcp_authorization_code()
+        McpAuthorizationCode.objects.create(
+            code=code_digest,
+            client=client,
+            user=user,
+            company=company,
+            agent=agent,
+            redirect_uri=redirect_uri,
+            code_challenge=parsed.challenge,
+            resource=parsed.resource,
+            expires_at=timezone.now() + timedelta(minutes=10),
+        )
+        McpCallLog.objects.create(
+            agent=agent,
+            company=company,
+            service='identity',
+            tool='oauth.authorize.approved',
+            http_method='POST',
+            path='/oauth/mcp/authorize',
+            status_code=302,
+            arguments_redacted={
+                'client_id': client.client_id,
+                'client_name': client.client_name[:255],
+                'redirect_host': parsed.redirect_host,
+                'resource': parsed.resource,
+                'services': services,
+                'access_mode': access_mode,
+                'read_level': read_level,
+                'allow_destructive': destructive,
+                'approved_by_user_id': user.pk,
+            },
+        )
     params = {'code': code}
-    if state:
-        params['state'] = state
-    sep = '&' if '?' in redirect_uri else '?'
-    return HttpResponseRedirect(f'{redirect_uri}{sep}{urlencode(params)}')
+    if parsed.state:
+        params['state'] = parsed.state
+    return approval_redirect(redirect_uri, params)
 
 
 @csrf_exempt
 @require_POST
 def mcp_token(request):
-    limited = check_rate_limit(request, scope='token_exchange')
+    limited = plain_response(check_rate_limit(request, scope='token_exchange'))
     if limited:
         return limited
     try:

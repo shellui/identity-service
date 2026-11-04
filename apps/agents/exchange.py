@@ -14,7 +14,7 @@ from django.http import JsonResponse
 from django.utils import timezone
 
 from apps.agents.global_revocation import global_agent_exchange_blocked
-from apps.agents.mcp_resources import resolve_mcp_resource
+from apps.agents.mcp_resources import resolve_mcp_resource, resource_company_id
 from apps.agents.models import Agent
 from apps.agents.scope import (
     access_within,
@@ -123,6 +123,9 @@ def handle_agent_token_exchange(request, *, data: dict[str, Any] | None = None) 
     resource_url, service_id = resolve_mcp_resource(resource_raw)
     if not resource_url or not service_id:
         return _error('invalid_target', 'Invalid or unknown MCP resource.')
+    resource_company = resource_company_id(resource_url)
+    if resource_company is not None and resource_company != company.id:
+        return _error('invalid_target', 'The MCP resource belongs to another company.')
 
     try:
         claims = verify_pinned(

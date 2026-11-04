@@ -11,7 +11,8 @@ from rest_framework_simplejwt.settings import api_settings
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.agents.models import Agent, AgentRefreshSession
-from shellui_django.mcp.resources import normalize_resource_indicator
+from apps.agents.mcp_resources import normalize_mcp_resource as normalize_resource_indicator
+from apps.agents.mcp_resources import resource_company_id
 
 
 def mcp_access_lifetime() -> timedelta:
@@ -31,6 +32,9 @@ def build_agent_access_token(agent: Agent, *, resource: str) -> dict:
     audience = normalize_resource_indicator(resource)
     if not audience:
         raise ValueError('Invalid MCP resource for access token audience.')
+    resource_company = resource_company_id(audience)
+    if resource_company is not None and resource_company != agent.company_id:
+        raise ValueError('MCP resource belongs to another company.')
     now = timezone.now()
     exp = now + mcp_access_lifetime()
     jti = uuid.uuid4().hex
@@ -69,6 +73,9 @@ def issue_agent_refresh(agent: Agent, *, resource: str) -> tuple[str, AgentRefre
     bound = normalize_resource_indicator(resource)
     if not bound:
         raise ValueError('Invalid MCP resource for refresh token.')
+    resource_company = resource_company_id(bound)
+    if resource_company is not None and resource_company != agent.company_id:
+        raise ValueError('MCP resource belongs to another company.')
     refresh = RefreshToken()
     refresh['sub'] = f'agent:{agent.id}'
     refresh['agent_id'] = str(agent.id)
@@ -119,6 +126,9 @@ def refresh_agent_access(refresh_token: str, *, resource: str) -> tuple[str, str
     if session.expires_at <= timezone.now():
         return None
     if not agent.is_active:
+        return None
+    resource_company = resource_company_id(bound)
+    if resource_company is not None and resource_company != agent.company_id:
         return None
     access = encode_access_token(agent, resource=bound)
     new_refresh, _session = issue_agent_refresh(agent, resource=bound)

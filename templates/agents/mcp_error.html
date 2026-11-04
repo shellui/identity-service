@@ -1,0 +1,8 @@
+{% extends "agents/_mcp_base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block main_attrs %} data-error-code="{{ error_code }}"{% endblock %}
+{% block content %}
+    <h1>{{ title }}</h1>
+    <p class="subtitle">{{ message }}</p>
+    <p class="note">{{ copy.start_again }}</p>
+{% endblock %}
