@@ -15,6 +15,13 @@ from .models import PersonalAccessToken
 from .refresh_sessions import is_access_jti_denied
 
 
+def _verifying_key():
+    """HS* verifies with the shared secret; RS*/ES* must verify with the public key."""
+    if api_settings.ALGORITHM.startswith('HS'):
+        return api_settings.SIGNING_KEY
+    return api_settings.VERIFYING_KEY
+
+
 class ShellUIJWTAuthentication(JWTAuthentication):
     """Same as SimpleJWT, but rejects revoked PATs and mismatched ``jti`` / user."""
 
@@ -97,7 +104,7 @@ class ShellUIJWTAuthentication(JWTAuthentication):
         try:
             payload = jwt.decode(
                 raw_token,
-                api_settings.SIGNING_KEY,
+                _verifying_key(),
                 algorithms=[api_settings.ALGORITHM],
                 issuer=issuer or None,
                 options={'require': ['exp', 'sub', 'agent_id', 'aud'], 'verify_aud': False},
