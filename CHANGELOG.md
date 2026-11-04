@@ -35,6 +35,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 - MCP OAuth redirect URIs allow only https and loopback http, reject fragments and user info, and match exactly. Invalid clients, redirect URIs, and resources get an error page instead of a redirect, and `/oauth/mcp/register` has its own rate limit (`AUTH_RATE_LIMIT_MCP_REGISTER`).
 - Identity `/mcp` accepts RS256 agent tokens, whose claims arrive as a dict, instead of failing with a 500.
 - MCP sign-in and consent pages use `Referrer-Policy: same-origin` instead of `no-referrer`, so same-origin form POSTs send a valid `Origin` header and Django CSRF no longer rejects MCP Inspector sign-in with `Origin: null`.
+- `POST /oauth/mcp/token` and `POST /oauth/mcp/register` accept `application/x-www-form-urlencoded` bodies (RFC 6749) as well as JSON, so MCP Inspector, ChatGPT, and Claude can exchange authorization codes after consent.
 
 <!---
 ## [Unreleased] - yyyy-mm-dd
