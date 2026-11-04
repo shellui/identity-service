@@ -244,6 +244,17 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Build dev target
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: dev
+          push: false
+          load: true
+          tags: shellui/identity-service:dev-ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
       # Web server, Celery worker with beat, graceful stop, worker mode, refused start
       # without Redis in production, no-Redis fallback with DEBUG=true.
       - name: Image smoke test

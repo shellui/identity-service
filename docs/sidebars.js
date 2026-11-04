@@ -26,6 +26,7 @@ const sidebars = {
     doc('index', 'Overview'),
     category('Get started', [
       doc('getting-started', 'Run identity-service'),
+      doc('local-dev-stack', 'Local dev stack'),
       doc('configuration', 'Configuration'),
     ]),
     category('Sign-in', [

@@ -103,7 +103,9 @@ def _api_key() -> str:
 
 
 def _base_url() -> str:
-    raw = str(getattr(settings, 'EMAIL_SERVICE_URL', '') or '').strip() or 'https://email.shellui.com'
+    raw = str(getattr(settings, 'EMAIL_SERVICE_HTTP_URL', '') or '').strip()
+    if not raw:
+        raw = str(getattr(settings, 'EMAIL_SERVICE_URL', '') or '').strip() or 'https://email.shellui.com'
     return raw.rstrip('/')
 
 

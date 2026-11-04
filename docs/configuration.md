@@ -55,7 +55,8 @@ identity-service sends magic links, invitations, and owner notifications. See [E
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `EMAIL_SERVICE_API_KEY` | empty | email-service key (`esk_`). Unset sends everything over SMTP |
-| `EMAIL_SERVICE_URL` | `https://email.shellui.com` | email-service origin. Local: `http://localhost:8003`, or `http://host.docker.internal:8003` from a container |
+| `EMAIL_SERVICE_URL` | `https://email.shellui.com` | Public email-service origin (MCP discovery). Local stack: `http://localhost:8004`, see [Local dev stack](local-dev-stack.md) |
+| `EMAIL_SERVICE_INTERNAL_URL` | empty | Server-to-server email-service origin. Unset uses `EMAIL_SERVICE_URL`. Local stack: `http://email:8000` |
 | `EMAIL_SERVICE_TIMEOUT_SECONDS` | `5` | Timeout for one HTTP attempt |
 | `EMAIL_SERVICE_SEND_ATTEMPTS` | `3` | Attempts for one direct send |
 | `EMAIL_SERVICE_RETRY_MAX_SLEEP_SECONDS` | `1` | Longest pause between direct send attempts |
@@ -208,7 +209,8 @@ Leave `SHELLUI_INSTANCE_ROLE` unset for a standalone deployment. `global` turns 
 | `OIDC_CODE_TTL_SECONDS` | `60` | Authorization code lifetime |
 | `OIDC_ID_TOKEN_TTL_SECONDS` | `300` | `id_token` lifetime |
 | `OIDC_BACKCHANNEL_TIMEOUT_SECONDS` | `3` | Back-channel logout POST timeout |
-| `GLOBAL_ISSUER_URL` | empty | Upstream issuer, relying party role |
+| `GLOBAL_ISSUER_URL` | empty | Upstream issuer, relying party role (browser redirects and `iss` validation) |
+| `GLOBAL_ISSUER_INTERNAL_URL` | empty | Base URL for server-side calls to the upstream token endpoint. Unset uses `GLOBAL_ISSUER_URL`. Local stack: `http://identity:8000` on a regional server |
 | `GLOBAL_JWKS` | empty | Pinned upstream JWKS JSON |
 | `GLOBAL_CLIENT_ID`, `GLOBAL_CLIENT_SECRET` | empty | Upstream client credentials |
 | `GLOBAL_REDIRECT_URI` | `{JWT_ISSUER}/oauth/upstream-callback` | Upstream redirect URI when the public URL differs |
@@ -219,8 +221,10 @@ Leave `SHELLUI_INSTANCE_ROLE` unset for a standalone deployment. `global` turns 
 | `PROVISIONING_ISSUER` | empty | Expected assertion `iss` (the dashboard) |
 | `PROVISIONING_AUDIENCE` | host of `JWT_ISSUER` | Expected assertion `aud` |
 | `PROVISIONING_DEFAULT_REDIRECTS` | empty | Origins added to each provisioned company's redirect allowlist |
-| `STORAGE_SERVICE_URL` | empty | storage-service origin, told to purge a deleted company. Unset: skipped with a warning. See [Company deletion](company-deletion.md) |
-| `HOSTING_SERVICE_URL` | empty | hosting-service origin, told to purge a deleted company. Unset: skipped with a warning |
+| `STORAGE_SERVICE_URL` | empty | Public storage-service origin (MCP `list_services`). Unset: skipped with a warning for deletion |
+| `STORAGE_SERVICE_INTERNAL_URL` | empty | storage-service origin for company-deletion HTTP. Unset uses `STORAGE_SERVICE_URL`. See [Company deletion](company-deletion.md) |
+| `HOSTING_SERVICE_URL` | empty | Public hosting-service origin (MCP `list_services`) |
+| `HOSTING_SERVICE_INTERNAL_URL` | empty | hosting-service origin for company-deletion HTTP. Unset uses `HOSTING_SERVICE_URL` |
 | `SAAS_SERVICE_URL` | empty | saas-service (dashboard) origin for MCP `list_services` |
 | `AI_SERVICE_URL` | empty | ai-service origin for MCP connector and `list_services` |
 | `AI_SERVICE_ISSUER` | `AI_SERVICE_URL` | Expected `iss` on ai-service downstream token delegation JWTs |
@@ -230,10 +234,12 @@ Leave `SHELLUI_INSTANCE_ROLE` unset for a standalone deployment. `global` turns 
 | `MCP_RATE_LIMIT_DOWNSTREAM_MINT` | `300` | Global per-minute cap on downstream access token mint requests |
 | `COMPANY_DELETION_TIMEOUT_SECONDS` | `10` | Timeout of each call to those services |
 | `DASHBOARD_WEBHOOK_URL` | empty | saas-service region webhook (`https://<dashboard>/api/v1/webhooks/<region>`) that receives `identity.company.deleted` |
+| `DASHBOARD_WEBHOOK_INTERNAL_URL` | empty | Server-to-server URL for that webhook POST. Unset uses `DASHBOARD_WEBHOOK_URL` |
 | `DASHBOARD_WEBHOOK_SECRET` | empty | Signing secret for that webhook. Same value as the region's webhook secret in saas-service |
 
 ## Related
 
+- [Local dev stack](local-dev-stack.md): sibling-repo compose, public vs internal URLs
 - [Run identity-service](getting-started.md): first start and production checklist
 - [Security hardening](security-hardening.md)
 - [Upgrade notes](upgrading.md)

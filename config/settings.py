@@ -31,6 +31,7 @@ from apps.federation.parsing import (
     region_startup_errors,
 )
 from config.allauth_provider_apps import ALLAUTH_SOCIALACCOUNT_PROVIDER_APPS
+from config.service_urls import internal_origin
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -238,10 +239,16 @@ ALLOWED_HOSTS = _env_csv('ALLOWED_HOSTS', ('localhost', '127.0.0.1'))
 _csrf_defaults = [
     'http://localhost:8000',
     'http://127.0.0.1:8000',
+    'http://localhost:8001',
+    'http://127.0.0.1:8001',
     'http://localhost:4000',
     'http://127.0.0.1:4000',
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
     'http://localhost:5174',
     'http://127.0.0.1:5174',
+    'http://localhost:5175',
+    'http://127.0.0.1:5175',
 ]
 if SHELLUI_INSTANCE_ROLE != 'region':
     _csrf_defaults.append('https://admin.shellui.com')
@@ -463,6 +470,8 @@ EMAIL_TIMEOUT = _env_positive_float('EMAIL_TIMEOUT', 10.0)
 EMAIL_SERVICE_URL = (
     os.getenv('EMAIL_SERVICE_URL', 'https://email.shellui.com').strip() or 'https://email.shellui.com'
 ).rstrip('/')
+EMAIL_SERVICE_INTERNAL_URL = os.getenv('EMAIL_SERVICE_INTERNAL_URL', '').strip()
+EMAIL_SERVICE_HTTP_URL = internal_origin(EMAIL_SERVICE_URL, EMAIL_SERVICE_INTERNAL_URL)
 EMAIL_SERVICE_API_KEY = os.getenv('EMAIL_SERVICE_API_KEY', '').strip()
 EMAIL_SERVICE_TIMEOUT_SECONDS = _env_float('EMAIL_SERVICE_TIMEOUT_SECONDS', 5.0)
 EMAIL_SERVICE_SEND_ATTEMPTS = _env_int('EMAIL_SERVICE_SEND_ATTEMPTS', 3)
@@ -482,7 +491,11 @@ MAGIC_LINK_EMAIL_DEFAULT_LANGUAGE = (
 # purge a deleted company at DELETION_PATH. Unset: that service is skipped with a warning.
 # Email uses EMAIL_SERVICE_URL above when EMAIL_SERVICE_API_KEY is set.
 STORAGE_SERVICE_URL = os.getenv('STORAGE_SERVICE_URL', '').strip()
+STORAGE_SERVICE_INTERNAL_URL = os.getenv('STORAGE_SERVICE_INTERNAL_URL', '').strip()
+STORAGE_SERVICE_HTTP_URL = internal_origin(STORAGE_SERVICE_URL, STORAGE_SERVICE_INTERNAL_URL)
 HOSTING_SERVICE_URL = os.getenv('HOSTING_SERVICE_URL', '').strip()
+HOSTING_SERVICE_INTERNAL_URL = os.getenv('HOSTING_SERVICE_INTERNAL_URL', '').strip()
+HOSTING_SERVICE_HTTP_URL = internal_origin(HOSTING_SERVICE_URL, HOSTING_SERVICE_INTERNAL_URL)
 SAAS_SERVICE_URL = os.getenv('SAAS_SERVICE_URL', '').strip()
 AI_SERVICE_URL = os.getenv('AI_SERVICE_URL', '').strip().rstrip('/')
 AI_SERVICE_ISSUER = (os.getenv('AI_SERVICE_ISSUER', '') or AI_SERVICE_URL).strip().rstrip('/')
@@ -492,6 +505,8 @@ AI_SERVICE_JWKS_TIMEOUT_SECONDS = _env_float('AI_SERVICE_JWKS_TIMEOUT_SECONDS', 
 COMPANY_DELETION_TIMEOUT_SECONDS = float(os.getenv('COMPANY_DELETION_TIMEOUT_SECONDS', '10') or '10')
 # saas-service region webhook (``/api/v1/webhooks/<region>``) and its secret, for identity.company.deleted.
 DASHBOARD_WEBHOOK_URL = os.getenv('DASHBOARD_WEBHOOK_URL', '').strip()
+DASHBOARD_WEBHOOK_INTERNAL_URL = os.getenv('DASHBOARD_WEBHOOK_INTERNAL_URL', '').strip()
+DASHBOARD_WEBHOOK_HTTP_URL = internal_origin(DASHBOARD_WEBHOOK_URL, DASHBOARD_WEBHOOK_INTERNAL_URL)
 DASHBOARD_WEBHOOK_SECRET = os.getenv('DASHBOARD_WEBHOOK_SECRET', '').strip()
 
 JWT_ACCESS_TOKEN_LIFETIME = _env_duration('JWT_ACCESS_TOKEN_LIFETIME', timedelta(minutes=5))
@@ -511,6 +526,8 @@ OIDC_BACKCHANNEL_TIMEOUT_SECONDS = _env_float('OIDC_BACKCHANNEL_TIMEOUT_SECONDS'
 
 # Relying party (role region): one upstream provider, pinned keys, not a per-company OAuth app.
 GLOBAL_ISSUER_URL = (os.getenv('GLOBAL_ISSUER_URL', '') or '').strip().rstrip('/')
+GLOBAL_ISSUER_INTERNAL_URL = (os.getenv('GLOBAL_ISSUER_INTERNAL_URL', '') or '').strip().rstrip('/')
+GLOBAL_OAUTH_BASE_URL = GLOBAL_ISSUER_INTERNAL_URL or GLOBAL_ISSUER_URL
 GLOBAL_JWKS = parse_jwks(os.getenv('GLOBAL_JWKS', ''))
 GLOBAL_CLIENT_ID = (os.getenv('GLOBAL_CLIENT_ID', '') or '').strip()
 GLOBAL_CLIENT_SECRET = os.getenv('GLOBAL_CLIENT_SECRET', '') or ''
@@ -609,8 +626,12 @@ CORS_ALLOW_ALL_ORIGINS = _env_bool('CORS_ALLOW_ALL_ORIGINS', True)
 CORS_ALLOWED_ORIGINS = [
     'http://localhost:4000',
     'http://127.0.0.1:4000',
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
     'http://localhost:5174',
     'http://127.0.0.1:5174',
+    'http://localhost:5175',
+    'http://127.0.0.1:5175',
 ]
 if SHELLUI_INSTANCE_ROLE != 'region':
     CORS_ALLOWED_ORIGINS.append('https://admin.shellui.com')
