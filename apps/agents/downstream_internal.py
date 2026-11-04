@@ -15,7 +15,7 @@ from shellui_django.mcp.delegation import (
 )
 from shellui_django.mcp.identity_jwks import IdentityJwksError
 from shellui_django.mcp.rate_limit import check_agent_rate_limit
-from shellui_django.mcp.resources import normalize_resource_indicator
+from apps.agents.mcp_resources import normalize_mcp_resource as normalize_resource_indicator
 
 from apps.agents.ai_service_config import (
     ai_service_delegation_enabled,

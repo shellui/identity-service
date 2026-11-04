@@ -47,6 +47,7 @@ class McpOAuthMetadataTests(TestCase):
     MCP_DYNAMIC_CLIENT_REGISTRATION=True,
     AUTH_RATE_LIMIT_ENABLED=False,
     OAUTH_ALLOW_LOOPBACK_REDIRECTS=True,
+    AI_SERVICE_URL='https://ai.test',
 )
 class McpOAuthFlowTests(TestCase):
     def setUp(self):
@@ -76,7 +77,7 @@ class McpOAuthFlowTests(TestCase):
                 'response_type': 'code',
                 'code_challenge': self.challenge,
                 'code_challenge_method': 'S256',
-                'resource': IDENTITY_MCP_RESOURCE,
+                'resource': f'https://ai.test/c/{self.company.id}/mcp',
             }
         )
         response = client.get(f'/oauth/mcp/authorize?{query}')

@@ -8,15 +8,38 @@ Shellui Identity is the OAuth authorization server for MCP clients. Each connect
 
 Identity exposes its **own** MCP tools at `POST /mcp` on the identity origin (for example `list_services`). Multi-service MCP clients connect through **ai-service**, which holds one OAuth session per agent and requests short-lived downstream access tokens from Identity when calling another service's `/mcp`. Identity never holds an ai-service secret; ai-service never holds Identity's signing key.
 
-## Connect a client (one URL and sign-in)
+## Connect a client (one URL per company)
 
-1. Point the MCP client at your identity origin (for example `https://auth.example.com`).
-2. The client loads OAuth authorization server metadata at `/.well-known/oauth-authorization-server` and protected resource metadata at `/.well-known/oauth-protected-resource` (resource `/mcp`).
-3. The client registers with **dynamic client registration** (`POST /oauth/mcp/register`) unless an operator disabled it (`MCP_DYNAMIC_CLIENT_REGISTRATION=false` or `Company.mcp_allow_dynamic_registration=false`).
-4. The user signs in and approves company, services, access level, and read level on the consent screen (`GET/POST /oauth/mcp/authorize` with PKCE S256 and RFC 8707 `resource=<service>/mcp`).
-5. The client exchanges the authorization code at `POST /oauth/mcp/token` with the same `resource`, then calls `POST /mcp` on that service with `Authorization: Bearer <access_token>`. Repeat for each service using a separate token per resource, or authorize `resource={AI_SERVICE_URL}/mcp` with `ai` in `services` to use the ai-service connector (one MCP URL, many services).
+Each company has its own MCP URL on ai-service: `{AI_SERVICE_URL}/c/<company_id>/mcp` (for example `https://ai.example.com/c/42/mcp`). The company comes from the URL, so the user never picks one and there is no default company. Plain `{AI_SERVICE_URL}/mcp` answers with an error that points to the per-company URL.
 
-Staff accounts (`is_staff`, `is_superuser`, and global staff) cannot authorize MCP agents.
+1. Add the per-company URL as a connector in ChatGPT, Claude, Grok, MCP Inspector, or another MCP client.
+2. The client reads protected resource metadata from ai-service (`/.well-known/oauth-protected-resource/c/<company_id>/mcp`), then authorization server metadata on identity (`/.well-known/oauth-authorization-server`).
+3. The client registers with **dynamic client registration** (`POST /oauth/mcp/register`) unless an operator disabled it (`MCP_DYNAMIC_CLIENT_REGISTRATION=false` or `Company.mcp_allow_dynamic_registration=false`). Registration is limited to `AUTH_RATE_LIMIT_MCP_REGISTER` per hour per IP.
+4. The browser opens `GET /oauth/mcp/authorize` with PKCE S256 and RFC 8707 `resource={AI_SERVICE_URL}/c/<company_id>/mcp`. A signed-out user lands on identity's own sign-in page (`/oauth/mcp/signin`) and asks for an email sign-in link. That page never shows the company name or its sign-in methods, and it looks the same for every company id, known or not, so nobody can map ids to companies. The link is sent only when the company exists and turned the email link on. Staff accounts can't use the email link and can't authorize MCP clients. The page is limited to `AUTH_RATE_LIMIT_MCP_SIGNIN` requests per 5 minutes per IP.
+5. After sign-in, identity checks that the user is a member of the company, then shows the consent page with the company name. An unknown company answers 404 only at this point. The user picks services, access level, and read level, then clicks **Approve**. Identity never approves on its own.
+6. The client exchanges the code at `POST /oauth/mcp/token` with the same `resource`. The access token's `aud` is the per-company URL and its `company_id` is that company. Refresh tokens stay bound to the same resource.
+
+### What the sign-in and consent pages show
+
+Both pages exist to stop phishing, so they show before anything else:
+
+- why the user is here: "`<client>` wants to access your company through the Shellui MCP connector" before sign-in, and with the company name on consent;
+- the client name, marked as chosen by the client and not verified;
+- the full host of the return address, before sign-in;
+- a warning not to continue if the user didn't start the connection.
+
+### Rules identity enforces
+
+- Redirect URIs use https, or http on a loopback host (`127.0.0.1`, `localhost`, `::1`). Every other scheme (`javascript:`, `data:`, custom app schemes) is rejected, and so are fragments and user info. Authorize compares the value to the registered list exactly, with no wildcards.
+- An unknown client, a redirect URI that doesn't match, or an invalid resource gets an error page on identity. Identity never redirects in that case.
+- An unknown company looks like a known one until sign-in, then answers 404.
+- The only saved return value is a relative `/oauth/mcp/authorize?...` path on identity.
+- Every page sends `X-Frame-Options: DENY` and `Content-Security-Policy: frame-ancestors 'none'`. Forms use CSRF tokens.
+- Each approval writes a `oauth.authorize.approved` row to the agent call log, with the client, return host, resource, and chosen access. It holds no code or token.
+
+Company ids in the URL are integers. Companies have no public non-sequential id yet (the slug comes from the name), so moving the URL to one is left for later.
+
+Downstream services keep their own `{origin}/mcp` resource. ai-service reaches them with short-lived downstream tokens, so clients only need the per-company URL.
 
 ## Global agent token exchange (region role)
 
