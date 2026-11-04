@@ -187,6 +187,7 @@ See [Security hardening](security-hardening.md) for the rate limit defaults, pro
 | --- | --- | --- |
 | `DEBUG` | `false` | Optional. Unset or empty means `false`, so production does not need to set it. Set `true` only for local development (`.env.example` and `docker-compose.yml` do). Required in `.env.example` for local runs |
 | `SETUP_TOKEN` | empty | One-time token for the web form that creates the first superuser with `DEBUG=false`. Prefer `createsuperuser` |
+| `IDENTITY_DEV_SEED` | `false` | Local dev only. With `DEBUG=true`, the dev entrypoint runs `manage.py seed_dev` (company 1, `admin` / `admin`, `dev@localhost`). Never set in production |
 | `IDENTITY_SERVICE_PORT` | `8000` | Host port in `docker-compose.yml` only |
 | `LOG_LEVEL` | `INFO`, `DEBUG` with `DEBUG=true` | App log level on stdout. Django errors and warnings (500 errors, `DisallowedHost`, CSRF failures) are always printed |
 | `SLOW_REQUEST_THRESHOLD_SECONDS` | `2` | Log a warning for slower requests. `0` turns it off |

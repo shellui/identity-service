@@ -70,3 +70,7 @@ With `DEBUG=true`, `REDIS_URL` is recommended (rate limits and OAuth state) but 
 ## Standalone compose in this repo
 
 `docker-compose.yml` at the repo root builds the **production** image and is aimed at a single-service try-out. Prefer the shellui dev stack when working across services. See [Configuration](configuration.md) for every variable.
+
+## Dev seed
+
+With `IDENTITY_DEV_SEED=true` (set by the shellui dev compose file), the dev entrypoint runs `python manage.py seed_dev` after migrations. It creates company 1 (Shellui Dev, magic link on, local front-end origins allowed), a superuser `admin` / `admin` and a non-staff member `dev@localhost` for magic link. It refuses to run unless `DEBUG=true` too, and it never overwrites existing rows. Local only: never set `IDENTITY_DEV_SEED` in production.
