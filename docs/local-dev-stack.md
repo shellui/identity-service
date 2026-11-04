@@ -10,15 +10,16 @@ Start the full stack from shellui:
 
 ```bash
 cd shellui/dev
-cp .env.local.example .env.local   # once
-docker compose --env-file .env.local up
+./start.sh
 ```
+
+Clone layout, URLs, common commands and troubleshooting are in the [Shellui dev stack guide](https://github.com/shellui/shellui/blob/develop/docs/dev-stack.md). This page only covers what is specific to this service.
 
 Start only identity (Postgres and Redis must already be running on the compose network):
 
 ```bash
 cd shellui/dev
-docker compose --env-file .env.local up identity
+./start.sh identity
 ```
 
 The **dev** image target installs Python dependencies under `/opt/venv` (outside `/app`), runs migrations, then `python manage.py runserver 0.0.0.0:8000` with autoreload. Set `DEBUG=true`. The production Dockerfile stage is unchanged and remains the default for publish and CI.
