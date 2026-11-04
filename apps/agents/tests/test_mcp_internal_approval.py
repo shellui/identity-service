@@ -5,6 +5,7 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 from django.utils import timezone
 
+from apps.agents.tests.mcp_test_settings import TEST_CALLER_SIGNING, TRUSTED_TEST_CALLER_SETTINGS
 from apps.companies.access import set_company_access
 from apps.companies.models import Company
 from apps.agents.models import Agent, McpApprovalRequest, McpOAuthClient
@@ -17,6 +18,7 @@ IDENTITY_ORIGIN = 'https://identity.test'
 
 def _approval_assertion(agent, *, service='storage', action='write_tool', args_hash='abc123'):
     return build_mcp_approval_assertion(
+        **TEST_CALLER_SIGNING,
         company_id=agent.company_id,
         agent_id=str(agent.id),
         service=service,
@@ -27,6 +29,7 @@ def _approval_assertion(agent, *, service='storage', action='write_tool', args_h
 
 
 @override_settings(
+    **TRUSTED_TEST_CALLER_SETTINGS,
     JWT_ISSUER=IDENTITY_ORIGIN,
     JWT_AUDIENCE='shellui-test',
     AUTH_RATE_LIMIT_ENABLED=False,
@@ -127,8 +130,9 @@ class McpInternalApprovalStateTests(TestCase):
             arguments_hash=self.args_hash,
             expires_at=timezone.now() + timedelta(minutes=10),
         )
+        # The storage key cannot speak for hosting, so the caller check refuses it first.
         response = self._state(service='hosting')
-        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.status_code, 403)
 
     def test_state_wrong_agent_id_in_assertion(self):
         other_client = McpOAuthClient.objects.create(
@@ -151,6 +155,7 @@ class McpInternalApprovalStateTests(TestCase):
             expires_at=timezone.now() + timedelta(minutes=10),
         )
         assertion = build_mcp_approval_assertion(
+            **TEST_CALLER_SIGNING,
             company_id=self.company.id,
             agent_id=str(other_agent.id),
             service='storage',
@@ -168,6 +173,7 @@ class McpInternalApprovalStateTests(TestCase):
 
 
 @override_settings(
+    **TRUSTED_TEST_CALLER_SETTINGS,
     JWT_ISSUER=IDENTITY_ORIGIN,
     JWT_AUDIENCE='shellui-test',
     AUTH_RATE_LIMIT_ENABLED=False,
@@ -191,6 +197,7 @@ class McpInternalApprovalConsumeTests(TestCase):
     def _consume(self, row_id, *, args_hash=None):
         args_hash = args_hash or self.args_hash
         assertion = build_mcp_approval_assertion(
+            **TEST_CALLER_SIGNING,
             company_id=self.agent.company_id,
             agent_id=str(self.agent.id),
             service='storage',
@@ -257,6 +264,7 @@ class McpInternalApprovalConsumeTests(TestCase):
             expires_at=timezone.now() + timedelta(minutes=10),
         )
         assertion = build_mcp_approval_assertion(
+            **TEST_CALLER_SIGNING,
             company_id=self.company.id,
             agent_id=str(other_agent.id),
             service='storage',

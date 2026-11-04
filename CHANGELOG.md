@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 - Add a Dockerfile `dev` target and [local dev stack](docs/local-dev-stack.md) docs for shellui/shellui compose (env-driven settings, optional `*_INTERNAL_URL` for server-to-server calls).
 - Use the shared shellui-django package for MCP instead of a vendored copy.
 - Bump `shellui-django[mcp]` to 0.3.0 and use `shellui_django.mcp.delegation` for ai-service downstream token requests.
+- Bump `shellui-django[mcp]` to 0.4.0 and verify internal MCP assertions with RS256 against a registry of trusted callers, one key per service (`*_SERVICE_ISSUER`, `*_SERVICE_JWKS`, `*_SERVICE_JWKS_URL`).
 
 ### ✨ Feature
 

@@ -92,6 +92,20 @@ When a write needs human confirmation, the service creates an approval through I
 
 Storage, hosting, and email must use this contract exactly (assertion fields on state and consume, `approval_id` in the consume body).
 
+### Trusted callers for internal assertions
+
+Every `/api/v1/mcp/internal/mcp-*` assertion is RS256, signed by the calling service with its own private key (`shellui_django` 0.4.0+). HS256 and `alg: none` are refused. Identity keeps a registry of trusted callers (`apps/agents/internal_callers.py`) and verifies each assertion with the public key of the caller whose issuer matches `iss`:
+
+| Caller | Issuer setting | Public key |
+|--------|----------------|------------|
+| ai-service | `AI_SERVICE_ISSUER` | `AI_SERVICE_JWKS` or `AI_SERVICE_JWKS_URL` |
+| storage-service | `STORAGE_SERVICE_ISSUER` | `STORAGE_SERVICE_JWKS` or `STORAGE_SERVICE_JWKS_URL` |
+| hosting-service | `HOSTING_SERVICE_ISSUER` | `HOSTING_SERVICE_JWKS` or `HOSTING_SERVICE_JWKS_URL` |
+| email-service | `EMAIL_SERVICE_ISSUER` | `EMAIL_SERVICE_JWKS` or `EMAIL_SERVICE_JWKS_URL` |
+| dashboard (saas-service) | `PROVISIONING_ISSUER` | `PROVISIONING_PUBLIC_KEY` |
+
+A caller with no issuer set is not trusted. Unknown issuers and wrong keys get `401`. Each `jti` is accepted once. Storage, hosting, and email may only create or read approvals for their own `service`, otherwise `403`.
+
 Company owners approve or reject in Shellui admin or via human user tokens only:
 
 - `GET /api/v1/mcp/approvals` (pending rows include `service`, `action`, `target`, and `arguments_redacted`; secrets stay masked)
