@@ -1,8 +1,21 @@
 from django.urls import path
 
-from apps.agents import admin_views, downstream_internal, internal_views
+from apps.agents import admin_views, downstream_internal, internal_views, personal_views
 
 urlpatterns = [
+    path('personal/status', personal_views.PersonalMcpStatusView.as_view(), name='mcp-personal-status'),
+    path('personal/agents', personal_views.PersonalAgentListView.as_view(), name='mcp-personal-agents'),
+    path('personal/agents/create', personal_views.PersonalAgentTokenCreateView.as_view(), name='mcp-personal-agents-create'),
+    path(
+        'personal/agents/<uuid:agent_id>/revoke',
+        personal_views.PersonalAgentRevokeView.as_view(),
+        name='mcp-personal-agent-revoke',
+    ),
+    path(
+        'personal/agents/<uuid:agent_id>/activity',
+        personal_views.PersonalAgentActivityView.as_view(),
+        name='mcp-personal-agent-activity',
+    ),
     path('agents', admin_views.McpAgentListView.as_view(), name='mcp-agents-list'),
     path('agents/<uuid:agent_id>/pause', admin_views.McpAgentPauseView.as_view(), name='mcp-agent-pause'),
     path('agents/<uuid:agent_id>/revoke', admin_views.McpAgentRevokeView.as_view(), name='mcp-agent-revoke'),
