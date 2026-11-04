@@ -290,6 +290,15 @@ class CompanyOAuthClient(models.Model):
         related_name='company_oauth_clients',
     )
     dedupe_key = models.CharField(max_length=512, null=True, blank=True)
+    sso_verified_domains = models.JSONField(
+        default=list,
+        blank=True,
+        help_text=(
+            'Lowercase domains this IdP serves for MCP home-realm sign-in (Django admin only). '
+            'Must be listed on the company verified email domains. Empty means any verified domain '
+            'when this is the only SSO/OAuth client for the company.'
+        ),
+    )
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
