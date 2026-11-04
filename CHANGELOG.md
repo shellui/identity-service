@@ -37,6 +37,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 - MCP sign-in and consent pages use `Referrer-Policy: same-origin` instead of `no-referrer`, so same-origin form POSTs send a valid `Origin` header and Django CSRF no longer rejects MCP Inspector sign-in with `Origin: null`.
 - `POST /oauth/mcp/token` and `POST /oauth/mcp/register` accept `application/x-www-form-urlencoded` bodies (RFC 6749) as well as JSON, so MCP Inspector, ChatGPT, and Claude can exchange authorization codes after consent.
 - **MCP email-first sign-in:** the sign-in page routes verified email domains to the company SSO/OAuth IdP (home realm). Operators set company `verified_email_domains` and optional per-IdP `sso_verified_domains` on `CompanyOAuthClient` in Django admin. Other addresses keep the same generic magic-link response (no account enumeration).
+- **MCP SaaS opt-in at consent:** when ai-service forwards SaaS tools it adds `saas_offered=1` on `/oauth/mcp/authorize`. Consent shows an optional SaaS checkbox; when checked and agent token exchange is enabled, the user completes interactive global Shellui sign-in at `/oauth/mcp/saas-return` before the regional authorization code is issued.
 
 <!---
 ## [Unreleased] - yyyy-mm-dd
