@@ -113,6 +113,7 @@ OPTIONAL = (
     Var('AUTH_RATE_LIMIT_ENABLED', 'true', 'Rate limits (requests per window)'),
     Var('AUTH_RATE_LIMIT_OAUTH', '30'),
     Var('AUTH_RATE_LIMIT_MCP_REGISTER', '10'),
+    Var('AUTH_RATE_LIMIT_MCP_SIGNIN', '30'),
     Var('AUTH_RATE_LIMIT_TOKEN_REFRESH', '60'),
     Var('AUTH_RATE_LIMIT_SETTINGS', '30'),
     Var('AUTH_RATE_LIMIT_ADMIN_LOGIN', '10'),

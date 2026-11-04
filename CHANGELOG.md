@@ -23,7 +23,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 - SaaS and AI in agent service consent; `POST /api/v1/mcp/internal/mcp-downstream-access-token` mints downstream agent JWTs for ai-service (RS256 delegation, single-use `jti`, rate limits).
 - **Agent token exchange:** Regional `POST /oauth/mcp/token` (RFC 8693) exchanges a global MCP agent JWT for a company-scoped regional agent token; provisioning `POST /api/v1/provisioning/global-agents/revoke` revokes linked regional agents.
 - **Per-company MCP URL:** `/oauth/mcp/authorize` takes the company from `resource={AI_SERVICE_URL}/c/<company_id>/mcp`. Agent tokens are bound to that company, and authorize, token, refresh, and exchange refuse a resource from another company.
-- **MCP sign-in page:** identity renders its own sign-in page at `/oauth/mcp/signin` with the company's email link and OAuth/SSO providers, then the consent page. Both show the client, the company, the return host, and a phishing warning (EN/FR).
+- **MCP sign-in page:** identity renders its own sign-in page at `/oauth/mcp/signin` (email sign-in link), then the consent page. Before sign-in the page shows the client and return host but never the company, and looks the same for unknown company ids (rate limited per IP with `AUTH_RATE_LIMIT_MCP_SIGNIN`). Consent shows the company to signed-in members only (EN/FR).
 - MCP consent needs an explicit Approve or Deny click and logs each approval to the agent call log.
 
 ### 🗑 Removed

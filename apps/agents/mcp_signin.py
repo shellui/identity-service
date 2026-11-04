@@ -48,7 +48,8 @@ class AuthorizeRequest:
     redirect_host: str
     resource: str
     service_id: str
-    company: Company
+    company: Company | None
+    company_id: int
     state: str
     challenge: str
 
@@ -129,9 +130,9 @@ def parse_authorize_request(params) -> AuthorizeRequest:
     company_id = resource_company_id(resource)
     if company_id is None:
         raise AuthorizeError('company_required')
-    company = Company.objects.filter(pk=company_id).first()
-    if company is None or getattr(company, 'deletion_requested_at', None) is not None:
-        raise AuthorizeError('unknown_company', status=404)
+    # An unknown company is not an error here. Before sign-in it must look exactly like a
+    # known one (no id-to-company oracle); authorize answers 404 only after sign-in.
+    company = Company.objects.filter(pk=company_id, deletion_requested_at__isnull=True).first()
     try:
         challenge = parse_client_pkce(
             _first(params, 'code_challenge') or None,
@@ -147,6 +148,7 @@ def parse_authorize_request(params) -> AuthorizeRequest:
         resource=resource,
         service_id=service_id,
         company=company,
+        company_id=company_id,
         state=_first(params, 'state'),
         challenge=challenge,
     )
@@ -223,7 +225,7 @@ def _saved_authorize(request: HttpRequest) -> tuple[str | None, AuthorizeRequest
         parsed = parse_authorize_request(parse_qs(urlsplit(path).query))
     except AuthorizeError:
         return None, None
-    if parsed.company.id != request.session.get(COMPANY_SESSION_KEY):
+    if parsed.company_id != request.session.get(COMPANY_SESSION_KEY):
         return None, None
     return path, parsed
 
@@ -234,7 +236,7 @@ def finish_mcp_signin(request: HttpRequest, *, user, company: Company) -> HttpRe
     if not path or parsed is None:
         return render_message(request, copy_for(page_language(request, user))['session_lost'], 400, user=user)
     copy = copy_for(page_language(request, user))
-    if parsed.company.id != company.id:
+    if parsed.company is None or parsed.company.id != company.id:
         return render_message(request, copy['session_lost'], 400, user=user)
     if is_mcp_oauth_refused_user(user):
         return render_message(request, copy['staff_refused'], 403, user=user)
@@ -244,16 +246,6 @@ def finish_mcp_signin(request: HttpRequest, *, user, company: Company) -> HttpRe
     # login() rotates the session; store the path again on the new session.
     remember_authorize(request, path, company.id)
     return HttpResponseRedirect(path)
-
-
-def _provider_choices(request: HttpRequest, company: Company) -> list[dict]:
-    from apps.authapi.views import _oauth_method_choices_for_company
-
-    try:
-        return _oauth_method_choices_for_company(request, company, signin_complete_url(request))
-    except Exception:  # noqa: BLE001
-        logger.warning('mcp_signin_provider_choices_failed company_id=%s', company.pk)
-        return []
 
 
 def _send_magic_link(request: HttpRequest, *, company: Company, email: str, lang: str) -> HttpResponse | None:
@@ -301,7 +293,8 @@ def mcp_signin(request: HttpRequest) -> HttpResponse:
     from apps.authapi.magic_link import magic_link_enabled_for_company
     from apps.authapi.throttling import check_rate_limit
 
-    limited = plain_response(check_rate_limit(request, scope='oauth'))
+    # Per IP, before anything else.
+    limited = plain_response(check_rate_limit(request, scope='mcp_signin'))
     if limited:
         return limited
     path, parsed = _saved_authorize(request)
@@ -309,24 +302,28 @@ def mcp_signin(request: HttpRequest) -> HttpResponse:
         return render_error(request, 'invalid_request', 400)
     if request.user.is_authenticated and not is_mcp_oauth_refused_user(request.user):
         return HttpResponseRedirect(path)
+    # Nothing on this page depends on the company: no name, no configured methods. Known and
+    # unknown company ids give the same page, status, and amount of work.
     company = parsed.company
     lang = page_language(request)
     copy = copy_for(lang)
-    magic_enabled = bool(magic_link_enabled_for_company(company))
     sent = False
     if request.method == 'POST':
-        if not magic_enabled:
-            return render_error(request, 'invalid_request', 400)
         email = str(request.POST.get('email') or '').strip().lower()
         if not email or '@' not in email or len(email) > 254:
             return render_error(request, 'invalid_request', 400)
-        limited = plain_response(_send_magic_link(request, company=company, email=email, lang=lang))
+        if company is not None and magic_link_enabled_for_company(company):
+            limited = plain_response(_send_magic_link(request, company=company, email=email, lang=lang))
+        else:
+            from apps.authapi import magic_link_views as mlv
+
+            # Same rate-limit buckets as a real request, so the answer looks the same.
+            limited = plain_response(
+                mlv._magic_link_rate_limits(request, company_id=parsed.company_id, email=email)
+            )
         if limited is not None:
             return limited
         sent = True
-    providers = _provider_choices(request, company)
-    for item in providers:
-        item['button'] = copy['provider_button'].format(provider=item.get('label') or item.get('provider'))
     client_name = parsed.client.client_name or parsed.client.client_id
     response = render(
         request,
@@ -334,16 +331,9 @@ def mcp_signin(request: HttpRequest) -> HttpResponse:
         {
             'page_language': lang,
             'copy': copy,
-            'why': copy['why'].format(client=client_name, company=company.name),
-            'methods_title': copy['methods_title'].format(company=company.name),
-            'no_methods': copy['no_methods'].format(company=company.name),
-            'email_sent': copy['email_sent'].format(company=company.name),
+            'why': copy['why_signin'].format(client=client_name),
             'client_name': client_name,
-            'company_name': company.name,
             'redirect_host': parsed.redirect_host,
-            'redirect_uri': parsed.redirect_uri,
-            'magic_enabled': magic_enabled,
-            'providers': providers,
             'sent': sent,
         },
     )

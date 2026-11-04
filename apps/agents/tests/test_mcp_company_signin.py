@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from urllib.parse import parse_qs, urlencode, urlsplit
 
 from django.contrib.auth import get_user_model
@@ -139,6 +140,9 @@ class CompanySigninFlowTests(TestCase):
         )
         self._assert_error_page(self.client.get(self._query(resource='https://ai.test/mcp')), 'company_required')
         self._assert_error_page(self.client.get(self._query(resource='')), 'company_required')
+
+    def test_unknown_company_is_404_only_after_signin(self):
+        self.client.force_login(self.user)
         self._assert_error_page(
             self.client.get(self._query(resource='https://ai.test/c/999999/mcp')), 'unknown_company', 404
         )
@@ -152,7 +156,8 @@ class CompanySigninFlowTests(TestCase):
         self.assertEqual(page['X-Frame-Options'], 'DENY')
         self.assertIn("frame-ancestors 'none'", page['Content-Security-Policy'])
         body = page.content.decode()
-        self.assertIn('Totally Claude wants to access Acme through the Shellui MCP connector.', body)
+        self.assertIn('Totally Claude wants to access your company through the Shellui MCP connector.', body)
+        self.assertNotIn('Acme', body)
         self.assertIn('The client chose this name itself.', body)
         self.assertIn('chatgpt.com', body)
         self.assertIn("If you didn&#x27;t start this connection yourself", body)
@@ -163,7 +168,8 @@ class CompanySigninFlowTests(TestCase):
     def test_signin_page_in_french(self):
         self.client.get(self._query())
         page = self.client.get('/oauth/mcp/signin', HTTP_ACCEPT_LANGUAGE='fr')
-        self.assertContains(page, 'veut accéder à Acme via le connecteur MCP Shellui')
+        self.assertContains(page, 'veut accéder à votre entreprise via le connecteur MCP Shellui')
+        self.assertNotContains(page, 'Acme')
 
     def test_signin_page_without_saved_request_is_an_error(self):
         self._assert_error_page(self.client.get('/oauth/mcp/signin'), 'invalid_request')
@@ -174,13 +180,48 @@ class CompanySigninFlowTests(TestCase):
         response = csrf_client.post('/oauth/mcp/signin', {'email': 'ella@acme.com'})
         self.assertEqual(response.status_code, 403)
 
-    def test_magic_link_hidden_when_company_disabled(self):
+    def test_magic_link_disabled_company_looks_the_same_and_sends_nothing(self):
+        from unittest import mock
+
         self.company.enable_magic_link = False
         self.company.save(update_fields=['enable_magic_link'])
         self.client.get(self._query())
         page = self.client.get('/oauth/mcp/signin')
-        self.assertNotContains(page, 'name="email"')
-        self.assertEqual(self.client.post('/oauth/mcp/signin', {'email': 'ella@acme.com'}).status_code, 400)
+        self.assertContains(page, 'name="email"')
+        with mock.patch('apps.authapi.magic_link_views.deliver_magic_link_email') as deliver:
+            response = self.client.post('/oauth/mcp/signin', {'email': 'ella@acme.com'})
+        self.assertEqual(response.status_code, 200)
+        deliver.assert_not_called()
+
+    def _signin_pages(self, resource):
+        from unittest import mock
+
+        client = Client()
+        first = client.get(self._query(resource=resource))
+        page = client.get('/oauth/mcp/signin')
+        with mock.patch('apps.authapi.magic_link_views.deliver_magic_link_email'):
+            posted = client.post('/oauth/mcp/signin', {'email': 'someone@example.com'})
+        strip = lambda r: re.sub(r'name="csrfmiddlewaretoken" value="[^"]+"', '', r.content.decode())  # noqa: E731
+        return first, page, posted, strip
+
+    def test_unknown_and_known_company_identical_before_signin(self):
+        known = self._signin_pages(self.resource)
+        unknown = self._signin_pages('https://ai.test/c/999999/mcp')
+        strip = known[3]
+        for a, b in zip(known[:3], unknown[:3]):
+            self.assertEqual(a.status_code, b.status_code)
+            self.assertEqual(a.get('Location'), b.get('Location'))
+            self.assertEqual(strip(a), strip(b))
+        self.assertEqual(known[0].status_code, 302)
+        self.assertEqual(known[1].status_code, 200)
+        for response in known[:3]:
+            self.assertNotIn('Acme', response.content.decode())
+
+    def test_signin_page_rate_limited_per_ip(self):
+        self.client.get(self._query())
+        with override_settings(AUTH_RATE_LIMIT_ENABLED=True):
+            codes = [self.client.get('/oauth/mcp/signin').status_code for _ in range(32)]
+        self.assertIn(429, codes)
 
     def test_magic_link_request_and_verify_signs_in_and_returns_to_consent(self):
         from unittest import mock

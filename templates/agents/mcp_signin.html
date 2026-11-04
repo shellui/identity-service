@@ -6,28 +6,15 @@
     <dl class="meta">
       <dt>{{ copy.client_label }}</dt>
       <dd><strong translate="no">{{ client_name }}</strong><br><span class="note">{{ copy.client_note }}</span></dd>
-      <dt>{{ copy.company_label }}</dt>
-      <dd><strong translate="no">{{ company_name }}</strong></dd>
       <dt>{{ copy.redirect_label }}</dt>
       <dd><span class="host" translate="no" data-testid="redirect-host">{{ redirect_host }}</span><span class="note">{{ copy.redirect_note }}</span></dd>
     </dl>
     <p class="warning" role="alert">{{ copy.warning }}</p>
-    <h2>{{ methods_title }}</h2>
-    {% if sent %}<p class="subtitle" role="status">{{ email_sent }}</p>{% endif %}
-    <div class="stack">
-    {% if magic_enabled %}
-      <form method="post" action="">
-        {% csrf_token %}
-        <label for="email">{{ copy.email_label }}</label>
-        <input type="email" id="email" name="email" autocomplete="email" required maxlength="254">
-        <div class="actions"><button type="submit" class="button">{{ copy.email_button }}</button></div>
-      </form>
-    {% endif %}
-    {% for method in providers %}
-      <a class="button" href="{{ method.url }}" rel="noreferrer">{{ method.button }}</a>
-    {% endfor %}
-    {% if not magic_enabled and not providers %}
-      <p class="subtitle">{{ no_methods }}</p>
-    {% endif %}
-    </div>
+    {% if sent %}<p class="subtitle" role="status">{{ copy.email_sent_generic }}</p>{% endif %}
+    <form method="post" action="">
+      {% csrf_token %}
+      <label for="email">{{ copy.email_label }}</label>
+      <input type="email" id="email" name="email" autocomplete="email" required maxlength="254">
+      <div class="actions"><button type="submit" class="button">{{ copy.email_button }}</button></div>
+    </form>
 {% endblock %}

@@ -164,6 +164,7 @@ The entrypoint sets `--worker-tmp-dir /dev/shm` (the heartbeat file lives in mem
 | `AUTH_RATE_LIMIT_ENABLED` | `true` | Turn rate limits off, for debugging only |
 | `AUTH_RATE_LIMIT_OAUTH` | `30` | OAuth requests per minute |
 | `AUTH_RATE_LIMIT_MCP_REGISTER` | `10` | MCP dynamic client registrations per hour, per client IP |
+| `AUTH_RATE_LIMIT_MCP_SIGNIN` | `30` | MCP sign-in page requests per 5 minutes, per client IP |
 | `AUTH_RATE_LIMIT_TOKEN_REFRESH` | `60` | Token refreshes per minute |
 | `AUTH_RATE_LIMIT_SETTINGS` | `30` | `GET /api/v1/settings` per minute |
 | `AUTH_RATE_LIMIT_MAGIC_LINK` | `10` | Magic link requests per minute |

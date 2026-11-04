@@ -162,20 +162,22 @@ def mcp_authorize(request):
         parsed = parse_authorize_request(params)
     except AuthorizeError as exc:
         return render_error(request, exc.code, exc.status)
-    if not _mcp_company_registration_allowed(parsed.company):
-        return render_error(request, 'registration_disabled', 403)
     if not request.user.is_authenticated:
         if request.method != 'GET':
             return render_error(request, 'invalid_request', 400)
         path = safe_authorize_path(request.get_full_path())
         if not path:
             return render_error(request, 'invalid_request', 400)
-        return signin_redirect(request, path, parsed.company.id)
+        return signin_redirect(request, path, parsed.company_id)
     user = request.user
     lang = page_language(request, user)
     copy = copy_for(lang)
     if is_mcp_oauth_refused_user(user):
         return render_message(request, copy['staff_refused'], 403, user=user)
+    if parsed.company is None:
+        return render_error(request, 'unknown_company', 404, user=user)
+    if not _mcp_company_registration_allowed(parsed.company):
+        return render_error(request, 'registration_disabled', 403, user=user)
     if not is_company_member(parsed.company, user):
         return render_message(request, copy['not_member'].format(company=parsed.company.name), 403, user=user)
     if request.method == 'POST':
