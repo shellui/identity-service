@@ -192,6 +192,31 @@ class McpApprovalRequest(models.Model):
         related_name='mcp_approval_decisions',
     )
     executed_at = models.DateTimeField(null=True, blank=True)
+    is_destructive = models.BooleanField(default=False)
+    short_action_summary = models.CharField(max_length=500, blank=True)
+    expired_event_logged = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+
+class McpApprovalSessionGrant(models.Model):
+    """Non-destructive write bypass for one MCP connection until TTL, revoke, or disconnect."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    agent = models.ForeignKey(Agent, on_delete=models.CASCADE, related_name='approval_session_grants')
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='mcp_approval_session_grants')
+    connection_id = models.CharField(max_length=128, blank=True, db_index=True)
+    granted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='mcp_approval_session_grants',
+    )
+    expires_at = models.DateTimeField()
+    revoked_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

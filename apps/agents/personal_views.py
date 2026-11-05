@@ -21,6 +21,7 @@ from apps.agents.personal_agent_tokens import (
     parse_required_expires_at,
     personal_agent_max_lifetime,
 )
+from apps.agents.approval_session import revoke_session_grants_for_agent
 from apps.agents.tokens import revoke_all_agent_refresh_sessions
 from apps.authapi.openapi_admin import ADMIN_API_ERRORS, admin_openapi_fields
 from apps.authapi.serializers import ShellUIOpenAPISerializer
@@ -220,6 +221,7 @@ class PersonalAgentRevokeView(APIView):
                 cred.revoked_at = now
                 cred.save(update_fields=['revoked_at'])
             revoke_all_agent_refresh_sessions(agent)
+            revoke_session_grants_for_agent(agent)
         return Response({'agent': _agent_summary(agent)})
 
 

@@ -24,10 +24,23 @@ from shellui_django.mcp.masking import redact_mapping
 
 from apps.actions.event_log import record_event
 from apps.actions.registry import get_event_type
+from apps.agents.approval_audit import record_approval_expired_once
+from apps.agents.approval_decisions import (
+    ApprovalDecisionError,
+    client_allow,
+    client_allow_session,
+    client_deny,
+)
 from apps.agents.approval_internal import (
     approval_binding_from_claims,
     lookup_approval_row,
     public_approval_status,
+)
+from apps.agents.approval_links import sign_approval_fallback_token
+from apps.agents.approval_session import (
+    active_session_grant,
+    revoke_session_grant,
+    session_allows_non_destructive_write,
 )
 from apps.agents.internal_callers import verify_caller_assertion
 from apps.agents.models import Agent, McpApprovalRequest, McpCallLog
@@ -140,6 +153,8 @@ class McpInternalApprovalCreateView(APIView):
         args = body.get('arguments') if isinstance(body.get('arguments'), dict) else {}
         redacted = redact_mapping(args, read_sensitive=False)
         target = _approval_target_from_body(body)
+        is_destructive = bool(body.get('is_destructive'))
+        short_action_summary = str(body.get('short_action_summary') or '')[:500]
         expires_at = timezone.now() + timedelta(minutes=10)
         row, created = McpApprovalRequest.objects.get_or_create(
             agent=agent,
@@ -152,14 +167,36 @@ class McpInternalApprovalCreateView(APIView):
                 'target': target,
                 'arguments_redacted': redacted,
                 'expires_at': expires_at,
+                'is_destructive': is_destructive,
+                'short_action_summary': short_action_summary,
             },
         )
         if not created and row.expires_at <= timezone.now():
             row.expires_at = expires_at
             row.arguments_redacted = redacted
             row.target = target or row.target
-            row.save(update_fields=['expires_at', 'arguments_redacted', 'target'])
-        return Response({'id': str(row.id), 'status': row.status, 'expires_at': row.expires_at.isoformat()})
+            row.is_destructive = is_destructive
+            row.short_action_summary = short_action_summary or row.short_action_summary
+            row.save(
+                update_fields=[
+                    'expires_at',
+                    'arguments_redacted',
+                    'target',
+                    'is_destructive',
+                    'short_action_summary',
+                ]
+            )
+        token = sign_approval_fallback_token(str(row.id))
+        fallback_path = f'/oauth/mcp/approval/{row.id}?token={token}'
+        return Response(
+            {
+                'id': str(row.id),
+                'status': row.status,
+                'expires_at': row.expires_at.isoformat(),
+                'is_destructive': row.is_destructive,
+                'fallback_path': fallback_path,
+            }
+        )
 
 
 class McpInternalApprovalStateView(APIView):
@@ -177,10 +214,105 @@ class McpInternalApprovalStateView(APIView):
             return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
         now = timezone.now()
         public_status = public_approval_status(row, now=now)
+        if public_status == 'expired':
+            record_approval_expired_once(row)
         payload = {'status': public_status}
         if public_status == 'approved':
             payload['id'] = str(row.id)
         return Response(payload)
+
+
+class McpInternalApprovalDecideView(APIView):
+    """Client/gateway decisions: allow, deny, or allow_session (non-destructive only)."""
+
+    authentication_classes = []
+    permission_classes = []
+
+    def post(self, request):
+        claims, err = _approval_assertion_claims(request)
+        if err:
+            return err
+        binding = approval_binding_from_claims(claims)
+        assert binding is not None
+        body = request.data if isinstance(request.data, dict) else {}
+        approval_id = str(body.get('approval_id') or '').strip()
+        decision = str(body.get('decision') or '').strip().lower()
+        actor_email = str(body.get('actor_email') or '').strip() or None
+        connection_id = str(body.get('connection_id') or '').strip()
+        if not approval_id:
+            return Response({'error': 'approval_id required.'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            row = McpApprovalRequest.objects.select_related('agent').get(
+                pk=approval_id,
+                agent_id=binding['agent_id'],
+                company_id=binding['company_id'],
+                service=binding['service'],
+                arguments_hash=binding['arguments_hash'],
+            )
+        except McpApprovalRequest.DoesNotExist:
+            return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            if decision in ('allow', 'approve'):
+                result = client_allow(row, actor_email=actor_email)
+            elif decision in ('deny', 'reject'):
+                result = client_deny(row, actor_email=actor_email)
+            elif decision in ('allow_session', 'session'):
+                result = client_allow_session(row, connection_id=connection_id, actor_email=actor_email)
+            else:
+                return Response({'error': 'decision must be allow, deny, or allow_session.'}, status=status.HTTP_400_BAD_REQUEST)
+        except ApprovalDecisionError as exc:
+            return Response({'error': exc.message}, status=exc.status)
+        return Response({'approval_id': str(result.row.id), 'status': result.row.status, 'audit_status': result.audit_status})
+
+
+class McpInternalApprovalSessionCheckView(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    def post(self, request):
+        claims, err = _approval_assertion_claims(request)
+        if err:
+            return err
+        binding = approval_binding_from_claims(claims)
+        assert binding is not None
+        body = request.data if isinstance(request.data, dict) else {}
+        connection_id = str(body.get('connection_id') or '').strip()
+        is_destructive = bool(body.get('is_destructive'))
+        allowed = session_allows_non_destructive_write(
+            agent_id=binding['agent_id'],
+            company_id=binding['company_id'],
+            connection_id=connection_id,
+            is_destructive=is_destructive,
+        )
+        grant = active_session_grant(
+            agent_id=binding['agent_id'],
+            company_id=binding['company_id'],
+            connection_id=connection_id,
+        )
+        payload = {'session_allowed': allowed}
+        if grant is not None:
+            payload['expires_at'] = grant.expires_at.isoformat()
+        return Response(payload)
+
+
+class McpInternalApprovalSessionRevokeView(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    def post(self, request):
+        claims, err = _approval_assertion_claims(request)
+        if err:
+            return err
+        binding = approval_binding_from_claims(claims)
+        assert binding is not None
+        body = request.data if isinstance(request.data, dict) else {}
+        connection_id = str(body.get('connection_id') or '').strip()
+        updated = revoke_session_grant(
+            agent_id=binding['agent_id'],
+            company_id=binding['company_id'],
+            connection_id=connection_id,
+        )
+        return Response({'revoked': updated > 0})
 
 
 class McpInternalApprovalConsumeView(APIView):

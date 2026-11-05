@@ -31,11 +31,15 @@ MCP_FORBIDDEN_OPERATION_IDS: frozenset[str] = frozenset(
         'api_v1_mcp_approvals_retrieve',
         'api_v1_mcp_approvals_approve',
         'api_v1_mcp_approvals_reject',
+        'api_v1_mcp_approvals_decide',
         'api_v1_mcp_call_logs_list',
         'api_v1_mcp_internal_mcp_revocations_list',
         'api_v1_mcp_internal_mcp_approval_requests_create',
         'api_v1_mcp_internal_mcp_approval_state_create',
         'api_v1_mcp_internal_mcp_approval_consume_create',
+        'api_v1_mcp_internal_mcp_approval_decide_create',
+        'api_v1_mcp_internal_mcp_approval_session_check_create',
+        'api_v1_mcp_internal_mcp_approval_session_revoke_create',
         'api_v1_mcp_internal_mcp_call_logs_create',
     }
 )

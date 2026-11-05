@@ -353,6 +353,30 @@ register_event(
 
 register_event(
     DomainEventType(
+        id='identity.mcp.approval_decision',
+        label='MCP approval decision',
+        description=(
+            'A human or client decided an MCP tool approval. '
+            'Summary form: {actor_email} {status} {tool_name} for {agent_name}.'
+        ),
+        payload_fields=(
+            EventFieldDoc('approval_id', 'Approval uuid', '00000000-0000-0000-0000-000000000001'),
+            EventFieldDoc('actor_email', 'Decider email when known', 'ada@acme.com'),
+            EventFieldDoc(
+                'status',
+                'approved, denied, expired, client_allowed, client_denied, or client_session_allowed',
+                'approved',
+            ),
+            EventFieldDoc('tool_name', 'Tool or action name', 'delete_object'),
+            EventFieldDoc('agent_name', 'Agent display name', 'ChatGPT connector'),
+            EventFieldDoc('service', 'Service id', 'storage'),
+        ),
+        webhook=False,
+    )
+)
+
+register_event(
+    DomainEventType(
         id='identity.scheduled_job.failed',
         label='Scheduled job failed',
         description='A scheduled job run raised an error. Platform event, staff only.',
