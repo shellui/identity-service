@@ -156,11 +156,12 @@ class CompanySigninFlowTests(TestCase):
         self.assertEqual(page['X-Frame-Options'], 'DENY')
         self.assertIn("frame-ancestors 'none'", page['Content-Security-Policy'])
         body = page.content.decode()
-        self.assertIn('Totally Claude wants to access your company through the Shellui MCP connector.', body)
+        self.assertIn('Totally Claude wants to use MCP for your company.', body)
         self.assertNotIn('Acme', body)
-        self.assertIn('The client chose this name itself.', body)
-        self.assertIn('chatgpt.com', body)
-        self.assertIn("If you didn&#x27;t start this connection yourself", body)
+        self.assertIn('Access requested', body)
+        self.assertIn('identity.test', body)
+        self.assertIn('Only continue if you started this from Totally Claude.', body)
+        self.assertIn('Cancel', body)
         self.assertIn('name="email"', body)
         self.assertIn('csrfmiddlewaretoken', body)
         self.assertNotIn('/admin/login', body)
@@ -168,7 +169,7 @@ class CompanySigninFlowTests(TestCase):
     def test_signin_page_in_french(self):
         self.client.get(self._query())
         page = self.client.get('/oauth/mcp/signin', HTTP_ACCEPT_LANGUAGE='fr')
-        self.assertContains(page, 'veut accéder à votre entreprise via le connecteur MCP Shellui')
+        self.assertContains(page, 'veut utiliser MCP pour votre entreprise')
         self.assertNotContains(page, 'Acme')
 
     def test_signin_page_without_saved_request_is_an_error(self):
@@ -309,8 +310,10 @@ class CompanySigninFlowTests(TestCase):
         self.assertEqual(verify['Location'], authorize)
         consent = self.client.get(authorize)
         self.assertEqual(consent.status_code, 200)
-        self.assertContains(consent, 'Allow this MCP client?')
-        self.assertContains(consent, 'chatgpt.com')
+        self.assertContains(consent, 'Allow Totally Claude?')
+        self.assertContains(consent, 'Settings → MCP / AI agents')
+        self.assertContains(consent, 'Allow')
+        self.assertContains(consent, 'Deny')
 
     def test_staff_magic_link_sends_nothing(self):
         from unittest import mock

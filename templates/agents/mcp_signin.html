@@ -2,19 +2,23 @@
 {% block title %}{{ copy.signin_title }}{% endblock %}
 {% block content %}
     <h1>{{ copy.signin_title }}</h1>
-    <p class="why">{{ why }}</p>
-    <dl class="meta">
-      <dt>{{ copy.client_label }}</dt>
-      <dd><strong translate="no">{{ client_name }}</strong><br><span class="note">{{ copy.client_note }}</span></dd>
-      <dt>{{ copy.redirect_label }}</dt>
-      <dd><span class="host" translate="no" data-testid="redirect-host">{{ redirect_host }}</span><span class="note">{{ copy.redirect_note }}</span></dd>
-    </dl>
-    <p class="warning" role="alert">{{ copy.warning }}</p>
+    <p class="why">{{ lead }}</p>
+    <p class="redirect-notice">{{ redirect_notice }}</p>
+    <section class="access" aria-labelledby="access-heading">
+      <h2 id="access-heading">{{ copy.access_heading }}</h2>
+      <ul class="access-list">
+        <li>{{ copy.access_bullet }}</li>
+      </ul>
+    </section>
+    <p class="warning" role="alert">{{ phishing }}</p>
     {% if sent %}<p class="subtitle" role="status">{{ copy.email_sent_generic }}</p>{% endif %}
     <form method="post" action="">
       {% csrf_token %}
       <label for="email">{{ copy.email_label }}</label>
       <input type="email" id="email" name="email" autocomplete="email" required maxlength="254">
-      <div class="actions"><button type="submit" class="button">{{ copy.email_button }}</button></div>
+      <div class="actions stack">
+        <button type="submit" class="button">{{ copy.email_button }}</button>
+        <a class="button button-secondary" href="{{ cancel_url }}">{{ copy.cancel }}</a>
+      </div>
     </form>
 {% endblock %}
