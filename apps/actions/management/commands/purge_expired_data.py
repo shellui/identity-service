@@ -4,7 +4,13 @@ from django.core.management.base import BaseCommand
 from django.db import connection
 
 from apps.actions.retention import purge_expired_data
-from apps.actions.scheduled_jobs import TRIGGER_COMMAND, TRIGGERS, run_recorded
+from apps.actions.scheduled_jobs import (
+    TRIGGER_COMMAND,
+    TRIGGERS,
+    format_purge_expired_data_summary,
+    normalize_purge_expired_data_stats,
+    run_recorded,
+)
 
 JOB = 'purge_expired_data'
 
@@ -41,10 +47,12 @@ class Command(BaseCommand):
         dry_run = bool(options['dry_run'])
 
         def work(_run_id):
-            stats = purge_expired_data(
-                batch_size=max(1, int(options['batch_size'])),
-                max_seconds=max(0.0, float(options['max_seconds'])) or None,
-                dry_run=dry_run,
+            stats = normalize_purge_expired_data_stats(
+                purge_expired_data(
+                    batch_size=max(1, int(options['batch_size'])),
+                    max_seconds=max(0.0, float(options['max_seconds'])) or None,
+                    dry_run=dry_run,
+                )
             )
             counts = {k: v for k, v in stats.items() if k != 'complete'}
             counts['complete'] = bool(stats['complete'])
@@ -61,15 +69,6 @@ class Command(BaseCommand):
         verb = 'would delete' if dry_run else 'deleted'
         self.stdout.write(
             self.style.SUCCESS(
-                f'purge_expired_data: {verb} '
-                f"events={stats['events']} "
-                f"webhook_deliveries={stats['webhook_deliveries']} "
-                f"email_events={stats['email_events']} "
-                f"scim_provisioning_events={stats['scim_provisioning_events']} "
-                f"revoked_mcp_agents={stats['revoked_mcp_agents']} "
-                f"mcp_call_logs={stats['mcp_call_logs']} "
-                f"scheduled_job_runs={stats['scheduled_job_runs']} "
-                f"complete={str(stats['complete']).lower()}"
-                + (f' run_id={run_id}' if run_id else '')
+                format_purge_expired_data_summary(stats, verb=verb, run_id=run_id)
             )
         )

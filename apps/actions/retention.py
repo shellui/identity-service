@@ -163,4 +163,6 @@ def purge_expired_data(
             stats['mcp_call_logs'] += McpCallLog.objects.filter(agent_id__in=ids).count()
             Agent.objects.filter(pk__in=ids).delete()
             stats['revoked_mcp_agents'] += len(ids)
-    return stats
+    from apps.actions.scheduled_jobs import normalize_purge_expired_data_stats
+
+    return normalize_purge_expired_data_stats(stats)
