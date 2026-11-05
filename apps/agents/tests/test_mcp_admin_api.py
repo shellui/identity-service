@@ -39,6 +39,36 @@ class McpAdminApiTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.json()['agents']), 1)
 
+    def test_list_agents_includes_creator(self):
+        token = self._owner_token()
+        response = self.client.get('/api/v1/mcp/agents', HTTP_AUTHORIZATION=f'Bearer {token}')
+        self.assertEqual(response.status_code, 200)
+        row = response.json()['agents'][0]
+        self.assertEqual(row['created_by']['id'], self.owner.pk)
+        self.assertEqual(row['created_by']['display_name'], self.owner.get_full_name() or self.owner.email)
+
+    def test_list_agents_creator_null_when_unknown(self):
+        import uuid
+
+        agent = Agent.objects.create(company=self.company, name='No creator')
+        token = self._owner_token()
+        response = self.client.get('/api/v1/mcp/agents', HTTP_AUTHORIZATION=f'Bearer {token}')
+        self.assertEqual(response.status_code, 200)
+        by_id = {row['id']: row for row in response.json()['agents']}
+        self.assertIsNone(by_id[str(agent.id)]['created_by'])
+
+        global_agent = Agent.objects.create(
+            company=self.company,
+            name='Global',
+            global_agent_id=uuid.uuid4(),
+        )
+        response = self.client.get('/api/v1/mcp/agents', HTTP_AUTHORIZATION=f'Bearer {token}')
+        by_id = {row['id']: row for row in response.json()['agents']}
+        self.assertEqual(
+            by_id[str(global_agent.id)]['created_by'],
+            {'id': None, 'display_name': 'Global MCP agent'},
+        )
+
     def test_pause_agent(self):
         token = self._owner_token()
         response = self.client.post(

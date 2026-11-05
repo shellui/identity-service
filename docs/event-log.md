@@ -47,7 +47,7 @@ The table has two indexes, `(company, created_at)` and `(user, created_at)`. The
 
 Each company has a **data retention** in days (`Company.data_retention_days`, default **7**). Only Shellui operators can change it, in Django admin under **Companies > Data retention**. Company owners see the value in the admin panel.
 
-The [`purge_expired_data`](scheduled-jobs.md#purge_expired_data) scheduled job deletes events older than the retention, together with finished webhook deliveries, email-service event posts, SCIM provisioning events, and scheduled job runs. It runs every hour inside the container when `REDIS_URL` is set.
+The [`purge_expired_data`](scheduled-jobs.md#purge_expired_data) scheduled job deletes events older than the retention, together with finished webhook deliveries, email-service event posts, SCIM provisioning events, revoked MCP agents (and their call logs), and scheduled job runs. It runs every hour inside the container when `REDIS_URL` is set.
 
 If events older than retention + 1 day are still stored, the job is not running. The admin panel dashboard, the **Log events** page, and the Django admin company page then show an error. See [Stale events warning](scheduled-jobs.md#stale-events-warning).
 

@@ -12,6 +12,7 @@ from shellui_django.mcp.masking import redact_mapping
 
 from apps.authapi.openapi_admin import ADMIN_API_ERRORS, admin_openapi_fields, mcp_extend_schema_kwargs
 from apps.authapi.serializers import ShellUIOpenAPISerializer
+from apps.agents.display import agent_created_by
 from apps.agents.models import Agent, McpApprovalRequest, McpCallLog
 from apps.agents.permissions import require_company_admin
 
@@ -44,6 +45,7 @@ def _agent_row(agent: Agent) -> dict:
         'revoked_at': agent.revoked_at.isoformat() if agent.revoked_at else None,
         'is_active': agent.is_active,
         'created_at': agent.created_at.isoformat(),
+        'created_by': agent_created_by(agent),
     }
 
 
@@ -66,7 +68,11 @@ class McpAgentListView(APIView):
         actor, company, err = require_company_admin(request, allow_agent_token=False)
         if err:
             return err
-        qs = Agent.objects.filter(company=company).order_by('-created_at')[:200]
+        qs = (
+            Agent.objects.filter(company=company)
+            .select_related('created_by')
+            .order_by('-created_at')[:200]
+        )
         return Response({'agents': [_agent_row(a) for a in qs]})
 
 

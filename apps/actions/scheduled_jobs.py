@@ -115,10 +115,37 @@ PURGE_EXPIRED_DATA = JobSpec(
         'webhook_deliveries',
         'email_events',
         'scim_provisioning_events',
+        'revoked_mcp_agents',
+        'mcp_call_logs',
         'scheduled_job_runs',
     ),
     cron_minute=17,
 )
+
+
+def normalize_purge_expired_data_stats(stats: dict) -> dict:
+    """Fill missing purge counters with zero (mocks and older callers may omit new keys)."""
+    normalized = {kind: int(stats.get(kind) or 0) for kind in PURGE_EXPIRED_DATA.item_kinds}
+    normalized['complete'] = bool(stats.get('complete', True))
+    return normalized
+
+
+def format_purge_expired_data_summary(stats: dict, *, verb: str, run_id: int | None = None) -> str:
+    s = normalize_purge_expired_data_stats(stats)
+    line = (
+        f'purge_expired_data: {verb} '
+        f"events={s['events']} "
+        f"webhook_deliveries={s['webhook_deliveries']} "
+        f"email_events={s['email_events']} "
+        f"scim_provisioning_events={s['scim_provisioning_events']} "
+        f"revoked_mcp_agents={s['revoked_mcp_agents']} "
+        f"mcp_call_logs={s['mcp_call_logs']} "
+        f"scheduled_job_runs={s['scheduled_job_runs']} "
+        f"complete={str(s['complete']).lower()}"
+    )
+    if run_id is not None:
+        line += f' run_id={run_id}'
+    return line
 
 JOBS: dict[str, JobSpec] = {spec.name: spec for spec in (RETRY_WEBHOOKS, PURGE_EXPIRED_DATA)}
 

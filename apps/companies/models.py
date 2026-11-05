@@ -141,8 +141,9 @@ class Company(models.Model):
         default=DEFAULT_DATA_RETENTION_DAYS,
         validators=[MinValueValidator(1), MaxValueValidator(3650)],
         help_text=(
-            'Days to keep the event log and finished webhook deliveries before '
-            '"manage.py purge_expired_data" deletes them. Django admin only.'
+            'Days to keep the event log, finished webhook deliveries, and revoked MCP agents '
+            '(with their call logs) before "manage.py purge_expired_data" deletes them. '
+            'Django admin only.'
         ),
     )
 
