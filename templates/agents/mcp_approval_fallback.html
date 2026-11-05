@@ -1,0 +1,31 @@
+{% extends "agents/_mcp_base.html" %}
+
+{% block title %}{{ title|default:copy.title_pending }}{% endblock %}
+
+{% block content %}
+  <h1>{{ title|default:copy.title_pending }}</h1>
+
+  {% if state == "pending" %}
+    <p class="why">{{ lead }}</p>
+    {% if detail %}
+      <p class="subtitle">{{ detail }}</p>
+    {% endif %}
+    {% if is_destructive %}
+      <p class="warning">{{ destructive_banner }}</p>
+    {% endif %}
+    <p class="note">{{ safety_line }}</p>
+    <p class="note">This link expires in {{ expires_in_minutes }} minutes.</p>
+    <form method="post" class="actions stack">
+      {% csrf_token %}
+      <input type="hidden" name="token" value="{{ page_token }}">
+      <button type="submit" name="decision" value="approve" class="button">{{ copy.primary_approve }}</button>
+      <button type="submit" name="decision" value="deny" class="button button-secondary">{{ copy.secondary_deny }}</button>
+    </form>
+  {% elif state == "wrong_account" %}
+    <p class="subtitle">{{ body }}</p>
+  {% else %}
+    <p class="subtitle">{{ body }}</p>
+  {% endif %}
+
+  <p class="note" style="margin-top: 1.25rem;">{{ copy.footer }}</p>
+{% endblock %}

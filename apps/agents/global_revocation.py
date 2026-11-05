@@ -6,6 +6,7 @@ import uuid
 
 from django.utils import timezone
 
+from apps.agents.approval_session import revoke_session_grants_for_agent
 from apps.agents.models import Agent, GlobalAgentRevocation
 from apps.agents.tokens import revoke_all_agent_refresh_sessions
 
@@ -20,6 +21,7 @@ def revoke_regional_agents_for_global(global_agent_id: uuid.UUID) -> int:
     Agent.objects.filter(pk__in=[a.pk for a in agents]).update(revoked_at=now)
     for agent in agents:
         revoke_all_agent_refresh_sessions(agent)
+        revoke_session_grants_for_agent(agent)
     return len(agents)
 
 

@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from apps.agents.models import Agent, McpApprovalRequest, McpCallLog, McpOAuthClient
+from apps.agents.models import Agent, McpApprovalRequest, McpApprovalSessionGrant, McpCallLog, McpOAuthClient
 
 
 @admin.register(McpOAuthClient)
@@ -22,6 +22,12 @@ class McpApprovalRequestAdmin(admin.ModelAdmin):
     list_display = ('id', 'agent', 'service', 'action', 'status', 'expires_at', 'created_at')
     list_filter = ('status', 'service')
     raw_id_fields = ('agent', 'company', 'decided_by')
+
+
+@admin.register(McpApprovalSessionGrant)
+class McpApprovalSessionGrantAdmin(admin.ModelAdmin):
+    list_display = ('id', 'agent', 'connection_id', 'expires_at', 'revoked_at', 'created_at')
+    raw_id_fields = ('agent', 'company', 'granted_by')
 
 
 @admin.register(McpCallLog)

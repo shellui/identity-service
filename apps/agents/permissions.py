@@ -78,3 +78,11 @@ def require_company_member(request, *, allow_agent_token: bool = False):
             status=status.HTTP_403_FORBIDDEN,
         )
     return user, company, None
+
+
+def require_approval_actor(request, *, allow_agent_token: bool = False):
+    """Company owners or the member who created the agent (Settings and fallback)."""
+    user, company, err = require_company_member(request, allow_agent_token=allow_agent_token)
+    if err:
+        return None, None, err
+    return user, company, None

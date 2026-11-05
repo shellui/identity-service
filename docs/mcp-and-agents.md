@@ -129,12 +129,18 @@ Every `/api/v1/mcp/internal/mcp-*` assertion is RS256, signed by the calling ser
 
 A caller with no issuer set is not trusted. Unknown issuers and wrong keys get `401`. Each `jti` is accepted once. Storage, hosting, and email may only create or read approvals for their own `service`, otherwise `403`.
 
-Company owners approve or reject in Shellui admin or via human user tokens only:
+Company owners and the member who created the agent approve or deny in Settings or via human user tokens:
 
-- `GET /api/v1/mcp/approvals` (pending rows include `service`, `action`, `target`, and `arguments_redacted`; secrets stay masked)
+- `GET /api/v1/mcp/approvals` (pending rows include `service`, `action`, `tool_name`, `target`, `is_destructive`, `short_action_summary`, and `arguments_redacted`; secrets stay masked)
 - `GET /api/v1/mcp/approvals/{id}`
-- `POST /api/v1/mcp/approvals/{id}/approve`
-- `POST /api/v1/mcp/approvals/{id}/reject`
+- `POST /api/v1/mcp/approvals/{id}/decide` with `{ "decision": "approve" | "deny" }`
+- `POST /api/v1/mcp/approvals/{id}/approve` and `POST /api/v1/mcp/approvals/{id}/reject` (same behavior as decide)
+
+The MCP client card (ai-service) calls `POST /api/v1/mcp/internal/mcp-approval-decide` with `allow`, `deny`, or `allow_session` (non-destructive only). Session allow lasts **60 seconds** per connection (`MCP_APPROVAL_SESSION_TTL_SECONDS`, clamped 30 to 60). Check with `POST /api/v1/mcp/internal/mcp-approval-session-check`; revoke on disconnect with `POST /api/v1/mcp/internal/mcp-approval-session-revoke`.
+
+Fallback browser page: `GET /oauth/mcp/approval/{id}?token=…` (signed token from `fallback_path` on create). Approve and Deny only.
+
+Audit event `identity.mcp.approval_decision` uses status `approved`, `denied`, `expired`, `client_allowed`, `client_denied`, or `client_session_allowed` with `{actor_email} {status} {tool_name} for {agent_name}`.
 
 ## Revocation
 

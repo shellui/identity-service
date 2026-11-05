@@ -13,8 +13,10 @@ from shellui_django.mcp.masking import redact_mapping
 from apps.authapi.openapi_admin import ADMIN_API_ERRORS, admin_openapi_fields, mcp_extend_schema_kwargs
 from apps.authapi.serializers import ShellUIOpenAPISerializer
 from apps.agents.display import agent_created_by
+from apps.agents.approval_access import pending_approvals_for_user, user_may_manage_approval
+from apps.agents.approval_decisions import ApprovalDecisionError, settings_approve, settings_deny
 from apps.agents.models import Agent, McpApprovalRequest, McpCallLog
-from apps.agents.permissions import require_company_admin
+from apps.agents.permissions import require_approval_actor, require_company_admin
 
 
 def _approval_row(row: McpApprovalRequest) -> dict:
@@ -24,12 +26,28 @@ def _approval_row(row: McpApprovalRequest) -> dict:
         'agent_name': row.agent.name,
         'service': row.service,
         'action': row.action,
+        'tool_name': row.action,
         'target': row.target,
         'arguments_hash': row.arguments_hash,
         'arguments_redacted': redact_mapping(row.arguments_redacted or {}, read_sensitive=False),
         'status': row.status,
+        'is_destructive': row.is_destructive,
+        'short_action_summary': row.short_action_summary,
         'expires_at': row.expires_at.isoformat(),
     }
+
+
+def _get_manageable_approval(request, approval_id):
+    actor, company, err = require_approval_actor(request, allow_agent_token=False)
+    if err:
+        return None, None, None, err
+    try:
+        row = McpApprovalRequest.objects.select_related('agent').get(pk=approval_id, company=company)
+    except McpApprovalRequest.DoesNotExist:
+        return None, None, None, Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+    if not user_may_manage_approval(actor, row):
+        return None, None, None, Response({'error': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
+    return actor, row, company, None
 
 
 def _agent_row(agent: Agent) -> dict:
@@ -134,9 +152,11 @@ class McpAgentRevokeView(APIView):
         agent.revoked_at = now
         agent.paused_at = agent.paused_at or now
         agent.save(update_fields=['revoked_at', 'paused_at', 'updated_at'])
+        from apps.agents.approval_session import revoke_session_grants_for_agent
         from apps.agents.models import AgentRefreshSession
 
         AgentRefreshSession.objects.filter(agent=agent, revoked_at__isnull=True).update(revoked_at=now)
+        revoke_session_grants_for_agent(agent)
         return Response({'agent': _agent_row(agent)})
 
 
@@ -146,7 +166,7 @@ class McpAgentRevokeView(APIView):
         operation_id='api_v1_mcp_approvals_list',
         **admin_openapi_fields(
             summary='List pending MCP approval requests',
-            lead='Returns pending human approvals for destructive MCP tool calls.',
+            lead='Returns pending approvals for agents you own or for the whole company when you are an owner.',
             side_effects='Read-only.',
             sensitive=True,
         ),
@@ -157,15 +177,10 @@ class McpApprovalListView(APIView):
     serializer_class = ShellUIOpenAPISerializer
 
     def get(self, request):
-        actor, company, err = require_company_admin(request, allow_agent_token=False)
+        actor, company, err = require_approval_actor(request, allow_agent_token=False)
         if err:
             return err
-        now = timezone.now()
-        qs = McpApprovalRequest.objects.filter(
-            company=company,
-            status=McpApprovalRequest.STATUS_PENDING,
-            expires_at__gt=now,
-        ).select_related('agent')[:100]
+        qs = pending_approvals_for_user(company, actor).select_related('agent')[:100]
         return Response({'approvals': [_approval_row(row) for row in qs]})
 
 
@@ -186,13 +201,9 @@ class McpApprovalDetailView(APIView):
     serializer_class = ShellUIOpenAPISerializer
 
     def get(self, request, approval_id):
-        actor, company, err = require_company_admin(request, allow_agent_token=False)
+        _actor, row, _company, err = _get_manageable_approval(request, approval_id)
         if err:
             return err
-        try:
-            row = McpApprovalRequest.objects.select_related('agent').get(pk=approval_id, company=company)
-        except McpApprovalRequest.DoesNotExist:
-            return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
         return Response({'approval': _approval_row(row)})
 
 
@@ -212,20 +223,14 @@ class McpApprovalApproveView(APIView):
     serializer_class = ShellUIOpenAPISerializer
 
     def post(self, request, approval_id):
-        actor, company, err = require_company_admin(request, allow_agent_token=False)
+        actor, row, _company, err = _get_manageable_approval(request, approval_id)
         if err:
             return err
         try:
-            row = McpApprovalRequest.objects.select_related('agent').get(pk=approval_id, company=company)
-        except McpApprovalRequest.DoesNotExist:
-            return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
-        if row.status != McpApprovalRequest.STATUS_PENDING or row.expires_at <= timezone.now():
-            return Response({'error': 'Approval is not pending.'}, status=status.HTTP_409_CONFLICT)
-        row.status = McpApprovalRequest.STATUS_APPROVED
-        row.decided_at = timezone.now()
-        row.decided_by = actor
-        row.save(update_fields=['status', 'decided_at', 'decided_by'])
-        return Response({'approval': _approval_row(row)})
+            result = settings_approve(row, user=actor)
+        except ApprovalDecisionError as exc:
+            return Response({'error': exc.message}, status=exc.status)
+        return Response({'approval': _approval_row(result.row)})
 
 
 @extend_schema_view(
@@ -244,20 +249,48 @@ class McpApprovalRejectView(APIView):
     serializer_class = ShellUIOpenAPISerializer
 
     def post(self, request, approval_id):
-        actor, company, err = require_company_admin(request, allow_agent_token=False)
+        actor, row, _company, err = _get_manageable_approval(request, approval_id)
         if err:
             return err
         try:
-            row = McpApprovalRequest.objects.get(pk=approval_id, company=company)
-        except McpApprovalRequest.DoesNotExist:
-            return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
-        if row.status != McpApprovalRequest.STATUS_PENDING:
-            return Response({'error': 'Approval is not pending.'}, status=status.HTTP_409_CONFLICT)
-        row.status = McpApprovalRequest.STATUS_REJECTED
-        row.decided_at = timezone.now()
-        row.decided_by = actor
-        row.save(update_fields=['status', 'decided_at', 'decided_by'])
-        return Response({'approval': _approval_row(row)})
+            result = settings_deny(row, user=actor)
+        except ApprovalDecisionError as exc:
+            return Response({'error': exc.message}, status=exc.status)
+        return Response({'approval': _approval_row(result.row)})
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=['mcp-admin'],
+        operation_id='api_v1_mcp_approvals_decide',
+        **admin_openapi_fields(
+            summary='Decide an MCP approval request (Settings)',
+            lead='Approve or deny a pending request. Session allow is only available on the client path.',
+            side_effects='Updates approval status and writes an audit event.',
+        ),
+        responses={200: OpenApiResponse(description='Updated approval'), **ADMIN_API_ERRORS},
+    ),
+)
+class McpApprovalDecideView(APIView):
+    serializer_class = ShellUIOpenAPISerializer
+
+    def post(self, request, approval_id):
+        actor, row, _company, err = _get_manageable_approval(request, approval_id)
+        if err:
+            return err
+        body = request.data if isinstance(request.data, dict) else {}
+        decision = str(body.get('decision') or '').strip().lower()
+        if decision in ('approve', 'allow'):
+            handler = settings_approve
+        elif decision in ('deny', 'reject'):
+            handler = settings_deny
+        else:
+            return Response({'error': 'decision must be approve or deny.'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            result = handler(row, user=actor)
+        except ApprovalDecisionError as exc:
+            return Response({'error': exc.message}, status=exc.status)
+        return Response({'approval': _approval_row(result.row)})
 
 
 @extend_schema_view(
