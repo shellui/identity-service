@@ -181,7 +181,8 @@ class McpApprovalListView(APIView):
         if err:
             return err
         qs = pending_approvals_for_user(company, actor).select_related('agent')[:100]
-        return Response({'approvals': [_approval_row(row) for row in qs]})
+        approvals = [_approval_row(row) for row in qs]
+        return Response({'approvals': approvals, 'pending_count': len(approvals)})
 
 
 @extend_schema_view(

@@ -75,7 +75,9 @@ class McpApprovalV1Tests(TestCase):
         member_token = self._token(self.member)
         listed = self.client.get('/api/v1/mcp/approvals', HTTP_AUTHORIZATION=f'Bearer {member_token}')
         self.assertEqual(listed.status_code, 200)
-        ids = {row['agent_id'] for row in listed.json()['approvals']}
+        body = listed.json()
+        self.assertEqual(body['pending_count'], len(body['approvals']))
+        ids = {row['agent_id'] for row in body['approvals']}
         self.assertEqual(ids, {str(self.agent.id)})
 
     def test_owner_lists_all_pending(self):

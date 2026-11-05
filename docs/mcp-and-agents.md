@@ -131,7 +131,7 @@ A caller with no issuer set is not trusted. Unknown issuers and wrong keys get `
 
 Company owners and the member who created the agent approve or deny in Settings or via human user tokens:
 
-- `GET /api/v1/mcp/approvals` (pending rows include `service`, `action`, `tool_name`, `target`, `is_destructive`, `short_action_summary`, and `arguments_redacted`; secrets stay masked)
+- `GET /api/v1/mcp/approvals` (returns `approvals` and `pending_count`, the number of rows in `approvals`; pending rows include `service`, `action`, `tool_name`, `target`, `is_destructive`, `short_action_summary`, and `arguments_redacted`; secrets stay masked)
 - `GET /api/v1/mcp/approvals/{id}`
 - `POST /api/v1/mcp/approvals/{id}/decide` with `{ "decision": "approve" | "deny" }`
 - `POST /api/v1/mcp/approvals/{id}/approve` and `POST /api/v1/mcp/approvals/{id}/reject` (same behavior as decide)
