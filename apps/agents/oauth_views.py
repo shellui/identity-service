@@ -198,7 +198,11 @@ def mcp_authorize(request):
         {
             'page_language': lang,
             'copy': copy,
-            'why': copy['why'].format(client=client_name, company=parsed.company.name),
+            'consent_title': copy['consent_title'].format(client_name=client_name),
+            'consent_body': copy['consent_body'].format(
+                client_name=client_name, company_name=parsed.company.name
+            ),
+            'phishing': copy['phishing'].format(client_name=client_name),
             'signed_in_as': copy['signed_in_as'].format(email=user.email or user.get_username()),
             'client_name': client_name,
             'client_id': parsed.client.client_id,

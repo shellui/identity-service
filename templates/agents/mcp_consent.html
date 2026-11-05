@@ -1,18 +1,16 @@
 {% extends "agents/_mcp_base.html" %}
-{% block title %}{{ copy.consent_title }}{% endblock %}
+{% block title %}{{ consent_title }}{% endblock %}
 {% block content %}
-    <h1>{{ copy.consent_title }}</h1>
+    <h1>{{ consent_title }}</h1>
     <p class="note">{{ signed_in_as }}</p>
-    <p class="why">{{ why }}</p>
-    <dl class="meta">
-      <dt>{{ copy.client_label }}</dt>
-      <dd><strong translate="no">{{ client_name }}</strong><br><span class="note">{{ copy.client_note }}</span></dd>
-      <dt>{{ copy.company_label }}</dt>
-      <dd><strong translate="no">{{ company_name }}</strong></dd>
-      <dt>{{ copy.redirect_label }}</dt>
-      <dd><span class="host" translate="no" data-testid="redirect-host">{{ redirect_host }}</span><span class="note">{{ copy.redirect_note }}</span></dd>
-    </dl>
-    <p class="warning" role="alert">{{ copy.warning }}</p>
+    <p class="consent-body">{{ consent_body }}</p>
+    <section class="access" aria-labelledby="access-heading">
+      <h2 id="access-heading">{{ copy.access_heading }}</h2>
+      <ul class="access-list">
+        <li>{{ copy.access_bullet }}</li>
+      </ul>
+    </section>
+    <p class="warning" role="alert">{{ phishing }}</p>
     <form method="post" action="">
       {% csrf_token %}
       <input type="hidden" name="response_type" value="code">
@@ -47,7 +45,7 @@
       <p class="note">{{ copy.saas_opt_in_note }}</p>
       {% endif %}
       <div class="actions stack">
-        <button type="submit" name="decision" value="approve" class="button">{{ copy.approve }}</button>
+        <button type="submit" name="decision" value="approve" class="button">{{ copy.allow }}</button>
         <button type="submit" name="decision" value="deny" class="button button-secondary">{{ copy.deny }}</button>
       </div>
     </form>

@@ -4,18 +4,25 @@ from __future__ import annotations
 
 COPY = {
     'en': {
-        'signin_title': 'Sign in to connect an MCP client',
-        'consent_title': 'Allow this MCP client?',
+        'signin_title': 'Sign in to connect an agent',
+        'signin_company_name': 'your company',
+        'consent_title': 'Allow {client_name}?',
+        'consent_body': (
+            '{client_name} will call MCP for {company_name} as you. '
+            'You can revoke this later in Settings → MCP / AI agents.'
+        ),
         'error_title': "This connection can't continue",
-        'why': '{client} wants to access {company} through the Shellui MCP connector.',
-        'why_signin': '{client} wants to access your company through the Shellui MCP connector. Sign in to see which company and approve.',
+        'why_signin': '{client_name} wants to use MCP for {company_name}.',
+        'redirect_notice': 'You are leaving this page to sign in on {login_host}.',
+        'access_heading': 'Access requested',
+        'access_bullet': "Call this company's services over MCP on your behalf",
+        'phishing': 'Only continue if you started this from {client_name}.',
         'email_sent_generic': 'If this address can sign in here, a sign-in link is on its way. Open it in this browser.',
         'client_label': 'Client name',
         'client_note': 'The client chose this name itself. Shellui does not verify it.',
         'company_label': 'Company',
         'redirect_label': 'After you approve, you go back to',
         'redirect_note': 'Check that you know this address. The client receives its access there.',
-        'warning': "If you didn't start this connection yourself, close this page. Don't sign in and don't approve.",
         'methods_title': 'Sign in to {company}',
         'email_label': 'Work email',
         'email_button': 'Email me a sign-in link',
@@ -36,10 +43,11 @@ COPY = {
             'When checked, you sign in on global Shellui before approval. The regional agent can '
             'call SaaS through token exchange.'
         ),
-        'approve': 'Approve',
+        'allow': 'Allow',
         'deny': 'Deny',
+        'cancel': 'Cancel',
         'denied': 'You denied access. You can close this page.',
-        'staff_refused': "Staff accounts can't connect MCP clients. Sign in with a company account.",
+        'staff_refused': 'Staff accounts cannot authorize MCP agents. Sign in with a company account.',
         'not_member': "Your account isn't a member of {company}.",
         'session_lost': 'Open the sign-in link in the browser where you started, then try again.',
         'start_again': 'Start the connection again from your MCP client.',
@@ -50,18 +58,25 @@ COPY = {
         'read_sensitive': 'Sensitive data',
     },
     'fr': {
-        'signin_title': 'Connectez-vous pour relier un client MCP',
-        'consent_title': 'Autoriser ce client MCP ?',
+        'signin_title': 'Connectez-vous pour relier un agent',
+        'signin_company_name': 'votre entreprise',
+        'consent_title': 'Autoriser {client_name} ?',
+        'consent_body': (
+            '{client_name} appellera MCP pour {company_name} en votre nom. '
+            'Vous pourrez révoquer cela plus tard dans Réglages → MCP / agents IA.'
+        ),
         'error_title': 'Cette connexion ne peut pas continuer',
-        'why': '{client} veut accéder à {company} via le connecteur MCP Shellui.',
-        'why_signin': "{client} veut accéder à votre entreprise via le connecteur MCP Shellui. Connectez-vous pour voir laquelle et donner votre accord.",
+        'why_signin': '{client_name} veut utiliser MCP pour {company_name}.',
+        'redirect_notice': 'Vous quittez cette page pour vous connecter sur {login_host}.',
+        'access_heading': 'Accès demandé',
+        'access_bullet': 'Appeler les services de cette entreprise via MCP en votre nom',
+        'phishing': 'Continuez seulement si vous avez lancé cette demande depuis {client_name}.',
         'email_sent_generic': 'Si cette adresse peut se connecter ici, un lien de connexion arrive. Ouvrez-le dans ce navigateur.',
         'client_label': 'Nom du client',
         'client_note': "Le client a choisi ce nom lui-même. Shellui ne le vérifie pas.",
         'company_label': 'Entreprise',
         'redirect_label': 'Après votre accord, vous revenez sur',
         'redirect_note': 'Vérifiez que vous connaissez cette adresse. Le client y reçoit son accès.',
-        'warning': "Si vous n'avez pas lancé cette connexion vous-même, fermez cette page. Ne vous connectez pas et n'autorisez rien.",
         'methods_title': 'Connexion à {company}',
         'email_label': 'E-mail professionnel',
         'email_button': "M'envoyer un lien de connexion",
@@ -82,10 +97,13 @@ COPY = {
             'Si coché, vous vous connectez sur Shellui global avant l\'accord. L\'agent régional pourra '
             'appeler SaaS via l\'échange de jetons.'
         ),
-        'approve': 'Autoriser',
+        'allow': 'Autoriser',
         'deny': 'Refuser',
+        'cancel': 'Annuler',
         'denied': "Vous avez refusé l'accès. Vous pouvez fermer cette page.",
-        'staff_refused': 'Les comptes staff ne peuvent pas relier de client MCP. Connectez-vous avec un compte entreprise.',
+        'staff_refused': (
+            'Les comptes staff ne peuvent pas autoriser des agents MCP. Connectez-vous avec un compte entreprise.'
+        ),
         'not_member': "Votre compte n'est pas membre de {company}.",
         'session_lost': 'Ouvrez le lien de connexion dans le navigateur où vous avez commencé, puis réessayez.',
         'start_again': 'Relancez la connexion depuis votre client MCP.',

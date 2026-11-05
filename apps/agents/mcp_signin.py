@@ -67,6 +67,37 @@ def _issuer() -> str:
     return str(getattr(settings, 'JWT_ISSUER', '') or '').strip().rstrip('/')
 
 
+def identity_login_host(request: HttpRequest) -> str:
+    issuer = _issuer()
+    host = urlsplit(issuer).netloc if issuer else ''
+    if not host:
+        host = request.get_host()
+    return host.split('@')[-1]
+
+
+def mcp_cancel_return_url(parsed: AuthorizeRequest) -> str:
+    params = {'error': 'access_denied'}
+    if parsed.state:
+        params['state'] = parsed.state
+    sep = '&' if '?' in parsed.redirect_uri else '?'
+    return f'{parsed.redirect_uri}{sep}{urlencode(params)}'
+
+
+def mcp_signin_page_strings(
+    request: HttpRequest,
+    *,
+    copy: dict[str, str],
+    client_name: str,
+    login_host: str,
+) -> dict[str, str]:
+    company_name = copy['signin_company_name']
+    return {
+        'lead': copy['why_signin'].format(client_name=client_name, company_name=company_name),
+        'redirect_notice': copy['redirect_notice'].format(login_host=login_host),
+        'phishing': copy['phishing'].format(client_name=client_name),
+    }
+
+
 def signin_complete_url(request: HttpRequest | None = None) -> str:
     base = _issuer()
     if not base and request is not None:
@@ -363,16 +394,21 @@ def mcp_signin(request: HttpRequest) -> HttpResponse:
                 return limited
         sent = True
     client_name = parsed.client.client_name or parsed.client.client_id
+    login_host = identity_login_host(request)
+    strings = mcp_signin_page_strings(
+        request, copy=copy, client_name=client_name, login_host=login_host
+    )
     response = render(
         request,
         'agents/mcp_signin.html',
         {
             'page_language': lang,
             'copy': copy,
-            'why': copy['why_signin'].format(client=client_name),
             'client_name': client_name,
-            'redirect_host': parsed.redirect_host,
+            'login_host': login_host,
+            'cancel_url': mcp_cancel_return_url(parsed),
             'sent': sent,
+            **strings,
         },
     )
     return protect_page(response)
