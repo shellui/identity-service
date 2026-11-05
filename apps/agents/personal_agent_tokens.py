@@ -13,7 +13,7 @@ from django.utils.dateparse import parse_datetime
 
 from apps.agents.models import Agent, PersonalAgentCredential
 from apps.agents.mcp_resources import company_mcp_resource_url
-from apps.agents.tokens import agent_services_scope
+from apps.agents.tokens import agent_services_scope, company_name_for_agent
 
 
 def personal_agent_max_lifetime() -> timedelta:
@@ -76,6 +76,7 @@ def encode_personal_agent_access_token(
         'agent_id': str(agent.id),
         'sub': f'agent:{agent.id}',
         'company_id': agent.company_id,
+        'company_name': company_name_for_agent(agent),
         'mcp_access': agent.access_mode,
         'mcp_read': agent.read_level,
         'mcp_destructive': bool(agent.allow_destructive_without_asking),

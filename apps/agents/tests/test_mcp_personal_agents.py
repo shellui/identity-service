@@ -74,6 +74,7 @@ class PersonalAgentTokenTests(TestCase):
         self.assertEqual(body['agent']['kind'], 'personal')
         claims = jwt.decode(body['access_token'], options={'verify_signature': False})
         self.assertEqual(claims['company_id'], self.company.id)
+        self.assertEqual(claims['company_name'], self.company.name)
         self.assertEqual(claims['aud'], self.resource)
         self.assertIn('personal_token_id', claims)
 

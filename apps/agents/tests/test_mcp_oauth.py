@@ -104,6 +104,7 @@ class McpOAuthFlowTests(TestCase):
         payload = jwt.decode(access, options={'verify_signature': False})
         self.assertEqual(payload['agent_id'], str(agent.id))
         self.assertEqual(payload['aud'], IDENTITY_MCP_RESOURCE)
+        self.assertEqual(payload['company_name'], self.company.name)
         from shellui_django.mcp.internal import build_mcp_revocation_assertion
 
         assertion = build_mcp_revocation_assertion(audience_url='https://identity.test', **TEST_CALLER_SIGNING)
