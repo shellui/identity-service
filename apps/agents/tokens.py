@@ -28,6 +28,17 @@ def agent_services_scope(agent: Agent) -> str:
     return ' '.join(str(s) for s in services)
 
 
+def company_name_for_agent(agent: Agent) -> str:
+    if not agent.company_id:
+        return ''
+    if 'company' in agent._state.fields_cache:
+        return agent.company.name or ''
+    from apps.companies.models import Company
+
+    name = Company.objects.filter(pk=agent.company_id).values_list('name', flat=True).first()
+    return name or ''
+
+
 def build_agent_access_token(agent: Agent, *, resource: str) -> dict:
     audience = normalize_resource_indicator(resource)
     if not audience:
@@ -43,6 +54,7 @@ def build_agent_access_token(agent: Agent, *, resource: str) -> dict:
         'agent_id': str(agent.id),
         'sub': f'agent:{agent.id}',
         'company_id': agent.company_id,
+        'company_name': company_name_for_agent(agent),
         'mcp_access': agent.access_mode,
         'mcp_read': agent.read_level,
         'mcp_destructive': bool(agent.allow_destructive_without_asking),
@@ -113,7 +125,7 @@ def refresh_agent_access(refresh_token: str, *, resource: str) -> tuple[str, str
     if not agent_id or not jti:
         return None
     try:
-        session = AgentRefreshSession.objects.select_related('agent').get(jti=jti, agent_id=agent_id)
+        session = AgentRefreshSession.objects.select_related('agent__company').get(jti=jti, agent_id=agent_id)
     except AgentRefreshSession.DoesNotExist:
         return None
     agent = session.agent

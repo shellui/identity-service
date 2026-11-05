@@ -111,7 +111,7 @@ class McpDownstreamAccessTokenView(APIView):
             return Response({'error': 'Resource is not configured.'}, status=status.HTTP_403_FORBIDDEN)
 
         try:
-            agent = Agent.objects.get(pk=agent_id, company_id=body_company)
+            agent = Agent.objects.select_related('company').get(pk=agent_id, company_id=body_company)
         except Agent.DoesNotExist:
             return Response({'error': 'Agent not found.'}, status=status.HTTP_404_NOT_FOUND)
 

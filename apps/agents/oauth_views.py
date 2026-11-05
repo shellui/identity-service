@@ -431,7 +431,7 @@ def mcp_token(request):
         try:
             row = (
                 McpAuthorizationCode.objects.select_for_update()
-                .select_related('agent', 'user')
+                .select_related('agent__company', 'user')
                 .get(code=code_digest, client=client)
             )
         except McpAuthorizationCode.DoesNotExist:

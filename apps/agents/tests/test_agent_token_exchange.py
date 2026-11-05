@@ -97,6 +97,7 @@ class AgentTokenExchangeTests(_CryptoMixin, TestCase):
         self.assertTrue(body['refresh_token'])
         claims = jwt.decode(body['access_token'], options={'verify_signature': False})
         self.assertEqual(claims['company_id'], self.company.pk)
+        self.assertEqual(claims['company_name'], self.company.name)
         self.assertEqual(claims['aud'], IDENTITY_MCP)
         agent = Agent.objects.get(company=self.company, global_agent_id=self.global_agent_id)
         self.assertEqual(str(agent.id), claims['agent_id'])
