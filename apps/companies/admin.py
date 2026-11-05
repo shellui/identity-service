@@ -248,8 +248,9 @@ class CompanyAdmin(admin.ModelAdmin):
             {
                 'fields': ('data_retention_days', 'retention_status_display'),
                 'description': (
-                    'Event log rows, finished webhook deliveries and SCIM provisioning events are deleted '
-                    'after this many days by the purge_expired_data scheduled job. '
+                    'Event log rows, finished webhook deliveries, SCIM provisioning events, and revoked '
+                    'MCP agents (with their call logs) are deleted after this many days by the '
+                    'purge_expired_data scheduled job. '
                     'Company owners see the value in the admin panel but cannot change it.'
                 ),
             },

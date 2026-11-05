@@ -10,6 +10,7 @@ from django.db.models import Model, Q, QuerySet
 from django.utils import timezone
 
 from apps.actions.models import ActionOutbox, EmailEventOutbox, EventLog
+from apps.agents.models import Agent, McpCallLog
 from apps.companies.models import Company
 from apps.scim.models import ScimProvisioningEvent
 
@@ -69,6 +70,22 @@ def _delete_in_batches(qs: QuerySet, *, batch_size: int, deadline: float | None)
         deleted += len(ids)
 
 
+def _revoked_agent_querysets(now: datetime):
+    """Agents revoked longer ago than each company's retention (call logs cascade on delete)."""
+    companies_by_days: dict[int, list[int]] = defaultdict(list)
+    for company_id, days in Company.objects.values_list('id', 'data_retention_days'):
+        companies_by_days[days].append(company_id)
+    for days, company_ids in sorted(companies_by_days.items()):
+        cutoff = now - timedelta(days=days)
+        for start in range(0, len(company_ids), _COMPANY_CHUNK):
+            chunk = company_ids[start : start + _COMPANY_CHUNK]
+            yield Agent.objects.filter(
+                company_id__in=chunk,
+                revoked_at__isnull=False,
+                revoked_at__lt=cutoff,
+            )
+
+
 def _expired_querysets(model: type[Model], extra: Q, has_null_company: bool, now: datetime):
     companies_by_days: dict[int, list[int]] = defaultdict(list)
     for company_id, days in Company.objects.values_list('id', 'data_retention_days'):
@@ -91,12 +108,14 @@ def purge_expired_data(
     now: datetime | None = None,
 ) -> dict:
     """
-    Delete expired event log rows, finished webhook deliveries, SCIM provisioning events and
-    scheduled job runs older than ``scheduled_jobs.RUN_RETENTION_DAYS``.
+    Delete expired event log rows, finished webhook deliveries, SCIM provisioning events,
+    revoked MCP agents (and their call logs), and scheduled job runs older than
+    ``scheduled_jobs.RUN_RETENTION_DAYS``.
 
     Rows without a company (sign-in failures before the company is known) use
-    ``Company.DEFAULT_DATA_RETENTION_DAYS``. Returns per-target counts and ``complete=False``
-    when ``max_seconds`` ran out first (the next run picks up where this one stopped).
+    ``Company.DEFAULT_DATA_RETENTION_DAYS``. MCP call logs for active agents are never
+    age-purged. Returns per-target counts and ``complete=False`` when ``max_seconds`` ran
+    out first (the next run picks up where this one stopped).
     """
     from apps.actions.scheduled_jobs import count_old_runs, purge_old_runs
 
@@ -104,6 +123,8 @@ def purge_expired_data(
     deadline = time.monotonic() + max_seconds if max_seconds else None
     stats: dict = {label: 0 for label, *_ in _PURGE_TARGETS}
     stats['scheduled_job_runs'] = 0
+    stats['revoked_mcp_agents'] = 0
+    stats['mcp_call_logs'] = 0
     stats['complete'] = True
     # Platform rows first: a few hundred per hour, independent of company retention.
     if dry_run:
@@ -124,4 +145,22 @@ def purge_expired_data(
             if not finished:
                 stats['complete'] = False
                 return stats
+    for qs in _revoked_agent_querysets(now):
+        if dry_run:
+            agent_ids = list(qs.order_by().values_list('pk', flat=True))
+            stats['revoked_mcp_agents'] += len(agent_ids)
+            if agent_ids:
+                stats['mcp_call_logs'] += McpCallLog.objects.filter(agent_id__in=agent_ids).count()
+            continue
+        ids_qs = qs.order_by().values_list('pk', flat=True)
+        while True:
+            if deadline is not None and time.monotonic() >= deadline:
+                stats['complete'] = False
+                return stats
+            ids = list(ids_qs[:batch_size])
+            if not ids:
+                break
+            stats['mcp_call_logs'] += McpCallLog.objects.filter(agent_id__in=ids).count()
+            Agent.objects.filter(pk__in=ids).delete()
+            stats['revoked_mcp_agents'] += len(ids)
     return stats

@@ -11,8 +11,9 @@ JOB = 'purge_expired_data'
 
 class Command(BaseCommand):
     help = (
-        'Delete event log rows, finished webhook deliveries, SCIM provisioning events and old '
-        "scheduled job runs past each company's data retention (for cron, typically every hour)."
+        'Delete event log rows, finished webhook deliveries, SCIM provisioning events, revoked '
+        "MCP agents and their call logs, and old scheduled job runs past each company's data "
+        'retention (for cron, typically every hour).'
     )
 
     def add_arguments(self, parser):
@@ -65,6 +66,8 @@ class Command(BaseCommand):
                 f"webhook_deliveries={stats['webhook_deliveries']} "
                 f"email_events={stats['email_events']} "
                 f"scim_provisioning_events={stats['scim_provisioning_events']} "
+                f"revoked_mcp_agents={stats['revoked_mcp_agents']} "
+                f"mcp_call_logs={stats['mcp_call_logs']} "
                 f"scheduled_job_runs={stats['scheduled_job_runs']} "
                 f"complete={str(stats['complete']).lower()}"
                 + (f' run_id={run_id}' if run_id else '')
