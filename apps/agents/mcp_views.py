@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import contextvars
+import json
+import time
 from datetime import timedelta
 
 from django.conf import settings
@@ -25,6 +28,11 @@ from apps.authapi.authentication import ShellUIJWTAuthentication
 from shellui_django.mcp.masking import redact_mapping
 
 _server: McpServer | None = None
+
+_mcp_tool_call_started_at: contextvars.ContextVar[float | None] = contextvars.ContextVar(
+    'identity_mcp_tool_call_started_at',
+    default=None,
+)
 
 
 def _schema() -> dict:
@@ -60,6 +68,12 @@ def _record_local_call(entry: dict) -> None:
         agent = Agent.objects.get(pk=agent_id, company_id=company_id)
     except Agent.DoesNotExist:
         return
+    duration_ms = entry.get('duration_ms')
+    if not isinstance(duration_ms, (int, float)):
+        started = _mcp_tool_call_started_at.get()
+        duration_ms = max(0, int((time.monotonic() - started) * 1000)) if started is not None else 0
+    else:
+        duration_ms = max(0, int(duration_ms))
     McpCallLog.objects.create(
         agent=agent,
         company_id=company_id,
@@ -68,6 +82,7 @@ def _record_local_call(entry: dict) -> None:
         http_method=entry.get('method') or '',
         path=entry.get('path') or '',
         status_code=int(entry.get('status') or 0),
+        duration_ms=duration_ms,
         arguments_redacted=entry.get('arguments') or {},
     )
 
@@ -183,4 +198,16 @@ def _agent_claims(request: HttpRequest) -> dict | None:
 @csrf_exempt
 def mcp_endpoint(request: HttpRequest):
     claims = _agent_claims(request)
-    return _get_server().handle(request, agent_claims=claims)
+    timer: contextvars.Token | None = None
+    if request.method == 'POST':
+        try:
+            payload = json.loads(request.body.decode('utf-8') or '{}')
+            if isinstance(payload, dict) and payload.get('method') == 'tools/call':
+                timer = _mcp_tool_call_started_at.set(time.monotonic())
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            pass
+    try:
+        return _get_server().handle(request, agent_claims=claims)
+    finally:
+        if timer is not None:
+            _mcp_tool_call_started_at.reset(timer)
