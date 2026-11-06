@@ -153,9 +153,21 @@ Services poll `GET /api/v1/mcp/internal/mcp-revocations` with a signed assertion
 
 ## Call logs
 
-Services forward redacted MCP call rows to `POST /api/v1/mcp/internal/mcp-call-logs` (assertion audience `shellui-mcp-call-log`). Identity stores them and emits `identity.mcp.call` security events. Arguments are redacted; tokens and secrets are never stored.
+Services forward redacted MCP call rows to `POST /api/v1/mcp/internal/mcp-call-logs` (assertion audience `shellui-mcp-call-log`, scope `mcp.call_log.write`). Identity stores them and emits `identity.mcp.call` security events. Arguments are redacted; tokens and secrets are never stored.
 
-Owners read logs with `GET /api/v1/mcp/call-logs`.
+**ai-service gateway (#24)** signs with **`AI_SERVICE_ISSUER`** / **`AI_SERVICE_JWKS`**. JSON body allowlist only: `agent_id`, `company_id`, `service`, `tool`, `method`, `path`, `status`, `duration_ms`, `client_ip`, `arguments` (redacted), plus trusted audit fields:
+
+| Field | Meaning |
+| --- | --- |
+| `operation_title` | Known registered OpenAPI operation title (printable, max 200) |
+| `access_kind` | `read`, `write`, or `destructive` |
+| `operation_result` | `success`, `error`, `denied`, `timeout`, `cancelled`, or `unavailable` |
+| `resource_label` | Short safe label derived from the operation target (max 120; limited charset) |
+| `approval_request_id` | Optional Identity approval row uuid when the call used an approval |
+
+Identity fills `company_id` / `company_name` and `agent_name` from the stored agent and company (request must not supply display names). Other callers keep the previous optional legacy `result` string without the audit block.
+
+Owners read logs with `GET /api/v1/mcp/call-logs`. Per-agent audit for company **owners** only: `GET /api/v1/mcp/personal/agents/{id}/activity` (same company; includes `duration_ms` and gateway metadata when present).
 
 ## Downstream access tokens (ai-service)
 

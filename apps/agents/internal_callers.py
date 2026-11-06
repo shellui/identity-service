@@ -34,6 +34,14 @@ class TrustedCaller:
     issuer: str
 
 
+@dataclass(frozen=True)
+class VerifiedCallerAssertion:
+    """Verified internal JWT plus which registered caller key matched ``iss``."""
+
+    claims: dict
+    caller: TrustedCaller
+
+
 def _setting(name: str) -> str:
     return str(getattr(settings, name, '') or '').strip().rstrip('/')
 
@@ -91,7 +99,9 @@ def _register_jti(jti: str) -> bool:
     return cache.add(f'{_JTI_CACHE_PREFIX}{jti}', 1, timeout=ttl)
 
 
-def verify_caller_assertion(raw_token: str, *, audience: str, scope: str, target: str) -> dict:
+def verify_caller_assertion(
+    raw_token: str, *, audience: str, scope: str, target: str
+) -> VerifiedCallerAssertion:
     """Verify an internal assertion against the key of the registered caller named in ``iss``.
 
     The unverified ``iss`` only selects which registered key to try. The signature, issuer,
@@ -125,4 +135,4 @@ def verify_caller_assertion(raw_token: str, *, audience: str, scope: str, target
     if scope == APPROVAL_SCOPE and caller.name in JWKS_CALLERS and claims.get('service') != caller.name:
         # A service key may only request approvals for its own tools.
         raise InternalAssertionError('Assertion service does not match caller.', status=403)
-    return claims
+    return VerifiedCallerAssertion(claims=claims, caller=caller)

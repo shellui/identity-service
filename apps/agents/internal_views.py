@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import timedelta
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
 from rest_framework import status
@@ -42,6 +43,14 @@ from apps.agents.approval_session import (
     revoke_session_grant,
     session_allows_non_destructive_write,
 )
+from apps.agents.call_log_trusted import (
+    assert_allowlisted_keys,
+    parse_access_kind,
+    parse_approval_request_id,
+    parse_operation_result,
+    parse_operation_title,
+    parse_resource_label,
+)
 from apps.agents.internal_callers import verify_caller_assertion
 from apps.agents.models import Agent, McpApprovalRequest, McpCallLog
 from apps.agents.revocation import REVOCATION_CACHE_SECONDS, blocked_agent_ids, blocked_agent_snapshots
@@ -73,7 +82,7 @@ def _assertion_from_request(request) -> str:
 
 def _approval_assertion_claims(request) -> tuple[dict | None, Response | None]:
     try:
-        claims = verify_caller_assertion(
+        verified = verify_caller_assertion(
             _assertion_from_request(request),
             audience=APPROVAL_AUDIENCE,
             scope=APPROVAL_SCOPE,
@@ -81,6 +90,7 @@ def _approval_assertion_claims(request) -> tuple[dict | None, Response | None]:
         )
     except InternalAssertionError as exc:
         return None, Response({'error': exc.message}, status=exc.status)
+    claims = verified.claims
     binding = approval_binding_from_claims(claims)
     if binding is None:
         return None, Response({'error': 'Invalid assertion claims.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -132,7 +142,7 @@ class McpInternalApprovalCreateView(APIView):
 
     def post(self, request):
         try:
-            claims = verify_caller_assertion(
+            verified = verify_caller_assertion(
                 _assertion_from_request(request),
                 audience=APPROVAL_AUDIENCE,
                 scope=APPROVAL_SCOPE,
@@ -140,6 +150,7 @@ class McpInternalApprovalCreateView(APIView):
             )
         except InternalAssertionError as exc:
             return Response({'error': exc.message}, status=exc.status)
+        claims = verified.claims
         binding = approval_binding_from_claims(claims)
         if binding is None:
             return Response({'error': 'Invalid assertion claims.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -367,7 +378,7 @@ class McpInternalCallLogView(APIView):
 
     def post(self, request):
         try:
-            verify_caller_assertion(
+            verified = verify_caller_assertion(
                 _assertion_from_request(request),
                 audience=CALL_LOG_AUDIENCE,
                 scope=CALL_LOG_SCOPE,
@@ -381,26 +392,74 @@ class McpInternalCallLogView(APIView):
         if not agent_id or company_id is None:
             return Response({'error': 'agent_id and company_id required.'}, status=status.HTTP_400_BAD_REQUEST)
         try:
-            agent = Agent.objects.get(pk=agent_id, company_id=company_id)
+            company_id = int(company_id)
+        except (TypeError, ValueError):
+            return Response({'error': 'company_id invalid.'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            agent = Agent.objects.select_related('company').get(pk=agent_id, company_id=company_id)
         except Agent.DoesNotExist:
             return Response({'error': 'Agent not found.'}, status=status.HTTP_404_NOT_FOUND)
         args = body.get('arguments') if isinstance(body.get('arguments'), dict) else {}
         ip_raw = str(body.get('client_ip') or '').strip()
         client_ip = ip_raw if ip_raw else None
-        result = str(body.get('result') or '')[:32]
-        row = McpCallLog.objects.create(
-            agent=agent,
-            company_id=company_id,
-            service=str(body.get('service') or '')[:32],
-            tool=str(body.get('tool') or '')[:255],
-            http_method=str(body.get('method') or '')[:10],
-            path=str(body.get('path') or '')[:500],
-            status_code=int(body.get('status') or 0),
-            duration_ms=int(body.get('duration_ms') or 0),
-            result=result,
-            client_ip=client_ip,
-            arguments_redacted=redact_mapping(args, read_sensitive=False),
-        )
+
+        if verified.caller.name != 'ai':
+            result = str(body.get('result') or '')[:32]
+            row = McpCallLog.objects.create(
+                agent=agent,
+                company_id=company_id,
+                service=str(body.get('service') or '')[:32],
+                tool=str(body.get('tool') or '')[:255],
+                http_method=str(body.get('method') or '')[:10],
+                path=str(body.get('path') or '')[:500],
+                status_code=int(body.get('status') or 0),
+                duration_ms=int(body.get('duration_ms') or 0),
+                result=result,
+                client_ip=client_ip,
+                arguments_redacted=redact_mapping(args, read_sensitive=False),
+            )
+        else:
+            try:
+                assert_allowlisted_keys(body)
+                operation_title = parse_operation_title(body.get('operation_title'))
+                access_kind = parse_access_kind(body.get('access_kind'))
+                operation_result = parse_operation_result(body.get('operation_result'))
+                resource_label = parse_resource_label(body.get('resource_label'))
+                approval_uuid = parse_approval_request_id(body.get('approval_request_id'))
+            except ValidationError as exc:
+                msgs = getattr(exc, 'messages', None)
+                detail = str(msgs[0]) if msgs else str(exc)
+                return Response({'error': detail}, status=status.HTTP_400_BAD_REQUEST)
+            approval_row = None
+            if approval_uuid is not None:
+                try:
+                    approval_row = McpApprovalRequest.objects.get(
+                        pk=approval_uuid,
+                        agent_id=agent_id,
+                        company_id=company_id,
+                    )
+                except McpApprovalRequest.DoesNotExist:
+                    return Response({'error': 'approval_request_id not found.'}, status=status.HTTP_404_NOT_FOUND)
+            result = operation_result[:32]
+            row = McpCallLog.objects.create(
+                agent=agent,
+                company_id=company_id,
+                service=str(body.get('service') or '')[:32],
+                tool=str(body.get('tool') or '')[:255],
+                http_method=str(body.get('method') or '')[:10],
+                path=str(body.get('path') or '')[:500],
+                status_code=int(body.get('status') or 0),
+                duration_ms=max(0, int(body.get('duration_ms') or 0)),
+                result=result,
+                client_ip=client_ip,
+                arguments_redacted=redact_mapping(args, read_sensitive=False),
+                operation_title=operation_title,
+                access_kind=access_kind,
+                operation_result=operation_result,
+                resource_label=resource_label,
+                company_name_snapshot=(agent.company.name or '')[:255],
+                approval_request=approval_row,
+            )
         event = get_event_type('identity.mcp.call')
         if event:
             record_event(

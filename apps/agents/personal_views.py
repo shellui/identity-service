@@ -14,7 +14,7 @@ from rest_framework.views import APIView
 
 from apps.agents.models import Agent, McpCallLog, PersonalAgentCredential
 from apps.agents.mcp_resources import company_mcp_resource_url, mcp_enabled_for_company
-from apps.agents.permissions import require_company_member
+from apps.agents.permissions import require_company_admin, require_company_member
 from apps.agents.personal_agent_tokens import (
     create_personal_agent_credential,
     normalize_personal_agent_services,
@@ -229,13 +229,28 @@ def _activity_row(row: McpCallLog) -> dict:
     result = (row.result or '').strip()
     if not result:
         result = 'success' if 200 <= row.status_code < 400 else 'error'
-    return {
+    out = {
         'timestamp': row.created_at.isoformat(),
         'tool': row.tool,
         'service': row.service,
         'result': result,
         'client_ip': row.client_ip,
     }
+    if row.operation_title:
+        out['operation_title'] = row.operation_title
+    if row.access_kind:
+        out['access_kind'] = row.access_kind
+    if row.operation_result:
+        out['operation_result'] = row.operation_result
+    if row.resource_label:
+        out['resource_label'] = row.resource_label
+    out['company_id'] = row.company_id
+    out['company_name'] = (row.company_name_snapshot or row.company.name or '').strip() or None
+    if row.approval_request_id:
+        out['approval_request_id'] = str(row.approval_request_id)
+    out['agent_name'] = row.agent.name
+    out['duration_ms'] = row.duration_ms
+    return out
 
 
 @extend_schema_view(
@@ -244,7 +259,7 @@ def _activity_row(row: McpCallLog) -> dict:
         operation_id='api_v1_mcp_personal_agent_activity',
         **admin_openapi_fields(
             summary='Activity log for your MCP agent',
-            lead='Recent tool calls for an agent you created. Never includes arguments or secrets.',
+            lead='Company owners only. Recent tool calls for an agent a member created. Never includes arguments or secrets.',
             side_effects='Read-only.',
         ),
         responses={200: OpenApiResponse(description='Activity rows'), **ADMIN_API_ERRORS},
@@ -254,16 +269,17 @@ class PersonalAgentActivityView(APIView):
     serializer_class = ShellUIOpenAPISerializer
 
     def get(self, request, agent_id):
-        user, company, err = require_company_member(request)
+        user, company, err = require_company_admin(request, allow_agent_token=False)
         if err:
             return err
         try:
-            agent = Agent.objects.get(pk=agent_id, company=company, created_by=user)
+            agent = Agent.objects.get(pk=agent_id, company=company)
         except Agent.DoesNotExist:
             return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
         cutoff = _activity_retention_cutoff()
         qs = (
             McpCallLog.objects.filter(agent=agent, company=company, created_at__gte=cutoff)
+            .select_related('agent', 'company', 'approval_request')
             .order_by('-created_at')[:200]
         )
         return Response({'agent_id': str(agent.id), 'activity': [_activity_row(r) for r in qs]})

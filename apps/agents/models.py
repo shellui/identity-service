@@ -261,6 +261,19 @@ class McpCallLog(models.Model):
     tool = models.CharField(max_length=255, blank=True)
     http_method = models.CharField(max_length=10, blank=True)
     path = models.CharField(max_length=500, blank=True)
+    # Trusted gateway metadata (ai #24); empty when rows come from legacy paths only.
+    operation_title = models.CharField(max_length=200, blank=True, default='')
+    access_kind = models.CharField(max_length=32, blank=True, default='')
+    operation_result = models.CharField(max_length=32, blank=True, default='')
+    resource_label = models.CharField(max_length=120, blank=True, default='')
+    company_name_snapshot = models.CharField(max_length=255, blank=True, default='')
+    approval_request = models.ForeignKey(
+        'McpApprovalRequest',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='call_logs',
+    )
     status_code = models.PositiveSmallIntegerField(default=0)
     duration_ms = models.PositiveIntegerField(default=0)
     result = models.CharField(max_length=32, blank=True, default='')

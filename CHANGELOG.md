@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
 
+### ✨ Feature
+
+- MCP internal call logs from **ai-service** accept allowlisted gateway audit fields (`operation_title`, `access_kind`, `operation_result`, `resource_label`, optional `approval_request_id`); Identity stores company and agent display context server-side. Personal activity API is **company-owner only** and surfaces the new fields without raw arguments.
+
 ### 🐛 Bug Fixes
 
 - Identity ``/mcp`` local ``tools/call`` rows store elapsed ``duration_ms`` in the admin call log.

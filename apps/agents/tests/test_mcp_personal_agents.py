@@ -40,6 +40,7 @@ class PersonalAgentTokenTests(TestCase):
         return _issue_shellui_tokens(self.user, company=self.company)['access_token']
 
     def test_status_and_create_list_revoke_activity(self):
+        self.company.owners.add(self.user)
         token = self._member_token()
         status = self.client.get(
             '/api/v1/mcp/personal/status',
@@ -105,6 +106,57 @@ class PersonalAgentTokenTests(TestCase):
         self.assertEqual(row['tool'], 'tools/list')
         self.assertEqual(row['client_ip'], '203.0.113.1')
         self.assertNotIn('arguments', json.dumps(activity.json()))
+
+    def test_activity_forbidden_for_non_owner_member(self):
+        other = User.objects.create_user(username='mem2', email='mem2@acme.com', password='unused')
+        set_company_access(self.company, other, enabled=True)
+        agent = Agent.objects.create(
+            company=self.company,
+            name='Owned by other',
+            created_by=other,
+            services_allowed=['identity'],
+        )
+        McpCallLog.objects.create(
+            agent=agent,
+            company=self.company,
+            service='ai',
+            tool='tools/list',
+            status_code=200,
+        )
+        token = self._member_token()
+        activity = self.client.get(
+            f'/api/v1/mcp/personal/agents/{agent.id}/activity',
+            HTTP_AUTHORIZATION=f'Bearer {token}',
+            HTTP_X_SHELLUI_COMPANY_ID=str(self.company.id),
+        )
+        self.assertEqual(activity.status_code, 403)
+
+    def test_owner_can_view_member_agent_activity(self):
+        self.company.owners.add(self.user)
+        other = User.objects.create_user(username='mem3', email='mem3@acme.com', password='unused')
+        set_company_access(self.company, other, enabled=True)
+        agent = Agent.objects.create(
+            company=self.company,
+            name='Member agent',
+            created_by=other,
+            services_allowed=['identity'],
+        )
+        McpCallLog.objects.create(
+            agent=agent,
+            company=self.company,
+            service='ai',
+            tool='ping',
+            status_code=200,
+            duration_ms=5,
+        )
+        token = self._member_token()
+        activity = self.client.get(
+            f'/api/v1/mcp/personal/agents/{agent.id}/activity',
+            HTTP_AUTHORIZATION=f'Bearer {token}',
+            HTTP_X_SHELLUI_COMPANY_ID=str(self.company.id),
+        )
+        self.assertEqual(activity.status_code, 200)
+        self.assertEqual(len(activity.json()['activity']), 1)
 
         revoked = self.client.post(
             f'/api/v1/mcp/personal/agents/{agent_id}/revoke',
