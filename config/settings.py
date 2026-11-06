@@ -387,6 +387,14 @@ MCP_REFRESH_TOKEN_LIFETIME = _env_duration('MCP_REFRESH_TOKEN_LIFETIME', timedel
 MCP_PERSONAL_AGENT_MAX_LIFETIME_DAYS = _env_int('MCP_PERSONAL_AGENT_MAX_LIFETIME_DAYS', 90)
 MCP_AGENT_ACTIVITY_RETENTION_DAYS = _env_int('MCP_AGENT_ACTIVITY_RETENTION_DAYS', 90)
 MCP_APPROVAL_SESSION_TTL_SECONDS = max(30, min(_env_int('MCP_APPROVAL_SESSION_TTL_SECONDS', 60), 60))
+# shellui-django caps internal assertion JWT ``exp - iat`` at 60 seconds by default; raise for approval
+# assertions when the gateway signs longer-lived tokens (for example setup flows up to 900 seconds).
+MCP_APPROVAL_ASSERTION_MAX_LIFETIME_SECONDS = max(60, _env_int('MCP_APPROVAL_ASSERTION_MAX_LIFETIME_SECONDS', 900))
+MCP_APPROVAL_SETUP_SESSION_TTL_MIN_SECONDS = max(1, _env_int('MCP_APPROVAL_SETUP_SESSION_TTL_MIN_SECONDS', 600))
+MCP_APPROVAL_SETUP_SESSION_TTL_MAX_SECONDS = max(
+    MCP_APPROVAL_SETUP_SESSION_TTL_MIN_SECONDS,
+    _env_int('MCP_APPROVAL_SETUP_SESSION_TTL_MAX_SECONDS', 900),
+)
 MCP_RATE_LIMITS = {
     'default': {'limit': 120, 'window': 60},
     'mcp_agent': {'limit': _env_int('MCP_RATE_LIMIT_AGENT', 120), 'window': 60},

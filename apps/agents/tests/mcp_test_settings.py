@@ -37,3 +37,18 @@ TEST_CALLER_SIGNING = {
     'kid': _CALLER_KEY.kid,
     'issuer': TEST_CALLER_ISSUER,
 }
+
+# RS256 key standing in for ai-service (MCP gateway) approval assertions.
+_AI_PRIVATE, _AI_PUBLIC = generate_rsa_key_pair(2048)
+_AI_KEY = load_signing_key(private_pem=_AI_PRIVATE, public_pem=_AI_PUBLIC)
+TEST_AI_SERVICE_ISSUER = 'https://ai.test'
+TRUSTED_AI_TEST_CALLER_SETTINGS = {
+    'AI_SERVICE_ISSUER': TEST_AI_SERVICE_ISSUER,
+    'AI_SERVICE_URL': 'https://ai.example.com',
+    'AI_SERVICE_JWKS': build_jwks_document(_AI_KEY),
+}
+TEST_AI_CALLER_SIGNING = {
+    'private_key_pem': _AI_KEY.private_pem,
+    'kid': _AI_KEY.kid,
+    'issuer': TEST_AI_SERVICE_ISSUER,
+}

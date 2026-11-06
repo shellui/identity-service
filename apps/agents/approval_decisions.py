@@ -15,6 +15,7 @@ from apps.agents.approval_audit import (
     APPROVAL_AUDIT_DENIED,
     record_approval_decision_event,
 )
+from apps.agents.mcp_setup_session_ttl import resolve_session_grant_ttl_seconds
 from apps.agents.approval_session import grant_session_write
 from apps.agents.models import McpApprovalRequest
 
@@ -125,10 +126,16 @@ def client_allow_session(
     *,
     connection_id: str = '',
     actor_email: str | None,
+    caller_name: str = '',
+    assertion_claims: dict | None = None,
 ) -> ApprovalDecisionResult:
     if row.is_destructive:
         raise ApprovalDecisionError('Destructive actions cannot use session allow.', status=409)
-    grant_session_write(agent=row.agent, connection_id=connection_id)
+    ttl_seconds = resolve_session_grant_ttl_seconds(
+        caller_name=caller_name,
+        assertion_claims=assertion_claims,
+    )
+    grant_session_write(agent=row.agent, connection_id=connection_id, ttl_seconds=ttl_seconds)
     return approve_pending(
         row,
         decided_by=None,

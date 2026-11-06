@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
 
+### ✨ Feature
+
+- MCP session Allow TTL stays **60 seconds** by default, but ai-service can sign approval assertions with ``setup_flow`` and ``mcp_session_ttl_seconds`` between **600** and **900** during new-company setup so Identity grants that longer per-connection window. Other callers and out-of-band values cannot extend the grant; destructive actions still need an approval each time.
+
 ### 🐛 Bug Fixes
 
 - Identity ``/mcp`` local ``tools/call`` rows store elapsed ``duration_ms`` in the admin call log.

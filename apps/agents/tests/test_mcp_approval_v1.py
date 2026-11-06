@@ -1,27 +1,38 @@
 import json
+import time
+import uuid
 from datetime import timedelta
 
+import jwt
 from django.contrib.auth import get_user_model
 from django.test import Client, TestCase, override_settings
 from django.utils import timezone
+from shellui_django.mcp.internal import APPROVAL_AUDIENCE, APPROVAL_SCOPE, build_mcp_approval_assertion
 
 from apps.actions.models import EventLog
 from apps.agents.approval_links import sign_approval_fallback_token
 from apps.agents.models import Agent, McpApprovalRequest, McpApprovalSessionGrant
-from apps.agents.tests.mcp_test_settings import TEST_CALLER_SIGNING, TRUSTED_TEST_CALLER_SETTINGS
+from apps.agents.tests.mcp_test_settings import (
+    TEST_AI_CALLER_SIGNING,
+    TEST_CALLER_SIGNING,
+    TRUSTED_AI_TEST_CALLER_SETTINGS,
+    TRUSTED_TEST_CALLER_SETTINGS,
+)
 from apps.companies.access import set_company_access
 from apps.companies.models import Company
-from shellui_django.mcp.internal import build_mcp_approval_assertion
 
 User = get_user_model()
 
+_APPROVAL_SETTINGS = {**TRUSTED_TEST_CALLER_SETTINGS, **TRUSTED_AI_TEST_CALLER_SETTINGS}
+
 
 @override_settings(
-    **TRUSTED_TEST_CALLER_SETTINGS,
+    **_APPROVAL_SETTINGS,
     JWT_ISSUER='https://identity.test',
     JWT_AUDIENCE='shellui-test',
     AUTH_RATE_LIMIT_ENABLED=False,
     MCP_APPROVAL_SESSION_TTL_SECONDS=60,
+    MCP_APPROVAL_ASSERTION_MAX_LIFETIME_SECONDS=900,
 )
 class McpApprovalV1Tests(TestCase):
     def setUp(self):
@@ -51,6 +62,70 @@ class McpApprovalV1Tests(TestCase):
             arguments_hash=args_hash,
             audience_url='https://identity.test',
         )
+
+    def _ai_assertion(
+        self,
+        agent,
+        *,
+        args_hash='abc123',
+        service='storage',
+        action='write_file',
+        lifetime_seconds=60,
+        extra_claims=None,
+    ):
+        signing = TEST_AI_CALLER_SIGNING
+        now = int(time.time())
+        claims = {
+            'iss': signing['issuer'],
+            'aud': APPROVAL_AUDIENCE,
+            'sub': f'agent:{agent.id}',
+            'scope': APPROVAL_SCOPE,
+            'company_id': self.company.id,
+            'agent_id': str(agent.id),
+            'service': service,
+            'action': action,
+            'arguments_hash': args_hash,
+            'target': 'https://identity.test',
+            'iat': now,
+            'exp': now + lifetime_seconds,
+            'jti': uuid.uuid4().hex,
+        }
+        if extra_claims:
+            claims.update(extra_claims)
+        token = jwt.encode(claims, signing['private_key_pem'], algorithm='RS256', headers={'kid': signing['kid']})
+        return token.decode('utf-8') if isinstance(token, bytes) else token
+
+    def _service_assertion_with_claims(
+        self,
+        agent,
+        *,
+        args_hash='abc123',
+        service='storage',
+        action='write_file',
+        lifetime_seconds=60,
+        extra_claims=None,
+    ):
+        signing = TEST_CALLER_SIGNING
+        now = int(time.time())
+        claims = {
+            'iss': signing['issuer'],
+            'aud': APPROVAL_AUDIENCE,
+            'sub': f'agent:{agent.id}',
+            'scope': APPROVAL_SCOPE,
+            'company_id': self.company.id,
+            'agent_id': str(agent.id),
+            'service': service,
+            'action': action,
+            'arguments_hash': args_hash,
+            'target': 'https://identity.test',
+            'iat': now,
+            'exp': now + lifetime_seconds,
+            'jti': uuid.uuid4().hex,
+        }
+        if extra_claims:
+            claims.update(extra_claims)
+        token = jwt.encode(claims, signing['private_key_pem'], algorithm='RS256', headers={'kid': signing['kid']})
+        return token.decode('utf-8') if isinstance(token, bytes) else token
 
     def _create_via_internal(self, agent=None, *, args_hash='abc123', **extra_body):
         agent = agent or self.agent
@@ -240,3 +315,120 @@ class McpApprovalV1Tests(TestCase):
         self.assertEqual(response.json()['status'], 'expired')
         row.refresh_from_db()
         self.assertTrue(row.expired_event_logged)
+
+    def test_setup_session_uses_600_seconds_when_ai_mints_setup_claims(self):
+        h = 's' * 64
+        created = self._create_via_internal(args_hash=h)
+        assertion = self._ai_assertion(
+            self.agent,
+            args_hash=h,
+            lifetime_seconds=900,
+            extra_claims={'setup_flow': True, 'mcp_session_ttl_seconds': 600},
+        )
+        self.client.post(
+            '/api/v1/mcp/internal/mcp-approval-decide',
+            data=json.dumps(
+                {'approval_id': created['id'], 'decision': 'allow_session', 'connection_id': 'setup-conn'}
+            ),
+            content_type='application/json',
+            HTTP_AUTHORIZATION=f'Bearer {assertion}',
+        )
+        grant = McpApprovalSessionGrant.objects.get(agent=self.agent, connection_id='setup-conn')
+        self.assertAlmostEqual((grant.expires_at - timezone.now()).total_seconds(), 600, delta=10)
+
+    def test_setup_ttl_ignored_for_non_ai_caller(self):
+        h = 't' * 64
+        created = self._create_via_internal(args_hash=h)
+        assertion = self._service_assertion_with_claims(
+            self.agent,
+            args_hash=h,
+            lifetime_seconds=900,
+            extra_claims={'setup_flow': True, 'mcp_session_ttl_seconds': 600},
+        )
+        self.client.post(
+            '/api/v1/mcp/internal/mcp-approval-decide',
+            data=json.dumps(
+                {'approval_id': created['id'], 'decision': 'allow_session', 'connection_id': 'svc-setup'}
+            ),
+            content_type='application/json',
+            HTTP_AUTHORIZATION=f'Bearer {assertion}',
+        )
+        grant = McpApprovalSessionGrant.objects.get(agent=self.agent, connection_id='svc-setup')
+        self.assertAlmostEqual((grant.expires_at - timezone.now()).total_seconds(), 60, delta=5)
+
+    def test_setup_ttl_out_of_band_falls_back_to_default(self):
+        h = 'u' * 64
+        created = self._create_via_internal(args_hash=h)
+        assertion = self._ai_assertion(
+            self.agent,
+            args_hash=h,
+            lifetime_seconds=900,
+            extra_claims={'setup_flow': True, 'mcp_session_ttl_seconds': 120},
+        )
+        self.client.post(
+            '/api/v1/mcp/internal/mcp-approval-decide',
+            data=json.dumps(
+                {'approval_id': created['id'], 'decision': 'allow_session', 'connection_id': 'bad-band'}
+            ),
+            content_type='application/json',
+            HTTP_AUTHORIZATION=f'Bearer {assertion}',
+        )
+        grant = McpApprovalSessionGrant.objects.get(agent=self.agent, connection_id='bad-band')
+        self.assertAlmostEqual((grant.expires_at - timezone.now()).total_seconds(), 60, delta=5)
+
+    def test_setup_ttl_cannot_exceed_signed_assertion_lifetime(self):
+        h = 'v' * 64
+        created = self._create_via_internal(args_hash=h)
+        assertion = self._ai_assertion(
+            self.agent,
+            args_hash=h,
+            lifetime_seconds=120,
+            extra_claims={'setup_flow': True, 'mcp_session_ttl_seconds': 600},
+        )
+        self.client.post(
+            '/api/v1/mcp/internal/mcp-approval-decide',
+            data=json.dumps(
+                {'approval_id': created['id'], 'decision': 'allow_session', 'connection_id': 'short-jwt'}
+            ),
+            content_type='application/json',
+            HTTP_AUTHORIZATION=f'Bearer {assertion}',
+        )
+        grant = McpApprovalSessionGrant.objects.get(agent=self.agent, connection_id='short-jwt')
+        self.assertAlmostEqual((grant.expires_at - timezone.now()).total_seconds(), 60, delta=5)
+
+    def test_session_not_reused_across_connections(self):
+        h = 'w' * 64
+        created = self._create_via_internal(args_hash=h)
+        assertion = self._assertion(self.agent, args_hash=h)
+        self.client.post(
+            '/api/v1/mcp/internal/mcp-approval-decide',
+            data=json.dumps(
+                {'approval_id': created['id'], 'decision': 'allow_session', 'connection_id': 'only-a'}
+            ),
+            content_type='application/json',
+            HTTP_AUTHORIZATION=f'Bearer {assertion}',
+        )
+        check_other = self.client.post(
+            '/api/v1/mcp/internal/mcp-approval-session-check',
+            data=json.dumps({'connection_id': 'only-b', 'is_destructive': False}),
+            content_type='application/json',
+            HTTP_AUTHORIZATION=f'Bearer {self._assertion(self.agent, args_hash=h)}',
+        )
+        self.assertFalse(check_other.json()['session_allowed'])
+
+    def test_expired_session_grant_is_not_allowed(self):
+        past = timezone.now() - timedelta(seconds=1)
+        McpApprovalSessionGrant.objects.create(
+            agent=self.agent,
+            company=self.company,
+            connection_id='gone',
+            expires_at=past,
+        )
+        h = 'x' * 64
+        check = self.client.post(
+            '/api/v1/mcp/internal/mcp-approval-session-check',
+            data=json.dumps({'connection_id': 'gone', 'is_destructive': False}),
+            content_type='application/json',
+            HTTP_AUTHORIZATION=f'Bearer {self._assertion(self.agent, args_hash=h)}',
+        )
+        self.assertFalse(check.json()['session_allowed'])

@@ -71,20 +71,20 @@ def _assertion_from_request(request) -> str:
     return str(request.data.get('assertion') or '').strip()
 
 
-def _approval_assertion_claims(request) -> tuple[dict | None, Response | None]:
+def _approval_assertion_claims(request):
     try:
-        claims = verify_caller_assertion(
+        verified = verify_caller_assertion(
             _assertion_from_request(request),
             audience=APPROVAL_AUDIENCE,
             scope=APPROVAL_SCOPE,
             target=_identity_origin(),
         )
     except InternalAssertionError as exc:
-        return None, Response({'error': exc.message}, status=exc.status)
-    binding = approval_binding_from_claims(claims)
+        return None, None, Response({'error': exc.message}, status=exc.status)
+    binding = approval_binding_from_claims(verified.claims)
     if binding is None:
-        return None, Response({'error': 'Invalid assertion claims.'}, status=status.HTTP_400_BAD_REQUEST)
-    return claims, None
+        return None, None, Response({'error': 'Invalid assertion claims.'}, status=status.HTTP_400_BAD_REQUEST)
+    return verified.claims, verified.caller, None
 
 
 class McpRevocationListView(APIView):
@@ -132,7 +132,7 @@ class McpInternalApprovalCreateView(APIView):
 
     def post(self, request):
         try:
-            claims = verify_caller_assertion(
+            verified = verify_caller_assertion(
                 _assertion_from_request(request),
                 audience=APPROVAL_AUDIENCE,
                 scope=APPROVAL_SCOPE,
@@ -140,6 +140,7 @@ class McpInternalApprovalCreateView(APIView):
             )
         except InternalAssertionError as exc:
             return Response({'error': exc.message}, status=exc.status)
+        claims = verified.claims
         binding = approval_binding_from_claims(claims)
         if binding is None:
             return Response({'error': 'Invalid assertion claims.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -204,7 +205,7 @@ class McpInternalApprovalStateView(APIView):
     permission_classes = []
 
     def post(self, request):
-        claims, err = _approval_assertion_claims(request)
+        claims, _caller, err = _approval_assertion_claims(request)
         if err:
             return err
         binding = approval_binding_from_claims(claims)
@@ -229,7 +230,7 @@ class McpInternalApprovalDecideView(APIView):
     permission_classes = []
 
     def post(self, request):
-        claims, err = _approval_assertion_claims(request)
+        claims, caller, err = _approval_assertion_claims(request)
         if err:
             return err
         binding = approval_binding_from_claims(claims)
@@ -257,7 +258,13 @@ class McpInternalApprovalDecideView(APIView):
             elif decision in ('deny', 'reject'):
                 result = client_deny(row, actor_email=actor_email)
             elif decision in ('allow_session', 'session'):
-                result = client_allow_session(row, connection_id=connection_id, actor_email=actor_email)
+                result = client_allow_session(
+                    row,
+                    connection_id=connection_id,
+                    actor_email=actor_email,
+                    caller_name=caller.name,
+                    assertion_claims=claims,
+                )
             else:
                 return Response({'error': 'decision must be allow, deny, or allow_session.'}, status=status.HTTP_400_BAD_REQUEST)
         except ApprovalDecisionError as exc:
@@ -270,7 +277,7 @@ class McpInternalApprovalSessionCheckView(APIView):
     permission_classes = []
 
     def post(self, request):
-        claims, err = _approval_assertion_claims(request)
+        claims, _caller, err = _approval_assertion_claims(request)
         if err:
             return err
         binding = approval_binding_from_claims(claims)
@@ -300,7 +307,7 @@ class McpInternalApprovalSessionRevokeView(APIView):
     permission_classes = []
 
     def post(self, request):
-        claims, err = _approval_assertion_claims(request)
+        claims, _caller, err = _approval_assertion_claims(request)
         if err:
             return err
         binding = approval_binding_from_claims(claims)
@@ -320,7 +327,7 @@ class McpInternalApprovalConsumeView(APIView):
     permission_classes = []
 
     def post(self, request):
-        claims, err = _approval_assertion_claims(request)
+        claims, _caller, err = _approval_assertion_claims(request)
         if err:
             return err
         binding = approval_binding_from_claims(claims)

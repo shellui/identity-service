@@ -20,9 +20,10 @@ def grant_session_write(
     agent: Agent,
     connection_id: str = '',
     granted_by_id: int | None = None,
+    ttl_seconds: int | None = None,
 ) -> McpApprovalSessionGrant:
     now = timezone.now()
-    ttl = session_ttl_seconds()
+    ttl = int(ttl_seconds) if ttl_seconds is not None else session_ttl_seconds()
     conn = (connection_id or '').strip()[:128]
     McpApprovalSessionGrant.objects.filter(
         agent=agent,
