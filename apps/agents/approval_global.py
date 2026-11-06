@@ -28,11 +28,8 @@ def parse_uuid(raw: Any) -> uuid.UUID | None:
 
 
 def parse_setup_expires_at_unix(raw: Any) -> datetime | None:
-    try:
-        ts = int(raw)
-    except (TypeError, ValueError):
-        return None
-    if ts <= 0:
+    ts = strict_non_negative_int(raw)
+    if ts is None or ts <= 0:
         return None
     return datetime.fromtimestamp(ts, tz=dt_timezone.utc)
 

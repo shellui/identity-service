@@ -175,6 +175,21 @@ class McpApprovalV1Tests(TestCase):
         self.assertEqual(response.status_code, 200)
         return response.json()
 
+    def _create_via_internal_ai(self, agent=None, *, args_hash='abc123', **extra_body):
+        agent = agent or self.agent
+        body = {
+            'is_destructive': False,
+            **extra_body,
+        }
+        response = self.client.post(
+            '/api/v1/mcp/internal/mcp-approval-requests',
+            data=json.dumps(body),
+            content_type='application/json',
+            HTTP_AUTHORIZATION=f'Bearer {self._ai_assertion(agent, args_hash=args_hash)}',
+        )
+        self.assertEqual(response.status_code, 200)
+        return response.json()
+
     def test_delegated_agent_rejects_storage_approval_create(self):
         delegated = Agent.objects.create(
             company=self.company,
@@ -252,6 +267,65 @@ class McpApprovalV1Tests(TestCase):
         )
         self.assertEqual(response.status_code, 409)
 
+    def test_session_check_returns_live_binding_and_grant_version_for_delegated(self):
+        gid = uuid.uuid4()
+        self.agent.global_agent_id = uuid.uuid4()
+        self.agent.global_company_id = gid
+        self.agent.company_binding_version = 0
+        self.agent.save(
+            update_fields=['global_agent_id', 'global_company_id', 'company_binding_version']
+        )
+        h = 'e3' * 32
+        created = self._create_via_internal_ai(args_hash=h)
+        decide_assertion = self._ai_assertion(self.agent, args_hash=h)
+        self.client.post(
+            '/api/v1/mcp/internal/mcp-approval-decide',
+            data=json.dumps(
+                {'approval_id': created['id'], 'decision': 'allow_session', 'connection_id': 'live-triplet'}
+            ),
+            content_type='application/json',
+            HTTP_AUTHORIZATION=f'Bearer {decide_assertion}',
+        )
+        check_assertion = self._ai_assertion(self.agent, args_hash=h)
+        check = self.client.post(
+            '/api/v1/mcp/internal/mcp-approval-session-check',
+            data=json.dumps({'connection_id': 'live-triplet', 'is_destructive': False}),
+            content_type='application/json',
+            HTTP_AUTHORIZATION=f'Bearer {check_assertion}',
+        )
+        self.assertEqual(check.status_code, 200)
+        body = check.json()
+        self.assertTrue(body['session_allowed'])
+        self.assertEqual(body['grant_version'], int(self.agent.grant_version))
+        self.assertEqual(body['global_company_id'], str(gid))
+        self.assertEqual(body['company_binding_version'], 0)
+
+    def test_session_check_403_when_delegated_missing_company_binding(self):
+        self.agent.global_agent_id = uuid.uuid4()
+        self.agent.global_company_id = None
+        self.agent.company_binding_version = None
+        self.agent.save(update_fields=['global_agent_id', 'global_company_id', 'company_binding_version'])
+        h = 'e4' * 32
+        created = self._create_via_internal_ai(args_hash=h)
+        decide_assertion = self._ai_assertion(self.agent, args_hash=h)
+        self.client.post(
+            '/api/v1/mcp/internal/mcp-approval-decide',
+            data=json.dumps(
+                {'approval_id': created['id'], 'decision': 'allow_session', 'connection_id': 'no-bind'}
+            ),
+            content_type='application/json',
+            HTTP_AUTHORIZATION=f'Bearer {decide_assertion}',
+        )
+        check_assertion = self._ai_assertion(self.agent, args_hash=h)
+        check = self.client.post(
+            '/api/v1/mcp/internal/mcp-approval-session-check',
+            data=json.dumps({'connection_id': 'no-bind', 'is_destructive': False}),
+            content_type='application/json',
+            HTTP_AUTHORIZATION=f'Bearer {check_assertion}',
+        )
+        self.assertEqual(check.status_code, 403)
+        self.assertFalse(check.json().get('session_allowed', True))
+
     def test_client_session_grant_and_check(self):
         created = self._create_via_internal(args_hash='e' * 64)
         assertion = self._assertion(self.agent, args_hash='e' * 64)
@@ -293,6 +367,24 @@ class McpApprovalV1Tests(TestCase):
             HTTP_AUTHORIZATION=f'Bearer {self._assertion(self.agent, args_hash="e2" * 32)}',
         )
         self.assertFalse(destructive.json()['session_allowed'])
+
+    def test_internal_approval_create_rejects_arguments_redacted(self):
+        response = self.client.post(
+            '/api/v1/mcp/internal/mcp-approval-requests',
+            data=json.dumps({'is_destructive': False, 'arguments_redacted': {}}),
+            content_type='application/json',
+            HTTP_AUTHORIZATION=f'Bearer {self._assertion(self.agent, args_hash="x" * 64)}',
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_internal_approval_create_requires_json_bool_is_destructive(self):
+        response = self.client.post(
+            '/api/v1/mcp/internal/mcp-approval-requests',
+            data=json.dumps({'is_destructive': 'false'}),
+            content_type='application/json',
+            HTTP_AUTHORIZATION=f'Bearer {self._assertion(self.agent, args_hash="y" * 64)}',
+        )
+        self.assertEqual(response.status_code, 400)
 
     def test_session_revoke_on_disconnect(self):
         created = self._create_via_internal(args_hash='f' * 64)

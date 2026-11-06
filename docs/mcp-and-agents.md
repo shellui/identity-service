@@ -83,6 +83,7 @@ Global agent tokens are RS256 JWTs from the global identity issuer. Mint them af
 | `sub` | Global user id (agent owner) |
 | `agent_id` | Global agent uuid |
 | `token_type` | `agent_access` (not `access`; no `sid` or `pat_id`) |
+| `mcp_authority` | Always `global_delegated` (required; no legacy omission) |
 | `email`, `email_verified` | Owner email; `email_verified` must be boolean `true` |
 | `user_metadata.is_staff` | Boolean `false` for non-staff; staff exchange is refused |
 | `scope` | Space-separated OAuth-style service ids (`identity`, `storage`, `ai`, …); include `ai` when the user enabled that capability (required for `{AI_SERVICE_URL}/c/<company_id>/mcp` exchange) |
@@ -96,6 +97,8 @@ Optional: `agent_name` for the regional agent display name.
 **New-company setup (global subject token, regional exchange):** optional `setup_flow` as JSON `true` or `false` only. When `setup_flow` is `true`, the global token must also carry `mcp_new_company_grant` as JSON **`true`** (strings, `1`, or omitted values are rejected). Pairing enforces that the global issuer actually selected the first-company setup grant and clients cannot turn it on alone. Require `setup_context_company_id` (JSON positive integer, must equal regional `company_id`), `setup_expires_at` (JSON non-negative unix seconds, strictly after `iat`, not after global `exp`), and `mcp_session_ttl_seconds` in the 600 to 900 band, with strict JSON integer types. Identity rejects legacy `setup_context_exp`. When `setup_flow` is `false`, do not send `mcp_new_company_grant`. When both setup claims are absent on a later exchange, Identity clears any stored setup context on the regional agent. Identity derives **`mcp_new_company_grant` on the regional access token** only after this validation. Regional MCP access tokens echo `setup_context_company_id`, `setup_expires_at`, `setup_flow`, `mcp_new_company_grant`, and `mcp_session_ttl_seconds` while that window is active. The ai-service gateway forwards the same into approval **assertions**. Identity extends session Allow only when the assertion is ai-signed, `mcp_session_ttl_seconds` is in the configured band, the grant is not longer than `exp - iat` on the assertion JWT, **and** both remaining seconds to regional access token `exp` and remaining seconds to `setup_context_expires_at` are at least `MCP_APPROVAL_SETUP_SESSION_TTL_MIN_SECONDS` (default 600). If the shorter of those ceilings is under that floor, session Allow stays at the default (typically **60** seconds). If these global claims are absent or wrong, session Allow stays at that default.
 
 **Delegated agents and internal approvals:** agents with `global_agent_id` (token exchange) must use approvals signed by **ai-service**. Storage, hosting, and email get **409** with `error_code` `out_of_sync` if they try to create an approval for that agent.
+
+**Regional agent access tokens (after exchange):** include **`mcp_authority: delegated`**, **`global_agent_id`**, and the SaaS binding echo **`global_company_id`** / **`company_binding_version`** when the row is company-bound. OAuth-consent agents without `global_agent_id` omit `mcp_authority` (personal long-lived tokens stay unchanged).
 
 ## Access levels
 

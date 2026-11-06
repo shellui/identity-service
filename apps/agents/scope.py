@@ -61,8 +61,13 @@ def services_within(global_services: list[str], requested: list[str] | None) -> 
     allowed = [s for s in global_services if s in _ALLOWED_SERVICES]
     if not allowed:
         return None
-    if not requested:
+    # Distinguish omitted body key (None) from explicit JSON [] (must not widen to full cap).
+    if requested is None:
         return allowed
+    if not isinstance(requested, list):
+        return None
+    if len(requested) == 0:
+        return None
     narrowed = [s for s in requested if s in _ALLOWED_SERVICES]
     if not narrowed:
         return None

@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 - Global agent token exchange: the global subject token ``scope`` must include ``ai`` for ``{AI_SERVICE_URL}/c/<company_id>/mcp``. First-company setup on the global token requires ``setup_flow`` and ``mcp_new_company_grant`` both JSON ``true`` (pairing and strict integer deadlines); absent setup claims clear any stored setup on the regional agent. Personal MCP agent access tokens set ``iss`` from ``SIMPLE_JWT['ISSUER']`` or ``JWT_ISSUER`` for the same behavior as company agents.
 
+- Global subject tokens must include ``mcp_authority: global_delegated``. Regional tokens from exchange include ``mcp_authority: delegated``. ``mcp-approval-session-check`` returns live ``global_company_id``, ``company_binding_version``, and ``grant_version`` on success when the agent is delegated; internal approval create rejects ``arguments_redacted`` in the JSON body and refuses non-JSON ``is_destructive``.
+
 ### 🐛 Bug Fixes
 
 - Identity ``/mcp`` local ``tools/call`` rows store elapsed ``duration_ms`` in the admin call log.

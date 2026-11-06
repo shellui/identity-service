@@ -45,6 +45,8 @@ from apps.federation.signing import TokenError, verify_pinned
 logger = logging.getLogger(__name__)
 
 GLOBAL_AGENT_TOKEN_TYPE = 'agent_access'
+# Global issuer (SaaS) profile for MCP agents that may exchange to a regional delegated row.
+GLOBAL_AGENT_MCP_AUTHORITY = 'global_delegated'
 
 
 def agent_exchange_enabled() -> bool:
@@ -376,6 +378,8 @@ def handle_agent_token_exchange(request, *, data: dict[str, Any] | None = None) 
 
     if claims.get('token_type') != GLOBAL_AGENT_TOKEN_TYPE:
         return _error('invalid_grant', 'The subject token must be a global agent access token.')
+    if claims.get('mcp_authority') != GLOBAL_AGENT_MCP_AUTHORITY:
+        return _error('invalid_grant', 'The global agent token must declare mcp_authority global_delegated.')
     if claims.get('sid') or claims.get('pat_id'):
         return _error('invalid_grant', 'The subject token must be a global agent access token.')
     if claims.get('email_verified') is not True:
@@ -565,11 +569,17 @@ def handle_agent_token_exchange(request, *, data: dict[str, Any] | None = None) 
         else:
             if not agent.is_active:
                 return _error('invalid_grant', 'The regional agent is paused, revoked, or expired.')
-            if agent.global_agent_id and (
-                agent.global_company_id != global_company_id
-                or agent.company_binding_version != company_binding_version
-            ):
+            if agent.global_company_id is None:
+                # First SaaS company bind for an older regional row that only had global_agent_id.
+                pass
+            elif agent.global_company_id != global_company_id:
                 return _error('invalid_grant', 'The global company binding does not match this agent.')
+            if (
+                agent.global_company_id is not None
+                and agent.company_binding_version is not None
+                and company_binding_version < agent.company_binding_version
+            ):
+                return _error('invalid_grant', 'The company binding version is stale.')
             stored_cap = list(agent.global_allowed_services or [])
             if not stored_cap:
                 return _error('invalid_grant', 'The regional agent has no stored service cap.')
@@ -630,11 +640,6 @@ def handle_agent_token_exchange(request, *, data: dict[str, Any] | None = None) 
 
             agent.global_allowed_services = global_cap_services
             agent.global_company_id = global_company_id
-            if (
-                agent.company_binding_version is not None
-                and company_binding_version < agent.company_binding_version
-            ):
-                return _error('invalid_grant', 'The company binding version is stale.')
             agent.company_binding_version = company_binding_version
             agent.access_mode = final_access
             agent.read_level = final_read

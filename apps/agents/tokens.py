@@ -70,6 +70,9 @@ def build_agent_access_token(agent: Agent, *, resource: str) -> dict:
         'exp': int(exp.timestamp()),
         'aud': audience,
     }
+    ga = getattr(agent, 'global_agent_id', None)
+    if ga is not None:
+        claims['mcp_authority'] = 'delegated'
     # Tests often override ``JWT_ISSUER`` without refreshing ``SIMPLE_JWT['ISSUER']``;
     # PyJWT rejects ``issuer=...`` when the token omits ``iss``, so mirror both sources.
     _issuer = api_settings.ISSUER or getattr(settings, 'JWT_ISSUER', None)
@@ -99,7 +102,6 @@ def build_agent_access_token(agent: Agent, *, resource: str) -> dict:
         claims['setup_context_company_id'] = int(setup_cid)
         claims['setup_expires_at'] = su
     claims['grant_version'] = int(getattr(agent, 'grant_version', 0) or 0)
-    ga = getattr(agent, 'global_agent_id', None)
     if ga is not None:
         claims['global_agent_id'] = str(ga)
     gc = getattr(agent, 'global_company_id', None)

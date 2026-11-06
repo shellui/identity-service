@@ -11,7 +11,7 @@ from django.core.cache import cache
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
-from apps.agents.exchange import GLOBAL_AGENT_TOKEN_TYPE, GRANT_TYPE
+from apps.agents.exchange import GLOBAL_AGENT_MCP_AUTHORITY, GLOBAL_AGENT_TOKEN_TYPE, GRANT_TYPE
 from apps.agents.models import Agent
 from apps.agents.tokens import issue_agent_refresh, refresh_agent_access
 from apps.companies.models import Company, CompanyMembership
@@ -69,6 +69,7 @@ class AgentTokenExchangeTests(_CryptoMixin, TestCase):
             'mcp_read': 'safe',
             'mcp_destructive': False,
             'user_metadata': {'full_name': 'Ada Lovelace', 'is_staff': False},
+            'mcp_authority': GLOBAL_AGENT_MCP_AUTHORITY,
         }
         claims.update(extra)
         if 'global_company_id' not in claims:
@@ -245,6 +246,41 @@ class AgentTokenExchangeTests(_CryptoMixin, TestCase):
         response = self._post(self._global_agent_token(scope='identity storage'))
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json()['error'], 'invalid_grant')
+
+    def test_global_token_requires_mcp_authority_global_delegated(self):
+        self._member()
+        response = self._post(self._global_agent_token(mcp_authority='legacy'))
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()['error'], 'invalid_grant')
+
+    def test_empty_services_array_is_not_omitted_services(self):
+        self._member()
+        gc = str(self.saas_global_company_id)
+        first = self._post(
+            self._global_agent_token(
+                scope='identity storage ai',
+                global_company_id=gc,
+                company_binding_version=1,
+            ),
+        )
+        self.assertEqual(first.status_code, 200)
+        second = self._post(
+            self._global_agent_token(
+                scope='identity storage ai',
+                global_company_id=gc,
+                company_binding_version=1,
+            ),
+            services=[],
+        )
+        self.assertEqual(second.status_code, 400)
+        self.assertEqual(second.json()['error'], 'invalid_grant')
+
+    def test_regional_access_token_includes_mcp_authority_delegated(self):
+        self._member()
+        response = self._post(self._global_agent_token())
+        self.assertEqual(response.status_code, 200)
+        claims = jwt.decode(response.json()['access_token'], options={'verify_signature': False})
+        self.assertEqual(claims.get('mcp_authority'), 'delegated')
 
     def test_rejects_legacy_setup_context_exp_on_global_token(self):
         self._member()

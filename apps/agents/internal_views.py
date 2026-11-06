@@ -49,6 +49,7 @@ from apps.agents.internal_callers import verify_caller_assertion
 from apps.agents.call_log_internal import fixed_resource_label_for_service, safe_operation_title
 from apps.agents.call_log_outcome import canonical_outcome_ingest
 from apps.agents.json_strict import strict_json_int_for_company_id
+from apps.agents.mcp_claims import strict_bool_claim
 from apps.agents.mcp_audit_codes import sanitize_error_code
 from apps.agents.models import Agent, McpApprovalRequest, McpCallLog
 from apps.agents.tokens import company_name_for_agent
@@ -214,6 +215,8 @@ class McpInternalApprovalCreateView(APIView):
         body = request.data if isinstance(request.data, dict) else {}
         if body.get('arguments') not in (None, {}):
             return Response({'error': 'arguments not accepted.'}, status=status.HTTP_400_BAD_REQUEST)
+        if 'arguments_redacted' in body:
+            return Response({'error': 'arguments_redacted not accepted.'}, status=status.HTTP_400_BAD_REQUEST)
         if body.get('target') not in (None, '') or body.get('short_action_summary') not in (None, ''):
             return Response(
                 {'error': 'target and short_action_summary are server-derived.'},
@@ -223,7 +226,13 @@ class McpInternalApprovalCreateView(APIView):
         action_slug = (binding['action'] or '')[:255]
         target = f'{service_id}:{action_slug}'[:500] if service_id or action_slug else ''
         short_action_summary = ''
-        is_destructive = bool(body.get('is_destructive'))
+        if 'is_destructive' in body:
+            raw_des = body.get('is_destructive')
+            if raw_des is not True and raw_des is not False:
+                return Response({'error': 'is_destructive must be a JSON boolean.'}, status=status.HTTP_400_BAD_REQUEST)
+            is_destructive = raw_des
+        else:
+            is_destructive = False
         expires_at = timezone.now() + timedelta(minutes=10)
         snap_gv = int(agent.grant_version or 0)
         snap_gc = agent.global_company_id
@@ -253,9 +262,6 @@ class McpInternalApprovalCreateView(APIView):
                 row.target = target or row.target
                 row.is_destructive = is_destructive
                 row.short_action_summary = short_action_summary
-                row.authority_grant_version = snap_gv
-                row.authority_global_company_id = snap_gc
-                row.authority_company_binding_version = snap_cb
                 row.save(
                     update_fields=[
                         'expires_at',
@@ -263,9 +269,6 @@ class McpInternalApprovalCreateView(APIView):
                         'target',
                         'is_destructive',
                         'short_action_summary',
-                        'authority_grant_version',
-                        'authority_global_company_id',
-                        'authority_company_binding_version',
                     ]
                 )
         token = sign_approval_fallback_token(str(row.id))
@@ -380,7 +383,16 @@ class McpInternalApprovalSessionCheckView(APIView):
         assert binding is not None
         body = request.data if isinstance(request.data, dict) else {}
         connection_id = str(body.get('connection_id') or '').strip()
-        is_destructive = bool(body.get('is_destructive'))
+        if 'is_destructive' in body:
+            raw_des = body.get('is_destructive')
+            if raw_des is not True and raw_des is not False:
+                return Response(
+                    {'error': 'is_destructive must be a JSON boolean.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            is_destructive = raw_des
+        else:
+            is_destructive = False
         live_err = _approval_live_authority(claims, binding)
         if live_err is not None:
             return live_err
@@ -396,23 +408,36 @@ class McpInternalApprovalSessionCheckView(APIView):
         payload: dict = {'session_allowed': allowed}
         if allowed:
             assert grant is not None
-            pv = getattr(grant, 'agent_grant_version', 0) or 0
-            gc = getattr(grant, 'global_company_id', None)
-            cb = getattr(grant, 'company_binding_version', None)
-            ag = grant.agent
+            ag = Agent.objects.only(
+                'grant_version',
+                'global_company_id',
+                'company_binding_version',
+                'global_agent_id',
+            ).get(pk=binding['agent_id'], company_id=binding['company_id'])
+            payload['grant_version'] = int(ag.grant_version or 0)
+            g_agent = getattr(ag, 'global_agent_id', None)
             ag_gc = getattr(ag, 'global_company_id', None)
-            if ag_gc is not None:
+            ag_cb = getattr(ag, 'company_binding_version', None)
+            if g_agent is not None:
+                if ag_gc is None or ag_cb is None:
+                    return Response(
+                        {'error': 'Delegated agent is missing SaaS company binding.', 'session_allowed': False},
+                        status=status.HTTP_403_FORBIDDEN,
+                    )
                 payload['global_company_id'] = str(ag_gc)
+                payload['company_binding_version'] = int(ag_cb)
             now = timezone.now()
             setup_cid = getattr(grant, 'setup_company_id', None)
             setup_until = getattr(grant, 'setup_context_expires_at', None)
             setup_unix = None
-            new_grant = bool(getattr(grant, 'setup_new_company_grant', False))
+            new_grant = strict_bool_claim(getattr(grant, 'setup_new_company_grant', False))
             setup_ttl = getattr(grant, 'setup_mcp_session_ttl_seconds', None)
+            snap_gc = getattr(grant, 'global_company_id', None)
+            snap_cb = getattr(grant, 'company_binding_version', None)
             setup_extended = (
                 new_grant
-                and gc is not None
-                and cb is not None
+                and snap_gc is not None
+                and snap_cb is not None
                 and setup_ttl is not None
                 and setup_cid is not None
                 and setup_until is not None
@@ -422,9 +447,6 @@ class McpInternalApprovalSessionCheckView(APIView):
             if setup_extended:
                 setup_unix = int(setup_until.timestamp())
             payload['expires_at'] = grant.expires_at.isoformat()
-            payload['grant_version'] = pv
-            if cb is not None:
-                payload['company_binding_version'] = cb
             if setup_unix is not None:
                 payload['setup_expires_at'] = setup_unix
             if setup_extended:
