@@ -33,6 +33,20 @@ class ApprovalDecisionResult:
     audit_status: str
 
 
+def lock_approval_for_update(**lookup) -> McpApprovalRequest:
+    """Lock this approval row inside the current transaction.
+
+    ``agent`` is nullable, so ``select_for_update().select_related('agent')`` becomes
+    ``FOR UPDATE`` on the outer join. PostgreSQL rejects that. ``of=('self',)`` locks
+    only the approval row and still loads ``agent`` for the owner check and audit.
+    """
+    return (
+        McpApprovalRequest.objects.select_for_update(of=('self',))
+        .select_related('agent')
+        .get(**lookup)
+    )
+
+
 def _ensure_pending(row: McpApprovalRequest) -> None:
     now = timezone.now()
     if row.status != McpApprovalRequest.STATUS_PENDING:
@@ -49,7 +63,7 @@ def approve_pending(
     audit_status: str,
     actor_email: str | None = None,
 ) -> ApprovalDecisionResult:
-    row = McpApprovalRequest.objects.select_for_update().select_related('agent').get(pk=row.pk)
+    row = lock_approval_for_update(pk=row.pk)
     _ensure_pending(row)
     row.status = McpApprovalRequest.STATUS_APPROVED
     row.decided_at = timezone.now()
@@ -72,7 +86,7 @@ def deny_pending(
     audit_status: str,
     actor_email: str | None = None,
 ) -> ApprovalDecisionResult:
-    row = McpApprovalRequest.objects.select_for_update().select_related('agent').get(pk=row.pk)
+    row = lock_approval_for_update(pk=row.pk)
     _ensure_pending(row)
     row.status = McpApprovalRequest.STATUS_REJECTED
     row.decided_at = timezone.now()
@@ -137,7 +151,7 @@ def client_allow_session(
         agent=row.agent,
     )
     with transaction.atomic():
-        row_locked = McpApprovalRequest.objects.select_for_update().select_related('agent').get(pk=row.pk)
+        row_locked = lock_approval_for_update(pk=row.pk)
         _ensure_pending(row_locked)
         if row_locked.is_destructive:
             raise ApprovalDecisionError('Destructive actions cannot use session allow.', status=409)

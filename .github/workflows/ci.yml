@@ -23,6 +23,20 @@ jobs:
     env:
       SECRET_KEY: ci-only-not-for-production-0123456789abcdef
       DEBUG: 'true'
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: identity
+          POSTGRES_PASSWORD: identity
+          POSTGRES_DB: identity
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U identity -d identity"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -87,6 +101,11 @@ jobs:
 
       - name: Run tests
         run: uv run python manage.py test --verbosity=1
+
+      - name: Postgres approval lock regression
+        env:
+          POSTGRES_DATABASE_URL: postgres://identity:identity@localhost:5432/identity
+        run: uv run python manage.py test apps.agents.tests.test_approval_row_lock --verbosity=1
 
   security:
     name: Security & hygiene

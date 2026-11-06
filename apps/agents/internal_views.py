@@ -28,6 +28,7 @@ from apps.agents.approval_decisions import (
     client_allow,
     client_allow_session,
     client_deny,
+    lock_approval_for_update,
 )
 from apps.agents.approval_internal import (
     approval_binding_from_claims,
@@ -785,7 +786,7 @@ class McpInternalApprovalConsumeView(APIView):
                 if binding.get('is_global'):
                     flt['agent_id__isnull'] = True
                     flt['company_id__isnull'] = True
-                row = McpApprovalRequest.objects.select_for_update().select_related('agent').filter(**flt).get()
+                row = lock_approval_for_update(**flt)
             except McpApprovalRequest.DoesNotExist:
                 return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
             auth_parsed, auth_err = parse_approval_authority_claims(claims)

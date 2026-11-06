@@ -29,6 +29,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ### 🐛 Bug Fixes
 
+- Owner `POST /api/v1/mcp/approvals/{id}/decide` and approval consume lock only the approval row. PostgreSQL no longer returns 500 when `select_for_update` joined the nullable agent. A second decide or consume on that row stays a conflict. Staff and non-owners stay refused.
+
 - `GET /api/v1/mcp/internal/mcp-revocations` puts `max_active_grant_version` on the JSON body as well as in the signed assertion. `agents` lists every regional agent for the company filter, not only blocked rows. `revoked_agent_ids` stays the blocked set. Cache remains 30 seconds.
 
 - Destructive MCP call logs accept `allowed` and `failed` against an `approved` or `executed` approval (including after consume). `denied` and `waiting_approval` stay `access_kind` `destructive`. `session_used` is rejected for destructive calls. Identity does not move `executed` back to `approved`.
