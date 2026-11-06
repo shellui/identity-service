@@ -33,7 +33,7 @@ def grant_session_write(
         expires_at__gt=now,
     ).update(revoked_at=now)
     snap = Agent.objects.only(
-        'permission_version',
+        'grant_version',
         'global_company_id',
         'company_binding_version',
         'company_id',
@@ -44,7 +44,7 @@ def grant_session_write(
         connection_id=conn,
         granted_by_id=granted_by_id,
         expires_at=now + timedelta(seconds=ttl),
-        agent_permission_version=int(snap.permission_version or 0),
+        agent_grant_version=int(snap.grant_version or 0),
         global_company_id=snap.global_company_id,
         company_binding_version=snap.company_binding_version,
     )
@@ -83,7 +83,7 @@ def active_session_grant(
             revoked_at__isnull=True,
             expires_at__gt=now,
         )
-        .filter(agent__permission_version=F('agent_permission_version'))
+        .filter(agent__grant_version=F('agent_grant_version'))
         .filter(agent__revoked_at__isnull=True, agent__paused_at__isnull=True)
         .filter(
             Q(agent__global_company_id__isnull=True, global_company_id__isnull=True)

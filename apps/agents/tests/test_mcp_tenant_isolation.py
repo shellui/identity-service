@@ -5,13 +5,18 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 from django.utils import timezone
 
-from apps.agents.tests.mcp_test_settings import TEST_CALLER_SIGNING, TRUSTED_TEST_CALLER_SETTINGS
+from apps.agents.tests.mcp_test_settings import (
+    TEST_CALLER_SIGNING,
+    TRUSTED_TEST_CALLER_SETTINGS,
+    approval_authority_snapshot_for_agent,
+    build_mcp_approval_assertion_for_agent,
+)
 from apps.agents.tests.mcp_test_settings import rs256_identity_settings
 from apps.companies.access import set_company_access
 from apps.companies.models import Company
 from apps.agents.models import Agent, McpApprovalRequest, McpCallLog, McpOAuthClient
 from apps.agents.tokens import encode_access_token
-from shellui_django.mcp.internal import build_mcp_approval_assertion, build_mcp_revocation_assertion
+from shellui_django.mcp.internal import build_mcp_revocation_assertion
 
 User = get_user_model()
 
@@ -53,7 +58,8 @@ class McpTenantIsolationTests(TestCase):
         self.agent_token_a = encode_access_token(self.agent_a, resource=IDENTITY_MCP_RESOURCE)
 
     def _approval_assertion(self, agent, *, company_id=None, service='storage', args_hash='abc'):
-        return build_mcp_approval_assertion(
+        return build_mcp_approval_assertion_for_agent(
+            agent,
             **TEST_CALLER_SIGNING,
             company_id=company_id if company_id is not None else agent.company_id,
             agent_id=str(agent.id),
@@ -124,6 +130,7 @@ class McpTenantIsolationTests(TestCase):
             arguments_hash='hash-consume',
             status=McpApprovalRequest.STATUS_APPROVED,
             expires_at=timezone.now() + timedelta(minutes=10),
+            **approval_authority_snapshot_for_agent(self.agent_b),
         )
         assertion = self._approval_assertion(self.agent_a, company_id=self.company_a.id)
         response = self.client.post(

@@ -23,13 +23,13 @@ def compute_revocation_policy_version(
     revoked_ids: list[str],
     agents: list[dict[str, Any]],
     cache_seconds: int,
-    max_active_permission_version: int,
+    max_active_grant_version: int,
 ) -> int:
     """
     Fingerprint for positive gateway cache: changes when block list or agent snapshots change.
 
-    Uses a stable hash over ids, per-agent permission_version on blocked rows, the global
-    max active permission_version (grant invalidation without agent pause), and cache_seconds.
+    Uses a stable hash over ids, per-agent grant_version on blocked rows, the global
+    max active grant_version (grant invalidation without agent pause), and cache_seconds.
     """
     import hashlib
 
@@ -39,8 +39,8 @@ def compute_revocation_policy_version(
     for row in sorted(agents, key=lambda r: str(r.get('agent_id', ''))):
         parts.append(str(row.get('agent_id', '')))
         parts.append(str(row.get('company_id', '')))
-        parts.append(str(row.get('permission_version', 0)))
-    parts.append(str(int(max_active_permission_version)))
+        parts.append(str(row.get('grant_version', 0)))
+    parts.append(str(int(max_active_grant_version)))
     parts.append(str(cache_seconds))
     digest = hashlib.sha256('|'.join(parts).encode()).hexdigest()[:16]
     return REVOCATION_POLICY_VERSION_EPOCH_MS + int(digest, 16) % 1_000_000_000_000

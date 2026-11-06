@@ -3,12 +3,10 @@ import json
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 
-from apps.agents.tests.mcp_test_settings import TEST_CALLER_SIGNING, TRUSTED_TEST_CALLER_SETTINGS
+from apps.agents.tests.mcp_test_settings import TEST_CALLER_SIGNING, TRUSTED_TEST_CALLER_SETTINGS, build_mcp_approval_assertion_for_agent
 from apps.companies.access import set_company_access
 from apps.companies.models import Company
 from apps.agents.models import Agent, McpOAuthClient
-from shellui_django.mcp.internal import build_mcp_approval_assertion
-
 User = get_user_model()
 
 
@@ -102,7 +100,8 @@ class McpAdminApiTests(TestCase):
             services_allowed=['storage'],
         )
         args_hash = 'cafebabe' * 8
-        assertion = build_mcp_approval_assertion(
+        assertion = build_mcp_approval_assertion_for_agent(
+            agent,
             **TEST_CALLER_SIGNING,
             company_id=self.company.id,
             agent_id=str(agent.id),

@@ -78,7 +78,7 @@ def build_agent_access_token(agent: Agent, *, resource: str) -> dict:
         claims['setup_context_company_id'] = int(setup_cid)
         claims['setup_context_exp'] = su
         claims['setup_expires_at'] = su
-    claims['permission_version'] = int(getattr(agent, 'permission_version', 0) or 0)
+    claims['grant_version'] = int(getattr(agent, 'grant_version', 0) or 0)
     gc = getattr(agent, 'global_company_id', None)
     if gc is not None:
         claims['global_company_id'] = str(gc)

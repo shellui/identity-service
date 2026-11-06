@@ -7,10 +7,10 @@ import jwt
 from django.contrib.auth import get_user_model
 from django.test import Client, TestCase, override_settings
 from django.utils import timezone
-from shellui_django.mcp.internal import APPROVAL_AUDIENCE, APPROVAL_SCOPE, build_mcp_approval_assertion
+from shellui_django.mcp.internal import APPROVAL_AUDIENCE, APPROVAL_SCOPE
 
 from apps.actions.models import EventLog
-from apps.agents.agent_permissions import invalidate_agent_session_grants
+from apps.agents.agent_permissions import bump_agent_grant_version, invalidate_agent_session_grants
 from apps.agents.approval_links import sign_approval_fallback_token
 from apps.agents.models import Agent, McpApprovalRequest, McpApprovalSessionGrant
 from apps.agents.tests.mcp_test_settings import (
@@ -18,6 +18,9 @@ from apps.agents.tests.mcp_test_settings import (
     TEST_CALLER_SIGNING,
     TRUSTED_AI_TEST_CALLER_SETTINGS,
     TRUSTED_TEST_CALLER_SETTINGS,
+    approval_authority_snapshot_for_agent,
+    authority_claims_for_agent,
+    build_mcp_approval_assertion_for_agent,
 )
 from apps.companies.access import set_company_access
 from apps.companies.models import Company
@@ -45,7 +48,12 @@ class McpApprovalV1Tests(TestCase):
         set_company_access(self.company, self.owner, enabled=True)
         set_company_access(self.company, self.member, enabled=True)
         set_company_access(self.company, self.other, enabled=True)
-        self.agent = Agent.objects.create(company=self.company, name='Writer', created_by=self.member)
+        self.agent = Agent.objects.create(
+            company=self.company,
+            name='Writer',
+            created_by=self.member,
+            services_allowed=['storage'],
+        )
         self.other_agent = Agent.objects.create(company=self.company, name='Other', created_by=self.owner)
 
     def _enable_agent_setup_context(self, agent, *, minutes=20):
@@ -60,7 +68,8 @@ class McpApprovalV1Tests(TestCase):
         return _issue_shellui_tokens(user, company=self.company)['access_token']
 
     def _assertion(self, agent, *, args_hash='abc123', service='storage', action='write_file'):
-        return build_mcp_approval_assertion(
+        return build_mcp_approval_assertion_for_agent(
+            agent,
             **TEST_CALLER_SIGNING,
             company_id=self.company.id,
             agent_id=str(agent.id),
@@ -96,6 +105,7 @@ class McpApprovalV1Tests(TestCase):
             'iat': now,
             'exp': now + lifetime_seconds,
             'jti': uuid.uuid4().hex,
+            **authority_claims_for_agent(agent),
         }
         if extra_claims:
             claims.update(extra_claims)
@@ -128,6 +138,7 @@ class McpApprovalV1Tests(TestCase):
             'iat': now,
             'exp': now + lifetime_seconds,
             'jti': uuid.uuid4().hex,
+            **authority_claims_for_agent(agent),
         }
         if extra_claims:
             claims.update(extra_claims)
@@ -271,6 +282,7 @@ class McpApprovalV1Tests(TestCase):
             arguments_hash='g' * 64,
             short_action_summary='Write file',
             expires_at=timezone.now() + timedelta(minutes=10),
+            **approval_authority_snapshot_for_agent(self.agent),
         )
         token = sign_approval_fallback_token(str(row.id))
         client = Client()
@@ -293,6 +305,7 @@ class McpApprovalV1Tests(TestCase):
             arguments_hash='h' * 64,
             status=McpApprovalRequest.STATUS_PENDING,
             expires_at=timezone.now() - timedelta(minutes=1),
+            **approval_authority_snapshot_for_agent(self.agent),
         )
         token = sign_approval_fallback_token(str(row.id))
         client = Client()
@@ -311,6 +324,7 @@ class McpApprovalV1Tests(TestCase):
             arguments_hash='i' * 64,
             status=McpApprovalRequest.STATUS_PENDING,
             expires_at=timezone.now() - timedelta(minutes=1),
+            **approval_authority_snapshot_for_agent(self.agent),
         )
         assertion = self._assertion(self.agent, args_hash='i' * 64)
         response = self.client.post(
@@ -478,6 +492,7 @@ class McpApprovalV1Tests(TestCase):
             short_action_summary='x',
             expires_at=timezone.now() - timedelta(seconds=1),
             status=McpApprovalRequest.STATUS_PENDING,
+            **approval_authority_snapshot_for_agent(self.agent),
         )
         assertion = self._assertion(self.agent, args_hash=h)
         response = self.client.post(
@@ -579,6 +594,7 @@ class McpApprovalV1Tests(TestCase):
         )
         self.assertTrue(ok.json()['session_allowed'])
         invalidate_agent_session_grants(self.agent)
+        self.agent.refresh_from_db()
         bad = self.client.post(
             '/api/v1/mcp/internal/mcp-approval-session-check',
             data=json.dumps({'connection_id': 'perm-ver', 'is_destructive': False}),
@@ -586,6 +602,68 @@ class McpApprovalV1Tests(TestCase):
             HTTP_AUTHORIZATION=f'Bearer {self._assertion(self.agent, args_hash=h)}',
         )
         self.assertFalse(bad.json()['session_allowed'])
+
+    def test_internal_routes_reject_stale_authority_after_agent_narrowed(self):
+        """Pending human approval must fail closed after grant_version bumps; in-flight unchanged still works."""
+        h = 'st' * 32
+        created = self._create_via_internal(args_hash=h)
+        approval_id = created['id']
+        self.agent.refresh_from_db()
+        self.assertEqual(self.agent.grant_version, 0)
+        bump_agent_grant_version(self.agent)
+        self.agent.refresh_from_db()
+        state = self.client.post(
+            '/api/v1/mcp/internal/mcp-approval-state',
+            data=json.dumps({}),
+            content_type='application/json',
+            HTTP_AUTHORIZATION=f'Bearer {self._assertion(self.agent, args_hash=h)}',
+        )
+        self.assertEqual(state.status_code, 409)
+        self.assertEqual(state.json()['error'], 'Approval authority stale.')
+
+        decide = self.client.post(
+            '/api/v1/mcp/internal/mcp-approval-decide',
+            data=json.dumps({'approval_id': approval_id, 'decision': 'allow'}),
+            content_type='application/json',
+            HTTP_AUTHORIZATION=f'Bearer {self._assertion(self.agent, args_hash=h)}',
+        )
+        self.assertEqual(decide.status_code, 409)
+        self.assertEqual(decide.json()['error'], 'Approval authority stale.')
+
+        token = self._token(self.member)
+        approved = self.client.post(
+            f'/api/v1/mcp/approvals/{approval_id}/decide',
+            data=json.dumps({'decision': 'approve'}),
+            content_type='application/json',
+            HTTP_AUTHORIZATION=f'Bearer {token}',
+        )
+        self.assertEqual(approved.status_code, 200)
+
+        consume = self.client.post(
+            '/api/v1/mcp/internal/mcp-approval-consume',
+            data=json.dumps({'approval_id': approval_id}),
+            content_type='application/json',
+            HTTP_AUTHORIZATION=f'Bearer {self._assertion(self.agent, args_hash=h)}',
+        )
+        self.assertEqual(consume.status_code, 409)
+        self.assertFalse(consume.json().get('consumed', True))
+
+        fresh = self._create_via_internal(args_hash=h + 'x')
+        ok_state = self.client.post(
+            '/api/v1/mcp/internal/mcp-approval-state',
+            data=json.dumps({}),
+            content_type='application/json',
+            HTTP_AUTHORIZATION=f'Bearer {self._assertion(self.agent, args_hash=h + "x")}',
+        )
+        self.assertEqual(ok_state.status_code, 200)
+        self.assertEqual(ok_state.json()['status'], 'pending')
+        decide_fresh = self.client.post(
+            '/api/v1/mcp/internal/mcp-approval-decide',
+            data=json.dumps({'approval_id': fresh['id'], 'decision': 'allow'}),
+            content_type='application/json',
+            HTTP_AUTHORIZATION=f'Bearer {self._assertion(self.agent, args_hash=h + "x")}',
+        )
+        self.assertEqual(decide_fresh.status_code, 200)
 
     def test_session_invalid_when_company_binding_version_advances(self):
         h = 'cb' * 32
@@ -627,6 +705,7 @@ class McpApprovalV1Tests(TestCase):
         )
         self.agent.services_allowed = ['identity']
         self.agent.save(update_fields=['services_allowed'])
+        self.agent.refresh_from_db()
         check = self.client.post(
             '/api/v1/mcp/internal/mcp-approval-session-check',
             data=json.dumps({'connection_id': 'svc-ch', 'is_destructive': False}),

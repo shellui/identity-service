@@ -62,3 +62,34 @@ def services_within(global_services: list[str], requested: list[str] | None) -> 
     if any(s not in set(allowed) for s in narrowed):
         return None
     return narrowed
+
+
+def access_rank(mode: str) -> int | None:
+    return _ACCESS_RANK.get(mode)
+
+
+def read_rank(level: str) -> int | None:
+    return _READ_RANK.get(level)
+
+
+def is_narrower_or_equal_access(regional: str, proposed: str) -> bool:
+    """``proposed`` is allowed only when it does not exceed ``regional`` (no widening vs stored agent)."""
+    r_reg = access_rank(regional)
+    r_prop = access_rank(proposed)
+    if r_reg is None or r_prop is None:
+        return False
+    return r_prop <= r_reg
+
+
+def is_narrower_or_equal_read(regional: str, proposed: str) -> bool:
+    r_reg = read_rank(regional)
+    r_prop = read_rank(proposed)
+    if r_reg is None or r_prop is None:
+        return False
+    return r_prop <= r_reg
+
+
+def is_subset_services(regional: list[str], proposed: list[str]) -> bool:
+    reg = set(regional)
+    prop = set(proposed)
+    return prop <= reg

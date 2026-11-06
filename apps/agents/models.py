@@ -126,9 +126,9 @@ class Agent(models.Model):
         blank=True,
         help_text='Absolute end of new-company setup for this agent from the global subject token.',
     )
-    permission_version = models.PositiveIntegerField(
+    grant_version = models.PositiveIntegerField(
         default=0,
-        help_text='Bumps when company-scoped MCP permissions change; invalidates session Allow grants.',
+        help_text='Monotonic integer; bumps when MCP grants narrow or session-invalidating rules apply.',
     )
     expires_at = models.DateTimeField(null=True, blank=True)
     paused_at = models.DateTimeField(null=True, blank=True)
@@ -241,6 +241,9 @@ class McpApprovalRequest(models.Model):
     is_destructive = models.BooleanField(default=False)
     short_action_summary = models.CharField(max_length=500, blank=True)
     expired_event_logged = models.BooleanField(default=False)
+    authority_grant_version = models.PositiveIntegerField(default=0)
+    authority_global_company_id = models.UUIDField(null=True, blank=True)
+    authority_company_binding_version = models.PositiveIntegerField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -264,7 +267,7 @@ class McpApprovalSessionGrant(models.Model):
     expires_at = models.DateTimeField()
     revoked_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
-    agent_permission_version = models.PositiveIntegerField(default=0)
+    agent_grant_version = models.PositiveIntegerField(default=0)
     global_company_id = models.UUIDField(null=True, blank=True)
     company_binding_version = models.PositiveIntegerField(null=True, blank=True)
 
@@ -313,6 +316,12 @@ class McpCallLog(models.Model):
     status_code = models.PositiveSmallIntegerField(default=0)
     duration_ms = models.PositiveIntegerField(default=0)
     result = models.CharField(max_length=32, blank=True, default='')
+    operation_title = models.CharField(max_length=500, blank=True, default='')
+    access_kind = models.CharField(max_length=32, blank=True, default='')
+    outcome = models.CharField(max_length=32, blank=True, default='')
+    resource_label = models.CharField(max_length=500, blank=True, default='')
+    company_name = models.CharField(max_length=255, blank=True, default='')
+    approval_id = models.UUIDField(null=True, blank=True)
     client_ip = models.GenericIPAddressField(null=True, blank=True)
     arguments_redacted = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)

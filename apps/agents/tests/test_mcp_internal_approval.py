@@ -5,19 +5,23 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 from django.utils import timezone
 
-from apps.agents.tests.mcp_test_settings import TEST_CALLER_SIGNING, TRUSTED_TEST_CALLER_SETTINGS
+from apps.agents.tests.mcp_test_settings import (
+    TEST_CALLER_SIGNING,
+    TRUSTED_TEST_CALLER_SETTINGS,
+    approval_authority_snapshot_for_agent,
+    build_mcp_approval_assertion_for_agent,
+)
 from apps.companies.access import set_company_access
 from apps.companies.models import Company
 from apps.agents.models import Agent, McpApprovalRequest, McpOAuthClient
-from shellui_django.mcp.internal import build_mcp_approval_assertion
-
 User = get_user_model()
 
 IDENTITY_ORIGIN = 'https://identity.test'
 
 
 def _approval_assertion(agent, *, service='storage', action='write_tool', args_hash='abc123'):
-    return build_mcp_approval_assertion(
+    return build_mcp_approval_assertion_for_agent(
+        agent,
         **TEST_CALLER_SIGNING,
         company_id=agent.company_id,
         agent_id=str(agent.id),
@@ -80,6 +84,7 @@ class McpInternalApprovalStateTests(TestCase):
             action='write_tool',
             arguments_hash=self.args_hash,
             expires_at=timezone.now() + timedelta(minutes=10),
+            **approval_authority_snapshot_for_agent(self.agent),
         )
         pending = self._state()
         self.assertEqual(pending.status_code, 200)
@@ -102,6 +107,7 @@ class McpInternalApprovalStateTests(TestCase):
             arguments_hash=self.args_hash,
             status=McpApprovalRequest.STATUS_REJECTED,
             expires_at=timezone.now() + timedelta(minutes=10),
+            **approval_authority_snapshot_for_agent(self.agent),
         )
         response = self._state()
         self.assertEqual(response.status_code, 200)
@@ -116,6 +122,7 @@ class McpInternalApprovalStateTests(TestCase):
             arguments_hash=self.args_hash,
             status=McpApprovalRequest.STATUS_APPROVED,
             expires_at=timezone.now() - timedelta(minutes=1),
+            **approval_authority_snapshot_for_agent(self.agent),
         )
         response = self._state()
         self.assertEqual(response.status_code, 200)
@@ -129,6 +136,7 @@ class McpInternalApprovalStateTests(TestCase):
             action='write_tool',
             arguments_hash=self.args_hash,
             expires_at=timezone.now() + timedelta(minutes=10),
+            **approval_authority_snapshot_for_agent(self.agent),
         )
         # The storage key cannot speak for hosting, so the caller check refuses it first.
         response = self._state(service='hosting')
@@ -153,8 +161,10 @@ class McpInternalApprovalStateTests(TestCase):
             action='write_tool',
             arguments_hash=self.args_hash,
             expires_at=timezone.now() + timedelta(minutes=10),
+            **approval_authority_snapshot_for_agent(self.agent),
         )
-        assertion = build_mcp_approval_assertion(
+        assertion = build_mcp_approval_assertion_for_agent(
+            other_agent,
             **TEST_CALLER_SIGNING,
             company_id=self.company.id,
             agent_id=str(other_agent.id),
@@ -196,7 +206,8 @@ class McpInternalApprovalConsumeTests(TestCase):
 
     def _consume(self, row_id, *, args_hash=None):
         args_hash = args_hash or self.args_hash
-        assertion = build_mcp_approval_assertion(
+        assertion = build_mcp_approval_assertion_for_agent(
+            self.agent,
             **TEST_CALLER_SIGNING,
             company_id=self.agent.company_id,
             agent_id=str(self.agent.id),
@@ -221,6 +232,7 @@ class McpInternalApprovalConsumeTests(TestCase):
             arguments_hash=self.args_hash,
             status=McpApprovalRequest.STATUS_APPROVED,
             expires_at=timezone.now() + timedelta(minutes=10),
+            **approval_authority_snapshot_for_agent(self.agent),
         )
         first = self._consume(row.id)
         self.assertEqual(first.status_code, 200)
@@ -238,6 +250,7 @@ class McpInternalApprovalConsumeTests(TestCase):
             arguments_hash=self.args_hash,
             status=McpApprovalRequest.STATUS_APPROVED,
             expires_at=timezone.now() + timedelta(minutes=10),
+            **approval_authority_snapshot_for_agent(self.agent),
         )
         response = self._consume(row.id, args_hash='other')
         self.assertEqual(response.status_code, 404)
@@ -262,8 +275,10 @@ class McpInternalApprovalConsumeTests(TestCase):
             arguments_hash=self.args_hash,
             status=McpApprovalRequest.STATUS_APPROVED,
             expires_at=timezone.now() + timedelta(minutes=10),
+            **approval_authority_snapshot_for_agent(self.agent),
         )
-        assertion = build_mcp_approval_assertion(
+        assertion = build_mcp_approval_assertion_for_agent(
+            other_agent,
             **TEST_CALLER_SIGNING,
             company_id=self.company.id,
             agent_id=str(other_agent.id),
@@ -289,6 +304,7 @@ class McpInternalApprovalConsumeTests(TestCase):
             arguments_hash='hash3',
             status=McpApprovalRequest.STATUS_REJECTED,
             expires_at=timezone.now() + timedelta(minutes=10),
+            **approval_authority_snapshot_for_agent(self.agent),
         )
         denied_resp = self._consume(denied.id, args_hash='hash3')
         self.assertEqual(denied_resp.status_code, 409)
@@ -302,6 +318,7 @@ class McpInternalApprovalConsumeTests(TestCase):
             arguments_hash='hash4',
             status=McpApprovalRequest.STATUS_APPROVED,
             expires_at=timezone.now() - timedelta(minutes=1),
+            **approval_authority_snapshot_for_agent(self.agent),
         )
         expired_resp = self._consume(expired.id, args_hash='hash4')
         self.assertEqual(expired_resp.status_code, 409)

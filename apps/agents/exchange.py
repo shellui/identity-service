@@ -10,6 +10,7 @@ from typing import Any
 from django.conf import settings
 from django.core.cache import cache
 from django.db import transaction
+from django.db.models import F
 from django.http import JsonResponse
 from django.utils import timezone
 
@@ -17,13 +18,17 @@ from apps.agents.global_revocation import global_agent_exchange_blocked
 from apps.agents.mcp_resources import resolve_mcp_resource, resource_company_id
 from apps.agents.models import Agent
 from apps.agents.scope import (
+    access_rank,
     access_within,
     destructive_within,
+    is_narrower_or_equal_access,
+    is_narrower_or_equal_read,
+    is_subset_services,
     parse_services,
     read_within,
     services_within,
 )
-from apps.agents.tokens import encode_access_token, issue_agent_refresh
+from apps.agents.tokens import encode_access_token, issue_agent_refresh, revoke_all_agent_refresh_sessions
 from apps.authapi.throttling import check_rate_limit
 from apps.companies.models import Company
 from apps.federation.exchange import ACCESS_TOKEN_TYPE, GRANT_TYPE
@@ -164,6 +169,87 @@ def _parse_global_company_binding(claims: dict[str, Any]) -> tuple[uuid.UUID | N
     return gid, ver
 
 
+def _merge_regional_exchange_agent(
+    *,
+    agent: Agent,
+    global_access: str,
+    global_read: str,
+    global_destructive: bool,
+    narrowed_services: list[str],
+    requested_services: list[str] | None,
+    access_from_global: str | None,
+    read_from_global: str | None,
+    destructive_from_global: bool,
+    data: dict[str, Any],
+) -> tuple[list[str], str, str, bool, bool] | None:
+    """
+    Existing regional agent: exchange never widens. Omitted body fields keep the stored row.
+
+    Returns (services, access, read, destructive, did_narrow) or None when the merge is invalid.
+    """
+    gw_svc = set(narrowed_services)
+    ex_set = set(agent.services_allowed or [])
+
+    if requested_services is not None:
+        prop_set = gw_svc
+    else:
+        prop_set = ex_set
+
+    if not prop_set <= gw_svc:
+        return None
+    if not prop_set <= ex_set:
+        return None
+
+    final_services = sorted(prop_set)
+
+    if data.get('access_mode') not in (None, ''):
+        if access_from_global is None:
+            return None
+        if not is_narrower_or_equal_access(agent.access_mode, access_from_global):
+            return None
+        final_access = access_from_global
+    else:
+        final_access = agent.access_mode
+    if access_within(global_access, final_access) is None:
+        return None
+
+    if data.get('read_level') not in (None, ''):
+        if read_from_global is None:
+            return None
+        if not is_narrower_or_equal_read(agent.read_level, read_from_global):
+            return None
+        final_read = read_from_global
+    else:
+        final_read = agent.read_level
+    if read_within(global_read, final_read) is None:
+        return None
+
+    if data.get('allow_destructive') not in (None, ''):
+        if agent.allow_destructive_without_asking is False and destructive_from_global is True:
+            return None
+        final_destructive = destructive_from_global
+    else:
+        final_destructive = bool(agent.allow_destructive_without_asking)
+    if final_destructive and not global_destructive:
+        return None
+
+    services_narrowed = set(final_services) < ex_set
+    access_narrowed = (
+        access_rank(final_access) is not None
+        and access_rank(agent.access_mode) is not None
+        and access_rank(final_access) < access_rank(agent.access_mode)
+    )
+    read_narrowed = (
+        read_rank(final_read) is not None
+        and read_rank(agent.read_level) is not None
+        and read_rank(final_read) < read_rank(agent.read_level)
+    )
+    dest_narrowed = agent.allow_destructive_without_asking is True and final_destructive is False
+    did_narrow = services_narrowed or access_narrowed or read_narrowed or dest_narrowed
+
+    return final_services, final_access, final_read, final_destructive, did_narrow
+
+
 def handle_agent_token_exchange(request, *, data: dict[str, Any] | None = None) -> JsonResponse:
     if not agent_exchange_enabled():
         return JsonResponse({}, status=404)
@@ -252,15 +338,15 @@ def handle_agent_token_exchange(request, *, data: dict[str, Any] | None = None) 
     global_access = str(claims.get('mcp_access') or Agent.ACCESS_ASK)
     global_read = str(claims.get('mcp_read') or Agent.READ_SAFE)
     global_destructive = bool(claims.get('mcp_destructive'))
-    access_mode = access_within(global_access, data.get('access_mode'))
-    read_level = read_within(global_read, data.get('read_level'))
-    destructive = destructive_within(
+    access_from_global = access_within(global_access, data.get('access_mode'))
+    read_from_global = read_within(global_read, data.get('read_level'))
+    destructive_from_global = destructive_within(
         global_allowed=global_destructive,
         requested=_parse_optional_bool(data.get('allow_destructive')),
     )
-    if access_mode is None or read_level is None:
+    if access_from_global is None or read_from_global is None:
         return _error('invalid_grant', 'Requested access exceeds the global agent.')
-    if destructive is False and _parse_optional_bool(data.get('allow_destructive')) is True:
+    if destructive_from_global is False and _parse_optional_bool(data.get('allow_destructive')) is True:
         return _error('invalid_grant', 'Destructive access is not allowed for this global agent.')
 
     metadata = claims.get('user_metadata') if isinstance(claims.get('user_metadata'), dict) else {}
@@ -296,9 +382,9 @@ def handle_agent_token_exchange(request, *, data: dict[str, Any] | None = None) 
                 global_agent_id=global_agent_id,
                 name=agent_name,
                 created_by=user,
-                access_mode=access_mode,
-                read_level=read_level,
-                allow_destructive_without_asking=destructive,
+                access_mode=access_from_global,
+                read_level=read_from_global,
+                allow_destructive_without_asking=destructive_from_global,
                 services_allowed=narrowed_services,
                 setup_company_id=setup_company_id,
                 setup_context_expires_at=setup_expires_at,
@@ -312,6 +398,21 @@ def handle_agent_token_exchange(request, *, data: dict[str, Any] | None = None) 
                 return _error('invalid_grant', 'The global company binding does not match this agent.')
             if agent.global_company_id and not global_company_id:
                 return _error('invalid_grant', 'The global company binding is missing from the subject token.')
+            merged = _merge_regional_exchange_agent(
+                agent=agent,
+                global_access=global_access,
+                global_read=global_read,
+                global_destructive=global_destructive,
+                narrowed_services=narrowed_services,
+                requested_services=requested_services,
+                access_from_global=access_from_global,
+                read_from_global=read_from_global,
+                destructive_from_global=destructive_from_global,
+                data=data,
+            )
+            if merged is None:
+                return _error('invalid_grant', 'Exchange would widen an existing regional agent.')
+            final_services, final_access, final_read, final_destructive, did_narrow = merged
             if global_company_id is not None:
                 agent.global_company_id = global_company_id
             if company_binding_version is not None:
@@ -321,14 +422,18 @@ def handle_agent_token_exchange(request, *, data: dict[str, Any] | None = None) 
                 ):
                     return _error('invalid_grant', 'The company binding version is stale.')
                 agent.company_binding_version = company_binding_version
-            agent.access_mode = access_mode
-            agent.read_level = read_level
-            agent.allow_destructive_without_asking = destructive
-            agent.services_allowed = narrowed_services
+            agent.access_mode = final_access
+            agent.read_level = final_read
+            agent.allow_destructive_without_asking = final_destructive
+            agent.services_allowed = final_services
             agent.setup_company_id = setup_company_id
             agent.setup_context_expires_at = setup_expires_at
             if agent.created_by_id is None:
                 agent.created_by = user
+            if did_narrow:
+                revoke_all_agent_refresh_sessions(agent)
+                Agent.objects.filter(pk=agent.pk).update(grant_version=F('grant_version') + 1)
+                agent.refresh_from_db(fields=['grant_version'])
             agent.save(
                 update_fields=[
                     'access_mode',
@@ -341,6 +446,7 @@ def handle_agent_token_exchange(request, *, data: dict[str, Any] | None = None) 
                     'company_binding_version',
                     'created_by',
                     'updated_at',
+                    'grant_version',
                 ]
             )
 

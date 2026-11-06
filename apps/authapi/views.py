@@ -780,6 +780,29 @@ def _generated_social_app_name(provider: str, company: Company) -> str:
     return candidate
 
 
+def _shellui_access_token_setup_claims(user: User, company: Company) -> dict:
+    """Optional new-company setup window for MCP personal UIs (signed on the access token)."""
+    from apps.agents.models import Agent
+
+    now = datetime.now(timezone.utc)
+    agent = (
+        Agent.objects.filter(
+            company=company,
+            created_by=user,
+            setup_company_id=company.id,
+            setup_context_expires_at__gt=now,
+        )
+        .order_by('-setup_context_expires_at')
+        .first()
+    )
+    if agent is None or agent.setup_context_expires_at is None:
+        return {}
+    return {
+        'setup_context_company_id': company.id,
+        'setup_expires_at': int(agent.setup_context_expires_at.timestamp()),
+    }
+
+
 def _issue_shellui_tokens(
     user: User,
     company: Company,
@@ -844,6 +867,8 @@ def _issue_shellui_tokens(
         auth_time = now_ts
     access['auth_time'] = auth_time
     refresh['auth_time'] = auth_time
+    for key, value in _shellui_access_token_setup_claims(user, company).items():
+        access[key] = value
     expires_at = int(access['exp'])
     return {
         'access_token': str(access),

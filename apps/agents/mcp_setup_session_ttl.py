@@ -39,6 +39,12 @@ def session_allow_ttl_bound_seconds() -> tuple[int, int]:
     return lo, hi
 
 
+def session_ttl_seconds() -> int:
+    """Default non-setup session Allow TTL from ``MCP_APPROVAL_SESSION_TTL_SECONDS`` (clamped 30 to 60)."""
+    base = int(getattr(settings, 'MCP_APPROVAL_SESSION_TTL_SECONDS', 60) or 60)
+    return max(30, min(base, 60))
+
+
 def resolve_session_grant_ttl_seconds(
     *,
     caller_name: str,

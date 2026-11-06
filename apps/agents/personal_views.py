@@ -14,6 +14,8 @@ from rest_framework.views import APIView
 
 from apps.agents.models import Agent, McpCallLog, PersonalAgentCredential
 from apps.agents.mcp_resources import company_mcp_resource_url, global_mcp_url, mcp_enabled_for_company
+from apps.agents.mcp_setup_session_ttl import session_allow_ttl_bound_seconds
+from apps.agents.mcp_setup_session_ttl import session_ttl_seconds as mcp_default_approval_session_ttl_seconds
 from apps.agents.permissions import require_company_member
 from apps.agents.personal_agent_tokens import (
     create_personal_agent_credential,
@@ -26,6 +28,28 @@ from apps.agents.tokens import revoke_all_agent_refresh_sessions
 from apps.authapi.openapi_admin import ADMIN_API_ERRORS, admin_openapi_fields
 from apps.authapi.serializers import ShellUIOpenAPISerializer
 from apps.authapi.throttling import check_rate_limit
+
+
+def _setup_from_access_token(request, company) -> tuple[bool | None, int | None]:
+    """Setup window from validated ShellUI access token (must match this company)."""
+    token = getattr(request, 'auth', None)
+    if token is None or not hasattr(token, 'get'):
+        return None, None
+    cid = token.get('setup_context_company_id')
+    exp_unix = token.get('setup_expires_at')
+    if cid is None or exp_unix is None:
+        return None, None
+    try:
+        if int(cid) != int(company.id):
+            return None, None
+    except (TypeError, ValueError):
+        return None, None
+    try:
+        exp_i = int(exp_unix)
+    except (TypeError, ValueError):
+        return None, None
+    now_i = int(timezone.now().timestamp())
+    return exp_i > now_i, exp_i
 
 
 def _activity_retention_cutoff():
@@ -89,13 +113,21 @@ class PersonalMcpStatusView(APIView):
         if err:
             return err
         url = company_mcp_resource_url(company.id)
-        return Response(
-            {
-                'mcp_enabled': bool(url),
-                'mcp_url': url,
-                'global_mcp_url': global_mcp_url(),
-            }
-        )
+        setup_active, setup_expires_at_unix = _setup_from_access_token(request, company)
+        lo, hi = session_allow_ttl_bound_seconds()
+        payload = {
+            'mcp_enabled': bool(url),
+            'mcp_url': url,
+            'global_mcp_url': global_mcp_url(),
+            'approval_session_ttl_seconds': mcp_default_approval_session_ttl_seconds(),
+            'setup_session_ttl_min_seconds': lo,
+            'setup_session_ttl_max_seconds': hi,
+        }
+        if setup_active is not None:
+            payload['setup_active'] = setup_active
+        if setup_expires_at_unix is not None:
+            payload['setup_expires_at'] = setup_expires_at_unix
+        return Response(payload)
 
 
 @extend_schema_view(
@@ -232,16 +264,25 @@ class PersonalAgentRevokeView(APIView):
 
 
 def _activity_row(row: McpCallLog) -> dict:
-    result = (row.result or '').strip()
-    if not result:
-        result = 'success' if 200 <= row.status_code < 400 else 'error'
-    return {
+    from apps.agents.call_log_outcome import CANONICAL_OUTCOMES, canonical_outcome
+
+    outcome = (row.outcome or '').strip().lower()
+    if outcome not in CANONICAL_OUTCOMES:
+        outcome = canonical_outcome(row.result, status_code=row.status_code)
+    row_out = {
         'timestamp': row.created_at.isoformat(),
-        'tool': row.tool,
+        'operation_title': row.operation_title or row.tool or row.path or 'mcp_call',
+        'access_kind': row.access_kind or 'unknown',
+        'outcome': outcome,
+        'resource_label': row.resource_label or row.tool or row.path or '',
+        'company_name': row.company_name or '',
+        'duration_ms': row.duration_ms,
         'service': row.service,
-        'result': result,
         'client_ip': row.client_ip,
     }
+    if row.approval_id is not None:
+        row_out['approval_id'] = str(row.approval_id)
+    return row_out
 
 
 @extend_schema_view(

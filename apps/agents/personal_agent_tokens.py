@@ -86,7 +86,7 @@ def encode_personal_agent_access_token(
         'iat': int(now.timestamp()),
         'exp': int(expires_at.timestamp()),
         'aud': audience,
-        'permission_version': int(getattr(agent, 'permission_version', 0) or 0),
+        'grant_version': int(getattr(agent, 'grant_version', 0) or 0),
     }
     gc = getattr(agent, 'global_company_id', None)
     if gc is not None:
