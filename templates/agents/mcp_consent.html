@@ -1,0 +1,51 @@
+{% extends "agents/_mcp_base.html" %}
+{% block title %}{{ consent_title }}{% endblock %}
+{% block content %}
+    <h1>{{ consent_title }}</h1>
+    <p class="note">{{ signed_in_as }}</p>
+    <p class="consent-body">{{ consent_body }}</p>
+    <section class="access" aria-labelledby="access-heading">
+      <h2 id="access-heading">{{ copy.access_heading }}</h2>
+      <ul class="access-list">
+        <li>{{ copy.access_bullet }}</li>
+      </ul>
+    </section>
+    <p class="warning" role="alert">{{ phishing }}</p>
+    <form method="post" action="">
+      {% csrf_token %}
+      <input type="hidden" name="response_type" value="code">
+      <input type="hidden" name="client_id" value="{{ client_id }}">
+      <input type="hidden" name="redirect_uri" value="{{ redirect_uri }}">
+      <input type="hidden" name="resource" value="{{ resource }}">
+      <input type="hidden" name="state" value="{{ state }}">
+      <input type="hidden" name="code_challenge" value="{{ code_challenge }}">
+      <input type="hidden" name="code_challenge_method" value="S256">
+      <fieldset>
+        <legend>{{ copy.services_label }}</legend>
+        {% for sid, label in services %}
+        <label class="check"><input type="checkbox" name="services" value="{{ sid }}" {% if sid == 'identity' %}checked{% endif %}> <span translate="no">{{ label }}</span></label>
+        {% endfor %}
+      </fieldset>
+      <label for="access_mode">{{ copy.access_label }}</label>
+      <select name="access_mode" id="access_mode">
+        <option value="read_only">{{ copy.access_read_only }}</option>
+        <option value="ask" selected>{{ copy.access_ask }}</option>
+        <option value="full">{{ copy.access_full }}</option>
+      </select>
+      <label for="read_level">{{ copy.read_label }}</label>
+      <select name="read_level" id="read_level">
+        <option value="safe" selected>{{ copy.read_safe }}</option>
+        <option value="sensitive">{{ copy.read_sensitive }}</option>
+      </select>
+      <label for="agent_name">{{ copy.agent_name_label }}</label>
+      <input type="text" name="agent_name" id="agent_name" maxlength="255" value="{{ client_name }}">
+      {% if saas_opt_in_offered %}
+      <label class="check"><input type="checkbox" name="include_saas"> <span>{{ copy.saas_opt_in_label }}</span></label>
+      <p class="note">{{ copy.saas_opt_in_note }}</p>
+      {% endif %}
+      <div class="actions stack">
+        <button type="submit" name="decision" value="approve" class="button">{{ copy.allow }}</button>
+        <button type="submit" name="decision" value="deny" class="button button-secondary">{{ copy.deny }}</button>
+      </div>
+    </form>
+{% endblock %}

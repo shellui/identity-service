@@ -19,6 +19,7 @@ from django.urls import reverse
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt, csrf_protect
 from allauth.socialaccount.models import SocialApp, SocialAccount
+from apps.authapi.openapi_admin import ADMIN_API_ERRORS, mcp_extend_schema_kwargs
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema, extend_schema_view
 from rest_framework import status
 from rest_framework.permissions import AllowAny
@@ -779,6 +780,29 @@ def _generated_social_app_name(provider: str, company: Company) -> str:
     return candidate
 
 
+def _shellui_access_token_setup_claims(user: User, company: Company) -> dict:
+    """Optional new-company setup window for MCP personal UIs (signed on the access token)."""
+    from apps.agents.models import Agent
+
+    now = datetime.now(timezone.utc)
+    agent = (
+        Agent.objects.filter(
+            company=company,
+            created_by=user,
+            setup_company_id=company.id,
+            setup_context_expires_at__gt=now,
+        )
+        .order_by('-setup_context_expires_at')
+        .first()
+    )
+    if agent is None or agent.setup_context_expires_at is None:
+        return {}
+    return {
+        'setup_context_company_id': company.id,
+        'setup_expires_at': int(agent.setup_context_expires_at.timestamp()),
+    }
+
+
 def _issue_shellui_tokens(
     user: User,
     company: Company,
@@ -843,6 +867,8 @@ def _issue_shellui_tokens(
         auth_time = now_ts
     access['auth_time'] = auth_time
     refresh['auth_time'] = auth_time
+    for key, value in _shellui_access_token_setup_claims(user, company).items():
+        access[key] = value
     expires_at = int(access['exp'])
     return {
         'access_token': str(access),
@@ -1095,6 +1121,23 @@ def _finalize_shellui_oauth_login(
     token_delivery: str | None = None,
     code_challenge: str | None = None,
 ) -> HttpResponse:
+    from apps.agents.mcp_signin import finish_mcp_signin, is_mcp_signin_redirect
+
+    if is_mcp_signin_redirect(redirect_to):
+        # MCP connector sign-in: start the identity session, issue no app tokens.
+        response = finish_mcp_signin(request, user=user, company=company)
+        if response.status_code in (301, 302):
+            auth_metrics.record_successful_login(provider, company_id=company.id)
+            record_login_event(
+                request=request,
+                outcome=LoginOutcome.SUCCESS,
+                provider=provider,
+                user=user,
+                company=company,
+                client_timezone=client_tz,
+                client_device_id=client_dev,
+            )
+        return response
     _notify_user_logged_in_for_oauth(request, user)
     payload = _issue_shellui_tokens(user, company=company, avatar_url=avatar_url, oauth_provider=provider)
     auth_metrics.record_successful_login(provider, company_id=company.id)
@@ -2159,6 +2202,7 @@ class ShellUIAuthorizeView(APIView):
 @rate_limit('oauth')
 class ShellUIOAuthCallbackView(APIView):
     permission_classes = [AllowAny]
+    serializer_class = ShellUIOpenAPISerializer
 
     def post(self, request):
         """Apple Sign in with form_post: verify POST, bridge via single-use cookie, 303 to GET."""
@@ -2485,12 +2529,34 @@ class ShellUIOAuthCallbackView(APIView):
         )
 
 
+@extend_schema_view(
+    get=extend_schema(
+        tags=['auth-social'],
+        summary='Confirm OAuth sign-in in the browser',
+        responses={
+            200: OpenApiResponse(description='HTML confirmation page'),
+            400: OpenApiResponse(description='Invalid confirmation token or action'),
+            404: OpenApiResponse(description='Company not found'),
+        },
+        auth=[],
+    ),
+    post=extend_schema(
+        tags=['auth-social'],
+        summary='Complete OAuth sign-in after confirmation',
+        responses={
+            302: OpenApiResponse(description='Redirect with tokens in URL fragment'),
+            400: OpenApiResponse(description='Invalid confirmation'),
+        },
+        auth=[],
+    ),
+)
 @rate_limit('oauth')
 @method_decorator(csrf_protect, name='dispatch')
 class ShellUIOAuthConfirmView(APIView):
     """Browser confirmation step after provider OAuth, before JWT fragment redirect."""
 
     permission_classes = [AllowAny]
+    serializer_class = ShellUIOpenAPISerializer
 
     def get(self, request):
         if str(request.GET.get('action', '')).strip().lower() != 'switch':
@@ -2613,6 +2679,7 @@ class ShellUIOAuthConfirmView(APIView):
         },
     ),
 )
+@rate_limit('token_exchange')
 class ShellUIOAuthSessionView(APIView):
     permission_classes = [AllowAny]
     authentication_classes = []
@@ -3270,10 +3337,9 @@ class ShellUIPreferenceView(APIView):
 
 @extend_schema_view(
     get=extend_schema(
+        **mcp_extend_schema_kwargs('api_v1_users_list'),
+        responses={**ADMIN_API_ERRORS},
         tags=['directory-users'],
-        summary='List users (staff or company owner)',
-        description='Paginated directory of users. Requires staff JWT or company-owner membership.',
-        operation_id='api_v1_users_list',
         parameters=[
             OpenApiParameter(
                 name='q',
@@ -3335,34 +3401,20 @@ class ShellUIAdminUserListView(APIView):
 
 @extend_schema_view(
     get=extend_schema(
+        **mcp_extend_schema_kwargs('api_v1_users_retrieve'),
+        responses={**ADMIN_API_ERRORS},
         tags=['directory-users'],
-        summary='Retrieve user (staff or company owner)',
-        description='Single user with Shellui metadata. Requires staff JWT or company-owner membership.',
-        operation_id='api_v1_users_retrieve',
     ),
     put=extend_schema(
+        **mcp_extend_schema_kwargs('api_v1_users_update'),
+        responses={**ADMIN_API_ERRORS},
         tags=['directory-users'],
-        summary='Update user (staff or company owner)',
-        description=(
-            'Update Django user fields and/or merge `data` into cached user_metadata (same shape as '
-            'PUT /api/v1/user). Staff and company owners may change is_active (enables/disables '
-            'access for this company only), first_name, last_name, group_ids (within this company), '
-            'and `data`. Enabling a previously disabled membership emails the user. `is_staff` and '
-            '`is_superuser` are read-only: only Django admin may change them, and a body that '
-            'contains either field is refused with 400 `admin_only_field`.'
-        ),
         request=ShellUIAdminUserUpdateSerializer,
     ),
     delete=extend_schema(
+        **mcp_extend_schema_kwargs('api_v1_users_destroy'),
         tags=['directory-users'],
-        summary='Delete user from this company (staff or company owner)',
-        description=(
-            'Removes the user and their data from the requested company. The account itself is '
-            'deleted only when this is their last company. Emits `identity.user.deleted` with '
-            '`source=admin`. Refuses to delete yourself (400), a staff user unless the caller is '
-            'staff (403), or the only owner of a company (409 `last_company_owner`).'
-        ),
-        responses={
+        responses={**ADMIN_API_ERRORS, 
             204: OpenApiResponse(description='User removed from the company'),
             400: OpenApiResponse(description='Caller tried to delete themselves'),
             403: OpenApiResponse(description='Not staff or owner, or owner targeting a staff user'),
@@ -3603,15 +3655,14 @@ def _forbid_scim_group_admin_mutation(group: CompanyGroup) -> Response | None:
 
 @extend_schema_view(
     get=extend_schema(
+        **mcp_extend_schema_kwargs('api_v1_groups_list'),
+        responses={**ADMIN_API_ERRORS},
         tags=['directory-groups'],
-        summary='List auth groups (staff or company owner)',
-        description='All company groups for requested company with `user_count`.',
-        operation_id='api_v1_groups_list',
     ),
     post=extend_schema(
+        **mcp_extend_schema_kwargs('api_v1_groups_create'),
+        responses={**ADMIN_API_ERRORS},
         tags=['directory-groups'],
-        summary='Create auth group (staff or company owner)',
-        description='Create a named group.',
         request=ShellUIAdminGroupCreateSerializer,
     ),
 )
@@ -3668,23 +3719,26 @@ class ShellUIAdminGroupListView(APIView):
 
 @extend_schema_view(
     get=extend_schema(
+        **mcp_extend_schema_kwargs('api_v1_groups_retrieve'),
+        responses={**ADMIN_API_ERRORS},
         tags=['directory-groups'],
-        summary='Retrieve auth group (staff or company owner)',
-        operation_id='api_v1_groups_retrieve',
     ),
     put=extend_schema(
+        **mcp_extend_schema_kwargs('api_v1_groups_update'),
+        responses={**ADMIN_API_ERRORS},
         tags=['directory-groups'],
-        summary='Rename auth group (staff or company owner)',
         request=ShellUIAdminGroupUpdateSerializer,
     ),
     patch=extend_schema(
+        **mcp_extend_schema_kwargs('api_v1_groups_partial_update'),
+        responses={**ADMIN_API_ERRORS},
         tags=['directory-groups'],
-        summary='Rename auth group (staff or company owner)',
         request=ShellUIAdminGroupUpdateSerializer,
     ),
     delete=extend_schema(
+        **mcp_extend_schema_kwargs('api_v1_groups_destroy'),
+        responses={**ADMIN_API_ERRORS},
         tags=['directory-groups'],
-        summary='Delete auth group (staff or company owner)',
     ),
 )
 class ShellUIAdminGroupDetailView(APIView):
@@ -3765,14 +3819,14 @@ class ShellUIAdminGroupDetailView(APIView):
 
 @extend_schema_view(
     get=extend_schema(
+        **mcp_extend_schema_kwargs('api_v1_oauth_clients_list'),
+        responses={**ADMIN_API_ERRORS},
         tags=['oauth-clients'],
-        summary='List company OAuth clients (staff or company owner)',
-        description='All OAuth client keys for the active company, grouped by provider in UI clients.',
-        operation_id='api_v1_oauth_clients_list',
     ),
     post=extend_schema(
+        **mcp_extend_schema_kwargs('api_v1_oauth_clients_create'),
+        responses={**ADMIN_API_ERRORS},
         tags=['oauth-clients'],
-        summary='Create company OAuth client (staff or company owner)',
         request=ShellUIAdminOAuthClientCreateSerializer,
     ),
 )
@@ -3844,19 +3898,9 @@ class ShellUIAdminOAuthClientListView(APIView):
 
 @extend_schema_view(
     get=extend_schema(
+        **mcp_extend_schema_kwargs('api_v1_oauth_provider_catalog_retrieve'),
+        responses={**ADMIN_API_ERRORS},
         tags=['oauth-social-apps'],
-        summary='OAuth provider catalog for admin setup (staff or company owner)',
-        description=(
-            'Lists django-allauth providers with setup metadata and extra settings schema. '
-            'Use top-level `callback_url` and each provider\'s `callback_url` when registering IdP '
-            'redirect URIs in Shellui admin. These URLs are the identity-hosted '
-            '`/api/v1/oauth/callback` endpoint for this request host. Do not use allauth\'s default '
-            '`/accounts/.../login/callback/` paths from provider docs. '
-            'Each `console_url` entry is `{kind, url, form}` with optional `placeholders` when '
-            '`form` is `template`. Translate `kind` using `console_link_kinds` '
-            '(app_registration, developer_console, app_settings, docs, other). '
-            'Translate extra settings by field `name` (no English labels in the catalog).'
-        ),
         parameters=[
             OpenApiParameter(
                 name='include_legacy',
@@ -3906,16 +3950,14 @@ class ShellUIAdminOAuthProviderCatalogView(APIView):
 
 @extend_schema_view(
     get=extend_schema(
+        **mcp_extend_schema_kwargs('api_v1_oauth_social_apps_list'),
+        responses={**ADMIN_API_ERRORS},
         tags=['oauth-social-apps'],
-        summary='List available allauth SocialApps for OAuth setup (staff or company owner)',
-        description=(
-            'Returns SocialApp rows for supported providers, plus whether each app '
-            'is already linked to the active company OAuth mappings.'
-        ),
     ),
     post=extend_schema(
+        **mcp_extend_schema_kwargs('api_v1_oauth_social_apps_create'),
+        responses={**ADMIN_API_ERRORS},
         tags=['oauth-social-apps'],
-        summary='Create SocialApp OAuth key and optionally map to company',
         request=ShellUIAdminOAuthSocialAppCreateSerializer,
     ),
 )
@@ -4046,17 +4088,15 @@ class ShellUIAdminOAuthSocialAppListView(APIView):
 
 @extend_schema_view(
     put=extend_schema(
+        **mcp_extend_schema_kwargs('api_v1_oauth_social_apps_update'),
+        responses={**ADMIN_API_ERRORS},
         tags=['oauth-social-apps'],
-        summary='Update SocialApp OAuth key for this company',
         request=ShellUIAdminOAuthSocialAppUpdateSerializer,
     ),
     delete=extend_schema(
+        **mcp_extend_schema_kwargs('api_v1_oauth_social_apps_destroy'),
+        responses={**ADMIN_API_ERRORS},
         tags=['oauth-social-apps'],
-        summary='Delete SocialApp OAuth key for this company',
-        description=(
-            'Deletes the company mapping and the underlying SocialApp. '
-            'For safety, deletion is blocked when the SocialApp is mapped to another company.'
-        ),
     ),
 )
 class ShellUIAdminOAuthSocialAppDetailView(APIView):
@@ -4180,18 +4220,20 @@ class ShellUIAdminOAuthSocialAppDetailView(APIView):
 
 @extend_schema_view(
     get=extend_schema(
+        **mcp_extend_schema_kwargs('api_v1_oauth_clients_retrieve'),
+        responses={**ADMIN_API_ERRORS},
         tags=['oauth-clients'],
-        summary='Retrieve company OAuth client (staff or company owner)',
-        operation_id='api_v1_oauth_clients_retrieve',
     ),
     put=extend_schema(
+        **mcp_extend_schema_kwargs('api_v1_oauth_clients_update'),
+        responses={**ADMIN_API_ERRORS},
         tags=['oauth-clients'],
-        summary='Update company OAuth client (staff or company owner)',
         request=ShellUIAdminOAuthClientUpdateSerializer,
     ),
     delete=extend_schema(
+        **mcp_extend_schema_kwargs('api_v1_oauth_clients_destroy'),
+        responses={**ADMIN_API_ERRORS},
         tags=['oauth-clients'],
-        summary='Delete company OAuth client (staff or company owner)',
     ),
 )
 class ShellUIAdminOAuthClientDetailView(APIView):
@@ -4280,20 +4322,14 @@ def _oauth_redirect_payload(row: CompanyOAuthRedirect) -> dict:
 
 @extend_schema_view(
     get=extend_schema(
+        **mcp_extend_schema_kwargs('api_v1_oauth_redirects_list'),
+        responses={**ADMIN_API_ERRORS},
         tags=['oauth-redirects'],
-        summary='List company OAuth redirect allowlist (staff or company owner)',
-        description=(
-            'http(s) origins allowed as post-login bounce destinations (`redirect_to`). '
-            'Desktop sign-in uses the company `desktop_redirect_schemes` list, not a row here. '
-            'Loopback (localhost / 127.0.0.1 / ::1) is allowed when DEBUG or '
-            'OAUTH_ALLOW_LOOPBACK_REDIRECTS=true. Empty allowlist denies other http(s) redirects. '
-            'Entries with `source=hosting` are synced from hosting-service preview sites.'
-        ),
-        operation_id='api_v1_oauth_redirects_list',
     ),
     post=extend_schema(
+        **mcp_extend_schema_kwargs('api_v1_oauth_redirects_create'),
+        responses={**ADMIN_API_ERRORS},
         tags=['oauth-redirects'],
-        summary='Add an OAuth redirect allowlist entry (staff or company owner)',
         request=ShellUIAdminOAuthRedirectCreateSerializer,
     ),
 )
@@ -4336,18 +4372,20 @@ class ShellUIAdminOAuthRedirectListView(APIView):
 
 @extend_schema_view(
     get=extend_schema(
+        **mcp_extend_schema_kwargs('api_v1_oauth_redirects_retrieve'),
+        responses={**ADMIN_API_ERRORS},
         tags=['oauth-redirects'],
-        summary='Retrieve OAuth redirect allowlist entry (staff or company owner)',
-        operation_id='api_v1_oauth_redirects_retrieve',
     ),
     patch=extend_schema(
+        **mcp_extend_schema_kwargs('api_v1_oauth_redirects_partial_update'),
+        responses={**ADMIN_API_ERRORS},
         tags=['oauth-redirects'],
-        summary='Update OAuth redirect allowlist entry (staff or company owner)',
         request=ShellUIAdminOAuthRedirectUpdateSerializer,
     ),
     delete=extend_schema(
+        **mcp_extend_schema_kwargs('api_v1_oauth_redirects_destroy'),
+        responses={**ADMIN_API_ERRORS},
         tags=['oauth-redirects'],
-        summary='Delete OAuth redirect allowlist entry (staff or company owner)',
     ),
 )
 class ShellUIAdminOAuthRedirectDetailView(APIView):
@@ -4408,18 +4446,15 @@ class ShellUIAdminOAuthRedirectDetailView(APIView):
 
 @extend_schema_view(
     put=extend_schema(
+        **mcp_extend_schema_kwargs('api_v1_hosting_oauth_redirects_update'),
+        responses={**ADMIN_API_ERRORS},
         tags=['oauth-redirects'],
-        summary='Upsert a hosting-managed OAuth redirect origin (owner/staff JWT)',
-        description=(
-            'Called by hosting-service with the deployer\'s access token. '
-            'Requires staff or company-owner JWT. Company scope comes from the JWT. '
-            'Only `source=hosting` rows are written.'
-        ),
         request=ShellUIHostingOAuthRedirectSyncSerializer,
     ),
     delete=extend_schema(
+        **mcp_extend_schema_kwargs('api_v1_hosting_oauth_redirects_destroy'),
+        responses={**ADMIN_API_ERRORS},
         tags=['oauth-redirects'],
-        summary='Remove a hosting-managed OAuth redirect origin (owner/staff JWT)',
         request=ShellUIHostingOAuthRedirectDeleteSerializer,
     ),
 )
@@ -4486,19 +4521,15 @@ class ShellUIHostingOAuthRedirectSyncView(APIView):
 
 @extend_schema_view(
     get=extend_schema(
+        **mcp_extend_schema_kwargs('api_v1_personal_access_tokens_list'),
+        responses={**ADMIN_API_ERRORS},
         tags=['personal-access-tokens'],
-        summary='List personal access tokens',
-        description='JWT-based personal access tokens for the signed-in user in the current company.',
     ),
     post=extend_schema(
+        **mcp_extend_schema_kwargs('api_v1_personal_access_tokens_create'),
+        responses={**ADMIN_API_ERRORS},
         tags=['personal-access-tokens'],
-        summary='Create personal access token',
         request=ShellUIPersonalAccessTokenCreateSerializer,
-        description=(
-            'Returns a Shellui-shaped JWT once in `access_token`. '
-            '`read_only` restricts to safe HTTP methods. Only Django staff may set '
-            '`access_global_metrics` for GET /api/v1/metrics/all.'
-        ),
     ),
 )
 @rate_limit('pat', identity=lambda request: str(getattr(getattr(request, 'user', None), 'pk', '') or ''))
@@ -4542,9 +4573,9 @@ class ShellUIPersonalAccessTokenListCreateView(APIView):
 
 @extend_schema_view(
     post=extend_schema(
+        **mcp_extend_schema_kwargs('api_v1_personal_access_tokens_revoke'),
+        responses={**ADMIN_API_ERRORS},
         tags=['personal-access-tokens'],
-        summary='Revoke personal access token',
-        description='Marks the token as revoked; JWT access stops immediately.',
     ),
 )
 @rate_limit('pat', identity=lambda request: str(getattr(getattr(request, 'user', None), 'pk', '') or ''))
@@ -4569,14 +4600,9 @@ class ShellUIPersonalAccessTokenRevokeView(APIView):
 
 @extend_schema_view(
     get=extend_schema(
+        **mcp_extend_schema_kwargs('api_v1_scim_status'),
+        responses={**ADMIN_API_ERRORS},
         tags=['scim'],
-        summary='SCIM deployment and company configuration status (staff or company owner)',
-        description=(
-            'Reports whether SCIM is enabled on this identity deployment and whether the current '
-            'company has active (non-revoked) SCIM bearer tokens. Works when SCIM is disabled so '
-            'admin UIs can show deployment state.'
-        ),
-        operation_id='api_v1_scim_status',
     ),
 )
 class ShellUIAdminScimStatusView(APIView):
@@ -4592,19 +4618,15 @@ class ShellUIAdminScimStatusView(APIView):
 
 @extend_schema_view(
     get=extend_schema(
+        **mcp_extend_schema_kwargs('api_v1_scim_tokens_list'),
+        responses={**ADMIN_API_ERRORS},
         tags=['scim'],
-        summary='List company SCIM bearer tokens (staff or company owner)',
-        description='Never includes token secrets or hashes. Allowed when SCIM is disabled (cleanup).',
-        operation_id='api_v1_scim_tokens_list',
     ),
     post=extend_schema(
+        **mcp_extend_schema_kwargs('api_v1_scim_tokens_create'),
+        responses={**ADMIN_API_ERRORS},
         tags=['scim'],
-        summary='Create company SCIM bearer token (staff or company owner)',
         request=ShellUIAdminScimTokenCreateSerializer,
-        description=(
-            'Returns the bearer secret once in `token`. Blocked when the deployment emergency kill switch '
-            '`SCIM_ENABLED=false` is set.'
-        ),
     ),
 )
 class ShellUIAdminScimTokenListCreateView(APIView):
@@ -4648,10 +4670,9 @@ class ShellUIAdminScimTokenListCreateView(APIView):
 
 @extend_schema_view(
     post=extend_schema(
+        **mcp_extend_schema_kwargs('api_v1_scim_tokens_revoke'),
+        responses={**ADMIN_API_ERRORS},
         tags=['scim'],
-        summary='Revoke company SCIM bearer token (staff or company owner)',
-        description='Idempotent: already-revoked tokens return success. Allowed when SCIM is disabled.',
-        operation_id='api_v1_scim_tokens_revoke',
     ),
 )
 class ShellUIAdminScimTokenRevokeView(APIView):
@@ -4677,27 +4698,21 @@ class ShellUIAdminScimTokenRevokeView(APIView):
 
 @extend_schema_view(
     get=extend_schema(
+        **mcp_extend_schema_kwargs('api_v1_auth_methods_retrieve'),
+        responses={**ADMIN_API_ERRORS},
         tags=['auth-admin'],
-        summary='Company auth methods (staff or company owner)',
-        description=(
-            'Read magic-link and OAuth capability flags for the company. '
-            '`magic_link_effective` is false when the company or deployment disables magic link.'
-        ),
-        operation_id='api_v1_auth_methods_retrieve',
     ),
     patch=extend_schema(
+        **mcp_extend_schema_kwargs('api_v1_auth_methods_partial_update'),
+        responses={**ADMIN_API_ERRORS},
         tags=['auth-admin'],
-        summary='Update company auth methods (staff or company owner)',
         request=ShellUIAdminAuthMethodsUpdateSerializer,
-        description='Toggle `enable_magic_link` for the company (fully disables magic-link request/verify when false).',
-        operation_id='api_v1_auth_methods_partial_update',
     ),
     put=extend_schema(
+        **mcp_extend_schema_kwargs('api_v1_auth_methods_update'),
+        responses={**ADMIN_API_ERRORS},
         tags=['auth-admin'],
-        summary='Update company auth methods (staff or company owner)',
         request=ShellUIAdminAuthMethodsUpdateSerializer,
-        description='Same as PATCH — set `enable_magic_link` for the company.',
-        operation_id='api_v1_auth_methods_update',
     ),
 )
 class ShellUIAdminAuthMethodsView(APIView):
@@ -4739,12 +4754,10 @@ class ShellUIAdminAuthMethodsView(APIView):
 @extend_schema_view(
     get=extend_schema(
         tags=['platform-metrics'],
-        summary='Prometheus metrics (staff or company owner)',
+        summary='Prometheus metrics for one company (staff or company owner)',
         description=(
-            'Prometheus text exposition (openmetrics) for the company in the Bearer token '
-            '(JWT or PAT must include a `company_id` claim). Do not send `company_id` as a query parameter. '
-            'Only that company\'s `shellui_auth_company_*` gauges and `shellui_auth_successful_logins_total` '
-            'series; no runtime, platform-wide or other-company metrics (use `/api/v1/metrics/all`).'
+            'Company-scoped Prometheus text exposition. Requires a Django staff user or a company '
+            'owner JWT with `company_id`. Not exposed as an MCP tool.'
         ),
         responses={
             200: OpenApiResponse(description='text/plain Prometheus exposition'),

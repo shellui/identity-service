@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="{{ page_language|default:'en' }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{% endblock %} · Shellui</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f4f6f8;
+      --card: #ffffff;
+      --text: #111827;
+      --muted: #6b7280;
+      --border: #e5e7eb;
+      --primary: #111827;
+      --primary-hover: #1f2937;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0f1419;
+        --card: #151b23;
+        --text: #e7ecf3;
+        --muted: #9aa7b8;
+        --border: #2a3441;
+        --primary: #e7ecf3;
+        --primary-hover: #ffffff;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 1.5rem;
+      touch-action: manipulation;
+    }
+    .card {
+      width: min(100%, 420px);
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 1.5rem;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+    }
+    h1 {
+      margin: 0 0 0.35rem;
+      font-size: 1.2rem;
+      font-weight: 650;
+      letter-spacing: -0.02em;
+      text-wrap: balance;
+    }
+    .subtitle {
+      margin: 0 0 1.25rem;
+      color: var(--muted);
+      font-size: 0.92rem;
+      line-height: 1.45;
+    }
+    a.button, button.button {
+      display: block;
+      width: 100%;
+      text-align: center;
+      text-decoration: none;
+      box-sizing: border-box;
+      border: 0;
+      border-radius: 10px;
+      padding: 0.75rem 1rem;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      background: var(--primary);
+      color: var(--card);
+      min-height: 44px;
+    }
+    a.button:hover, button.button:hover { background: var(--primary-hover); }
+    a.button:focus-visible, button.button:focus-visible {
+      outline: 2px solid var(--text);
+      outline-offset: 2px;
+    }
+    button.button-secondary {
+      margin-top: 0.75rem;
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    button.button-secondary:hover { background: rgba(127, 127, 127, 0.08); }
+    noscript .subtitle { margin-top: 1rem; margin-bottom: 0; }
+  </style>
+  <style>
+    .card { width: min(100%, 480px); }
+    .why { font-size: 1rem; line-height: 1.45; margin: 0 0 1rem; }
+    .meta { margin: 0 0 1rem; font-size: 0.9rem; }
+    .meta dt { color: var(--muted); margin-top: 0.6rem; }
+    .meta dd { margin: 0.15rem 0 0; }
+    .note { color: var(--muted); font-size: 0.82rem; }
+    .host { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 1.05rem; font-weight: 700; word-break: break-all; padding: 0.5rem 0.65rem; border: 1px solid var(--border); border-radius: 8px; display: block; margin-top: 0.25rem; }
+    .warning { border: 1px solid #d97706; background: rgba(217, 119, 6, 0.1); border-radius: 10px; padding: 0.75rem; font-size: 0.88rem; line-height: 1.45; margin: 0 0 1.25rem; }
+    label { display: block; font-size: 0.88rem; font-weight: 600; margin: 0.9rem 0 0.3rem; }
+    input[type=email], input[type=text], select { width: 100%; padding: 0.6rem; border-radius: 8px; border: 1px solid var(--border); background: var(--card); color: var(--text); font-size: 0.95rem; }
+    fieldset { border: 0; padding: 0; margin: 0.9rem 0 0; }
+    legend { font-size: 0.88rem; font-weight: 600; }
+    .check { font-weight: 400; display: flex; gap: 0.5rem; align-items: flex-start; margin: 0.35rem 0; }
+    .stack > * + * { margin-top: 0.75rem; }
+    h2 { font-size: 1rem; margin: 1.25rem 0 0.5rem; font-weight: 650; }
+    .redirect-notice { margin: 0 0 1rem; font-size: 0.9rem; color: var(--muted); line-height: 1.45; }
+    .access-list { margin: 0.35rem 0 0; padding-left: 1.15rem; font-size: 0.92rem; line-height: 1.45; }
+    .consent-body { font-size: 1rem; line-height: 1.45; margin: 0 0 1rem; }
+    .actions { margin-top: 1.25rem; }
+  </style>
+</head>
+<body>
+  <main class="card"{% block main_attrs %}{% endblock %}>
+{% block content %}{% endblock %}
+  </main>
+</body>
+</html>

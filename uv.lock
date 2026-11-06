@@ -464,7 +464,7 @@ wheels = [
 
 [[package]]
 name = "identity-service"
-version = "0.10.1"
+version = "0.11.0"
 source = { virtual = "." }
 dependencies = [
     { name = "celery" },
@@ -488,6 +488,7 @@ dependencies = [
     { name = "redis" },
     { name = "requests" },
     { name = "sentry-sdk" },
+    { name = "shellui-django", extra = ["mcp"] },
     { name = "whitenoise" },
 ]
 
@@ -514,6 +515,7 @@ requires-dist = [
     { name = "redis", specifier = "==8.1.0" },
     { name = "requests", specifier = "==2.33.0" },
     { name = "sentry-sdk", specifier = "==2.63.0" },
+    { name = "shellui-django", extras = ["mcp"], specifier = "==0.5.0" },
     { name = "whitenoise", specifier = "==6.12.0" },
 ]
 
@@ -942,6 +944,27 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/ba/c8/b3c970a5b186722d276cd40a05b3254e03bccc0208560aff20f612e018e8/sentry_sdk-2.63.0.tar.gz", hash = "sha256:2a1502bf864769275dbc8c2c9fc7a0f7f5e18358180b615d262d13a31ffba216", size = 912449, upload-time = "2026-06-16T12:45:57.553Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/7b/57/cb205f7d93373120f666b9c5736dc0815524d96a9b278e7a728f018dc22a/sentry_sdk-2.63.0-py3-none-any.whl", hash = "sha256:3a9b5ddd403f79eb73bd670f75f04485819db53d28f76ced7bc09041cb0dfd6a", size = 495950, upload-time = "2026-06-16T12:45:55.819Z" },
+]
+
+[[package]]
+name = "shellui-django"
+version = "0.5.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "django" },
+    { name = "djangorestframework" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/66/24/b57fc372e839b6305d0e4ca5c2e1c1effc3ea1392f71390f811adecafecf/shellui_django-0.5.0.tar.gz", hash = "sha256:80b66ec455012b893f979a9730b6a0b90e12da96740a1445680ac84588433e44", size = 36789, upload-time = "2026-11-06T18:40:31.228Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/9e/36/87755a0869fd466d8b578f73d3eb58a01eca58b95378fb2fb10b12199d6c/shellui_django-0.5.0-py3-none-any.whl", hash = "sha256:63d4c16c3f3b2cbf7087b01578f18ccc3db492ed8a10639c38a02129c40f920d", size = 29398, upload-time = "2026-11-06T18:40:29.922Z" },
+]
+
+[package.optional-dependencies]
+mcp = [
+    { name = "cryptography" },
+    { name = "djangorestframework-simplejwt" },
+    { name = "pyjwt" },
+    { name = "requests" },
 ]
 
 [[package]]

@@ -9,6 +9,7 @@ from django.db.models import Q
 from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_datetime
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema, extend_schema_view
+from apps.authapi.openapi_admin import ADMIN_API_ERRORS, admin_openapi_fields, mcp_extend_schema_kwargs
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -123,15 +124,8 @@ def _row(user) -> dict:
 
 @extend_schema_view(
     get=extend_schema(
+        **mcp_extend_schema_kwargs('api_v1_users_audience'),
         tags=['directory-users'],
-        summary='Broadcast audience (staff or company owner)',
-        description=(
-            'Members of the token company matching every filter, for email broadcasts. '
-            '`user_ids` adds hand-picked members; alone, it is the whole audience. '
-            'Users without an email or with a deactivated account are left out. '
-            'Each row carries the language from the user preferences (`en` by default).'
-        ),
-        operation_id='api_v1_users_audience',
         parameters=[
             OpenApiParameter(name='group_ids', type=str, description='Comma-separated group ids. Nested groups count.'),
             OpenApiParameter(name='roles', type=str, description='Comma-separated: owner, staff, member.'),
@@ -148,6 +142,7 @@ def _row(user) -> dict:
             OpenApiParameter(name='page_size', type=int, description=f'Up to {MAX_PAGE_SIZE}. Default 100.'),
         ],
         responses={
+            **ADMIN_API_ERRORS,
             200: OpenApiResponse(description='`{count, page, page_size, results}`'),
             400: OpenApiResponse(description='`{error: "invalid_filter", field}`'),
         },

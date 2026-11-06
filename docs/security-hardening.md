@@ -13,6 +13,8 @@ Abuse-prone endpoints are rate limited, with counters in the shared cache (Redis
 | Scope | Default | Endpoints | Variable |
 | --- | --- | --- | --- |
 | `oauth` | 30 per minute per IP | `/api/v1/authorize`, OAuth callback, confirm, exchange, provider login | `AUTH_RATE_LIMIT_OAUTH` |
+| `mcp_register` | 10 per hour per IP | `POST /oauth/mcp/register` (dynamic client registration) | `AUTH_RATE_LIMIT_MCP_REGISTER` |
+| `mcp_signin` | 30 per 5 minutes per IP | `GET/POST /oauth/mcp/signin` | `AUTH_RATE_LIMIT_MCP_SIGNIN` |
 | `token_refresh` | 60 per minute per IP | `POST /api/v1/token?grant_type=refresh_token` | `AUTH_RATE_LIMIT_TOKEN_REFRESH` |
 | `auth_settings` | 30 per minute per IP | `GET /api/v1/settings` | `AUTH_RATE_LIMIT_SETTINGS` |
 | `magic_link` | 10 per minute | `POST /api/v1/magic-link/request`, per IP, per email, and per company | `AUTH_RATE_LIMIT_MAGIC_LINK` |

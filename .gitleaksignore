@@ -14,6 +14,9 @@ ad25aa8943f3f4799ca024d7d6b330861bb49e08:apps/authapi/tests/test_oauth_company_i
 d5533c96658b240c5885345adaab4dd6212a2e56:apps/authapi/tests/test_oauth_company_idp_isolation.py:generic-api-key:297
 d5533c96658b240c5885345adaab4dd6212a2e56:apps/authapi/tests/test_oauth_company_idp_isolation.py:generic-api-key:763
 
+# Docs curl example: literal paste placeholder for subject_token looked like a generic secret (PR #135)
+14afaa1d3f644a9a0790c750230339cf397dfe04:docs/mcp-and-agents.md:generic-api-key:56
+
 # Docs curl examples with a your_access_token_here placeholder in commit a475061 (later switched to $ACCESS_TOKEN)
 a475061f6a40baf7691be2c9f0ef3d23c0e25d93:docs/metrics.md:curl-auth-header:15
 a475061f6a40baf7691be2c9f0ef3d23c0e25d93:docs/metrics.md:curl-auth-header:18

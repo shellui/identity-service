@@ -26,6 +26,7 @@ const sidebars = {
     doc('index', 'Overview'),
     category('Get started', [
       doc('getting-started', 'Run identity-service'),
+      doc('local-dev-stack', 'Local dev stack'),
       doc('configuration', 'Configuration'),
     ]),
     category('Sign-in', [
@@ -45,6 +46,7 @@ const sidebars = {
       doc('jwks', 'JWT and JWKS'),
       doc('metrics', 'Metrics and access tokens'),
     ]),
+    category('MCP', [doc('mcp-and-agents', 'MCP and agents')]),
     category('Events and email', [
       doc('actions', 'Webhooks'),
       doc('n8n', 'n8n'),
