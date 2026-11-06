@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from django.db.models import Q
 from django.utils import timezone
 from drf_spectacular.utils import OpenApiResponse, extend_schema, extend_schema_view
 from rest_framework import status
@@ -16,15 +17,21 @@ from apps.agents.display import agent_created_by
 from apps.agents.approval_access import pending_approvals_for_user, user_may_manage_approval
 from apps.agents.approval_decisions import ApprovalDecisionError, settings_approve, settings_deny
 from apps.agents.call_log_outcome import display_outcome_for_read
+from apps.federation.models import ProvisionedCompany
 from apps.agents.models import Agent, McpApprovalRequest, McpCallLog
 from apps.agents.permissions import require_approval_actor, require_company_admin
 
 
 def _approval_row(row: McpApprovalRequest) -> dict:
+    if row.agent_id is not None:
+        agent_id_s, agent_name = str(row.agent_id), row.agent.name
+    else:
+        agent_id_s = str(row.global_agent_id) if row.global_agent_id is not None else ''
+        agent_name = 'Global control plane'
     return {
         'id': str(row.id),
-        'agent_id': str(row.agent_id),
-        'agent_name': row.agent.name,
+        'agent_id': agent_id_s,
+        'agent_name': agent_name,
         'service': row.service,
         'action': row.action,
         'tool_name': row.action,
@@ -43,9 +50,18 @@ def _get_manageable_approval(request, approval_id):
     if err:
         return None, None, None, err
     try:
-        row = McpApprovalRequest.objects.select_related('agent').get(pk=approval_id, company=company)
+        row = (
+            McpApprovalRequest.objects.select_related('agent')
+            .filter(pk=approval_id)
+            .filter(Q(company=company) | Q(agent_id__isnull=True, company_id__isnull=True))
+            .get()
+        )
     except McpApprovalRequest.DoesNotExist:
         return None, None, None, Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+    if row.agent_id is None and row.global_company_id is not None:
+        pc = ProvisionedCompany.objects.filter(global_company_id=str(row.global_company_id)).select_related('company').first()
+        if pc is None or pc.company_id != company.pk:
+            return None, None, None, Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
     if not user_may_manage_approval(actor, row):
         return None, None, None, Response({'error': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
     return actor, row, company, None

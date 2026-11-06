@@ -18,6 +18,7 @@ from apps.agents.approval_decisions import ApprovalDecisionError, settings_appro
 from apps.agents.approval_links import parse_fallback_token
 from apps.agents.models import McpApprovalRequest
 from apps.agents.mcp_signin import CSP_HEADER, MCP_REFERRER_POLICY
+from apps.federation.models import ProvisionedCompany
 
 COPY = {
     'title_pending': 'Approve this action?',
@@ -54,9 +55,27 @@ def _protect(response: HttpResponse) -> HttpResponse:
     return response
 
 
+def _fallback_agent_company_labels(row: McpApprovalRequest) -> tuple[str, str]:
+    if row.agent_id is not None:
+        agent_name = row.agent.name
+    else:
+        agent_name = 'Global control plane'
+    if row.company_id is not None:
+        company_name = row.company.name
+    elif row.global_company_id is not None:
+        pc = (
+            ProvisionedCompany.objects.filter(global_company_id=str(row.global_company_id))
+            .select_related('company')
+            .first()
+        )
+        company_name = pc.company.name if pc is not None else ''
+    else:
+        company_name = ''
+    return agent_name, company_name
+
+
 def _render_state(request: HttpRequest, *, row: McpApprovalRequest, state: str) -> HttpResponse:
-    agent_name = row.agent.name
-    company_name = row.company.name
+    agent_name, company_name = _fallback_agent_company_labels(row)
     tool_name = row.action
     ctx = {
         'copy': COPY,
@@ -85,7 +104,8 @@ def _render_state(request: HttpRequest, *, row: McpApprovalRequest, state: str) 
         ctx['body'] = COPY['wrong_account']
     else:
         ctx['title'] = COPY['title_pending']
-        ctx['lead'] = f'{agent_name} wants to run {tool_name} on {company_name}.'
+        on_label = company_name if company_name else 'your organization'
+        ctx['lead'] = f'{agent_name} wants to run {tool_name} on {on_label}.'
     response = render(request, 'agents/mcp_approval_fallback.html', ctx)
     return _protect(response)
 

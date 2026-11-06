@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
-from django.db.models import QuerySet
+import uuid
+
+from django.db.models import Q, QuerySet
 
 from apps.agents.models import Agent, McpApprovalRequest
 from apps.authapi.views import _is_user_company_owner
 from apps.companies.models import Company
+from apps.federation.models import ProvisionedCompany
 
 
 def user_may_manage_agent(user, agent: Agent) -> bool:
@@ -17,17 +20,37 @@ def user_may_manage_agent(user, agent: Agent) -> bool:
 
 
 def user_may_manage_approval(user, row: McpApprovalRequest) -> bool:
+    """Regional rows: owner or agent creator. Global rows (no regional ``Agent`` yet): company owners only."""
+    if row.agent_id is None:
+        if row.global_company_id is None:
+            return False
+        pc = ProvisionedCompany.objects.filter(global_company_id=str(row.global_company_id)).select_related('company').first()
+        if pc is None:
+            return False
+        return _is_user_company_owner(user, pc.company)
     return user_may_manage_agent(user, row.agent)
 
 
 def pending_approvals_for_user(company: Company, user) -> QuerySet[McpApprovalRequest]:
     from django.utils import timezone
 
-    qs = McpApprovalRequest.objects.filter(
-        company=company,
+    now = timezone.now()
+    gc_uuids: list[uuid.UUID] = []
+    for raw in ProvisionedCompany.objects.filter(company=company).values_list('global_company_id', flat=True):
+        try:
+            gc_uuids.append(uuid.UUID(str(raw)))
+        except (ValueError, TypeError, AttributeError):
+            continue
+
+    base = McpApprovalRequest.objects.filter(
         status=McpApprovalRequest.STATUS_PENDING,
-        expires_at__gt=timezone.now(),
+        expires_at__gt=now,
     ).select_related('agent', 'agent__created_by')
     if _is_user_company_owner(user, company):
-        return qs
-    return qs.filter(agent__created_by=user)
+        if gc_uuids:
+            return base.filter(
+                Q(company=company)
+                | Q(agent_id__isnull=True, company_id__isnull=True, global_company_id__in=gc_uuids)
+            )
+        return base.filter(company=company)
+    return base.filter(company=company, agent__created_by=user)

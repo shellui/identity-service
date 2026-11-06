@@ -10,7 +10,9 @@ import jwt
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 
+from apps.actions.models import EventLog
 from apps.authapi.jwks import build_jwks_document, generate_rsa_key_pair, load_signing_key
+from apps.authapi.views import _issue_shellui_tokens
 from apps.companies.access import set_company_access
 from apps.companies.models import Company
 from apps.federation.models import ProvisionedCompany, UpstreamAccount
@@ -63,8 +65,10 @@ class McpGlobalApprovalCreateTests(TestCase):
     def setUp(self):
         self.company = Company.objects.create(name='Gbl Co', slug='gbl-co')
         self.owner = User.objects.create_user('own', 'own@gbl.test', 'x')
+        self.member = User.objects.create_user('mem', 'mem@gbl.test', 'x')
         self.company.owners.add(self.owner)
         set_company_access(self.company, self.owner, enabled=True)
+        set_company_access(self.company, self.member, enabled=True)
         self.gc = uuid.uuid4()
         ProvisionedCompany.objects.create(company=self.company, global_company_id=str(self.gc))
         UpstreamAccount.objects.create(user=self.owner, issuer=_GLOBAL, sub='owner-sub-1', email=self.owner.email)
@@ -93,6 +97,12 @@ class McpGlobalApprovalCreateTests(TestCase):
         }
         base.update(overrides)
         return base
+
+    def _owner_token(self):
+        return _issue_shellui_tokens(self.owner, company=self.company)['access_token']
+
+    def _member_token(self):
+        return _issue_shellui_tokens(self.member, company=self.company)['access_token']
 
     def test_create_global_pending(self):
         with self._settings():
@@ -160,3 +170,96 @@ class McpGlobalApprovalCreateTests(TestCase):
             )
         self.assertEqual(state_r.status_code, 200, state_r.content)
         self.assertEqual(state_r.json()['status'], 'pending')
+
+    def test_owner_lists_global_pending(self):
+        with self._settings():
+            assertion = _build_dashboard_approval_assertion(
+                claims_extra=self._claims(),
+                private_pem=self._dash_key.private_pem,
+                kid=self._dash_key.kid,
+            )
+            create_r = self.client.post(
+                '/api/v1/mcp/internal/mcp-approval-requests',
+                data=json.dumps({}),
+                content_type='application/json',
+                HTTP_AUTHORIZATION=f'Bearer {assertion}',
+            )
+        self.assertEqual(create_r.status_code, 200, create_r.content)
+        approval_id = create_r.json()['id']
+        listed = self.client.get('/api/v1/mcp/approvals', HTTP_AUTHORIZATION=f'Bearer {self._owner_token()}')
+        self.assertEqual(listed.status_code, 200)
+        ids = {row['id'] for row in listed.json()['approvals']}
+        self.assertIn(approval_id, ids)
+        match = next(row for row in listed.json()['approvals'] if row['id'] == approval_id)
+        self.assertEqual(match['agent_name'], 'Global control plane')
+        self.assertEqual(match['agent_id'], str(self.ga))
+
+    def test_member_does_not_list_global_pending_without_agent(self):
+        with self._settings():
+            assertion = _build_dashboard_approval_assertion(
+                claims_extra=self._claims(),
+                private_pem=self._dash_key.private_pem,
+                kid=self._dash_key.kid,
+            )
+            self.client.post(
+                '/api/v1/mcp/internal/mcp-approval-requests',
+                data=json.dumps({}),
+                content_type='application/json',
+                HTTP_AUTHORIZATION=f'Bearer {assertion}',
+            )
+        listed = self.client.get('/api/v1/mcp/approvals', HTTP_AUTHORIZATION=f'Bearer {self._member_token()}')
+        self.assertEqual(listed.status_code, 200)
+        self.assertEqual(listed.json()['approvals'], [])
+
+    def test_owner_decide_global_audit_has_company(self):
+        with self._settings():
+            assertion = _build_dashboard_approval_assertion(
+                claims_extra=self._claims(),
+                private_pem=self._dash_key.private_pem,
+                kid=self._dash_key.kid,
+            )
+            create_r = self.client.post(
+                '/api/v1/mcp/internal/mcp-approval-requests',
+                data=json.dumps({}),
+                content_type='application/json',
+                HTTP_AUTHORIZATION=f'Bearer {assertion}',
+            )
+        self.assertEqual(create_r.status_code, 200, create_r.content)
+        approval_id = create_r.json()['id']
+        decide = self.client.post(
+            f'/api/v1/mcp/approvals/{approval_id}/decide',
+            data=json.dumps({'decision': 'approve'}),
+            content_type='application/json',
+            HTTP_AUTHORIZATION=f'Bearer {self._owner_token()}',
+        )
+        self.assertEqual(decide.status_code, 200)
+        event = EventLog.objects.filter(event_type='identity.mcp.approval_decision').latest('id')
+        self.assertEqual(event.company_id, self.company.id)
+
+    def test_other_company_cannot_get_global_approval_detail(self):
+        other_company = Company.objects.create(name='Other Co', slug='other-gbl')
+        other_owner = User.objects.create_user('o2', 'o2@gbl.test', 'x')
+        other_company.owners.add(other_owner)
+        set_company_access(other_company, other_owner, enabled=True)
+        ProvisionedCompany.objects.create(company=other_company, global_company_id=str(uuid.uuid4()))
+
+        with self._settings():
+            assertion = _build_dashboard_approval_assertion(
+                claims_extra=self._claims(),
+                private_pem=self._dash_key.private_pem,
+                kid=self._dash_key.kid,
+            )
+            create_r = self.client.post(
+                '/api/v1/mcp/internal/mcp-approval-requests',
+                data=json.dumps({}),
+                content_type='application/json',
+                HTTP_AUTHORIZATION=f'Bearer {assertion}',
+            )
+        self.assertEqual(create_r.status_code, 200, create_r.content)
+        approval_id = create_r.json()['id']
+        other_token = _issue_shellui_tokens(other_owner, company=other_company)['access_token']
+        detail = self.client.get(
+            f'/api/v1/mcp/approvals/{approval_id}',
+            HTTP_AUTHORIZATION=f'Bearer {other_token}',
+        )
+        self.assertEqual(detail.status_code, 404)
