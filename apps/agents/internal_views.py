@@ -45,13 +45,13 @@ from apps.agents.approval_authority import (
     approval_row_stale_for_agent,
     parse_approval_authority_claims,
 )
-from apps.agents.internal_callers import verify_caller_assertion
+from apps.agents.internal_callers import verify_caller_assertion, verify_delegated_authority_assertion
 from apps.agents.call_log_internal import fixed_resource_label_for_service, safe_operation_title
 from apps.agents.call_log_outcome import canonical_outcome_ingest
-from apps.agents.json_strict import strict_json_int_for_company_id
+from apps.agents.json_strict import strict_json_int_for_company_id, strict_non_negative_int
 from apps.agents.mcp_claims import strict_bool_claim
 from apps.agents.mcp_audit_codes import sanitize_error_code
-from apps.agents.models import Agent, McpApprovalRequest, McpCallLog
+from apps.agents.models import Agent, GlobalAgentRevocation, McpApprovalRequest, McpCallLog
 from apps.agents.tokens import company_name_for_agent
 from apps.agents.revocation import (
     REVOCATION_CACHE_SECONDS,
@@ -180,6 +180,96 @@ class McpRevocationListView(APIView):
         response = Response(payload)
         response['Cache-Control'] = f'private, max-age={REVOCATION_CACHE_SECONDS}'
         return response
+
+
+_ALLOWED_DELEGATED_AUTHORITY_CALLERS = frozenset({'storage', 'hosting', 'email', 'ai'})
+
+
+class McpInternalDelegatedAgentAuthorityView(APIView):
+    """Storage, hosting, email, and ai-service: verify live delegated agent binding (not revocation-only)."""
+
+    authentication_classes = []
+    permission_classes = []
+
+    def post(self, request):
+        try:
+            verified = verify_delegated_authority_assertion(
+                _assertion_from_request(request),
+                target=_identity_origin(),
+            )
+        except InternalAssertionError as exc:
+            return Response({'error': exc.message}, status=exc.status)
+        if verified.caller.name not in _ALLOWED_DELEGATED_AUTHORITY_CALLERS:
+            return Response({'error': 'Caller not allowed for delegated authority checks.'}, status=status.HTTP_403_FORBIDDEN)
+        body = request.data if isinstance(request.data, dict) else {}
+        raw_aid = body.get('agent_id')
+        try:
+            agent_uuid = uuid.UUID(str(raw_aid).strip())
+        except (TypeError, ValueError, AttributeError):
+            return Response({'error': 'agent_id must be a uuid string.'}, status=status.HTTP_400_BAD_REQUEST)
+        cid = strict_json_int_for_company_id(body.get('company_id'))
+        if cid is None or cid == 0:
+            return Response({'error': 'company_id must be a positive JSON integer.'}, status=status.HTTP_400_BAD_REQUEST)
+        raw_gc = body.get('global_company_id')
+        if type(raw_gc) is not str or not raw_gc.strip():
+            return Response({'error': 'global_company_id must be a uuid string.'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            body_gc = uuid.UUID(raw_gc.strip())
+        except (ValueError, TypeError):
+            return Response({'error': 'Invalid global_company_id.'}, status=status.HTTP_400_BAD_REQUEST)
+        gv = strict_non_negative_int(body.get('grant_version'))
+        if gv is None:
+            return Response({'error': 'grant_version must be a JSON non-negative integer.'}, status=status.HTTP_400_BAD_REQUEST)
+        cb = strict_non_negative_int(body.get('company_binding_version'))
+        if cb is None:
+            return Response(
+                {'error': 'company_binding_version must be a JSON non-negative integer.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            agent = Agent.objects.get(pk=agent_uuid, company_id=cid)
+        except Agent.DoesNotExist:
+            return Response({'error': 'Agent not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        if agent.global_agent_id is None:
+            return Response({'error': 'Agent is not a delegated exchange agent.'}, status=status.HTTP_404_NOT_FOUND)
+        if GlobalAgentRevocation.objects.filter(global_agent_id=agent.global_agent_id).exists():
+            return Response(
+                {'error': 'Global agent is revoked.', 'authorized': False},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if not agent.is_active:
+            return Response({'error': 'Agent inactive.', 'authorized': False}, status=status.HTTP_403_FORBIDDEN)
+        row_gc = getattr(agent, 'global_company_id', None)
+        row_cb = getattr(agent, 'company_binding_version', None)
+        if row_gc is None or row_cb is None:
+            return Response({'error': 'Agent has no SaaS company binding.', 'authorized': False}, status=status.HTTP_403_FORBIDDEN)
+        if row_gc != body_gc:
+            return Response({'error': 'global_company_id mismatch.', 'authorized': False}, status=status.HTTP_403_FORBIDDEN)
+        if int(agent.grant_version or 0) != int(gv):
+            return Response({'error': 'grant_version mismatch.', 'authorized': False}, status=status.HTTP_403_FORBIDDEN)
+        if int(row_cb) != int(cb):
+            return Response({'error': 'company_binding_version mismatch.', 'authorized': False}, status=status.HTTP_403_FORBIDDEN)
+
+        return Response(
+            {
+                'authorized': True,
+                'revoked': agent.revoked_at is not None,
+                'paused': agent.paused_at is not None,
+                'agent_id': str(agent.id),
+                'company_id': int(agent.company_id),
+                'global_agent_id': str(agent.global_agent_id),
+                'global_company_id': str(row_gc),
+                'grant_version': int(agent.grant_version or 0),
+                'company_binding_version': int(row_cb),
+                'services_allowed': list(agent.services_allowed or []),
+                'global_allowed_services': list(agent.global_allowed_services or []),
+                'access_mode': agent.access_mode,
+                'read_level': agent.read_level,
+                'allow_destructive_without_asking': bool(agent.allow_destructive_without_asking),
+            }
+        )
 
 
 class McpInternalApprovalCreateView(APIView):
@@ -554,6 +644,8 @@ class McpInternalCallLogView(APIView):
             return Response({'error': 'Agent not found.'}, status=status.HTTP_404_NOT_FOUND)
         if 'arguments' in body:
             return Response({'error': 'arguments not accepted.'}, status=status.HTTP_400_BAD_REQUEST)
+        if 'arguments_redacted' in body:
+            return Response({'error': 'arguments_redacted not accepted.'}, status=status.HTTP_400_BAD_REQUEST)
         ip_raw = str(body.get('client_ip') or '').strip()
         client_ip = ip_raw if ip_raw else None
         result = str(body.get('result') or '')[:32]

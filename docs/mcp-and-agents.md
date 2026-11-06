@@ -142,6 +142,36 @@ Every `/api/v1/mcp/internal/mcp-*` assertion is RS256, signed by the calling ser
 
 A caller with no issuer set is not trusted. Unknown issuers and wrong keys get `401`. Each `jti` is accepted once. Storage, hosting, and email may only create or read approvals for their own `service`, otherwise `403`.
 
+### Live delegated agent authority (canonical)
+
+Use this route to verify a regional **delegated** agent row against the live SaaS binding before trusting a downstream MCP token or approval path. Do **not** substitute revocation polling alone; this check reads the current `Agent` row.
+
+- **Endpoint:** `POST /api/v1/mcp/internal/mcp-agent-delegated-authority`
+- **Authorization:** `Bearer` RS256 assertion (`shellui_django.mcp.internal` verification rules), same pattern as other internal routes
+  - `aud`: **`shellui-mcp-agent-delegated-authority`**
+  - `scope`: **`mcp.agent.delegated.authority.read`**
+  - `target`: Identity issuer (`JWT_ISSUER`, same as other internal assertions)
+  - `iss`: the regional service issuer (`STORAGE_SERVICE_ISSUER`, `HOSTING_SERVICE_ISSUER`, `EMAIL_SERVICE_ISSUER`, or `AI_SERVICE_ISSUER`)
+  - `sub`: `service`, `iat`, `exp`, `jti` as usual
+- **Callers allowed:** storage, hosting, email, and ai-service only (`403` for dashboard and other issuers).
+- **JSON body (strict types):**
+  - `agent_id`: uuid string
+  - `company_id`: JSON integer (regional company)
+  - `global_company_id`: uuid string (SaaS)
+  - `grant_version`: JSON non-negative integer (`0` valid)
+  - `company_binding_version`: JSON non-negative integer (`0` valid)
+
+**200** when the row matches exactly:
+
+- `authorized`: `true`
+- `revoked` / `paused`: booleans from the row
+- `agent_id`, `company_id`, `global_agent_id`, `global_company_id`, `grant_version`, `company_binding_version`
+- `services_allowed`, `global_allowed_services`, `access_mode`, `read_level`, `allow_destructive_without_asking`
+
+**404** when the agent is missing, or when `global_agent_id` is null (not a delegated exchange agent). **400** on malformed body types. **403** when the agent is inactive, global revocation applies to that global agent id, or any of `global_company_id`, `grant_version`, or `company_binding_version` does not match the live row.
+
+Downstream services should **retire** any alternate paths (for example `mcp-delegated-agent-authority` vs `mcp-agent-delegated-authority`); only this URL is canonical on Identity.
+
 Company owners and the member who created the agent approve or deny in Settings or via human user tokens:
 
 - `GET /api/v1/mcp/approvals` (returns `approvals` and `pending_count`, the number of rows in `approvals`; pending rows include `service`, `action`, `tool_name`, `target` (`service:action`), `is_destructive`, `short_action_summary` (same as `action`), and `arguments_redacted` (always `{}` for internal creates))
@@ -176,7 +206,7 @@ Identity tests use `apps.agents.trusted_revocation.parse_trusted_revocation_poll
 
 ## Call logs
 
-Services forward MCP call audit rows to `POST /api/v1/mcp/internal/mcp-call-logs` (assertion audience `shellui-mcp-call-log`). Identity stores them and emits `identity.mcp.call` security events. The body must include `outcome` as one of `allowed`, `failed`, `denied`, `pending_approval`, or `session_used` (legacy `success`, `error`, `rate_limited`, and `timeout` are accepted on ingest and normalized to the five values). Omitting `outcome` or sending an unknown string returns `400`. Identity does not infer an outcome from HTTP status alone. `company_id` must be a JSON integer in the body (same rule as the assertion). `arguments` and untrusted `operation_title` / `resource_label` are rejected; stored `arguments_redacted` is always `{}`.
+Services forward MCP call audit rows to `POST /api/v1/mcp/internal/mcp-call-logs` (assertion audience `shellui-mcp-call-log`). Identity stores them and emits `identity.mcp.call` security events. The body must include `outcome` as one of `allowed`, `failed`, `denied`, `pending_approval`, or `session_used` (legacy `success`, `error`, `rate_limited`, and `timeout` are accepted on ingest and normalized to the five values). Omitting `outcome` or sending an unknown string returns `400`. Identity does not infer an outcome from HTTP status alone. `company_id` must be a JSON integer in the body (same rule as the assertion). `arguments`, `arguments_redacted`, and untrusted `operation_title` / `resource_label` are rejected; new rows store `arguments_redacted` as `{}`.
 
 Activity and admin list APIs map legacy stored values to the five labels. Use `error_code` (allowlisted) for timeout or rate limit detail; outcome stays `failed` for those cases.
 

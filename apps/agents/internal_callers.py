@@ -22,6 +22,11 @@ from apps.agents.ai_service_config import (
 )
 from apps.federation.parsing import parse_jwks
 
+from apps.agents.mcp_delegated_authority import (
+    DELEGATED_AGENT_AUTHORITY_AUDIENCE,
+    DELEGATED_AGENT_AUTHORITY_SCOPE,
+)
+
 _JTI_CACHE_PREFIX = 'mcp:internal-assertion:jti:'
 
 # Services that sign with their own key and publish it at ``{origin}/.well-known/jwks.json``.
@@ -113,7 +118,14 @@ def _register_jti_factory(max_lifetime_seconds: int):
     return _register_jti
 
 
-def verify_caller_assertion(raw_token: str, *, audience: str, scope: str, target: str) -> VerifiedAssertion:
+def verify_caller_assertion(
+    raw_token: str,
+    *,
+    audience: str,
+    scope: str,
+    target: str,
+    enforce_approval_service_match: bool = True,
+) -> VerifiedAssertion:
     """Verify an internal assertion against the key of the registered caller named in ``iss``.
 
     The unverified ``iss`` only selects which registered key to try. The signature, issuer,
@@ -156,7 +168,23 @@ def verify_caller_assertion(raw_token: str, *, audience: str, scope: str, target
         register_jti=_register_jti_factory(max_lifetime),
         max_lifetime_seconds=max_lifetime,
     )
-    if scope == APPROVAL_SCOPE and caller.name in JWKS_CALLERS and claims.get('service') != caller.name:
+    if (
+        enforce_approval_service_match
+        and scope == APPROVAL_SCOPE
+        and caller.name in JWKS_CALLERS
+        and claims.get('service') != caller.name
+    ):
         # A service key may only request approvals for its own tools.
         raise InternalAssertionError('Assertion service does not match caller.', status=403)
     return VerifiedAssertion(claims=claims, caller=caller)
+
+
+def verify_delegated_authority_assertion(raw_token: str, *, target: str) -> VerifiedAssertion:
+    """RS256 internal assertion for live delegated-agent authority (storage, hosting, email, ai)."""
+    return verify_caller_assertion(
+        raw_token,
+        audience=DELEGATED_AGENT_AUTHORITY_AUDIENCE,
+        scope=DELEGATED_AGENT_AUTHORITY_SCOPE,
+        target=target,
+        enforce_approval_service_match=False,
+    )

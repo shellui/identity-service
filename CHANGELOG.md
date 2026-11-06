@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 - Global subject tokens must include ``mcp_authority: global_delegated``. Regional tokens from exchange include ``mcp_authority: delegated``. ``mcp-approval-session-check`` returns live ``global_company_id``, ``company_binding_version``, and ``grant_version`` on success when the agent is delegated; internal approval create rejects ``arguments_redacted`` in the JSON body and refuses non-JSON ``is_destructive``.
 
+- New internal route ``POST /api/v1/mcp/internal/mcp-agent-delegated-authority`` (assertion audience ``shellui-mcp-agent-delegated-authority``, scope ``mcp.agent.delegated.authority.read``) for storage, hosting, email, and ai-service to verify live delegated agent binding. Migration ``0021`` clears legacy ``arguments_redacted`` on MCP approval and call log rows.
+
 ### 🐛 Bug Fixes
 
 - Identity ``/mcp`` local ``tools/call`` rows store elapsed ``duration_ms`` in the admin call log.
