@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from datetime import timedelta
 
 import jwt
 from django.contrib.auth import get_user_model
@@ -326,3 +327,151 @@ class McpInternalCallLogTests(TestCase):
             }
         )
         self.assertEqual(r_no_appr.status_code, 400, r_no_appr.content)
+
+    def _enable_destructive(self):
+        self.agent.global_max_destructive = True
+        self.agent.save(update_fields=['global_max_destructive'])
+
+    def _destructive_approval(self, *, status, action='wipe_bucket', arguments_hash='b' * 64, **extra):
+        self._enable_destructive()
+        fields = {
+            'agent': self.agent,
+            'company': self.company,
+            'service': 'storage',
+            'action': action,
+            'arguments_hash': arguments_hash,
+            'short_action_summary': 'x',
+            'expires_at': timezone.now() + timedelta(minutes=5),
+            'status': status,
+            'is_destructive': True,
+            **approval_authority_snapshot_for_agent(self.agent),
+        }
+        fields.update(extra)
+        return McpApprovalRequest.objects.create(**fields)
+
+    def _destructive_body(self, *, outcome, approval=None, tool='wipe_bucket'):
+        body = {
+            'agent_id': str(self.agent.id),
+            'company_id': self.company.pk,
+            'service': 'storage',
+            'tool': tool,
+            'method': 'POST',
+            'path': '/mcp',
+            'status': 200,
+            'duration_ms': 1,
+            'outcome': outcome,
+            'access_kind': 'destructive',
+        }
+        if approval is not None:
+            body['approval_id'] = str(approval.id)
+        return body
+
+    def test_destructive_allowed_and_failed_for_approved_or_executed(self):
+        from apps.agents.models import McpCallLog
+
+        approved = self._destructive_approval(status=McpApprovalRequest.STATUS_APPROVED, arguments_hash='c' * 64)
+        executed = self._destructive_approval(status=McpApprovalRequest.STATUS_EXECUTED, arguments_hash='d' * 64)
+        for row, outcome in (
+            (approved, 'allowed'),
+            (approved, 'failed'),
+            (executed, 'allowed'),
+            (executed, 'failed'),
+        ):
+            response = self._post(self._destructive_body(outcome=outcome, approval=row))
+            self.assertEqual(response.status_code, 201, response.content)
+            log = McpCallLog.objects.get(pk=response.json()['id'])
+            self.assertEqual(log.approval_id, row.id)
+            self.assertEqual(log.access_kind, 'destructive')
+            self.assertEqual(log.outcome, outcome)
+            self.assertEqual(log.arguments_redacted, {})
+            self.assertNotIn('arguments', response.json())
+        approved.refresh_from_db()
+        executed.refresh_from_db()
+        self.assertEqual(approved.status, McpApprovalRequest.STATUS_APPROVED)
+        self.assertEqual(executed.status, McpApprovalRequest.STATUS_EXECUTED)
+
+    def test_destructive_denied_and_waiting_stay_destructive(self):
+        from apps.agents.models import McpCallLog
+
+        pending = self._destructive_approval(status=McpApprovalRequest.STATUS_PENDING, arguments_hash='e' * 64)
+        rejected = self._destructive_approval(status=McpApprovalRequest.STATUS_REJECTED, arguments_hash='f' * 64)
+        executed = self._destructive_approval(status=McpApprovalRequest.STATUS_EXECUTED, arguments_hash='1' * 64)
+        approved = self._destructive_approval(status=McpApprovalRequest.STATUS_APPROVED, arguments_hash='2' * 64)
+
+        denied = self._post(self._destructive_body(outcome='denied'))
+        self.assertEqual(denied.status_code, 201, denied.content)
+        denied_log = McpCallLog.objects.get(pk=denied.json()['id'])
+        self.assertEqual(denied_log.access_kind, 'destructive')
+        self.assertEqual(denied_log.outcome, 'denied')
+        self.assertIsNone(denied_log.approval_id)
+
+        waiting = self._post(self._destructive_body(outcome='waiting_approval'))
+        self.assertEqual(waiting.status_code, 201, waiting.content)
+        waiting_log = McpCallLog.objects.get(pk=waiting.json()['id'])
+        self.assertEqual(waiting_log.access_kind, 'destructive')
+        self.assertEqual(waiting_log.outcome, 'waiting_approval')
+        self.assertNotEqual(waiting_log.access_kind, 'write')
+
+        linked_denied = self._post(self._destructive_body(outcome='denied', approval=pending))
+        self.assertEqual(linked_denied.status_code, 201, linked_denied.content)
+        self.assertEqual(McpCallLog.objects.get(pk=linked_denied.json()['id']).approval_id, pending.id)
+
+        linked_waiting = self._post(self._destructive_body(outcome='waiting_approval', approval=rejected))
+        self.assertEqual(linked_waiting.status_code, 201, linked_waiting.content)
+        self.assertEqual(McpCallLog.objects.get(pk=linked_waiting.json()['id']).approval_id, rejected.id)
+
+        denied_executed = self._post(self._destructive_body(outcome='denied', approval=executed))
+        self.assertEqual(denied_executed.status_code, 400, denied_executed.content)
+        waiting_approved = self._post(self._destructive_body(outcome='waiting_approval', approval=approved))
+        self.assertEqual(waiting_approved.status_code, 400, waiting_approved.content)
+
+        pending.refresh_from_db()
+        rejected.refresh_from_db()
+        executed.refresh_from_db()
+        approved.refresh_from_db()
+        self.assertEqual(pending.status, McpApprovalRequest.STATUS_PENDING)
+        self.assertEqual(rejected.status, McpApprovalRequest.STATUS_REJECTED)
+        self.assertEqual(executed.status, McpApprovalRequest.STATUS_EXECUTED)
+        self.assertEqual(approved.status, McpApprovalRequest.STATUS_APPROVED)
+
+    def test_destructive_session_used_rejected(self):
+        approved = self._destructive_approval(status=McpApprovalRequest.STATUS_APPROVED, arguments_hash='3' * 64)
+        response = self._post(self._destructive_body(outcome='session_used', approval=approved))
+        self.assertEqual(response.status_code, 400, response.content)
+        approved.refresh_from_db()
+        self.assertEqual(approved.status, McpApprovalRequest.STATUS_APPROVED)
+
+    def test_destructive_preserves_requested_approval_id(self):
+        from apps.agents.models import McpCallLog
+
+        first = self._destructive_approval(status=McpApprovalRequest.STATUS_EXECUTED, arguments_hash='4' * 64)
+        second = self._destructive_approval(status=McpApprovalRequest.STATUS_EXECUTED, arguments_hash='5' * 64)
+        response = self._post(self._destructive_body(outcome='failed', approval=second))
+        self.assertEqual(response.status_code, 201, response.content)
+        log = McpCallLog.objects.get(pk=response.json()['id'])
+        self.assertEqual(log.approval_id, second.id)
+        self.assertNotEqual(log.approval_id, first.id)
+        self.assertEqual(log.arguments_redacted, {})
+        first.refresh_from_db()
+        second.refresh_from_db()
+        self.assertEqual(first.status, McpApprovalRequest.STATUS_EXECUTED)
+        self.assertEqual(second.status, McpApprovalRequest.STATUS_EXECUTED)
+
+    def test_destructive_ambiguous_fingerprint_rejected(self):
+        from apps.agents.models import McpCallLog
+
+        match = self._destructive_approval(status=McpApprovalRequest.STATUS_EXECUTED, arguments_hash='6' * 64)
+        other = self._destructive_approval(
+            status=McpApprovalRequest.STATUS_EXECUTED,
+            arguments_hash='7' * 64,
+            authority_grant_version=99,
+        )
+        rejected = self._post(self._destructive_body(outcome='allowed', approval=other))
+        self.assertEqual(rejected.status_code, 400, rejected.content)
+        self.assertFalse(McpCallLog.objects.filter(approval_id=other.id).exists())
+        self.assertFalse(McpCallLog.objects.filter(approval_id=match.id).exists())
+        accepted = self._post(self._destructive_body(outcome='failed', approval=match))
+        self.assertEqual(accepted.status_code, 201, accepted.content)
+        self.assertEqual(McpCallLog.objects.get(pk=accepted.json()['id']).approval_id, match.id)
+        match.refresh_from_db()
+        self.assertEqual(match.status, McpApprovalRequest.STATUS_EXECUTED)

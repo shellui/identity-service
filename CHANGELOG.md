@@ -27,6 +27,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ### 🐛 Bug Fixes
 
+- Destructive MCP call logs accept `allowed` and `failed` against an `approved` or `executed` approval (including after consume). `denied` and `waiting_approval` stay `access_kind` `destructive`. `session_used` is rejected for destructive calls. Identity does not move `executed` back to `approved`.
+
 - Identity ``/mcp`` local ``tools/call`` rows store elapsed ``duration_ms`` in the admin call log.
 
 ## [0.11.0] - 2026-11-01

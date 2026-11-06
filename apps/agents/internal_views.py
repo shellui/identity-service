@@ -59,7 +59,10 @@ from apps.agents.internal_callers import verify_caller_assertion, verify_delegat
 from apps.agents.call_log_internal import fixed_resource_label_for_service, safe_operation_title
 from apps.agents.call_log_outcome import (
     OUTCOME_ALLOWED,
+    OUTCOME_DENIED,
+    OUTCOME_FAILED,
     OUTCOME_SESSION_USED,
+    OUTCOME_WAITING_APPROVAL,
     canonical_outcome_ingest,
 )
 from apps.agents.json_strict import strict_json_int_for_company_id, strict_non_negative_int
@@ -809,6 +812,42 @@ class McpInternalApprovalConsumeView(APIView):
         return Response({'consumed': True})
 
 
+def _destructive_call_log_outcome_error(*, outcome: str, approval_id: uuid.UUID | None) -> str | None:
+    """Status rules for a destructive call log. Fingerprint match is checked by the caller.
+
+    ``allowed`` and ``failed`` require an approved or executed destructive row (consume leaves
+    ``executed``). ``denied`` and ``waiting_approval`` are not execution: approval is optional, and
+    when present the row must be pending or rejected. ``session_used`` is never a destructive audit.
+    """
+    if outcome == OUTCOME_SESSION_USED:
+        return 'session_used is not allowed for destructive access_kind.'
+    if outcome in (OUTCOME_ALLOWED, OUTCOME_FAILED):
+        if approval_id is None:
+            return 'approval_id required for destructive tools.'
+        appr = McpApprovalRequest.objects.get(pk=approval_id)
+        if not appr.is_destructive:
+            return 'approval_id must reference a destructive approval for destructive access_kind.'
+        if appr.status not in (
+            McpApprovalRequest.STATUS_APPROVED,
+            McpApprovalRequest.STATUS_EXECUTED,
+        ):
+            return 'approval must be approved or executed for destructive call log.'
+        return None
+    if outcome in (OUTCOME_DENIED, OUTCOME_WAITING_APPROVAL):
+        if approval_id is None:
+            return None
+        appr = McpApprovalRequest.objects.get(pk=approval_id)
+        if not appr.is_destructive:
+            return 'approval_id must reference a destructive approval for destructive access_kind.'
+        if appr.status not in (
+            McpApprovalRequest.STATUS_PENDING,
+            McpApprovalRequest.STATUS_REJECTED,
+        ):
+            return 'denied or waiting_approval cannot reference an approved or executed destructive approval.'
+        return None
+    return 'Invalid outcome for destructive access_kind.'
+
+
 def _call_log_matches_approval_row(agent: Agent, appr: McpApprovalRequest) -> bool:
     if appr.agent_id is None or appr.company_id is None:
         return False
@@ -953,32 +992,10 @@ class McpInternalCallLogView(APIView):
                 return Response({'error': 'approval_id does not match this call.'}, status=status.HTTP_400_BAD_REQUEST)
 
         if destructive_write:
-            if outcome not in (OUTCOME_SESSION_USED, OUTCOME_ALLOWED):
-                return Response(
-                    {
-                        'error': (
-                            'destructive access_kind requires outcome allowed or session_used '
-                            'with a matching destructive approval.'
-                        )
-                    },
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-            if approval_uuid is None:
-                return Response(
-                    {'error': 'approval_id required for destructive tools.'},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-            appr_d = McpApprovalRequest.objects.get(pk=approval_uuid)
-            if not appr_d.is_destructive:
-                return Response(
-                    {'error': 'approval_id must reference a destructive approval for destructive access_kind.'},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-            if appr_d.status != McpApprovalRequest.STATUS_APPROVED:
-                return Response(
-                    {'error': 'approval must be approved for destructive call log.'},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
+            # Keep access_kind destructive. Do not rewrite the approval row (executed stays executed).
+            destructive_err = _destructive_call_log_outcome_error(outcome=outcome, approval_id=approval_uuid)
+            if destructive_err is not None:
+                return Response({'error': destructive_err}, status=status.HTTP_400_BAD_REQUEST)
         elif approval_uuid is not None:
             appr_nd = McpApprovalRequest.objects.get(pk=approval_uuid)
             if appr_nd.is_destructive:
