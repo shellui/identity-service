@@ -112,12 +112,7 @@ class McpAdminApiTests(TestCase):
         )
         create = self.client.post(
             '/api/v1/mcp/internal/mcp-approval-requests',
-            data=json.dumps(
-                {
-                    'arguments': {'api_key': 'super-secret-value', 'object_name': 'report.pdf'},
-                    'target': 'POST /api/v1/objects/delete',
-                }
-            ),
+            data=json.dumps({}),
             content_type='application/json',
             HTTP_AUTHORIZATION=f'Bearer {assertion}',
         )
@@ -130,14 +125,13 @@ class McpAdminApiTests(TestCase):
         row = approvals[0]
         self.assertEqual(row['service'], 'storage')
         self.assertEqual(row['action'], 'delete_object')
-        self.assertEqual(row['target'], 'POST /api/v1/objects/delete')
-        self.assertEqual(row['arguments_redacted']['api_key'], '[redacted]')
-        self.assertEqual(row['arguments_redacted']['object_name'], 'report.pdf')
+        self.assertEqual(row['target'], 'storage:delete_object')
+        self.assertEqual(row['arguments_redacted'], {})
         detail = self.client.get(
             f'/api/v1/mcp/approvals/{row["id"]}',
             HTTP_AUTHORIZATION=f'Bearer {owner_token}',
         )
         self.assertEqual(detail.status_code, 200)
         approval = detail.json()['approval']
-        self.assertEqual(approval['arguments_redacted']['api_key'], '[redacted]')
-        self.assertEqual(approval['target'], 'POST /api/v1/objects/delete')
+        self.assertEqual(approval['arguments_redacted'], {})
+        self.assertEqual(approval['target'], 'storage:delete_object')

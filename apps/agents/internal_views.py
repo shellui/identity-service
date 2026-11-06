@@ -20,8 +20,6 @@ from shellui_django.mcp.internal import (
     REVOCATION_SCOPE,
     InternalAssertionError,
 )
-from shellui_django.mcp.masking import redact_mapping
-
 from apps.actions.event_log import record_event
 from apps.actions.registry import get_event_type
 from apps.agents.approval_audit import record_approval_expired_once
@@ -48,7 +46,9 @@ from apps.agents.approval_authority import (
     parse_approval_authority_claims,
 )
 from apps.agents.internal_callers import verify_caller_assertion
-from apps.agents.call_log_outcome import CANONICAL_OUTCOMES, canonical_outcome, normalized_resource_label
+from apps.agents.call_log_internal import fixed_resource_label_for_service, safe_operation_title
+from apps.agents.call_log_outcome import canonical_outcome_ingest
+from apps.agents.json_strict import strict_json_int_for_company_id
 from apps.agents.mcp_audit_codes import sanitize_error_code
 from apps.agents.models import Agent, McpApprovalRequest, McpCallLog
 from apps.agents.tokens import company_name_for_agent
@@ -64,19 +64,6 @@ from apps.federation.signing import TokenError
 
 def _identity_origin() -> str:
     return (getattr(settings, 'JWT_ISSUER', '') or '').rstrip('/')
-
-
-def _approval_target_from_body(body: dict) -> str:
-    target = str(body.get('target') or '').strip()
-    if target:
-        return target[:500]
-    method = str(body.get('method') or '').strip().upper()
-    path = str(body.get('path') or '').strip()
-    if method and path:
-        return f'{method} {path}'[:500]
-    if path:
-        return path[:500]
-    return ''
 
 
 def _assertion_from_request(request) -> str:
@@ -122,6 +109,28 @@ def _approval_live_authority(claims: dict, binding: dict) -> Response | None:
     return None
 
 
+def _delegated_approval_caller_conflict(
+    *,
+    agent: Agent,
+    caller_name: str,
+) -> Response | None:
+    """Regional services may host approvals for personal agents; delegated rows need ai-service."""
+    if agent.global_agent_id is None:
+        return None
+    if caller_name == 'ai':
+        return None
+    return Response(
+        {
+            'error': (
+                'This agent was created by delegated global token exchange. Route MCP approvals '
+                'through the regional AI gateway for this company, or reconcile out-of-band.'
+            ),
+            'error_code': 'out_of_sync',
+        },
+        status=status.HTTP_409_CONFLICT,
+    )
+
+
 class McpRevocationListView(APIView):
     authentication_classes = []
     permission_classes = []
@@ -140,11 +149,12 @@ class McpRevocationListView(APIView):
         cid = int(company_id) if company_id and str(company_id).isdigit() else None
         revoked_ids = blocked_agent_ids(company_id=cid)
         agents = blocked_agent_snapshots(company_id=cid)
+        max_gv = active_max_grant_version(company_id=cid)
         policy_ver = compute_revocation_policy_version(
             revoked_ids=revoked_ids,
             agents=agents,
             cache_seconds=REVOCATION_CACHE_SECONDS,
-            max_active_grant_version=active_max_grant_version(company_id=cid),
+            max_active_grant_version=max_gv,
         )
         try:
             revocation_assertion = sign_revocation_list_response(
@@ -152,6 +162,7 @@ class McpRevocationListView(APIView):
                 agents=agents,
                 cache_seconds=REVOCATION_CACHE_SECONDS,
                 revocation_policy_version=policy_ver,
+                max_active_grant_version=max_gv,
             )
         except TokenError:
             return Response(
@@ -194,15 +205,25 @@ class McpInternalApprovalCreateView(APIView):
             return Response({'error': 'Agent not found.'}, status=status.HTTP_404_NOT_FOUND)
         if not agent.is_active:
             return Response({'error': 'Agent inactive.'}, status=status.HTTP_403_FORBIDDEN)
+        delegated_err = _delegated_approval_caller_conflict(agent=agent, caller_name=verified.caller.name)
+        if delegated_err is not None:
+            return delegated_err
         live_err = _approval_live_authority(claims, binding)
         if live_err is not None:
             return live_err
         body = request.data if isinstance(request.data, dict) else {}
-        args = body.get('arguments') if isinstance(body.get('arguments'), dict) else {}
-        redacted = redact_mapping(args, read_sensitive=False)
-        target = _approval_target_from_body(body)
+        if body.get('arguments') not in (None, {}):
+            return Response({'error': 'arguments not accepted.'}, status=status.HTTP_400_BAD_REQUEST)
+        if body.get('target') not in (None, '') or body.get('short_action_summary') not in (None, ''):
+            return Response(
+                {'error': 'target and short_action_summary are server-derived.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        service_id = (binding['service'] or '')[:32]
+        action_slug = (binding['action'] or '')[:255]
+        target = f'{service_id}:{action_slug}'[:500] if service_id or action_slug else ''
+        short_action_summary = ''
         is_destructive = bool(body.get('is_destructive'))
-        short_action_summary = str(body.get('short_action_summary') or '')[:500]
         expires_at = timezone.now() + timedelta(minutes=10)
         snap_gv = int(agent.grant_version or 0)
         snap_gc = agent.global_company_id
@@ -216,7 +237,7 @@ class McpInternalApprovalCreateView(APIView):
             defaults={
                 'company_id': binding['company_id'],
                 'target': target,
-                'arguments_redacted': redacted,
+                'arguments_redacted': {},
                 'expires_at': expires_at,
                 'is_destructive': is_destructive,
                 'short_action_summary': short_action_summary,
@@ -228,10 +249,10 @@ class McpInternalApprovalCreateView(APIView):
         if not created:
             if row.expires_at <= timezone.now():
                 row.expires_at = expires_at
-                row.arguments_redacted = redacted
+                row.arguments_redacted = {}
                 row.target = target or row.target
                 row.is_destructive = is_destructive
-                row.short_action_summary = short_action_summary or row.short_action_summary
+                row.short_action_summary = short_action_summary
                 row.authority_grant_version = snap_gv
                 row.authority_global_company_id = snap_gc
                 row.authority_company_binding_version = snap_cb
@@ -242,17 +263,6 @@ class McpInternalApprovalCreateView(APIView):
                         'target',
                         'is_destructive',
                         'short_action_summary',
-                        'authority_grant_version',
-                        'authority_global_company_id',
-                        'authority_company_binding_version',
-                    ]
-                )
-            elif row.status == McpApprovalRequest.STATUS_PENDING:
-                row.authority_grant_version = snap_gv
-                row.authority_global_company_id = snap_gc
-                row.authority_company_binding_version = snap_cb
-                row.save(
-                    update_fields=[
                         'authority_grant_version',
                         'authority_global_company_id',
                         'authority_company_binding_version',
@@ -371,37 +381,34 @@ class McpInternalApprovalSessionCheckView(APIView):
         body = request.data if isinstance(request.data, dict) else {}
         connection_id = str(body.get('connection_id') or '').strip()
         is_destructive = bool(body.get('is_destructive'))
-        auth_err = _approval_live_authority(claims, binding)
-        if auth_err is not None:
-            return auth_err
+        live_err = _approval_live_authority(claims, binding)
+        if live_err is not None:
+            return live_err
         grant = active_session_grant(
             agent_id=binding['agent_id'],
             company_id=binding['company_id'],
             connection_id=connection_id,
+            service=str(binding.get('service') or '')[:32],
+            action=str(binding.get('action') or '')[:255],
+            arguments_hash=str(binding.get('arguments_hash') or '')[:64],
         )
         allowed = not is_destructive and grant is not None
         payload: dict = {'session_allowed': allowed}
         if allowed:
             assert grant is not None
-            agent = Agent.objects.only(
-                'grant_version',
-                'global_company_id',
-                'company_binding_version',
-                'setup_company_id',
-                'setup_context_expires_at',
-                'setup_new_company_grant',
-                'setup_mcp_session_ttl_seconds',
-                'company_id',
-            ).get(pk=binding['agent_id'])
-            pv = int(getattr(agent, 'grant_version', 0) or 0)
-            cb = getattr(agent, 'company_binding_version', None)
+            pv = getattr(grant, 'agent_grant_version', 0) or 0
+            gc = getattr(grant, 'global_company_id', None)
+            cb = getattr(grant, 'company_binding_version', None)
+            ag = grant.agent
+            ag_gc = getattr(ag, 'global_company_id', None)
+            if ag_gc is not None:
+                payload['global_company_id'] = str(ag_gc)
             now = timezone.now()
-            setup_cid = getattr(agent, 'setup_company_id', None)
-            setup_until = getattr(agent, 'setup_context_expires_at', None)
+            setup_cid = getattr(grant, 'setup_company_id', None)
+            setup_until = getattr(grant, 'setup_context_expires_at', None)
             setup_unix = None
-            new_grant = bool(getattr(agent, 'setup_new_company_grant', False))
-            setup_ttl = getattr(agent, 'setup_mcp_session_ttl_seconds', None)
-            gc = getattr(agent, 'global_company_id', None)
+            new_grant = bool(getattr(grant, 'setup_new_company_grant', False))
+            setup_ttl = getattr(grant, 'setup_mcp_session_ttl_seconds', None)
             setup_extended = (
                 new_grant
                 and gc is not None
@@ -414,17 +421,10 @@ class McpInternalApprovalSessionCheckView(APIView):
             )
             if setup_extended:
                 setup_unix = int(setup_until.timestamp())
-            elif (
-                setup_cid is not None
-                and setup_until is not None
-                and int(setup_cid) == int(binding['company_id'])
-                and setup_until > now
-            ):
-                setup_unix = int(setup_until.timestamp())
             payload['expires_at'] = grant.expires_at.isoformat()
             payload['grant_version'] = pv
             if cb is not None:
-                payload['company_binding_version'] = int(cb)
+                payload['company_binding_version'] = cb
             if setup_unix is not None:
                 payload['setup_expires_at'] = setup_unix
             if setup_extended:
@@ -522,14 +522,16 @@ class McpInternalCallLogView(APIView):
             return Response({'error': exc.message}, status=exc.status)
         body = request.data if isinstance(request.data, dict) else {}
         agent_id = str(body.get('agent_id') or '')
-        company_id = body.get('company_id')
-        if not agent_id or company_id is None:
+        company_id_raw = body.get('company_id')
+        cid = strict_json_int_for_company_id(company_id_raw)
+        if not agent_id or cid is None:
             return Response({'error': 'agent_id and company_id required.'}, status=status.HTTP_400_BAD_REQUEST)
         try:
-            agent = Agent.objects.get(pk=agent_id, company_id=company_id)
+            agent = Agent.objects.get(pk=agent_id, company_id=cid)
         except Agent.DoesNotExist:
             return Response({'error': 'Agent not found.'}, status=status.HTTP_404_NOT_FOUND)
-        args = body.get('arguments') if isinstance(body.get('arguments'), dict) else {}
+        if 'arguments' in body:
+            return Response({'error': 'arguments not accepted.'}, status=status.HTTP_400_BAD_REQUEST)
         ip_raw = str(body.get('client_ip') or '').strip()
         client_ip = ip_raw if ip_raw else None
         result = str(body.get('result') or '')[:32]
@@ -540,22 +542,29 @@ class McpInternalCallLogView(APIView):
         path_s = str(body.get('path') or '')[:500]
         path_s = path_s.split('?', 1)[0].split('#', 1)[0].strip()[:500]
         outcome_raw = str(body.get('outcome') or '').strip().lower()
-        if outcome_raw and outcome_raw not in CANONICAL_OUTCOMES:
+        normalized = canonical_outcome_ingest(outcome_raw or None)
+        if outcome_raw and normalized is None:
             return Response({'error': 'Invalid outcome.'}, status=status.HTTP_400_BAD_REQUEST)
-        outcome = canonical_outcome(outcome_raw or None, status_code=status_code)
-        operation_title = str(body.get('operation_title') or '').strip()[:200]
-        if not operation_title:
-            operation_title = (tool_s or path_s or 'mcp_call')[:200]
+        if not outcome_raw and normalized is None:
+            return Response({'error': 'outcome required.'}, status=status.HTTP_400_BAD_REQUEST)
+        outcome = normalized or ''
+        if body.get('operation_title') not in (None, ''):
+            return Response({'error': 'operation_title not accepted.'}, status=status.HTTP_400_BAD_REQUEST)
+        operation_title = safe_operation_title(tool_s)
         access_kind = str(body.get('access_kind') or '').strip().lower()[:32]
         if access_kind not in ('read', 'write', 'destructive', 'unknown', ''):
             return Response({'error': 'Invalid access_kind.'}, status=status.HTTP_400_BAD_REQUEST)
         if not access_kind:
             access_kind = 'unknown'
-        resource_label_in = str(body.get('resource_label') or '').strip()[:500]
-        resource_label_in = resource_label_in.split('?', 1)[0].split('#', 1)[0].strip()[:500]
-        resource_label = resource_label_in or normalized_resource_label(tool_s, method_s, path_s)
-        company_name_in = str(body.get('company_name') or '').strip()[:255]
-        company_name = company_name_in or company_name_for_agent(agent)
+        if body.get('resource_label') not in (None, ''):
+            return Response({'error': 'resource_label not accepted.'}, status=status.HTTP_400_BAD_REQUEST)
+        service_id_raw = str(body.get('service') or '')[:32]
+        resource_label = fixed_resource_label_for_service(
+            service_id=service_id_raw, method=method_s, path=path_s
+        )
+        if resource_label is None:
+            return Response({'error': 'Invalid path for service.'}, status=status.HTTP_400_BAD_REQUEST)
+        company_name = company_name_for_agent(agent)
         approval_id = None
         raw_approval = body.get('approval_id')
         if raw_approval not in (None, ''):
@@ -570,15 +579,16 @@ class McpInternalCallLogView(APIView):
             else:
                 if (
                     str(appr.agent_id) != str(agent.id)
-                    or int(appr.company_id) != int(company_id)
-                    or str(appr.service or '') != str(body.get('service') or '')[:32]
+                    or int(appr.company_id) != int(cid)
+                    or str(appr.service or '') != service_id_raw
+                    or str(appr.action or '')[:255] != tool_s[:255]
                 ):
                     approval_id = None
         error_code_raw = body.get('error_code')
         error_code_val = sanitize_error_code(error_code_raw) or ''
         row = McpCallLog.objects.create(
             agent=agent,
-            company_id=company_id,
+            company_id=cid,
             service=str(body.get('service') or '')[:32],
             tool=tool_s,
             http_method=method_s,
@@ -594,7 +604,7 @@ class McpInternalCallLogView(APIView):
             approval_id=approval_id,
             error_code=error_code_val,
             client_ip=client_ip,
-            arguments_redacted=redact_mapping(args, read_sensitive=False),
+            arguments_redacted={},
         )
         event = get_event_type('identity.mcp.call')
         if event:

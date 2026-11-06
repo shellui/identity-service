@@ -8,7 +8,6 @@ from django.utils import timezone
 
 from apps.agents.agent_permissions import invalidate_agent_session_grants
 from apps.agents.models import Agent, GlobalAgentRevocation
-from apps.agents.tokens import revoke_all_agent_refresh_sessions
 
 
 def revoke_regional_agents_for_global(global_agent_id: uuid.UUID) -> int:
@@ -19,6 +18,8 @@ def revoke_regional_agents_for_global(global_agent_id: uuid.UUID) -> int:
     if not agents:
         return 0
     Agent.objects.filter(pk__in=[a.pk for a in agents]).update(revoked_at=now)
+    from apps.agents.tokens import revoke_all_agent_refresh_sessions
+
     for agent in agents:
         revoke_all_agent_refresh_sessions(agent)
         invalidate_agent_session_grants(agent)

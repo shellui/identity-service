@@ -15,7 +15,11 @@ from django.http import JsonResponse
 from django.utils import timezone
 
 from apps.agents.global_revocation import global_agent_exchange_blocked
-from apps.agents.mcp_resources import resolve_mcp_resource, resource_company_id
+from apps.agents.mcp_resources import (
+    is_regional_gateway_resource_for_company,
+    resolve_mcp_resource,
+    resource_company_id,
+)
 from apps.agents.models import Agent
 from apps.agents.scope import (
     access_rank,
@@ -23,8 +27,7 @@ from apps.agents.scope import (
     destructive_within,
     is_narrower_or_equal_access,
     is_narrower_or_equal_read,
-    is_subset_services,
-    parse_services,
+    parse_regional_mcp_scope,
     read_rank,
     read_within,
     services_within,
@@ -56,14 +59,17 @@ def _error(code: str, description: str, status: int = 400) -> JsonResponse:
 
 
 def _staff_refused(claims: dict[str, Any]) -> bool:
+    """Reject only explicit ``True`` staff; any other type than JSON false is invalid."""
     metadata = claims.get('user_metadata') if isinstance(claims.get('user_metadata'), dict) else {}
-    if not isinstance(metadata.get('is_staff'), bool) or any(
-        source.get(flag) is not False
-        for source in (metadata, claims)
-        for flag in ('is_staff', 'is_superuser')
-        if flag in source
-    ):
-        return True
+    for source in (metadata, claims):
+        for flag in ('is_staff', 'is_superuser'):
+            if flag not in source:
+                continue
+            val = source.get(flag)
+            if val is True:
+                return True
+            if val is not False:
+                return True
     return False
 
 
@@ -90,12 +96,9 @@ def _resolve_company(data: dict[str, Any]) -> Company | None:
 def _parse_optional_bool(value) -> bool | None:
     if value is None or value == '':
         return None
-    if isinstance(value, bool):
-        return value
-    text = str(value).strip().lower()
-    if text in {'1', 'true', 'yes', 'on'}:
+    if value is True:
         return True
-    if text in {'0', 'false', 'no', 'off'}:
+    if value is False:
         return False
     return None
 
@@ -106,87 +109,96 @@ def _parse_setup_context_from_global_claims(
     regional_company_id: int,
     global_exp_unix: int | None,
     subject_has_global_binding: bool,
-) -> tuple[int | None, datetime | None, bool, int | None]:
+) -> tuple[int | None, datetime | None, bool, int | None, str | None]:
     """
-    Optional server-authorized new-company setup window from the global subject token.
+    Optional new-company setup from the global subject token (SaaS-signed).
 
-    Strict booleans: ``setup_flow`` and ``mcp_new_company_grant`` must be JSON true (or string
-    ``true`` per ai-service). When ``setup_flow`` is false, setup is cleared. Long setup requires
-    ``mcp_new_company_grant``, matching ``setup_context_company_id``, SaaS binding on the subject
-    token, numeric ``mcp_session_ttl_seconds`` in the 600 to 900 band, and a valid absolute
-    deadline ``setup_expires_at`` not after the global access token ``exp``.
+    SaaS does **not** mint ``mcp_new_company_grant``; Identity derives that server-side when setup
+    validates. If ``setup_flow`` is JSON ``false`` or absent, setup is cleared. If ``setup_flow``
+    is JSON ``true``, every required field must validate or the exchange is rejected (no downgrade
+    to ordinary authority).
     """
-    setup_flow = strict_bool_claim(claims.get('setup_flow'))
+    if 'mcp_new_company_grant' in claims:
+        return None, None, False, None, 'Unexpected mcp_new_company_grant on global subject token.'
+    if 'setup_context_exp' in claims:
+        return None, None, False, None, 'Legacy setup_context_exp is not accepted on global subject tokens.'
+
+    setup_raw = claims.get('setup_flow')
+    setup_flow = strict_bool_claim(setup_raw)
+    if setup_raw is not None and not setup_flow:
+        return None, None, False, None, None
     if not setup_flow:
-        return None, None, False, None
+        return None, None, False, None, None
 
-    new_grant = strict_bool_claim(claims.get('mcp_new_company_grant'))
     try:
         ctx_company = int(claims.get('setup_context_company_id'))
     except (TypeError, ValueError):
-        return None, None, False, None
+        return None, None, False, None, 'Invalid setup_context_company_id.'
     if ctx_company != regional_company_id:
-        return None, None, False, None
+        return None, None, False, None, 'setup_context_company_id does not match token exchange company.'
+
+    raw_deadline = claims.get('setup_expires_at')
+    if raw_deadline is None or raw_deadline == '':
+        return None, None, False, None, 'setup_expires_at is required when setup_flow is true.'
+    try:
+        ctx_exp_unix = int(raw_deadline)
+    except (TypeError, ValueError):
+        return None, None, False, None, 'setup_expires_at must be a unix second integer.'
+    try:
+        iat = int(claims.get('iat'))
+    except (TypeError, ValueError):
+        return None, None, False, None, 'Invalid iat on global subject token.'
+    if ctx_exp_unix <= iat:
+        return None, None, False, None, 'setup_expires_at must be after iat.'
+    if global_exp_unix is not None and ctx_exp_unix > int(global_exp_unix):
+        return None, None, False, None, 'setup_expires_at must not be after global exp.'
+    now_ts = int(timezone.now().timestamp())
+    if ctx_exp_unix <= now_ts:
+        return None, None, False, None, 'setup_expires_at is in the past.'
 
     raw_ttl = claims.get('mcp_session_ttl_seconds')
     try:
         setup_ttl = int(raw_ttl)
     except (TypeError, ValueError):
-        setup_ttl = 0
+        return None, None, False, None, 'mcp_session_ttl_seconds must be an integer when setup_flow is true.'
     lo = int(getattr(settings, 'MCP_APPROVAL_SETUP_SESSION_TTL_MIN_SECONDS', 600) or 600)
     hi = int(getattr(settings, 'MCP_APPROVAL_SETUP_SESSION_TTL_MAX_SECONDS', 900) or 900)
     if lo > hi:
         lo, hi = hi, lo
-
-    ctx_exp_unix = None
-    raw_setup_deadline = claims.get('setup_expires_at')
-    if raw_setup_deadline is not None and raw_setup_deadline != '':
-        try:
-            ctx_exp_unix = int(raw_setup_deadline)
-        except (TypeError, ValueError):
-            ctx_exp_unix = None
-    else:
-        try:
-            ctx_exp_unix = int(claims.get('setup_context_exp'))
-        except (TypeError, ValueError):
-            ctx_exp_unix = None
-    try:
-        iat = int(claims.get('iat'))
-    except (TypeError, ValueError):
-        iat = 0
-    if ctx_exp_unix is None or ctx_exp_unix <= iat:
-        return None, None, False, None
-
-    if global_exp_unix is not None and ctx_exp_unix > int(global_exp_unix):
-        return None, None, False, None
-
-    if not new_grant or not subject_has_global_binding:
-        return None, None, False, None
     if setup_ttl < lo or setup_ttl > hi:
-        return None, None, False, None
+        return None, None, False, None, 'mcp_session_ttl_seconds must be within the setup band.'
+
+    if not subject_has_global_binding:
+        return None, None, False, None, 'setup_flow requires global_company_id and company_binding_version.'
 
     ctx_exp = datetime.fromtimestamp(ctx_exp_unix, tz=dt_timezone.utc)
-    return ctx_company, ctx_exp, True, setup_ttl
+    return ctx_company, ctx_exp, True, setup_ttl, None
 
 
-def _parse_global_company_binding(claims: dict[str, Any]) -> tuple[uuid.UUID | None, int | None]:
-    """SaaS-signed global company id and binding generation; both or neither."""
+def _parse_delegated_global_binding(claims: dict[str, Any]) -> tuple[uuid.UUID, int] | None:
+    """
+    Strict SaaS binding for delegated global agent exchange.
+
+    Both claims must be present with concrete types: UUID string for ``global_company_id``,
+    non-negative int for ``company_binding_version`` (``0`` is valid). Anything else rejects exchange.
+    """
+    if 'global_company_id' not in claims or 'company_binding_version' not in claims:
+        return None
     raw_gid = claims.get('global_company_id')
     raw_ver = claims.get('company_binding_version')
-    if raw_gid is None or raw_gid == '':
-        return None, None
+    if not isinstance(raw_gid, str) or raw_gid.strip() == '':
+        return None
+    if isinstance(raw_ver, bool):
+        return None
     try:
-        gid = uuid.UUID(str(raw_gid))
-    except (TypeError, ValueError):
-        return None, None
-    if raw_ver is None or raw_ver == '':
-        return None, None
-    try:
-        ver = int(raw_ver)
-    except (TypeError, ValueError):
-        return None, None
+        gid = uuid.UUID(raw_gid.strip())
+    except (TypeError, ValueError, AttributeError):
+        return None
+    if type(raw_ver) is not int:
+        return None
+    ver = raw_ver
     if ver < 0:
-        return None, None
+        return None
     return gid, ver
 
 
@@ -300,6 +312,9 @@ def handle_agent_token_exchange(request, *, data: dict[str, Any] | None = None) 
     if not isinstance(payload, dict):
         payload = dict(payload)
     data = payload
+    _ad = data.get('allow_destructive')
+    if _ad is not None and not isinstance(_ad, bool):
+        return _error('invalid_grant', 'allow_destructive must be a JSON boolean when present.')
     if str(data.get('grant_type') or '') != GRANT_TYPE:
         return _error('unsupported_grant_type', 'Grant type is not supported.')
     if str(data.get('subject_token_type') or '') != ACCESS_TOKEN_TYPE:
@@ -316,6 +331,11 @@ def handle_agent_token_exchange(request, *, data: dict[str, Any] | None = None) 
         return _error('invalid_target', 'Company not found.')
 
     resource_raw = str(data.get('resource') or '').strip()
+    if not is_regional_gateway_resource_for_company(resource_raw, company.pk):
+        return _error(
+            'invalid_target',
+            'Delegated token exchange requires the regional AI gateway resource for this company.',
+        )
     resource_url, service_id = resolve_mcp_resource(resource_raw)
     if not resource_url or not service_id:
         return _error('invalid_target', 'Invalid or unknown MCP resource.')
@@ -362,16 +382,35 @@ def handle_agent_token_exchange(request, *, data: dict[str, Any] | None = None) 
     if not jti or _consume_subject_jti(jti, exp):
         return _error('invalid_grant', 'The global agent token was already used.')
 
-    global_services_from_claims = parse_services(str(claims.get('scope') or ''))
+    binding = _parse_delegated_global_binding(claims)
+    if binding is None:
+        return _error(
+            'invalid_grant',
+            'Delegated global agent token must include valid global_company_id and company_binding_version.',
+        )
+    global_company_id, company_binding_version = binding
+    subject_has_global_binding = True
+
+    raw_scope = claims.get('scope')
+    if raw_scope is None or raw_scope == '':
+        return _error('invalid_grant', 'The global agent token scope is missing.')
+    global_services_from_claims = parse_regional_mcp_scope(str(raw_scope))
+    if not global_services_from_claims:
+        return _error(
+            'invalid_grant',
+            'The global agent scope must include at least one regional MCP service id.',
+        )
     claimed_scope_set = set(global_services_from_claims)
 
     existing_for_cap = (
         Agent.objects.filter(company=company, global_agent_id=global_agent_id)
-        .only('global_allowed_services')
+        .only('global_allowed_services', 'services_allowed')
         .first()
     )
     stored_global_svc = list(getattr(existing_for_cap, 'global_allowed_services', None) or [])
-    if stored_global_svc:
+    if existing_for_cap is not None:
+        if not stored_global_svc:
+            return _error('invalid_grant', 'The regional agent has no stored service cap.')
         effective_global_services = sorted(claimed_scope_set & set(stored_global_svc))
         if not effective_global_services:
             return _error('invalid_grant', 'The global agent token would widen allowed services.')
@@ -385,15 +424,39 @@ def handle_agent_token_exchange(request, *, data: dict[str, Any] | None = None) 
         requested_services = [part for part in requested_services.split() if part]
     elif requested_services is not None and not isinstance(requested_services, list):
         requested_services = None
-    narrowed_services = services_within(effective_global_services, requested_services)
+    if requested_services is None and existing_for_cap is not None:
+        existing_regional = list(getattr(existing_for_cap, 'services_allowed', None) or [])
+        intersection = sorted(set(effective_global_services) & set(existing_regional))
+        if not intersection:
+            return _error(
+                'invalid_grant',
+                'Omitted services must stay within the regional agent allowed set.',
+            )
+        narrowed_services = intersection
+    else:
+        narrowed_services = services_within(effective_global_services, requested_services)
     if not narrowed_services:
         return _error('invalid_grant', 'Requested services are not allowed for this global agent.')
     if service_id not in claimed_scope_set:
         return _error('invalid_grant', 'The MCP resource is not included in allowed services.')
 
-    global_access = str(claims.get('mcp_access') or Agent.ACCESS_ASK)
-    global_read = str(claims.get('mcp_read') or Agent.READ_SAFE)
-    global_destructive = bool(claims.get('mcp_destructive'))
+    try:
+        global_mcp_access = str(claims.get('mcp_access'))
+    except (TypeError, ValueError):
+        return _error('invalid_grant', 'mcp_access is required on the global subject token.')
+    try:
+        global_mcp_read = str(claims.get('mcp_read'))
+    except (TypeError, ValueError):
+        return _error('invalid_grant', 'mcp_read is required on the global subject token.')
+    raw_dest = claims.get('mcp_destructive')
+    if raw_dest is True:
+        global_destructive = True
+    elif raw_dest is False:
+        global_destructive = False
+    else:
+        return _error('invalid_grant', 'mcp_destructive must be a boolean on the global subject token.')
+    global_access = global_mcp_access
+    global_read = global_mcp_read
     global_access_cap = global_access
     global_read_cap = global_read
     global_destructive_cap = global_destructive
@@ -431,18 +494,22 @@ def handle_agent_token_exchange(request, *, data: dict[str, Any] | None = None) 
     except (TypeError, ValueError):
         global_exp_unix = None
 
-    gid_probe, ver_probe = _parse_global_company_binding(claims)
-    subject_has_global_binding = gid_probe is not None and ver_probe is not None
-
-    setup_company_id, setup_expires_at, setup_new_company_flag, setup_ttl_stored = (
-        _parse_setup_context_from_global_claims(
-            claims,
-            regional_company_id=company.pk,
-            global_exp_unix=global_exp_unix,
-            subject_has_global_binding=subject_has_global_binding,
+    setup_company_id: int | None = None
+    setup_expires_at: datetime | None = None
+    setup_new_company_flag = False
+    setup_ttl_stored: int | None = None
+    clear_setup = 'setup_flow' not in claims
+    if not clear_setup:
+        setup_company_id, setup_expires_at, setup_new_company_flag, setup_ttl_stored, setup_parse_err = (
+            _parse_setup_context_from_global_claims(
+                claims,
+                regional_company_id=company.pk,
+                global_exp_unix=global_exp_unix,
+                subject_has_global_binding=subject_has_global_binding,
+            )
         )
-    )
-    global_company_id, company_binding_version = _parse_global_company_binding(claims)
+        if setup_parse_err:
+            return _error('invalid_grant', setup_parse_err)
 
     with transaction.atomic():
         agent = (
@@ -458,7 +525,7 @@ def handle_agent_token_exchange(request, *, data: dict[str, Any] | None = None) 
                 created_by=user,
                 access_mode=access_from_global,
                 read_level=read_from_global,
-                allow_destructive_without_asking=destructive_from_global,
+                allow_destructive_without_asking=False,
                 services_allowed=narrowed_services,
                 setup_company_id=setup_company_id,
                 setup_context_expires_at=setup_expires_at,
@@ -474,32 +541,36 @@ def handle_agent_token_exchange(request, *, data: dict[str, Any] | None = None) 
         else:
             if not agent.is_active:
                 return _error('invalid_grant', 'The regional agent is paused, revoked, or expired.')
-            if agent.global_company_id and global_company_id and agent.global_company_id != global_company_id:
+            if agent.global_agent_id and (
+                agent.global_company_id != global_company_id
+                or agent.company_binding_version != company_binding_version
+            ):
                 return _error('invalid_grant', 'The global company binding does not match this agent.')
-            if agent.global_company_id and not global_company_id:
-                return _error('invalid_grant', 'The global company binding is missing from the subject token.')
             stored_cap = list(agent.global_allowed_services or [])
-            if stored_cap:
-                cap_set = set(stored_cap)
-                if not set(narrowed_services) <= cap_set:
-                    return _error('invalid_grant', 'The global agent token would widen allowed services.')
-                cap_access = getattr(agent, 'global_max_access_mode', None) or global_access
-                cap_read = getattr(agent, 'global_max_read_level', None) or global_read
-                cap_dest = bool(getattr(agent, 'global_max_destructive', global_destructive))
-                if (
-                    access_rank(global_access) is None
-                    or access_rank(cap_access) is None
-                    or access_rank(global_access) > access_rank(cap_access)
-                ):
-                    return _error('invalid_grant', 'The global agent token would widen access mode.')
-                if (
-                    read_rank(global_read) is None
-                    or read_rank(cap_read) is None
-                    or read_rank(global_read) > read_rank(cap_read)
-                ):
-                    return _error('invalid_grant', 'The global agent token would widen read level.')
-                if global_destructive and not cap_dest:
-                    return _error('invalid_grant', 'The global agent token would widen destructive access.')
+            if not stored_cap:
+                return _error('invalid_grant', 'The regional agent has no stored service cap.')
+            cap_set = set(stored_cap)
+            if not set(narrowed_services) <= cap_set:
+                return _error('invalid_grant', 'The global agent token would widen allowed services.')
+            cap_access = getattr(agent, 'global_max_access_mode', None)
+            cap_read = getattr(agent, 'global_max_read_level', None)
+            cap_dest = getattr(agent, 'global_max_destructive', None)
+            if cap_access is None or cap_read is None or cap_dest is None:
+                return _error('invalid_grant', 'The regional agent is missing stored global caps.')
+            if (
+                access_rank(global_access) is None
+                or access_rank(cap_access) is None
+                or access_rank(global_access) > access_rank(cap_access)
+            ):
+                return _error('invalid_grant', 'The global agent token would widen access mode.')
+            if (
+                read_rank(global_read) is None
+                or read_rank(cap_read) is None
+                or read_rank(global_read) > read_rank(cap_read)
+            ):
+                return _error('invalid_grant', 'The global agent token would widen read level.')
+            if global_destructive and not bool(cap_dest):
+                return _error('invalid_grant', 'The global agent token would widen destructive access.')
             merged = _merge_regional_exchange_agent(
                 agent=agent,
                 global_access=global_access,
@@ -517,26 +588,43 @@ def handle_agent_token_exchange(request, *, data: dict[str, Any] | None = None) 
             if merged is None:
                 return _error('invalid_grant', 'Exchange would widen an existing regional agent.')
             final_services, final_access, final_read, final_destructive, did_narrow = merged
-            if global_company_id is not None:
-                agent.global_company_id = global_company_id
-            if company_binding_version is not None:
-                if (
-                    agent.company_binding_version is not None
-                    and company_binding_version < agent.company_binding_version
-                ):
-                    return _error('invalid_grant', 'The company binding version is stale.')
-                agent.company_binding_version = company_binding_version
+
+            prev_acc = getattr(agent, 'global_max_access_mode', None)
+            prev_read = getattr(agent, 'global_max_read_level', None)
+            if prev_acc is None or prev_read is None:
+                return _error('invalid_grant', 'The regional agent is missing stored global caps.')
+            r_g = access_rank(global_access)
+            r_pa = access_rank(prev_acc)
+            r_gr = read_rank(global_read)
+            r_pr = read_rank(prev_read)
+            if r_g is None or r_pa is None or r_gr is None or r_pr is None:
+                return _error('invalid_grant', 'Invalid global access or read on subject token.')
+            agent.global_max_access_mode = global_access if r_g < r_pa else prev_acc
+            agent.global_max_read_level = global_read if r_gr < r_pr else prev_read
+            prev_dest = bool(getattr(agent, 'global_max_destructive', False))
+            agent.global_max_destructive = prev_dest and global_destructive
+
+            agent.global_allowed_services = global_cap_services
+            agent.global_company_id = global_company_id
+            if (
+                agent.company_binding_version is not None
+                and company_binding_version < agent.company_binding_version
+            ):
+                return _error('invalid_grant', 'The company binding version is stale.')
+            agent.company_binding_version = company_binding_version
             agent.access_mode = final_access
             agent.read_level = final_read
-            agent.allow_destructive_without_asking = final_destructive
+            agent.allow_destructive_without_asking = False
             agent.services_allowed = final_services
             agent.setup_company_id = setup_company_id
             agent.setup_context_expires_at = setup_expires_at
             agent.setup_new_company_grant = setup_new_company_flag
             agent.setup_mcp_session_ttl_seconds = setup_ttl_stored
-            agent.global_max_access_mode = global_access_cap
-            agent.global_max_read_level = global_read_cap
-            agent.global_max_destructive = global_destructive_cap
+            if clear_setup:
+                agent.setup_company_id = None
+                agent.setup_context_expires_at = None
+                agent.setup_new_company_grant = False
+                agent.setup_mcp_session_ttl_seconds = None
             if agent.created_by_id is None:
                 agent.created_by = user
             if did_narrow:
@@ -555,6 +643,7 @@ def handle_agent_token_exchange(request, *, data: dict[str, Any] | None = None) 
                     'setup_mcp_session_ttl_seconds',
                     'global_company_id',
                     'company_binding_version',
+                    'global_allowed_services',
                     'global_max_access_mode',
                     'global_max_read_level',
                     'global_max_destructive',
@@ -564,7 +653,10 @@ def handle_agent_token_exchange(request, *, data: dict[str, Any] | None = None) 
                 ]
             )
 
-    access = encode_access_token(agent, resource=resource_url)
+    try:
+        access = encode_access_token(agent, resource=resource_url)
+    except ValueError as exc:
+        return _error('invalid_grant', str(exc) or 'The agent cannot issue tokens.')
     refresh, _session = issue_agent_refresh(agent, resource=resource_url)
     logger.info(
         'agent token exchange: issued company_id=%s agent_id=%s global_agent_id=%s',

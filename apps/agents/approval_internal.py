@@ -7,6 +7,7 @@ from typing import Any
 from django.utils import timezone
 
 from apps.agents.approval_global import ensure_global_approval_claims, is_global_placeholder_company_id
+from apps.agents.json_strict import strict_json_int_for_company_id
 from apps.agents.models import McpApprovalRequest
 
 
@@ -18,9 +19,8 @@ def approval_binding_from_claims(claims: dict[str, Any]) -> dict[str, Any] | Non
     arguments_hash = str(claims.get('arguments_hash') or '')
     if not agent_id or company_id is None or not service or not action or not arguments_hash:
         return None
-    try:
-        cid = int(company_id)
-    except (TypeError, ValueError):
+    cid = strict_json_int_for_company_id(company_id)
+    if cid is None:
         return None
 
     if is_global_placeholder_company_id(cid):

@@ -128,5 +128,8 @@ class McpDownstreamAccessTokenView(APIView):
         if not jti or not _consume_request_jti(jti):
             return Response({'error': 'Delegation request already used.'}, status=status.HTTP_401_UNAUTHORIZED)
 
-        access_token = encode_access_token(agent, resource=resource)
+        try:
+            access_token = encode_access_token(agent, resource=resource)
+        except ValueError:
+            return Response({'error': 'Agent cannot issue tokens.'}, status=status.HTTP_403_FORBIDDEN)
         return Response({'access_token': access_token})

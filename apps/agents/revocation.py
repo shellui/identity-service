@@ -56,13 +56,18 @@ def blocked_agent_snapshots(*, company_id: int | None = None) -> list[dict]:
     qs = Agent.objects.filter(pk__in=ids).order_by('id')
     rows: list[dict] = []
     for agent in qs:
-        rows.append(
-            {
-                'agent_id': str(agent.id),
-                'company_id': agent.company_id,
-                'is_active': agent.is_active,
-                'paused': agent.paused_at is not None,
-                'grant_version': int(getattr(agent, 'grant_version', 0) or 0),
-            }
-        )
+        gc = getattr(agent, 'global_company_id', None)
+        cb = getattr(agent, 'company_binding_version', None)
+        snap: dict = {
+            'agent_id': str(agent.id),
+            'company_id': agent.company_id,
+            'is_active': agent.is_active,
+            'paused': agent.paused_at is not None,
+            'grant_version': int(getattr(agent, 'grant_version', 0) or 0),
+        }
+        if gc is not None:
+            snap['global_company_id'] = str(gc)
+        if cb is not None:
+            snap['company_binding_version'] = int(cb)
+        rows.append(snap)
     return rows

@@ -155,6 +155,10 @@ def client_allow_session(
             agent=row_locked.agent,
             connection_id=connection_id,
             ttl_seconds=ttl_seconds,
+            approval_request=row_locked,
+            service=str(row_locked.service or '')[:32],
+            action=str(row_locked.action or '')[:255],
+            arguments_hash=str(row_locked.arguments_hash or '')[:64],
         )
     row_locked.refresh_from_db()
     return ApprovalDecisionResult(row=row_locked, audit_status=APPROVAL_AUDIT_CLIENT_SESSION_ALLOWED)

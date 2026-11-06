@@ -44,7 +44,17 @@ def parse_trusted_revocation_poll_response_identity(
         audience=REVOCATION_AUDIENCE,
         issuer=expected_issuer.rstrip('/'),
         leeway=CLOCK_SKEW,
-        options={'require': ['exp', 'iat', 'iss', 'aud', 'revocation_policy_version']},
+        options={
+            'require': [
+                'exp',
+                'iat',
+                'iss',
+                'aud',
+                'jti',
+                'revocation_policy_version',
+                'max_active_grant_version',
+            ]
+        },
     )
     if claims.get('scope') != REVOCATION_LIST_SCOPE:
         raise ValueError('Invalid revocation list scope')

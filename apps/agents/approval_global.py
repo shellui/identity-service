@@ -8,6 +8,7 @@ from typing import Any
 
 from django.utils import timezone
 
+from apps.agents.json_strict import strict_non_negative_int
 from apps.agents.models import Agent, McpApprovalRequest
 from apps.agents.global_revocation import global_agent_exchange_blocked
 
@@ -49,11 +50,8 @@ def ensure_global_approval_claims(claims: dict[str, Any]) -> dict[str, Any] | No
     if ga is None or gc is None:
         return None
     raw_ver = claims.get('company_binding_version')
-    try:
-        ver = int(raw_ver)
-    except (TypeError, ValueError):
-        return None
-    if ver < 1:
+    ver = strict_non_negative_int(raw_ver)
+    if ver is None:
         return None
     raw_setup = claims.get('setup_expires_at')
     setup_exp = parse_setup_expires_at_unix(raw_setup) if raw_setup is not None else None

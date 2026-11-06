@@ -460,7 +460,10 @@ def mcp_token(request):
         row.redeemed_at = timezone.now()
         row.save(update_fields=['redeemed_at'])
         bound_resource = row.resource
-    access = encode_access_token(agent, resource=bound_resource)
+    try:
+        access = encode_access_token(agent, resource=bound_resource)
+    except ValueError:
+        return JsonResponse({'error': 'invalid_grant'}, status=400)
     refresh, _session = issue_agent_refresh(agent, resource=bound_resource)
     return JsonResponse(
         {

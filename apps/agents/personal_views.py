@@ -264,11 +264,14 @@ class PersonalAgentRevokeView(APIView):
 
 
 def _activity_row(row: McpCallLog) -> dict:
-    from apps.agents.call_log_outcome import CANONICAL_OUTCOMES, canonical_outcome
+    from apps.agents.call_log_outcome import display_outcome_for_read
 
-    outcome = (row.outcome or '').strip().lower()
-    if outcome not in CANONICAL_OUTCOMES:
-        outcome = canonical_outcome(row.result, status_code=row.status_code)
+    outcome = display_outcome_for_read(
+        row.outcome,
+        result=row.result,
+        status_code=row.status_code,
+        error_code=row.error_code,
+    )
     row_out = {
         'timestamp': row.created_at.isoformat(),
         'operation_title': row.operation_title or row.tool or row.path or 'mcp_call',

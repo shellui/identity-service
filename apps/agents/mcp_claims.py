@@ -6,12 +6,8 @@ from typing import Any
 
 
 def strict_bool_claim(raw: object) -> bool:
-    """True only for ``bool`` True or case-insensitive string ``true`` (ai-service / identity-issued)."""
-    if isinstance(raw, bool):
-        return raw
-    if isinstance(raw, str):
-        return raw.strip().lower() == 'true'
-    return False
+    """True only for JSON boolean ``true`` (no string or numeric truthiness)."""
+    return raw is True
 
 
 def optional_int(raw: object) -> int | None:

@@ -15,9 +15,16 @@ _READ_RANK = {
 }
 _ALLOWED_SERVICES = {choice[0] for choice in Agent.SERVICE_CHOICES}
 
+_REGIONAL_MCP_SERVICES = _ALLOWED_SERVICES - {Agent.SERVICE_SAAS}
+
 
 def parse_services(scope: str | None) -> list[str]:
     return [part for part in str(scope or '').split() if part in _ALLOWED_SERVICES]
+
+
+def parse_regional_mcp_scope(scope: str | None) -> list[str]:
+    """Service ids for regional MCP tools (excludes SaaS dashboard scopes from global delegation)."""
+    return [part for part in str(scope or '').split() if part in _REGIONAL_MCP_SERVICES]
 
 
 def access_within(global_mode: str, requested: str | None) -> str | None:

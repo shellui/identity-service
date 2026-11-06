@@ -104,6 +104,15 @@ def company_mcp_resource_url(company_id: int) -> str | None:
     return url or None
 
 
+def is_regional_gateway_resource_for_company(resource_raw: str | None, company_id: int) -> bool:
+    """True when ``resource_raw`` normalizes to this region's configured AI gateway for ``company_id``."""
+    expected = gateway_resource_for_company(company_id)
+    if not expected:
+        return False
+    normalized = normalize_mcp_resource(resource_raw)
+    return bool(normalized and normalized.rstrip('/') == expected.rstrip('/'))
+
+
 def mcp_enabled_for_company(company_id: int) -> bool:
     return company_mcp_resource_url(company_id) is not None
 

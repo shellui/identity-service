@@ -98,9 +98,13 @@ def build_mcp_approval_assertion_for_agent(
     private_key_pem: str | None = None,
     kid: str | None = None,
     issuer: str | None = None,
+    authority_claims_override: dict | None = None,
 ) -> str:
     """Same shape as ``shellui_django`` ``build_mcp_approval_assertion`` plus live authority claims."""
     now = int(time.time())
+    auth = {**authority_claims_for_agent(agent)}
+    if authority_claims_override:
+        auth.update(authority_claims_override)
     claims = {
         'iss': _approval_service_issuer(issuer),
         'aud': APPROVAL_AUDIENCE,
@@ -115,7 +119,7 @@ def build_mcp_approval_assertion_for_agent(
         'iat': now,
         'exp': now + int(lifetime_seconds),
         'jti': uuid.uuid4().hex,
-        **authority_claims_for_agent(agent),
+        **auth,
     }
     token = jwt.encode(claims, private_key_pem, algorithm='RS256', headers={'kid': kid} if kid else None)
     return token.decode('utf-8') if isinstance(token, bytes) else token

@@ -105,6 +105,7 @@ class PersonalAgentTokenTests(TestCase):
         row = activity.json()['activity'][0]
         self.assertEqual(row['tool'], 'tools/list')
         self.assertEqual(row['client_ip'], '203.0.113.1')
+        self.assertEqual(row['outcome'], 'allowed')
         self.assertNotIn('arguments', json.dumps(activity.json()))
 
         revoked = self.client.post(

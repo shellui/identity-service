@@ -199,6 +199,17 @@ class AgentRefreshSession(models.Model):
     expires_at = models.DateTimeField()
     revoked_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    # Authority at issuance: refresh must not widen vs this snapshot or current agent.
+    grant_version = models.PositiveIntegerField(default=0)
+    services_allowed = models.JSONField(default=list)
+    access_mode = models.CharField(max_length=20, default=Agent.ACCESS_ASK)
+    read_level = models.CharField(max_length=20, default=Agent.READ_SAFE)
+    allow_destructive = models.BooleanField(default=False)
+    global_company_id = models.UUIDField(null=True, blank=True)
+    company_binding_version = models.PositiveIntegerField(null=True, blank=True)
+    setup_company_id = models.PositiveIntegerField(null=True, blank=True)
+    setup_context_expires_at = models.DateTimeField(null=True, blank=True)
+    setup_new_company_grant = models.BooleanField(default=False)
 
 
 class McpApprovalRequest(models.Model):
@@ -273,6 +284,16 @@ class McpApprovalSessionGrant(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     agent = models.ForeignKey(Agent, on_delete=models.CASCADE, related_name='approval_session_grants')
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='mcp_approval_session_grants')
+    approval_request = models.ForeignKey(
+        'McpApprovalRequest',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='session_grants',
+    )
+    service = models.CharField(max_length=32, blank=True, default='')
+    action = models.CharField(max_length=255, blank=True, default='')
+    arguments_hash = models.CharField(max_length=64, blank=True, default='')
     connection_id = models.CharField(max_length=128, blank=True, db_index=True)
     granted_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -287,6 +308,11 @@ class McpApprovalSessionGrant(models.Model):
     agent_grant_version = models.PositiveIntegerField(default=0)
     global_company_id = models.UUIDField(null=True, blank=True)
     company_binding_version = models.PositiveIntegerField(null=True, blank=True)
+    services_allowed = models.JSONField(default=list)
+    setup_company_id = models.PositiveIntegerField(null=True, blank=True)
+    setup_context_expires_at = models.DateTimeField(null=True, blank=True)
+    setup_new_company_grant = models.BooleanField(default=False)
+    setup_mcp_session_ttl_seconds = models.PositiveIntegerField(null=True, blank=True)
 
     class Meta:
         ordering = ['-created_at']
@@ -323,6 +349,16 @@ class PersonalAgentCredential(models.Model):
 
 
 class McpCallLog(models.Model):
+    OUTCOME_CHOICES = (
+        ('allowed', 'Allowed'),
+        ('failed', 'Failed'),
+        ('denied', 'Denied'),
+        ('pending_approval', 'Pending approval'),
+        ('session_used', 'Session used'),
+        ('success', 'Success (legacy)'),
+        ('error', 'Error (legacy)'),
+    )
+
     id = models.BigAutoField(primary_key=True)
     agent = models.ForeignKey(Agent, on_delete=models.CASCADE, related_name='call_logs')
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='mcp_call_logs')
@@ -335,7 +371,7 @@ class McpCallLog(models.Model):
     result = models.CharField(max_length=32, blank=True, default='')
     operation_title = models.CharField(max_length=500, blank=True, default='')
     access_kind = models.CharField(max_length=32, blank=True, default='')
-    outcome = models.CharField(max_length=32, blank=True, default='')
+    outcome = models.CharField(max_length=32, blank=True, default='', choices=OUTCOME_CHOICES)
     resource_label = models.CharField(max_length=500, blank=True, default='')
     company_name = models.CharField(max_length=255, blank=True, default='')
     approval_id = models.UUIDField(null=True, blank=True)

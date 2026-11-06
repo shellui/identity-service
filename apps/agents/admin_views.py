@@ -15,6 +15,7 @@ from apps.authapi.serializers import ShellUIOpenAPISerializer
 from apps.agents.display import agent_created_by
 from apps.agents.approval_access import pending_approvals_for_user, user_may_manage_approval
 from apps.agents.approval_decisions import ApprovalDecisionError, settings_approve, settings_deny
+from apps.agents.call_log_outcome import display_outcome_for_read
 from apps.agents.models import Agent, McpApprovalRequest, McpCallLog
 from apps.agents.permissions import require_approval_actor, require_company_admin
 
@@ -317,6 +318,12 @@ class McpCallLogListView(APIView):
         qs = McpCallLog.objects.filter(company=company).select_related('agent').order_by('-created_at')[:200]
         rows = []
         for row in qs:
+            outcome_display = display_outcome_for_read(
+                row.outcome,
+                result=row.result,
+                status_code=row.status_code,
+                error_code=row.error_code,
+            )
             rows.append(
                 {
                     'id': row.id,
@@ -326,7 +333,7 @@ class McpCallLogListView(APIView):
                     'tool': row.tool,
                     'operation_title': row.operation_title or row.tool or row.path or 'mcp_call',
                     'access_kind': row.access_kind or 'unknown',
-                    'outcome': row.outcome or '',
+                    'outcome': outcome_display,
                     'resource_label': row.resource_label or row.tool or row.path or '',
                     'company_name': row.company_name or '',
                     'approval_id': str(row.approval_id) if row.approval_id is not None else None,
