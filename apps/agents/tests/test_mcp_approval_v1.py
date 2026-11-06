@@ -377,6 +377,15 @@ class McpApprovalV1Tests(TestCase):
         )
         self.assertEqual(response.status_code, 400)
 
+    def test_internal_approval_create_rejects_arguments_key(self):
+        response = self.client.post(
+            '/api/v1/mcp/internal/mcp-approval-requests',
+            data=json.dumps({'is_destructive': False, 'arguments': {}}),
+            content_type='application/json',
+            HTTP_AUTHORIZATION=f'Bearer {self._assertion(self.agent, args_hash="x" * 64)}',
+        )
+        self.assertEqual(response.status_code, 400)
+
     def test_internal_approval_create_requires_json_bool_is_destructive(self):
         response = self.client.post(
             '/api/v1/mcp/internal/mcp-approval-requests',

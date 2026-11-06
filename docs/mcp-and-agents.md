@@ -114,9 +114,9 @@ Optional: `agent_name` for the regional agent display name.
 | --- | --- | --- |
 | Read only | `read_only` | Safe HTTP methods and tools tagged `x-mcp.read_only` |
 | Ask before changes | `ask` (default) | Writes create a pending approval |
-| Full access | `full` | Writes run immediately unless the tool is marked destructive |
+| Full access | `full` | Writes run immediately when the tool is not marked destructive |
 
-**Destructive changes:** Identity never grants destructive tools without a separate human approval. OAuth consent no longer offers "destructive without asking". Settings and the personal-token API reject attempts to enable it; `mcp_destructive` is always `false` on regional JWTs for delegated (`mcp_authority: delegated`) agents. Legacy rows may still store the old flag until an operator narrows the agent.
+**Destructive changes:** Identity never runs a destructive tool without a **separate human approval** for that action (delegated agents included: exchange may narrow `allow_destructive` on the body, but regional JWTs keep `mcp_destructive` false and approvals still gate each destructive call). OAuth consent no longer offers "destructive without asking". Settings and the personal-token API reject attempts to enable it; `mcp_destructive` is always `false` on regional JWTs for delegated (`mcp_authority: delegated`) agents. **Staff** accounts cannot complete MCP OAuth or agent flows; use a company human member.
 
 ## Read levels
 
@@ -129,7 +129,7 @@ Optional: `agent_name` for the regional agent display name.
 
 When a write needs human confirmation, the service creates an approval through Identity:
 
-- `POST /api/v1/mcp/internal/mcp-approval-requests` with a short-lived assertion (audience `shellui-mcp-approval`, scope `mcp.approval.create`), same pattern as [company deletion](company-deletion.md). The JSON body is optional for `is_destructive` only. Identity does not accept `arguments`, `target`, or `short_action_summary` from the client: `target` is set to `{service}:{action}` and `arguments_redacted` stays `{}`.
+- `POST /api/v1/mcp/internal/mcp-approval-requests` with a short-lived assertion (audience `shellui-mcp-approval`, scope `mcp.approval.create`), same pattern as [company deletion](company-deletion.md). The JSON body is optional for `is_destructive` only. Identity rejects **any** `arguments` key (including `{}`) and rejects `arguments_redacted`, `target`, and `short_action_summary`: `target` is set to `{service}:{action}` and `arguments_redacted` stays `{}`.
   - **Regional row** (normal MCP agent): `company_id` is a JSON **positive** integer (regional tenant). `agent_id` is the regional `Agent` uuid string. Live authority: `grant_version` (JSON integer). If that agent is company-bound (`global_company_id` on the row), the assertion must also carry `global_company_id` (uuid string) and `company_binding_version` (JSON integer, `0` valid) and they must match the live `Agent`. If the agent is not company-bound, omit both binding claims.
   - **Global account row** (SaaS dashboard before a regional `Agent` exists): only **dashboard** (`PROVISIONING_ISSUER` / `PROVISIONING_PUBLIC_KEY`) may create. Use `company_id` **`0`** (JSON integer) and `agent_id` set to the **same** uuid string as `global_agent_id` (the assertion `sub` may be `agent:<global_agent_id>`). Required claims: `global_agent_id` (uuid string), `global_company_id` (uuid string), `global_user_sub` (non-empty string, global IdP `sub` for the acting user), `company_binding_version` (JSON integer), `grant_version` (JSON integer). Identity does **not** trust a forwarded owner flag; it checks ownership by resolving `UpstreamAccount` for `(issuer=GLOBAL_ISSUER_URL, sub=global_user_sub)` and requiring that user in `Company.owners` for the region `ProvisionedCompany` with that `global_company_id`. **Grant authority:** `grant_version` and `company_binding_version` must both equal the region **`ProvisionedCompany.limits_version`** for that `global_company_id`. `GlobalAgentRevocation` for `global_agent_id` blocks create. Optional `setup_expires_at` (JSON non-negative unix seconds, strictly in the future) must match the global subject token when that token carries setup expiry; if present and invalid, create fails. Global rows store `agent_id` and `company_id` as null on the approval row; lookups use the global ids and `global_user_sub`, not a regional agent id. **`allow_session` / session check / session revoke** internal routes return **400** for global bindings (session grants require a regional `Agent`).
   Only **ai-service** may use a longer assertion JWT lifetime (see `MCP_APPROVAL_ASSERTION_MAX_LIFETIME_SECONDS`); storage, hosting, and email stay near 60 seconds. ai-service may add `setup_flow` and `mcp_session_ttl_seconds` (600 to 900) on signed assertions during new-company **regional** setup. Identity extends session Allow **only** when the regional `Agent` still has server-stored setup context from global token exchange (`setup_company_id`, `setup_context_expires_at`) and the gateway assertion passes the usual checks (`mcp_session_ttl_seconds` in band, `<= exp - iat`, and grant ends by `setup_context_expires_at`). Other callers and HTTP bodies cannot rely on those claims for a longer grant.
@@ -157,7 +157,7 @@ A caller with no issuer set is not trusted. Unknown issuers and wrong keys get `
 
 ### Live delegated agent authority (canonical)
 
-Use this route to verify a regional **delegated** agent row against the live SaaS binding before trusting a downstream MCP token or approval path. Do **not** substitute revocation polling alone; this check reads the current `Agent` row. The response never echoes untrusted fields beyond the five body ids; it is always derived from the live row.
+Use this route to verify a regional **delegated** agent row against the live SaaS binding before trusting a downstream MCP token or approval path. Do **not** substitute revocation polling alone; this check reads the current `Agent` row. **No aliases:** JSON body keys are exactly `agent_id`, `company_id`, `global_company_id`, `grant_version`, `company_binding_version` (no `regional_id`, `global_agentid`, or extras). **200** responses always return the **same fixed keys** below (plus `revoked_at`, which is `null` when not revoked); values come from the live row together with the binding triple from the request.
 
 - **Endpoints (same handler):**
   - **Canonical:** `POST /api/v1/mcp/internal/mcp-agent-delegated-authority`
@@ -187,14 +187,15 @@ Use this route to verify a regional **delegated** agent row against the live Saa
 | Caller not in the allowlist (for example dashboard) | **403** |
 | Agent row missing; `global_agent_id` null (personal agent) | **404** |
 
-**200** response (always includes the state fields below). Identity loads the agent by **`agent_id` and `company_id`** (body must match the row).
+**200** response. Identity loads the agent by **`agent_id` and `company_id`** (body must match the row).
 
-- When **`global_company_id` / `grant_version` / `company_binding_version`** match the live delegated row: **`authorized`** is `true` only if the agent is **active** in the ordinary sense (not paused, not expired, not revoked) **and** not blocked by **`GlobalAgentRevocation`** for that `global_agent_id`. Otherwise **`authorized`** is `false`.
-- When those three binding fields **do not** match the live row: **`200`** with **`authorized`:** `false`, **`active`:** `false`, **`revoked`:** `false`, **`paused`:** `false` (triple mismatch: treat as inactive for authorization without revealing which field failed).
-- **`active`:** `true` only when the row would issue tokens: not paused, not expired, not revoked, and not globally blocked. If **`revoked`** is `true`, **`active`** is always `false`.
-- **`global_agent_id`:** included from the live row when the agent is delegated (do not accept a client-supplied global id as proof).
+- When **`global_company_id` / `grant_version` / `company_binding_version`** match the live delegated row: **`authorized`** is `true` only if the agent would issue tokens: not paused, not expired, not revoked, and not globally blocked for that `global_agent_id`. Otherwise **`authorized`** is `false`.
+- When those three binding fields **do not** match the live row: **`200`** with **`authorized`:** `false`, **`active`:** `false` (fail closed). **`revoked`**, **`paused`**, **`revoked_at`**, **`access_mode`**, **`read_level`**, **`allow_destructive`**, and **`services_allowed`** still reflect the **live** row.
+- **`allow_destructive`:** always `false` for delegated agents in this response (destructive tools still require a human approval per call).
+- **`services_allowed`:** sorted list of service ids from the agent row.
+- **`global_agent_id`:** always from the live row (never from the request body).
 
-**200 body (fixed keys):** `authorized`, `active`, `revoked`, `paused`, `agent_id`, `company_id`, `global_company_id`, `grant_version`, `company_binding_version`, `global_agent_id`. When revocation applies, **`revoked_at`** (unix seconds) may be present from the row or global registry.
+**200 body (fixed keys):** `authorized`, `active`, `revoked`, `paused`, `agent_id`, `company_id`, `global_agent_id`, `global_company_id`, `grant_version`, `company_binding_version`, `access_mode`, `read_level`, `allow_destructive`, `services_allowed`, `revoked_at` (unix seconds or JSON `null`).
 
 This route is **not** cached on Identity.
 

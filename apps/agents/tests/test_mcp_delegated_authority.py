@@ -113,6 +113,24 @@ class McpDelegatedAgentAuthorityTests(TestCase):
         r = self._post(self._ok_body())
         self.assertEqual(r.status_code, 200)
         data = r.json()
+        fixed_keys = {
+            'authorized',
+            'active',
+            'revoked',
+            'paused',
+            'agent_id',
+            'company_id',
+            'global_agent_id',
+            'global_company_id',
+            'grant_version',
+            'company_binding_version',
+            'access_mode',
+            'read_level',
+            'allow_destructive',
+            'services_allowed',
+            'revoked_at',
+        }
+        self.assertEqual(set(data.keys()), fixed_keys)
         self.assertTrue(data['authorized'])
         self.assertTrue(data['active'])
         self.assertFalse(data['revoked'])
@@ -121,6 +139,11 @@ class McpDelegatedAgentAuthorityTests(TestCase):
         self.assertEqual(data['global_company_id'], str(self.saas_gc))
         self.assertEqual(data['grant_version'], 0)
         self.assertEqual(data['company_binding_version'], 0)
+        self.assertEqual(data['access_mode'], self.agent.access_mode)
+        self.assertEqual(data['read_level'], self.agent.read_level)
+        self.assertFalse(data['allow_destructive'])
+        self.assertEqual(data['services_allowed'], ['ai', 'storage'])
+        self.assertIsNone(data['revoked_at'])
 
     def test_alias_paths_same_handler(self):
         body = self._ok_body()
@@ -151,20 +174,30 @@ class McpDelegatedAgentAuthorityTests(TestCase):
         r = self._post(body)
         self.assertEqual(r.status_code, 200)
         d = r.json()
+        self.assertEqual(len(d), 15)
         self.assertFalse(d['authorized'])
         self.assertFalse(d['active'])
         self.assertEqual(d['agent_id'], str(self.agent.id))
         self.assertEqual(d['company_id'], self.company.pk)
+        self.assertEqual(d['global_agent_id'], str(self.gid))
         self.assertEqual(d['global_company_id'], str(self.saas_gc))
         self.assertEqual(d['grant_version'], 1)
         self.assertEqual(d['company_binding_version'], 0)
+        self.assertFalse(d['allow_destructive'])
 
     def test_global_company_mismatch_200_inactive(self):
+        wrong_gc = str(uuid.uuid4())
         body = self._ok_body()
-        body['global_company_id'] = str(uuid.uuid4())
+        body['global_company_id'] = wrong_gc
         r = self._post(body)
         self.assertEqual(r.status_code, 200)
-        self.assertFalse(r.json()['authorized'])
+        d = r.json()
+        self.assertEqual(len(d), 15)
+        self.assertFalse(d['authorized'])
+        self.assertFalse(d['active'])
+        self.assertEqual(d['global_company_id'], wrong_gc)
+        self.assertEqual(d['grant_version'], 0)
+        self.assertEqual(d['company_binding_version'], 0)
 
     def test_personal_agent_404(self):
         self.agent.global_agent_id = None
@@ -178,20 +211,23 @@ class McpDelegatedAgentAuthorityTests(TestCase):
         r = self._post(self._ok_body())
         self.assertEqual(r.status_code, 200)
         d = r.json()
+        self.assertEqual(len(d), 15)
         self.assertFalse(d['authorized'])
         self.assertFalse(d['active'])
         self.assertFalse(d['revoked'])
         self.assertTrue(d['paused'])
+        self.assertIsNone(d['revoked_at'])
 
     def test_global_registry_revoked_200(self):
         GlobalAgentRevocation.objects.create(global_agent_id=self.gid)
         r = self._post(self._ok_body())
         self.assertEqual(r.status_code, 200)
         d = r.json()
+        self.assertEqual(len(d), 15)
         self.assertFalse(d['authorized'])
         self.assertFalse(d['active'])
         self.assertTrue(d['revoked'])
-        self.assertIn('revoked_at', d)
+        self.assertIsNotNone(d['revoked_at'])
 
     def test_extra_assertion_claim_401(self):
         signing = TEST_CALLER_SIGNING

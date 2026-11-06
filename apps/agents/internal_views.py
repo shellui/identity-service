@@ -241,32 +241,80 @@ def _delegated_authority_assertion_error_response(exc: InternalAssertionError) -
     return Response({'error': exc.message}, status=exc.status)
 
 
-def _delegated_authority_mismatch_response(
+def _delegated_authority_revoked_at(agent: Agent) -> int | None:
+    ga = agent.global_agent_id
+    if ga is None:
+        return None
+    row_revoked = agent.revoked_at is not None
+    global_row_revoked = GlobalAgentRevocation.objects.filter(global_agent_id=ga).exists()
+    if row_revoked and agent.revoked_at is not None:
+        return int(agent.revoked_at.timestamp())
+    if global_row_revoked:
+        grev = (
+            GlobalAgentRevocation.objects.filter(global_agent_id=ga)
+            .order_by('-revoked_at')
+            .values_list('revoked_at', flat=True)
+            .first()
+        )
+        if grev is not None:
+            return int(grev.timestamp())
+    return None
+
+
+def _delegated_authority_fixed_payload(
+    agent: Agent,
     *,
-    agent_id: str,
-    company_id: int,
+    authorized: bool,
+    active: bool,
     global_company_id: str,
     grant_version: int,
     company_binding_version: int,
-) -> Response:
-    """Matching triple does not hold; caller is genuine so return safe row-shaped denial (no echo of request beyond the checked ids)."""
-    return Response(
-        {
-            'authorized': False,
-            'active': False,
-            'revoked': False,
-            'paused': False,
-            'agent_id': agent_id,
-            'company_id': company_id,
-            'global_company_id': global_company_id,
-            'grant_version': grant_version,
-            'company_binding_version': company_binding_version,
-        }
+) -> dict:
+    """Fixed JSON keys for every delegated-authority **200** response (no extras)."""
+    ga = agent.global_agent_id
+    assert ga is not None
+    paused = agent.paused_at is not None
+    row_revoked = agent.revoked_at is not None
+    global_row_revoked = GlobalAgentRevocation.objects.filter(global_agent_id=ga).exists()
+    revoked = bool(row_revoked or global_row_revoked)
+    services = sorted(str(s) for s in (agent.services_allowed or []))
+    # Delegated exchange agents never get destructive without asking on the regional JWT.
+    allow_dest = False
+    out = {
+        'authorized': authorized,
+        'active': active,
+        'revoked': revoked,
+        'paused': paused,
+        'agent_id': str(agent.id),
+        'company_id': int(agent.company_id),
+        'global_agent_id': str(ga),
+        'global_company_id': global_company_id,
+        'grant_version': int(grant_version),
+        'company_binding_version': int(company_binding_version),
+        'access_mode': str(agent.access_mode),
+        'read_level': str(agent.read_level),
+        'allow_destructive': allow_dest,
+        'services_allowed': services,
+        'revoked_at': _delegated_authority_revoked_at(agent),
+    }
+    return out
+
+
+def _delegated_authority_mismatch_response(*, agent: Agent, body_gc: uuid.UUID, gv: int, cb: int) -> Response:
+    """Binding triple does not match live row: fail closed (never authorized)."""
+    payload = _delegated_authority_fixed_payload(
+        agent,
+        authorized=False,
+        active=False,
+        global_company_id=str(body_gc),
+        grant_version=gv,
+        company_binding_version=cb,
     )
+    return Response(payload)
 
 
 def _delegated_authority_live_payload(agent: Agent) -> dict:
-    """Authoritative state from the Agent row plus global revocation registry."""
+    """Authoritative state when body binding matches the delegated agent row."""
     row_gc = agent.global_company_id
     row_cb = agent.company_binding_version
     ga = agent.global_agent_id
@@ -278,30 +326,14 @@ def _delegated_authority_live_payload(agent: Agent) -> dict:
     revoked = bool(row_revoked or global_row_revoked)
     active = bool(agent.is_active and not revoked)
     authorized = bool(active and not paused)
-    out: dict = {
-        'authorized': authorized,
-        'active': active,
-        'revoked': revoked,
-        'paused': paused,
-        'agent_id': str(agent.id),
-        'company_id': int(agent.company_id),
-        'global_company_id': str(row_gc),
-        'grant_version': gv,
-        'company_binding_version': int(row_cb),
-        'global_agent_id': str(ga),
-    }
-    if row_revoked and agent.revoked_at is not None:
-        out['revoked_at'] = int(agent.revoked_at.timestamp())
-    elif global_row_revoked:
-        grev = (
-            GlobalAgentRevocation.objects.filter(global_agent_id=ga)
-            .order_by('-revoked_at')
-            .values_list('revoked_at', flat=True)
-            .first()
-        )
-        if grev is not None:
-            out['revoked_at'] = int(grev.timestamp())
-    return out
+    return _delegated_authority_fixed_payload(
+        agent,
+        authorized=authorized,
+        active=active,
+        global_company_id=str(row_gc),
+        grant_version=gv,
+        company_binding_version=int(row_cb),
+    )
 
 
 class McpInternalDelegatedAgentAuthorityView(APIView):
@@ -361,13 +393,7 @@ class McpInternalDelegatedAgentAuthorityView(APIView):
         if row_gc is None or row_cb is None:
             return Response({'error': 'Agent has no SaaS company binding.'}, status=status.HTTP_404_NOT_FOUND)
         if row_gc != body_gc or int(agent.grant_version or 0) != int(gv) or int(row_cb) != int(cb):
-            return _delegated_authority_mismatch_response(
-                agent_id=str(agent_uuid),
-                company_id=cid,
-                global_company_id=str(body_gc),
-                grant_version=gv,
-                company_binding_version=cb,
-            )
+            return _delegated_authority_mismatch_response(agent=agent, body_gc=body_gc, gv=gv, cb=cb)
 
         return Response(_delegated_authority_live_payload(agent))
 
@@ -411,7 +437,7 @@ class McpInternalApprovalCreateView(APIView):
         if live_err is not None:
             return live_err
         body = request.data if isinstance(request.data, dict) else {}
-        if body.get('arguments') not in (None, {}):
+        if 'arguments' in body:
             return Response({'error': 'arguments not accepted.'}, status=status.HTTP_400_BAD_REQUEST)
         if 'arguments_redacted' in body:
             return Response({'error': 'arguments_redacted not accepted.'}, status=status.HTTP_400_BAD_REQUEST)
