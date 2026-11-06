@@ -49,6 +49,7 @@ class PersonalAgentTokenTests(TestCase):
         self.assertEqual(status.status_code, 200)
         self.assertTrue(status.json()['mcp_enabled'])
         self.assertEqual(status.json()['mcp_url'], self.resource)
+        self.assertIsNone(status.json().get('global_mcp_url'))
 
         expires = (timezone.now() + timedelta(days=7)).isoformat()
         created = self.client.post(
@@ -104,6 +105,7 @@ class PersonalAgentTokenTests(TestCase):
         row = activity.json()['activity'][0]
         self.assertEqual(row['tool'], 'tools/list')
         self.assertEqual(row['client_ip'], '203.0.113.1')
+        self.assertEqual(row['outcome'], 'allowed')
         self.assertNotIn('arguments', json.dumps(activity.json()))
 
         revoked = self.client.post(
@@ -178,3 +180,32 @@ class PersonalAgentTokenTests(TestCase):
                 personal_token_id=cred_id,
                 jti='jti',
             )
+
+
+@override_settings(
+    JWT_ISSUER='https://identity.test',
+    JWT_AUDIENCE='shellui-test',
+    AI_SERVICE_URL='',
+    DASHBOARD_PUBLIC_URL='https://app.shellui.com',
+    AUTH_RATE_LIMIT_ENABLED=False,
+)
+class PersonalMcpStatusGlobalUrlTests(TestCase):
+    def setUp(self):
+        self.company = Company.objects.create(name='SaaS URL', slug='saas-url')
+        self.user = User.objects.create_user(username='u', email='u@test.com', password='unused')
+        set_company_access(self.company, self.user, enabled=True)
+
+    def test_global_mcp_url_independent_of_regional_gateway(self):
+        from apps.authapi.views import _issue_shellui_tokens
+
+        token = _issue_shellui_tokens(self.user, company=self.company)['access_token']
+        status = self.client.get(
+            '/api/v1/mcp/personal/status',
+            HTTP_AUTHORIZATION=f'Bearer {token}',
+            HTTP_X_SHELLUI_COMPANY_ID=str(self.company.id),
+        )
+        self.assertEqual(status.status_code, 200)
+        body = status.json()
+        self.assertFalse(body['mcp_enabled'])
+        self.assertIsNone(body['mcp_url'])
+        self.assertEqual(body['global_mcp_url'], 'https://app.shellui.com/mcp')

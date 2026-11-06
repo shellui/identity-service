@@ -22,7 +22,17 @@ from apps.agents.ai_service_config import (
 )
 from apps.federation.parsing import parse_jwks
 
+from apps.agents.mcp_delegated_authority import (
+    DELEGATED_AGENT_AUTHORITY_AUDIENCE,
+    DELEGATED_AGENT_AUTHORITY_SCOPE,
+)
+
 _JTI_CACHE_PREFIX = 'mcp:internal-assertion:jti:'
+
+# Only these JWT claims may appear on verified internal assertions (no extra subject or tool claims).
+_DELEGATED_AUTHORITY_ASSERTION_KEYS = frozenset(
+    {'iss', 'aud', 'sub', 'scope', 'target', 'iat', 'exp', 'jti', 'nbf'}
+)
 
 # Services that sign with their own key and publish it at ``{origin}/.well-known/jwks.json``.
 JWKS_CALLERS = ('storage', 'hosting', 'email')
@@ -32,6 +42,14 @@ JWKS_CALLERS = ('storage', 'hosting', 'email')
 class TrustedCaller:
     name: str
     issuer: str
+
+
+@dataclass(frozen=True)
+class VerifiedAssertion:
+    """Verified JWT claims plus which registered caller key matched ``iss``."""
+
+    claims: dict
+    caller: TrustedCaller
 
 
 def _setting(name: str) -> str:
@@ -86,12 +104,33 @@ def _caller_for_issuer(issuer: str) -> TrustedCaller | None:
     return None
 
 
-def _register_jti(jti: str) -> bool:
-    ttl = INTERNAL_ASSERTION_MAX_LIFETIME_SECONDS + INTERNAL_ASSERTION_LEEWAY_SECONDS + 30
-    return cache.add(f'{_JTI_CACHE_PREFIX}{jti}', 1, timeout=ttl)
+def _assertion_jti_cache_ttl_seconds(max_lifetime_seconds: int) -> int:
+    return max_lifetime_seconds + INTERNAL_ASSERTION_LEEWAY_SECONDS + 30
 
 
-def verify_caller_assertion(raw_token: str, *, audience: str, scope: str, target: str) -> dict:
+def _approval_assertion_max_lifetime_seconds() -> int:
+    configured = int(getattr(settings, 'MCP_APPROVAL_ASSERTION_MAX_LIFETIME_SECONDS', 0) or 0)
+    floor = int(INTERNAL_ASSERTION_MAX_LIFETIME_SECONDS)
+    return max(floor, configured)
+
+
+def _register_jti_factory(max_lifetime_seconds: int):
+    ttl = _assertion_jti_cache_ttl_seconds(max_lifetime_seconds)
+
+    def _register_jti(jti: str) -> bool:
+        return cache.add(f'{_JTI_CACHE_PREFIX}{jti}', 1, timeout=ttl)
+
+    return _register_jti
+
+
+def verify_caller_assertion(
+    raw_token: str,
+    *,
+    audience: str,
+    scope: str,
+    target: str,
+    enforce_approval_service_match: bool = True,
+) -> VerifiedAssertion:
     """Verify an internal assertion against the key of the registered caller named in ``iss``.
 
     The unverified ``iss`` only selects which registered key to try. The signature, issuer,
@@ -113,6 +152,17 @@ def verify_caller_assertion(raw_token: str, *, audience: str, scope: str, target
         material = caller_verification_material(caller)
     except IdentityJwksError as exc:
         raise InternalAssertionError('Caller verification key is unavailable.', status=503) from exc
+    if scope == APPROVAL_SCOPE:
+        # Longer internal approval JWTs are only needed for ai-service setup flows. Other callers
+        # stay at the shellui-django default (60s) so service-signed assertions cannot be stretched
+        # without a separate explicit contract.
+        max_lifetime = (
+            _approval_assertion_max_lifetime_seconds()
+            if caller.name == 'ai'
+            else INTERNAL_ASSERTION_MAX_LIFETIME_SECONDS
+        )
+    else:
+        max_lifetime = INTERNAL_ASSERTION_MAX_LIFETIME_SECONDS
     claims = verify_mcp_internal_assertion(
         token,
         material,
@@ -120,9 +170,30 @@ def verify_caller_assertion(raw_token: str, *, audience: str, scope: str, target
         expected_audience=audience,
         expected_scope=scope,
         expected_target=target,
-        register_jti=_register_jti,
+        register_jti=_register_jti_factory(max_lifetime),
+        max_lifetime_seconds=max_lifetime,
     )
-    if scope == APPROVAL_SCOPE and caller.name in JWKS_CALLERS and claims.get('service') != caller.name:
+    if (
+        enforce_approval_service_match
+        and scope == APPROVAL_SCOPE
+        and caller.name in JWKS_CALLERS
+        and claims.get('service') != caller.name
+    ):
         # A service key may only request approvals for its own tools.
         raise InternalAssertionError('Assertion service does not match caller.', status=403)
-    return claims
+    return VerifiedAssertion(claims=claims, caller=caller)
+
+
+def verify_delegated_authority_assertion(raw_token: str, *, target: str) -> VerifiedAssertion:
+    """RS256 internal assertion for live delegated-agent authority (storage, hosting, email, ai)."""
+    verified = verify_caller_assertion(
+        raw_token,
+        audience=DELEGATED_AGENT_AUTHORITY_AUDIENCE,
+        scope=DELEGATED_AGENT_AUTHORITY_SCOPE,
+        target=target,
+        enforce_approval_service_match=False,
+    )
+    extra = set(verified.claims.keys()) - _DELEGATED_AUTHORITY_ASSERTION_KEYS
+    if extra:
+        raise InternalAssertionError('Invalid assertion.')
+    return verified

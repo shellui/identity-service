@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
 
+### ✨ Feature
+
+- `/.well-known/oauth-authorization-server` lists `token_endpoint` as `POST /oauth/token`. **Region** instances dispatch that path to MCP token grants and to RFC 8693 user session token exchange (agent exchange is routed by unverified `token_type=agent_access` or `mcp_authority=global_delegated` on the subject JWT). **Global** instances keep OpenID code exchange on `POST /oauth/token`. **Standalone** instances answer MCP grants on `POST /oauth/token` (empty body returns **400**, not 404).
+
+- Optional `global_mcp_url` on `GET /api/v1/mcp/personal/status` when `DASHBOARD_PUBLIC_URL` is set (Shellui dashboard origin); value is `{DASHBOARD_PUBLIC_URL}/mcp`, independent of regional `mcp_url`.
+
+- MCP session Allow TTL stays **60 seconds** by default. ai-service can sign longer approval assertions (other issuers stay near 60 second ``exp - iat``) and include ``setup_flow`` with ``mcp_session_ttl_seconds`` between **600** and **900** during new-company setup when the regional ``Agent`` has stored setup context from global token exchange (global subject token: ``setup_context_company_id`` and signed ``setup_expires_at``). Extended grants apply only when both remaining time to access token ``exp`` and remaining time to ``setup_context_expires_at`` are at least ``MCP_APPROVAL_SETUP_SESSION_TTL_MIN_SECONDS`` (default 600); otherwise Identity falls back to the default TTL. Regional access tokens echo ``setup_expires_at``. Revocation poll responses include ``revocation_policy_version`` (and the same claim in ``revocation_assertion``) so gateways drop positive cache when grants are revoked or company permissions change without pausing the agent. Other callers and HTTP bodies cannot extend the grant; destructive actions still need an approval each time.
+
+- Global agent token exchange: the global subject token ``scope`` must include ``ai`` for ``{AI_SERVICE_URL}/c/<company_id>/mcp``. First-company setup on the global token requires ``setup_flow`` and ``mcp_new_company_grant`` both JSON ``true`` (pairing and strict integer deadlines); absent setup claims clear any stored setup on the regional agent. Personal MCP agent access tokens set ``iss`` from ``SIMPLE_JWT['ISSUER']`` or ``JWT_ISSUER`` for the same behavior as company agents.
+
+- Global subject tokens must include ``mcp_authority: global_delegated``. Regional tokens from exchange include ``mcp_authority: delegated``. ``mcp-approval-session-check`` returns live ``global_company_id``, ``company_binding_version``, and ``grant_version`` on success when the agent is delegated; internal approval create rejects ``arguments_redacted`` in the JSON body and refuses non-JSON ``is_destructive``.
+
+- Live delegated agent authority: ``POST /api/v1/mcp/internal/mcp-agent-delegated-authority`` plus aliases ``.../mcp-delegated-authority`` and ``.../mcp-delegated-agent-authority`` (assertion audience ``shellui-mcp-agent-delegated-authority``, scope ``mcp.agent.delegated.authority.read``). **200** responses use a **fixed** set of keys including regional ``agent_id``, ``global_agent_id``, SaaS ``global_company_id``, ``grant_version``, ``company_binding_version``, ``access_mode``, ``read_level``, ``allow_destructive`` (always ``false`` for delegated rows), sorted ``services_allowed``, and ``revoked_at`` (``null`` when not revoked); assertion JWTs must not carry extra claims; missing bearer assertion returns **404**. MCP call log ingest uses ``waiting_approval`` (alias ``pending_approval`` on ingest); migration ``0022`` renames stored rows.
+
+- MCP internal call log ingest requires ``grant_version`` in the JSON body to match the ``Agent``; delegated agents must also send ``global_company_id`` and ``company_binding_version`` matching the row (otherwise **409**). ``access_kind`` ``destructive`` requires an approved destructive ``approval_id``; wrong tool or row match returns **400** instead of accepting the log with a dropped approval link.
+
+- Migration ``0021`` clears legacy ``arguments_redacted`` on MCP approval and call log rows.
+
 ### 🐛 Bug Fixes
 
 - Identity ``/mcp`` local ``tools/call`` rows store elapsed ``duration_ms`` in the admin call log.
@@ -27,7 +45,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 - Agents admin APIs for approvals, call logs, and revocation (`/api/v1/mcp/`).
 - OpenAPI descriptions for MCP registry and agent-friendly admin APIs.
 - SaaS and AI in agent service consent; `POST /api/v1/mcp/internal/mcp-downstream-access-token` mints downstream agent JWTs for ai-service (RS256 delegation, single-use `jti`, rate limits).
-- **Agent token exchange:** Regional `POST /oauth/mcp/token` (RFC 8693) exchanges a global MCP agent JWT for a company-scoped regional agent token; provisioning `POST /api/v1/provisioning/global-agents/revoke` revokes linked regional agents.
+- **Agent token exchange:** Regional `POST /oauth/token` (RFC 8693; `POST /oauth/mcp/token` is the same handler) exchanges a global MCP agent JWT for a company-scoped regional agent token; provisioning `POST /api/v1/provisioning/global-agents/revoke` revokes linked regional agents.
 - **Per-company MCP URL:** `/oauth/mcp/authorize` takes the company from `resource={AI_SERVICE_URL}/c/<company_id>/mcp`. Agent tokens are bound to that company, and authorize, token, refresh, and exchange refuse a resource from another company.
 - **MCP sign-in page:** identity renders its own sign-in page at `/oauth/mcp/signin` (email sign-in link), then the consent page. Before sign-in the page shows the client and return host but never the company, and looks the same for unknown company ids (rate limited per IP with `AUTH_RATE_LIMIT_MCP_SIGNIN`). Consent shows the company to signed-in members only (EN/FR).
 - MCP consent needs an explicit Approve or Deny click and logs each approval to the agent call log.

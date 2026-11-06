@@ -31,6 +31,7 @@ from apps.agents.oauth_views import (
     mcp_register,
     mcp_token,
 )
+from apps.agents.unified_oauth_token import oauth_token_dispatch
 from apps.authapi.jwks_views import ShellUIJwksView
 from apps.federation.provider import OpenIdConfigurationView
 from apps.federation.provisioning import CompanyPlanView
@@ -63,6 +64,7 @@ urlpatterns = [
         OpenIdConfigurationView.as_view(),
         name='federation-openid-configuration',
     ),
+    path('oauth/token', oauth_token_dispatch, name='oauth-token-dispatch'),
     path('oauth/', include(oauth_urlpatterns)),
     path('oauth/mcp/register', mcp_register, name='mcp-oauth-register'),
     path('oauth/mcp/authorize', mcp_authorize, name='mcp-oauth-authorize'),

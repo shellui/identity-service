@@ -179,6 +179,9 @@ The entrypoint sets `--worker-tmp-dir /dev/shm` (the heartbeat file lives in mem
 | `MCP_PERSONAL_AGENT_MAX_LIFETIME_DAYS` | `90` | Maximum expiry for personal MCP agent bearer tokens |
 | `MCP_AGENT_ACTIVITY_RETENTION_DAYS` | `90` | How long member activity logs are kept for personal MCP agents |
 | `MCP_APPROVAL_SESSION_TTL_SECONDS` | `60` | Seconds a client "Allow for this session" grant lasts (clamped 30 to 60) for non-destructive MCP writes |
+| `MCP_APPROVAL_ASSERTION_MAX_LIFETIME_SECONDS` | `900` | Maximum `exp - iat` Identity accepts on internal MCP approval assertions **from ai-service only** (600 to 900 second setup flows); other issuers stay at 60 seconds; shellui-django defaults to 60 |
+| `MCP_APPROVAL_SETUP_SESSION_TTL_MIN_SECONDS` | `600` | Lower bound for `mcp_session_ttl_seconds` on ai-service assertions with `setup_flow` when extending session Allow |
+| `MCP_APPROVAL_SETUP_SESSION_TTL_MAX_SECONDS` | `900` | Upper bound for the same |
 | `MCP_RATE_LIMIT_AGENT` | `120` | MCP tool calls per minute per agent |
 | `SECURE_SSL_REDIRECT`, `SESSION_COOKIE_SECURE`, `CSRF_COOKIE_SECURE` | `true` with `DEBUG=false`, `false` with `DEBUG=true` | HTTPS defaults. Secure cookies are named `__Host-sessionid` and `__Host-csrftoken`, with no `Domain`. `CSRF_COOKIE_HTTPONLY` is always on |
 | `SECURE_HSTS_SECONDS` | `31536000` with `DEBUG=false`, `0` with `DEBUG=true` | HSTS max-age |
@@ -222,7 +225,7 @@ Leave `SHELLUI_INSTANCE_ROLE` unset for a standalone deployment. `global` turns 
 | `GLOBAL_CLIENT_ID`, `GLOBAL_CLIENT_SECRET` | empty | Upstream client credentials |
 | `GLOBAL_REDIRECT_URI` | `{JWT_ISSUER}/oauth/upstream-callback` | Upstream redirect URI when the public URL differs |
 | `GLOBAL_ACCESS_TOKEN_AUDIENCE` | empty | `aud` of global access tokens (the global server's `JWT_AUDIENCE`). Turns on token exchange at `POST /oauth/token`. Empty answers 404 |
-| `GLOBAL_AGENT_ACCESS_TOKEN_AUDIENCE` | empty | `aud` of global MCP agent access tokens. Turns on agent token exchange at `POST /oauth/mcp/token`. Empty answers 404 |
+| `GLOBAL_AGENT_ACCESS_TOKEN_AUDIENCE` | empty | `aud` of global MCP agent access tokens. Turns on agent token exchange at `POST /oauth/token` (MCP authorization server `token_endpoint`; `POST /oauth/mcp/token` is the same handler). Empty answers 404 |
 | `PROVISIONING_PUBLIC_KEY` | empty | Dashboard provisioning public key (PEM), region role. Empty turns the provisioning API off |
 | `PROVISIONING_KEY_ID` | empty | Expected assertion `kid` when set |
 | `PROVISIONING_ISSUER` | empty | Expected assertion `iss` (the dashboard) |
@@ -253,6 +256,7 @@ Leave `SHELLUI_INSTANCE_ROLE` unset for a standalone deployment. `global` turns 
 | `DASHBOARD_WEBHOOK_URL` | empty | saas-service region webhook (`https://<dashboard>/api/v1/webhooks/<region>`) that receives `identity.company.deleted` |
 | `DASHBOARD_WEBHOOK_INTERNAL_URL` | empty | Server-to-server URL for that webhook POST. Unset uses `DASHBOARD_WEBHOOK_URL` |
 | `DASHBOARD_WEBHOOK_SECRET` | empty | Signing secret for that webhook. Same value as the region's webhook secret in saas-service |
+| `DASHBOARD_PUBLIC_URL` | empty | Optional public Shellui dashboard origin (`https://…`, path-less). When set, `GET /api/v1/mcp/personal/status` includes `global_mcp_url` as `{DASHBOARD_PUBLIC_URL}/mcp` for global account MCP discovery. Independent of regional `mcp_url` |
 
 ## Related
 

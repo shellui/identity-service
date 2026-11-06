@@ -30,6 +30,7 @@ class McpOAuthMetadataTests(TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(data['issuer'], 'https://identity.test')
+        self.assertEqual(data['token_endpoint'], 'https://identity.test/oauth/token')
         self.assertIn('registration_endpoint', data)
         self.assertEqual(data['code_challenge_methods_supported'], ['S256'])
         self.assertTrue(data.get('resource_indicators_supported'))
@@ -109,7 +110,7 @@ class McpOAuthFlowTests(TestCase):
 
         assertion = build_mcp_revocation_assertion(audience_url='https://identity.test', **TEST_CALLER_SIGNING)
         with rs256_identity_settings() as (_signing, jwks):
-            from shellui_django.mcp.internal import parse_trusted_revocation_poll_response
+            from apps.agents.trusted_revocation import parse_trusted_revocation_poll_response_identity
 
             revoked = self.client.get(
                 '/api/v1/mcp/internal/mcp-revocations',
@@ -120,8 +121,9 @@ class McpOAuthFlowTests(TestCase):
             self.assertEqual(data['cache_seconds'], 30)
             self.assertIn('revocation_assertion', data)
             self.assertIn('agents', data)
+            self.assertIn('revocation_policy_version', data)
             self.assertEqual(data['revoked_agent_ids'], [])
-            ids, cache, _agents = parse_trusted_revocation_poll_response(
+            ids, cache, _agents, policy_v1 = parse_trusted_revocation_poll_response_identity(
                 data,
                 expected_issuer='https://identity.test',
                 jwks=jwks,
@@ -138,12 +140,13 @@ class McpOAuthFlowTests(TestCase):
             )
             data2 = revoked2.json()
             self.assertIn(str(agent.id), data2['revoked_agent_ids'])
-            ids2, _, _ = parse_trusted_revocation_poll_response(
+            ids2, _, _, policy_v2 = parse_trusted_revocation_poll_response_identity(
                 data2,
                 expected_issuer='https://identity.test',
                 jwks=jwks,
             )
             self.assertIn(str(agent.id), ids2)
+            self.assertNotEqual(policy_v1, policy_v2)
 
     def test_revocation_list_unavailable_without_rs256_signing(self):
         from shellui_django.mcp.internal import build_mcp_revocation_assertion

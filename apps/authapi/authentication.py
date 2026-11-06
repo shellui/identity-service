@@ -100,7 +100,7 @@ class ShellUIJWTAuthentication(JWTAuthentication):
     def _decode_agent_jwt(self, raw_token: str) -> dict | None:
         import jwt
 
-        issuer = getattr(settings, 'JWT_ISSUER', None)
+        issuer = api_settings.ISSUER or getattr(settings, 'JWT_ISSUER', None)
         try:
             payload = jwt.decode(
                 raw_token,

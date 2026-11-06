@@ -18,6 +18,7 @@ from apps.authapi.login_audit import LoginOutcome, record_login_event
 from apps.authapi.throttling import check_rate_limit
 from apps.companies.access import apply_company_join
 from apps.companies.models import Company
+from apps.agents.json_strict import strict_positive_company_id_for_oauth_form
 from apps.federation.role import is_region
 from apps.federation.signing import TokenError, verify_pinned
 
@@ -60,9 +61,12 @@ def handle_token_exchange(request) -> Response:
     subject_token = str(data.get('subject_token') or '').strip()
     if not subject_token:
         return _error('invalid_request', 'Missing subject_token.')
+    cid = strict_positive_company_id_for_oauth_form(data.get('company_id'))
+    if cid is None:
+        return _error('invalid_target', 'Company not found.')
     try:
-        company = Company.objects.get(pk=int(str(data.get('company_id') or '').strip()))
-    except (Company.DoesNotExist, TypeError, ValueError):
+        company = Company.objects.get(pk=cid)
+    except Company.DoesNotExist:
         return _error('invalid_target', 'Company not found.')
 
     try:

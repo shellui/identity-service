@@ -34,10 +34,6 @@ COPY = {
         'access_label': 'Access level',
         'read_label': 'Data it can read',
         'agent_name_label': 'Agent name',
-        'destructive_label': (
-            'Allow destructive changes without asking. Deletes and irreversible actions then run '
-            'without a second prompt.'
-        ),
         'saas_opt_in_label': 'Also allow SaaS tools (global Shellui account sign-in required)',
         'saas_opt_in_note': (
             'When checked, you sign in on global Shellui before approval. The regional agent can '
@@ -88,10 +84,6 @@ COPY = {
         'access_label': "Niveau d'accès",
         'read_label': 'Données lisibles',
         'agent_name_label': "Nom de l'agent",
-        'destructive_label': (
-            'Autoriser les changements destructifs sans demander. Les suppressions et actions irréversibles '
-            "s'exécutent alors sans seconde confirmation."
-        ),
         'saas_opt_in_label': 'Autoriser aussi les outils SaaS (connexion au compte Shellui global requise)',
         'saas_opt_in_note': (
             'Si coché, vous vous connectez sur Shellui global avant l\'accord. L\'agent régional pourra '

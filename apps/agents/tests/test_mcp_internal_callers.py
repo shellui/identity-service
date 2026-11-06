@@ -93,3 +93,23 @@ class McpInternalCallerTests(TestCase):
             HTTP_AUTHORIZATION=f'Bearer {assertion}',
         )
         self.assertEqual(response.status_code, 403)
+
+    @override_settings(MCP_APPROVAL_ASSERTION_MAX_LIFETIME_SECONDS=900)
+    def test_storage_service_cannot_use_extended_approval_lifetime(self):
+        assertion = build_mcp_approval_assertion(
+            **TEST_CALLER_SIGNING,
+            company_id=1,
+            agent_id=str(uuid.uuid4()),
+            service='storage',
+            action='write_tool',
+            arguments_hash='abc999',
+            audience_url=IDENTITY_ORIGIN,
+            lifetime_seconds=900,
+        )
+        response = self.client.post(
+            APPROVALS,
+            data='{}',
+            content_type='application/json',
+            HTTP_AUTHORIZATION=f'Bearer {assertion}',
+        )
+        self.assertEqual(response.status_code, 401)

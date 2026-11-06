@@ -86,9 +86,17 @@ def encode_personal_agent_access_token(
         'iat': int(now.timestamp()),
         'exp': int(expires_at.timestamp()),
         'aud': audience,
+        'grant_version': int(getattr(agent, 'grant_version', 0) or 0),
     }
-    if api_settings.ISSUER:
-        claims['iss'] = api_settings.ISSUER
+    gc = getattr(agent, 'global_company_id', None)
+    if gc is not None:
+        claims['global_company_id'] = str(gc)
+    cb = getattr(agent, 'company_binding_version', None)
+    if cb is not None:
+        claims['company_binding_version'] = int(cb)
+    _issuer = api_settings.ISSUER or getattr(settings, 'JWT_ISSUER', None)
+    if _issuer:
+        claims['iss'] = _issuer
     headers = {}
     kid = getattr(settings, 'JWT_ACTIVE_KEY_ID', '')
     if kid:

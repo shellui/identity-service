@@ -21,14 +21,13 @@ from rest_framework import status
 from rest_framework.views import APIView
 from drf_spectacular.utils import OpenApiResponse, extend_schema
 
-from apps.authapi.client_pkce import PkceError, parse_client_pkce, verify_client_pkce
 from apps.authapi.throttling import check_rate_limit
 from apps.companies.models import Company
 from apps.agents.models import Agent, McpAuthorizationCode, McpCallLog, McpOAuthClient
-from apps.agents.oauth_codes import hash_authorization_code, issue_mcp_authorization_code
-from apps.agents.mcp_resources import resolve_mcp_resource
-from apps.agents.oauth_redirect import normalize_mcp_redirect_uris, validate_mcp_redirect_uri
-from apps.agents.oauth_request_body import oauth_error, parse_oauth_post_body, redirect_uris_from_body
+from apps.agents.oauth_codes import issue_mcp_authorization_code
+from apps.agents.oauth_redirect import normalize_mcp_redirect_uris
+from apps.agents.oauth_request_body import parse_oauth_post_body, redirect_uris_from_body
+from apps.agents.oauth_token_dispatch import handle_mcp_token_request
 from apps.agents.mcp_copy import copy_for
 from apps.agents.mcp_signin import (
     AuthorizeError,
@@ -45,8 +44,6 @@ from apps.agents.mcp_signin import (
 )
 from apps.agents.staff import is_mcp_oauth_refused_user
 from apps.agents.exchange import GRANT_TYPE as AGENT_EXCHANGE_GRANT
-from apps.agents.exchange import agent_exchange_enabled, handle_agent_token_exchange
-from apps.agents.tokens import encode_access_token, issue_agent_refresh, refresh_agent_access
 from apps.authapi.serializers import ShellUIOpenAPISerializer
 
 
@@ -77,7 +74,7 @@ class OAuthAuthorizationServerMetadataView(APIView):
         data = {
             'issuer': base,
             'authorization_endpoint': f'{base}/oauth/mcp/authorize',
-            'token_endpoint': f'{base}/oauth/mcp/token',
+            'token_endpoint': f'{base}/oauth/token',
             'registration_endpoint': f'{base}/oauth/mcp/register',
             'response_types_supported': ['code'],
             'grant_types_supported': ['authorization_code', 'refresh_token', AGENT_EXCHANGE_GRANT],
@@ -227,7 +224,6 @@ def _finalize_authorization(
     name: str,
     access_mode: str,
     read_level: str,
-    destructive: bool,
     services: list[str],
 ):
     client = parsed.client
@@ -242,7 +238,7 @@ def _finalize_authorization(
             oauth_client=client,
             created_by=user,
             access_mode=access_mode,
-            allow_destructive_without_asking=destructive,
+            allow_destructive_without_asking=False,
             read_level=read_level,
             services_allowed=services,
         )
@@ -274,7 +270,7 @@ def _finalize_authorization(
                 'services': services,
                 'access_mode': access_mode,
                 'read_level': read_level,
-                'allow_destructive': destructive,
+                'allow_destructive': False,
                 'approved_by_user_id': user.pk,
             },
         )
@@ -307,7 +303,6 @@ def complete_pending_mcp_consent(request, *, user, company, pending: dict):
         name=str(pending.get('name') or '')[:255],
         access_mode=pending.get('access_mode') or Agent.ACCESS_ASK,
         read_level=pending.get('read_level') or Agent.READ_SAFE,
-        destructive=bool(pending.get('destructive')),
         services=services,
     )
 
@@ -331,7 +326,6 @@ def _complete_authorize(request, *, user, parsed):
     read_level = request.POST.get('read_level') or Agent.READ_SAFE
     if read_level not in {Agent.READ_SAFE, Agent.READ_SENSITIVE}:
         read_level = Agent.READ_SAFE
-    destructive = request.POST.get('allow_destructive') == 'on'
     allowed_services = {choice[0] for choice in Agent.SERVICE_CHOICES}
     services = [s for s in request.POST.getlist('services') if s in allowed_services and s != Agent.SERVICE_AI]
     if not services:
@@ -358,7 +352,6 @@ def _complete_authorize(request, *, user, parsed):
                     'name': name,
                     'access_mode': access_mode,
                     'read_level': read_level,
-                    'destructive': destructive,
                     'services': services,
                     'include_saas': True,
                 },
@@ -373,7 +366,6 @@ def _complete_authorize(request, *, user, parsed):
         name=name,
         access_mode=access_mode,
         read_level=read_level,
-        destructive=destructive,
         services=services,
     )
 
@@ -384,89 +376,4 @@ def mcp_token(request):
     limited = plain_response(check_rate_limit(request, scope='token_exchange'))
     if limited:
         return limited
-    body, parse_err = parse_oauth_post_body(request)
-    if parse_err is not None:
-        return parse_err
-    assert body is not None
-    grant = str(body.get('grant_type') or '').strip()
-    if not grant:
-        return oauth_error('invalid_request')
-    if grant == AGENT_EXCHANGE_GRANT:
-        if not agent_exchange_enabled():
-            return JsonResponse({}, status=404)
-        return handle_agent_token_exchange(request, data=body)
-    if grant == 'refresh_token':
-        refresh = str(body.get('refresh_token') or '')
-        resource_url, _service_id = resolve_mcp_resource(str(body.get('resource') or ''))
-        if not resource_url:
-            return JsonResponse({'error': 'invalid_target'}, status=400)
-        pair = refresh_agent_access(refresh, resource=resource_url)
-        if not pair:
-            return JsonResponse({'error': 'invalid_grant'}, status=400)
-        access, new_refresh = pair
-        return JsonResponse(
-            {
-                'access_token': access,
-                'token_type': 'Bearer',
-                'expires_in': int(getattr(settings, 'MCP_ACCESS_TOKEN_LIFETIME', timedelta(minutes=15)).total_seconds()),
-                'refresh_token': new_refresh,
-            }
-        )
-    if grant != 'authorization_code':
-        return oauth_error('unsupported_grant_type')
-    code = str(body.get('code') or '').strip()
-    redirect_uri = str(body.get('redirect_uri') or '').strip()
-    client_id = str(body.get('client_id') or '').strip()
-    verifier = body.get('code_verifier')
-    try:
-        client = McpOAuthClient.objects.get(client_id=client_id)
-    except McpOAuthClient.DoesNotExist:
-        return JsonResponse({'error': 'invalid_client'}, status=401)
-    code_digest = hash_authorization_code(code)
-    canonical_redirect, rerr = validate_mcp_redirect_uri(request, redirect_uri)
-    if rerr or not canonical_redirect:
-        return JsonResponse({'error': 'invalid_grant'}, status=400)
-    redirect_uri = canonical_redirect
-    with transaction.atomic():
-        try:
-            row = (
-                McpAuthorizationCode.objects.select_for_update()
-                .select_related('agent__company', 'user')
-                .get(code=code_digest, client=client)
-            )
-        except McpAuthorizationCode.DoesNotExist:
-            return JsonResponse({'error': 'invalid_grant'}, status=400)
-        if row.redeemed_at is not None or row.expires_at <= timezone.now():
-            return JsonResponse({'error': 'invalid_grant'}, status=400)
-        if row.redirect_uri != redirect_uri:
-            return JsonResponse({'error': 'invalid_grant'}, status=400)
-        agent = row.agent
-        resource_url, service_id = resolve_mcp_resource(str(body.get('resource') or ''))
-        if not resource_url or row.resource != resource_url:
-            return JsonResponse({'error': 'invalid_target'}, status=400)
-        if not service_id or service_id not in (agent.services_allowed or []):
-            return JsonResponse({'error': 'access_denied'}, status=403)
-        message, _code = verify_client_pkce(
-            code_challenge=row.code_challenge,
-            code_verifier=verifier,
-            required=True,
-        )
-        if message:
-            return JsonResponse({'error': 'invalid_grant', 'error_description': message}, status=400)
-        if is_mcp_oauth_refused_user(row.user):
-            return JsonResponse({'error': 'access_denied'}, status=403)
-        if not agent.is_active:
-            return JsonResponse({'error': 'access_denied'}, status=403)
-        row.redeemed_at = timezone.now()
-        row.save(update_fields=['redeemed_at'])
-        bound_resource = row.resource
-    access = encode_access_token(agent, resource=bound_resource)
-    refresh, _session = issue_agent_refresh(agent, resource=bound_resource)
-    return JsonResponse(
-        {
-            'access_token': access,
-            'token_type': 'Bearer',
-            'expires_in': int(getattr(settings, 'MCP_ACCESS_TOKEN_LIFETIME', timedelta(minutes=15)).total_seconds()),
-            'refresh_token': refresh,
-        }
-    )
+    return handle_mcp_token_request(request)

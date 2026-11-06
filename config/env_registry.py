@@ -128,6 +128,9 @@ OPTIONAL = (
     Var('MCP_PERSONAL_AGENT_MAX_LIFETIME_DAYS', '90'),
     Var('MCP_AGENT_ACTIVITY_RETENTION_DAYS', '90'),
     Var('MCP_APPROVAL_SESSION_TTL_SECONDS', '60'),
+    Var('MCP_APPROVAL_ASSERTION_MAX_LIFETIME_SECONDS', '900'),
+    Var('MCP_APPROVAL_SETUP_SESSION_TTL_MIN_SECONDS', '600'),
+    Var('MCP_APPROVAL_SETUP_SESSION_TTL_MAX_SECONDS', '900'),
     Var('MCP_RATE_LIMIT_AGENT', '120'),
     Var('LOG_LEVEL', 'INFO', 'Observability'),
     Var('SLOW_REQUEST_THRESHOLD_SECONDS', '2'),
@@ -189,6 +192,11 @@ OPTIONAL = (
     Var('DASHBOARD_WEBHOOK_URL', ''),
     Var('DASHBOARD_WEBHOOK_INTERNAL_URL', '', 'Server-to-server saas webhook URL (defaults to DASHBOARD_WEBHOOK_URL)'),
     Var('DASHBOARD_WEBHOOK_SECRET', ''),
+    Var(
+        'DASHBOARD_PUBLIC_URL',
+        '',
+        'Optional public Shellui dashboard origin (https) for global MCP URL hint on personal status',
+    ),
 )
 
 ROLES = ('standalone', 'global', 'region')
