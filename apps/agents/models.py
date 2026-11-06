@@ -361,7 +361,13 @@ class McpCallLog(models.Model):
     )
 
     id = models.BigAutoField(primary_key=True)
-    agent = models.ForeignKey(Agent, on_delete=models.CASCADE, related_name='call_logs')
+    agent = models.ForeignKey(
+        Agent,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='call_logs',
+    )
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='mcp_call_logs')
     service = models.CharField(max_length=32)
     tool = models.CharField(max_length=255, blank=True)

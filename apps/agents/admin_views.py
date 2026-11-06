@@ -340,11 +340,15 @@ class McpCallLogListView(APIView):
                 status_code=row.status_code,
                 error_code=row.error_code,
             )
+            if row.agent_id is not None:
+                agent_id_s, agent_name = str(row.agent_id), row.agent.name
+            else:
+                agent_id_s, agent_name = '', 'Global control plane'
             rows.append(
                 {
                     'id': row.id,
-                    'agent_id': str(row.agent_id),
-                    'agent_name': row.agent.name,
+                    'agent_id': agent_id_s,
+                    'agent_name': agent_name,
                     'service': row.service,
                     'tool': row.tool,
                     'operation_title': row.operation_title or row.tool or row.path or 'mcp_call',

@@ -825,13 +825,32 @@ def _call_log_matches_approval_row(agent: Agent, appr: McpApprovalRequest) -> bo
     return snap_gc == agc and snap_cb is not None and int(snap_cb) == int(agcb or 0)
 
 
+def _call_log_matches_global_approval_row(
+    *,
+    appr: McpApprovalRequest,
+    global_agent_id: uuid.UUID,
+    global_company_id: uuid.UUID,
+    company_binding_version: int,
+) -> bool:
+    if appr.agent_id is not None or appr.company_id is not None:
+        return False
+    if appr.global_agent_id is None or appr.global_company_id is None:
+        return False
+    if appr.global_agent_id != global_agent_id or appr.global_company_id != global_company_id:
+        return False
+    if appr.company_binding_version is None or int(appr.company_binding_version) != int(company_binding_version):
+        return False
+    gv = int(getattr(appr, 'authority_grant_version', 0) or 0)
+    return gv == int(company_binding_version)
+
+
 class McpInternalCallLogView(APIView):
     authentication_classes = []
     permission_classes = []
 
     def post(self, request):
         try:
-            verify_caller_assertion(
+            verified = verify_caller_assertion(
                 _assertion_from_request(request),
                 audience=CALL_LOG_AUDIENCE,
                 scope=CALL_LOG_SCOPE,
@@ -840,11 +859,159 @@ class McpInternalCallLogView(APIView):
         except InternalAssertionError as exc:
             return Response({'error': exc.message}, status=exc.status)
         body = request.data if isinstance(request.data, dict) else {}
-        agent_id = str(body.get('agent_id') or '')
+        agent_id = str(body.get('agent_id') or '').strip()
         company_id_raw = body.get('company_id')
         cid = strict_json_int_for_company_id(company_id_raw)
+        global_agent_raw = str(body.get('global_agent_id') or '').strip()
+        global_company_raw = body.get('global_company_id')
+
+        if global_agent_raw and agent_id:
+            return Response(
+                {'error': 'agent_id must not be set when global_agent_id is present.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Global control-plane activity (no regional Agent yet): dashboard-signed only.
+        if global_agent_raw:
+            if verified.caller.name != 'dashboard':
+                return Response({'error': 'Global call logs require a dashboard-signed assertion.'}, status=status.HTTP_403_FORBIDDEN)
+            if agent_id:
+                return Response({'error': 'agent_id must not be set for global call logs.'}, status=status.HTTP_400_BAD_REQUEST)
+            if cid is None or int(cid) <= 0:
+                return Response({'error': 'company_id must be a positive JSON integer.'}, status=status.HTTP_400_BAD_REQUEST)
+            try:
+                ga_uuid = uuid.UUID(global_agent_raw)
+            except (ValueError, TypeError):
+                return Response({'error': 'Invalid global_agent_id.'}, status=status.HTTP_400_BAD_REQUEST)
+            if global_company_raw in (None, '') or type(global_company_raw) is not str:
+                return Response({'error': 'global_company_id must be a uuid string.'}, status=status.HTTP_400_BAD_REQUEST)
+            try:
+                gc_uuid = uuid.UUID(str(global_company_raw).strip())
+            except (ValueError, TypeError):
+                return Response({'error': 'Invalid global_company_id.'}, status=status.HTTP_400_BAD_REQUEST)
+            cb_body = strict_non_negative_int(body.get('company_binding_version'))
+            gv_body = strict_non_negative_int(body.get('grant_version'))
+            if cb_body is None:
+                return Response({'error': 'company_binding_version required in JSON body.'}, status=status.HTTP_400_BAD_REQUEST)
+            if gv_body is None:
+                return Response({'error': 'grant_version required in JSON body.'}, status=status.HTTP_400_BAD_REQUEST)
+            if global_agent_revoked(ga_uuid):
+                return Response({'error': 'Global agent is revoked.'}, status=status.HTTP_403_FORBIDDEN)
+            pc = provisioned_company_for_global_uuid(gc_uuid)
+            if pc is None:
+                return Response({'error': 'Regional company not provisioned for this binding.'}, status=status.HTTP_404_NOT_FOUND)
+            if int(pc.company_id) != int(cid):
+                return Response({'error': 'Call log company_id does not match provisioned binding.'}, status=status.HTTP_409_CONFLICT)
+            if int(pc.limits_version) != int(cb_body) or int(pc.limits_version) != int(gv_body):
+                return Response({'error': 'Call log authority mismatch.'}, status=status.HTTP_409_CONFLICT)
+
+            if 'arguments' in body:
+                return Response({'error': 'arguments not accepted.'}, status=status.HTTP_400_BAD_REQUEST)
+            if 'arguments_redacted' in body:
+                return Response({'error': 'arguments_redacted not accepted.'}, status=status.HTTP_400_BAD_REQUEST)
+            ip_raw = str(body.get('client_ip') or '').strip()
+            client_ip = ip_raw if ip_raw else None
+            result = str(body.get('result') or '')[:32]
+            status_code = int(body.get('status') or 0)
+            duration_ms = int(body.get('duration_ms') or 0)
+            tool_s = str(body.get('tool') or '')[:255]
+            method_s = str(body.get('method') or '')[:10]
+            path_s = str(body.get('path') or '')[:500]
+            path_s = path_s.split('?', 1)[0].split('#', 1)[0].strip()[:500]
+            outcome_raw = str(body.get('outcome') or '').strip().lower()
+            normalized = canonical_outcome_ingest(outcome_raw or None)
+            if outcome_raw and normalized is None:
+                return Response({'error': 'Invalid outcome.'}, status=status.HTTP_400_BAD_REQUEST)
+            if not outcome_raw and normalized is None:
+                return Response({'error': 'outcome required.'}, status=status.HTTP_400_BAD_REQUEST)
+            outcome = normalized or ''
+            if body.get('operation_title') not in (None, ''):
+                return Response({'error': 'operation_title not accepted.'}, status=status.HTTP_400_BAD_REQUEST)
+            operation_title = safe_operation_title(tool_s)
+            access_kind = str(body.get('access_kind') or '').strip().lower()[:32]
+            if access_kind not in ('read', 'write', 'destructive', 'unknown', ''):
+                return Response({'error': 'Invalid access_kind.'}, status=status.HTTP_400_BAD_REQUEST)
+            if not access_kind:
+                access_kind = 'unknown'
+            destructive_write = bool(access_kind == 'destructive')
+            if body.get('resource_label') not in (None, ''):
+                return Response({'error': 'resource_label not accepted.'}, status=status.HTTP_400_BAD_REQUEST)
+            service_id_raw = str(body.get('service') or '')[:32]
+            resource_label = fixed_resource_label_for_service(
+                service_id=service_id_raw, method=method_s, path=path_s
+            )
+            if resource_label is None:
+                return Response({'error': 'Invalid path for service.'}, status=status.HTTP_400_BAD_REQUEST)
+            if destructive_write:
+                return Response({'error': 'Destructive tools are not allowed for this agent.'}, status=status.HTTP_400_BAD_REQUEST)
+
+            approval_uuid: uuid.UUID | None = None
+            raw_approval = body.get('approval_id')
+            if raw_approval not in (None, ''):
+                try:
+                    approval_uuid = uuid.UUID(str(raw_approval))
+                except (ValueError, TypeError):
+                    return Response({'error': 'Invalid approval_id.'}, status=status.HTTP_400_BAD_REQUEST)
+                try:
+                    appr_try = McpApprovalRequest.objects.get(pk=approval_uuid)
+                except McpApprovalRequest.DoesNotExist:
+                    return Response({'error': 'approval row not found.'}, status=status.HTTP_404_NOT_FOUND)
+                if (
+                    str(appr_try.service or '') != service_id_raw
+                    or str(appr_try.action or '')[:255] != tool_s[:255]
+                    or not _call_log_matches_global_approval_row(
+                        appr=appr_try,
+                        global_agent_id=ga_uuid,
+                        global_company_id=gc_uuid,
+                        company_binding_version=int(cb_body),
+                    )
+                ):
+                    return Response({'error': 'approval_id does not match this call.'}, status=status.HTTP_400_BAD_REQUEST)
+
+            approval_id = approval_uuid
+            error_code_raw = body.get('error_code')
+            error_code_val = sanitize_error_code(error_code_raw) or ''
+            row = McpCallLog.objects.create(
+                agent=None,
+                company_id=cid,
+                service=str(body.get('service') or '')[:32],
+                tool=tool_s,
+                http_method=method_s,
+                path=path_s,
+                status_code=status_code,
+                duration_ms=duration_ms,
+                result=result,
+                operation_title=operation_title,
+                access_kind=access_kind,
+                outcome=outcome,
+                resource_label=resource_label,
+                company_name=pc.company.name,
+                approval_id=approval_id,
+                error_code=error_code_val,
+                client_ip=client_ip,
+                arguments_redacted={},
+            )
+            event = get_event_type('identity.mcp.call')
+            if event:
+                record_event(
+                    event,
+                    pc.company,
+                    {
+                        'global_agent_id': str(ga_uuid),
+                        'service': row.service,
+                        'tool': row.tool,
+                        'status_code': row.status_code,
+                    },
+                )
+            return Response({'id': row.id}, status=status.HTTP_201_CREATED)
+
         if not agent_id or cid is None:
             return Response({'error': 'agent_id and company_id required.'}, status=status.HTTP_400_BAD_REQUEST)
+        if body.get('global_agent_id') not in (None, ''):
+            return Response(
+                {'error': 'global_agent_id applies to dashboard global call logs only.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         try:
             agent = Agent.objects.get(pk=agent_id, company_id=cid)
         except Agent.DoesNotExist:

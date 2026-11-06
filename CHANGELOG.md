@@ -23,6 +23,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 - MCP internal call log ingest requires ``grant_version`` in the JSON body to match the ``Agent``; delegated agents must also send ``global_company_id`` and ``company_binding_version`` matching the row (otherwise **409**). ``access_kind`` ``destructive`` requires an approved destructive ``approval_id``; wrong tool or row match returns **400** instead of accepting the log with a dropped approval link.
 
+- Dashboard may ingest **global** MCP activity without a regional ``Agent`` row: ``POST .../mcp-call-logs`` with ``global_agent_id`` and a dashboard-signed assertion stores ``McpCallLog`` with ``agent`` null and ``company`` from ``ProvisionedCompany`` (migration ``0024``); regional service keys cannot use this path.
+
 - Migration ``0021`` clears legacy ``arguments_redacted`` on MCP approval and call log rows.
 
 ### 🐛 Bug Fixes
