@@ -18,7 +18,6 @@ from shellui_django.mcp.internal import (
     REVOCATION_AUDIENCE,
     REVOCATION_SCOPE,
     InternalAssertionError,
-    build_mcp_revocation_list_response_assertion,
 )
 from shellui_django.mcp.masking import redact_mapping
 
@@ -44,7 +43,14 @@ from apps.agents.approval_session import (
 )
 from apps.agents.internal_callers import verify_caller_assertion
 from apps.agents.models import Agent, McpApprovalRequest, McpCallLog
-from apps.agents.revocation import REVOCATION_CACHE_SECONDS, blocked_agent_ids, blocked_agent_snapshots
+from apps.agents.revocation import (
+    REVOCATION_CACHE_SECONDS,
+    active_max_permission_version,
+    blocked_agent_ids,
+    blocked_agent_snapshots,
+)
+from apps.agents.revocation_jwt import compute_revocation_policy_version, sign_revocation_list_response
+from apps.federation.signing import TokenError
 
 
 def _identity_origin() -> str:
@@ -105,20 +111,29 @@ class McpRevocationListView(APIView):
         cid = int(company_id) if company_id and str(company_id).isdigit() else None
         revoked_ids = blocked_agent_ids(company_id=cid)
         agents = blocked_agent_snapshots(company_id=cid)
+        policy_ver = compute_revocation_policy_version(
+            revoked_ids=revoked_ids,
+            agents=agents,
+            cache_seconds=REVOCATION_CACHE_SECONDS,
+            max_active_permission_version=active_max_permission_version(company_id=cid),
+        )
         try:
-            revocation_assertion = build_mcp_revocation_list_response_assertion(
+            revocation_assertion = sign_revocation_list_response(
                 revoked_agent_ids=revoked_ids,
                 agents=agents,
                 cache_seconds=REVOCATION_CACHE_SECONDS,
+                revocation_policy_version=policy_ver,
             )
-        except InternalAssertionError as exc:
-            if exc.status == status.HTTP_503_SERVICE_UNAVAILABLE:
-                return Response({'error': exc.message}, status=exc.status)
-            raise
+        except TokenError:
+            return Response(
+                {'error': 'Revocation list signing is not configured.'},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
         payload = {
             'revoked_agent_ids': revoked_ids,
             'agents': agents,
             'cache_seconds': REVOCATION_CACHE_SECONDS,
+            'revocation_policy_version': policy_ver,
             'revocation_assertion': revocation_assertion,
         }
         response = Response(payload)

@@ -152,11 +152,11 @@ class McpAgentRevokeView(APIView):
         agent.revoked_at = now
         agent.paused_at = agent.paused_at or now
         agent.save(update_fields=['revoked_at', 'paused_at', 'updated_at'])
-        from apps.agents.approval_session import revoke_session_grants_for_agent
+        from apps.agents.agent_permissions import invalidate_agent_session_grants
         from apps.agents.models import AgentRefreshSession
 
         AgentRefreshSession.objects.filter(agent=agent, revoked_at__isnull=True).update(revoked_at=now)
-        revoke_session_grants_for_agent(agent)
+        invalidate_agent_session_grants(agent)
         return Response({'agent': _agent_row(agent)})
 
 

@@ -66,6 +66,25 @@ def build_agent_access_token(agent: Agent, *, resource: str) -> dict:
     }
     if api_settings.ISSUER:
         claims['iss'] = api_settings.ISSUER
+    setup_until = getattr(agent, 'setup_context_expires_at', None)
+    setup_cid = getattr(agent, 'setup_company_id', None)
+    if (
+        setup_until is not None
+        and setup_cid is not None
+        and int(setup_cid) == int(agent.company_id)
+        and setup_until > now
+    ):
+        su = int(setup_until.timestamp())
+        claims['setup_context_company_id'] = int(setup_cid)
+        claims['setup_context_exp'] = su
+        claims['setup_expires_at'] = su
+    claims['permission_version'] = int(getattr(agent, 'permission_version', 0) or 0)
+    gc = getattr(agent, 'global_company_id', None)
+    if gc is not None:
+        claims['global_company_id'] = str(gc)
+    cb = getattr(agent, 'company_binding_version', None)
+    if cb is not None:
+        claims['company_binding_version'] = int(cb)
     return claims
 
 

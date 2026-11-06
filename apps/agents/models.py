@@ -74,6 +74,17 @@ class Agent(models.Model):
         db_index=True,
         help_text='Global MCP agent id when this row was created by token exchange.',
     )
+    global_company_id = models.UUIDField(
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text='SaaS global company id when this regional agent is company-bound.',
+    )
+    company_binding_version = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text='SaaS company binding version last accepted at token exchange.',
+    )
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='mcp_agents')
     name = models.CharField(max_length=255)
     oauth_client = models.ForeignKey(
@@ -104,6 +115,20 @@ class Agent(models.Model):
         max_length=255,
         blank=True,
         help_text='Optional project id or label chosen at consent.',
+    )
+    setup_company_id = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text='Company id for server-authorized setup context from global token exchange.',
+    )
+    setup_context_expires_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text='Absolute end of new-company setup for this agent from the global subject token.',
+    )
+    permission_version = models.PositiveIntegerField(
+        default=0,
+        help_text='Bumps when company-scoped MCP permissions change; invalidates session Allow grants.',
     )
     expires_at = models.DateTimeField(null=True, blank=True)
     paused_at = models.DateTimeField(null=True, blank=True)
@@ -174,8 +199,29 @@ class McpApprovalRequest(models.Model):
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    agent = models.ForeignKey(Agent, on_delete=models.CASCADE, related_name='approval_requests')
-    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='mcp_approval_requests')
+    agent = models.ForeignKey(
+        Agent,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='approval_requests',
+    )
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='mcp_approval_requests',
+    )
+    global_agent_id = models.UUIDField(null=True, blank=True, db_index=True)
+    global_company_id = models.UUIDField(null=True, blank=True, db_index=True)
+    company_binding_version = models.PositiveIntegerField(null=True, blank=True)
+    setup_expires_at = models.DateTimeField(null=True, blank=True)
+    global_user_sub = models.CharField(max_length=255, null=True, blank=True)
+    is_company_owner_actor = models.BooleanField(
+        default=False,
+        help_text='Set for global-account approvals when the actor is an owner in SaaS.',
+    )
     service = models.CharField(max_length=32)
     action = models.CharField(max_length=255)
     target = models.CharField(max_length=500, blank=True)
@@ -218,6 +264,9 @@ class McpApprovalSessionGrant(models.Model):
     expires_at = models.DateTimeField()
     revoked_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    agent_permission_version = models.PositiveIntegerField(default=0)
+    global_company_id = models.UUIDField(null=True, blank=True)
+    company_binding_version = models.PositiveIntegerField(null=True, blank=True)
 
     class Meta:
         ordering = ['-created_at']

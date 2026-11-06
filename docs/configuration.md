@@ -179,7 +179,7 @@ The entrypoint sets `--worker-tmp-dir /dev/shm` (the heartbeat file lives in mem
 | `MCP_PERSONAL_AGENT_MAX_LIFETIME_DAYS` | `90` | Maximum expiry for personal MCP agent bearer tokens |
 | `MCP_AGENT_ACTIVITY_RETENTION_DAYS` | `90` | How long member activity logs are kept for personal MCP agents |
 | `MCP_APPROVAL_SESSION_TTL_SECONDS` | `60` | Seconds a client "Allow for this session" grant lasts (clamped 30 to 60) for non-destructive MCP writes |
-| `MCP_APPROVAL_ASSERTION_MAX_LIFETIME_SECONDS` | `900` | Maximum `exp - iat` Identity accepts on internal MCP approval assertions. Raise when the ai-service gateway signs longer tokens (for example 600 to 900 second setup flows); shellui-django defaults to 60 |
+| `MCP_APPROVAL_ASSERTION_MAX_LIFETIME_SECONDS` | `900` | Maximum `exp - iat` Identity accepts on internal MCP approval assertions **from ai-service only** (600 to 900 second setup flows); other issuers stay at 60 seconds; shellui-django defaults to 60 |
 | `MCP_APPROVAL_SETUP_SESSION_TTL_MIN_SECONDS` | `600` | Lower bound for `mcp_session_ttl_seconds` on ai-service assertions with `setup_flow` when extending session Allow |
 | `MCP_APPROVAL_SETUP_SESSION_TTL_MAX_SECONDS` | `900` | Upper bound for the same |
 | `MCP_RATE_LIMIT_AGENT` | `120` | MCP tool calls per minute per agent |

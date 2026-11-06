@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import timedelta
 
 from django.conf import settings
+from django.db.models import F, Q
 from django.utils import timezone
 
 from apps.agents.models import Agent, McpApprovalSessionGrant
@@ -31,12 +32,21 @@ def grant_session_write(
         revoked_at__isnull=True,
         expires_at__gt=now,
     ).update(revoked_at=now)
+    snap = Agent.objects.only(
+        'permission_version',
+        'global_company_id',
+        'company_binding_version',
+        'company_id',
+    ).get(pk=agent.pk)
     return McpApprovalSessionGrant.objects.create(
         agent=agent,
         company_id=agent.company_id,
         connection_id=conn,
         granted_by_id=granted_by_id,
         expires_at=now + timedelta(seconds=ttl),
+        agent_permission_version=int(snap.permission_version or 0),
+        global_company_id=snap.global_company_id,
+        company_binding_version=snap.company_binding_version,
     )
 
 
@@ -72,6 +82,15 @@ def active_session_grant(
             connection_id=conn,
             revoked_at__isnull=True,
             expires_at__gt=now,
+        )
+        .filter(agent__permission_version=F('agent_permission_version'))
+        .filter(agent__revoked_at__isnull=True, agent__paused_at__isnull=True)
+        .filter(
+            Q(agent__global_company_id__isnull=True, global_company_id__isnull=True)
+            | Q(
+                global_company_id=F('agent__global_company_id'),
+                company_binding_version=F('agent__company_binding_version'),
+            )
         )
         .order_by('-expires_at')
         .first()

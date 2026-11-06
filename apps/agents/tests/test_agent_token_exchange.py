@@ -104,6 +104,79 @@ class AgentTokenExchangeTests(_CryptoMixin, TestCase):
         self.assertEqual(agent.created_by_id, user.pk)
         self.assertEqual(agent.services_allowed, ['identity', 'storage'])
 
+    def test_setup_context_stored_and_echoed_on_regional_access_token(self):
+        user = self._member()
+        now = unix_now()
+        setup_exp = now + 900
+        response = self._post(
+            self._global_agent_token(
+                setup_flow=True,
+                setup_context_company_id=self.company.pk,
+                setup_expires_at=setup_exp,
+                mcp_session_ttl_seconds=600,
+            ),
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        body = response.json()
+        claims = jwt.decode(body['access_token'], options={'verify_signature': False})
+        self.assertEqual(claims.get('setup_context_company_id'), self.company.pk)
+        self.assertEqual(claims.get('setup_expires_at'), setup_exp)
+        self.assertEqual(claims.get('setup_context_exp'), setup_exp)
+        agent = Agent.objects.get(company=self.company, global_agent_id=self.global_agent_id)
+        self.assertEqual(agent.setup_company_id, self.company.pk)
+        self.assertIsNotNone(agent.setup_context_expires_at)
+        self.assertAlmostEqual(
+            agent.setup_context_expires_at.timestamp(),
+            float(setup_exp),
+            delta=2,
+        )
+
+    def test_setup_context_legacy_setup_context_exp_still_accepted(self):
+        self._member()
+        now = unix_now()
+        setup_exp = now + 900
+        response = self._post(
+            self._global_agent_token(
+                setup_flow=True,
+                setup_context_company_id=self.company.pk,
+                setup_context_exp=setup_exp,
+            ),
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        claims = jwt.decode(response.json()['access_token'], options={'verify_signature': False})
+        self.assertEqual(claims.get('setup_expires_at'), setup_exp)
+
+    def test_global_company_binding_stored_at_exchange(self):
+        self._member()
+        gc = uuid.uuid4()
+        response = self._post(
+            self._global_agent_token(global_company_id=str(gc), company_binding_version=3),
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        claims = jwt.decode(response.json()['access_token'], options={'verify_signature': False})
+        self.assertEqual(claims.get('global_company_id'), str(gc))
+        self.assertEqual(claims.get('company_binding_version'), 3)
+        agent = Agent.objects.get(company=self.company, global_agent_id=self.global_agent_id)
+        self.assertEqual(agent.global_company_id, gc)
+        self.assertEqual(agent.company_binding_version, 3)
+
+    def test_mismatched_setup_context_company_is_ignored(self):
+        user = self._member()
+        now = unix_now()
+        response = self._post(
+            self._global_agent_token(
+                setup_flow=True,
+                setup_context_company_id=self.other_company.pk,
+                setup_context_exp=now + 900,
+            ),
+        )
+        self.assertEqual(response.status_code, 200)
+        agent = Agent.objects.get(company=self.company, global_agent_id=self.global_agent_id)
+        self.assertIsNone(agent.setup_company_id)
+        self.assertIsNone(agent.setup_context_expires_at)
+        claims = jwt.decode(response.json()['access_token'], options={'verify_signature': False})
+        self.assertNotIn('setup_context_exp', claims)
+
     def test_reuse_same_regional_agent_row(self):
         self._member()
         first = self._post(self._global_agent_token())

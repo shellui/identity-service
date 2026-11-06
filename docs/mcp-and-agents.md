@@ -87,6 +87,10 @@ Global agent tokens are RS256 JWTs from the global identity issuer. saas-service
 
 Optional: `agent_name` for the regional agent display name.
 
+**Company binding (saas-service mint, global subject token):** signed `global_company_id` (uuid string) and `company_binding_version` (non-negative integer). Identity stores them on the regional `Agent` at token exchange and echoes them on regional agent access tokens. The first exchange for a row may omit binding claims; later exchanges must not switch `global_company_id` and must not downgrade `company_binding_version`. Treat a signed token exchange as identity wiring only: MCP consent and membership still follow the OAuth and company flows below.
+
+**New-company setup (saas-service mint, regional exchange):** optional claims on the **global** subject token, all signed: `setup_flow` (truthy), `setup_context_company_id` (**must** equal the regional `company_id` on `POST /oauth/mcp/token`), and an absolute setup deadline as **`setup_expires_at`** (unix seconds, preferred) or legacy **`setup_context_exp`** (**must** be after `iat`). Optionally `mcp_session_ttl_seconds` (600 to 900). Identity copies `setup_context_company_id` and `setup_context_expires_at` onto the regional `Agent` on exchange. Regional MCP access tokens echo `setup_context_company_id`, **`setup_expires_at`** (same unix value), and legacy `setup_context_exp` while that window is active. The ai-service gateway forwards `setup_flow`, `mcp_session_ttl_seconds`, and the same setup deadline into approval **assertions**. Identity extends session Allow only when the assertion is ai-signed, `mcp_session_ttl_seconds` is in the configured band, the grant is not longer than `exp - iat` on the assertion JWT, **and** both remaining seconds to regional access token `exp` and remaining seconds to `setup_context_expires_at` are at least `MCP_APPROVAL_SETUP_SESSION_TTL_MIN_SECONDS` (default 600). If the shorter of those ceilings is under that floor, session Allow stays at the default (typically **60** seconds). If these global claims are absent or wrong, session Allow stays at that default.
+
 ## Access levels
 
 | Mode | Value | Behavior |
@@ -108,7 +112,7 @@ Optional: `agent_name` for the regional agent display name.
 
 When a write needs human confirmation, the service creates an approval through Identity:
 
-- `POST /api/v1/mcp/internal/mcp-approval-requests` with a short-lived assertion (audience `shellui-mcp-approval`, scope `mcp.approval.create`), same pattern as [company deletion](company-deletion.md). The assertion JWT carries `agent_id`, `company_id`, `service`, `action`, and `arguments_hash`. ai-service may add `setup_flow` and `mcp_session_ttl_seconds` (600 to 900) on signed assertions during new-company setup so Identity can grant a longer client session Allow; other callers cannot rely on those claims for a longer grant. The JSON body carries tool `arguments` (Identity stores `arguments_redacted` with the same `shellui_django.mcp` masking) and optional `target`, or `method` plus `path` to derive `target`.
+- `POST /api/v1/mcp/internal/mcp-approval-requests` with a short-lived assertion (audience `shellui-mcp-approval`, scope `mcp.approval.create`), same pattern as [company deletion](company-deletion.md). The assertion JWT carries `agent_id`, `company_id`, `service`, `action`, and `arguments_hash`. Only **ai-service** may use a longer assertion JWT lifetime (see `MCP_APPROVAL_ASSERTION_MAX_LIFETIME_SECONDS`); storage, hosting, and email stay at 60 seconds. ai-service may add `setup_flow` and `mcp_session_ttl_seconds` (600 to 900) on signed assertions during new-company setup. Identity extends session Allow **only** when the regional `Agent` still has server-stored setup context from global token exchange (`setup_company_id`, `setup_context_expires_at`) and the gateway assertion passes the usual checks (`mcp_session_ttl_seconds` in band, `<= exp - iat`, and grant ends by `setup_context_expires_at`). Other callers and HTTP bodies cannot rely on those claims for a longer grant. The JSON body carries tool `arguments` (Identity stores `arguments_redacted` with the same `shellui_django.mcp` masking) and optional `target`, or `method` plus `path` to derive `target`.
 - `POST /api/v1/mcp/internal/mcp-approval-state` with the same approval assertion (no GET). Identity looks up the latest row matching all assertion fields and returns `pending`, `approved`, `denied`, or `expired`. `404` when no row exists. Approved responses include `id` (approval uuid) for consume.
 - `POST /api/v1/mcp/internal/mcp-approval-consume` with the same approval assertion. JSON body: `{ "approval_id": "<uuid>" }`. Identity loads the row with `id`, `company_id`, `agent_id`, `service`, and `arguments_hash` from the assertion; any mismatch returns `404`. Consumption is atomic (`select_for_update`) and single use; `{ "consumed": true }` only while the row is approved and younger than 10 minutes.
 - One pending row per agent and arguments hash, **expires after 10 minutes**, runs once, never standing.
@@ -136,7 +140,7 @@ Company owners and the member who created the agent approve or deny in Settings 
 - `POST /api/v1/mcp/approvals/{id}/decide` with `{ "decision": "approve" | "deny" }`
 - `POST /api/v1/mcp/approvals/{id}/approve` and `POST /api/v1/mcp/approvals/{id}/reject` (same behavior as decide)
 
-The MCP client card (ai-service) calls `POST /api/v1/mcp/internal/mcp-approval-decide` with `allow`, `deny`, or `allow_session` (non-destructive only). Session allow lasts **60 seconds** per MCP connection by default (`MCP_APPROVAL_SESSION_TTL_SECONDS`, clamped 30 to 60). During new-company setup only, when the decision assertion is signed by **ai-service** and carries `setup_flow` with `mcp_session_ttl_seconds` between **600** and **900** (and not longer than the assertion JWT lifetime), Identity stores that TTL for this connection. Destructive actions never use session allow. Check with `POST /api/v1/mcp/internal/mcp-approval-session-check`; revoke on disconnect with `POST /api/v1/mcp/internal/mcp-approval-session-revoke`. Request bodies cannot set the TTL; only signed gateway claims count.
+The MCP client card (ai-service) calls `POST /api/v1/mcp/internal/mcp-approval-decide` with `allow`, `deny`, or `allow_session` (non-destructive only). Session allow lasts **60 seconds** per MCP connection by default (`MCP_APPROVAL_SESSION_TTL_SECONDS`, clamped 30 to 60). During new-company setup only, when the decision assertion is signed by **ai-service** and carries `setup_flow` with `mcp_session_ttl_seconds` between **600** and **900** (and not longer than the assertion JWT lifetime), and the regional agent still has setup context from exchange (above), Identity stores that TTL for this connection. The effective grant is capped by the **minimum** of remaining time to `setup_context_expires_at`, remaining time to the assertion JWT `exp`, and the configured max (`MCP_APPROVAL_SETUP_SESSION_TTL_MAX_SECONDS`, default 900). If the minimum ceiling is below `MCP_APPROVAL_SETUP_SESSION_TTL_MIN_SECONDS` (default 600), Identity uses the default session TTL instead (typically **60** seconds). Destructive actions never use session allow. Check with `POST /api/v1/mcp/internal/mcp-approval-session-check`; revoke on disconnect with `POST /api/v1/mcp/internal/mcp-approval-session-revoke`. Request bodies cannot set the TTL; only signed gateway claims count.
 
 Fallback browser page: `GET /oauth/mcp/approval/{id}?token=…` (signed token from `fallback_path` on create). Approve and Deny only.
 
@@ -149,7 +153,17 @@ Pause or revoke agents with:
 - `POST /api/v1/mcp/agents/{id}/pause`
 - `POST /api/v1/mcp/agents/{id}/revoke`
 
-Services poll `GET /api/v1/mcp/internal/mcp-revocations` with a signed assertion (audience `shellui-mcp-revocation`, scope `mcp.revocation.read`, cache **30 seconds** on the consumer) so revocation is effective almost immediately. Optional `?company_id=` filters the list to one tenant. Identity signs each response (`revocation_assertion`, scope `mcp.revocation.list`, short `exp`) including `revoked_agent_ids`, `agents` (`agent_id`, `company_id`, `is_active`, `paused`), and `cache_seconds`. Services must verify with `shellui_django.mcp.internal.parse_trusted_revocation_poll_response` (RS256 against Identity `/.well-known/jwks.json`, no SimpleJWT settings) and cross-check `company_id` against the agent token before treating an agent as blocked. `McpServer` passes `(agent_id, company_id)` to `identity_revocation_check`.
+Services poll `GET /api/v1/mcp/internal/mcp-revocations` with a signed assertion (audience `shellui-mcp-revocation`, scope `mcp.revocation.read`, cache **30 seconds** on the consumer) so revocation is effective almost immediately. Optional `?company_id=` filters the list to one tenant. The JSON body includes:
+
+- `revoked_agent_ids`, `agents` (snapshots for **blocked** agents: `agent_id`, `company_id`, `is_active`, `paused`, `permission_version`), `cache_seconds`
+- **`revocation_policy_version`**: integer fingerprint that changes when the blocked set changes, when any blocked agent snapshot changes, or when company-scoped **permission invalidation** bumps `Agent.permission_version` on an active agent (session Allow revoked, membership disabled, grant revoked, or agent `access_mode` / `read_level` / `allow_destructive_without_asking` / `services_allowed` updated)
+- `revocation_assertion`: RS256 JWT (scope `mcp.revocation.list`, short `exp`) whose payload repeats `revoked_agent_ids`, `agents`, `cache_seconds`, and **`revocation_policy_version`**
+
+Verify `revocation_assertion` with RS256 against Identity `/.well-known/jwks.json` (issuer `JWT_ISSUER`, audience `shellui-mcp-revocation`). Gateways that cache **positive** decisions (agent not in `revoked_agent_ids`) must treat the cache as stale when **`revocation_policy_version`** or the signed **`revocation_assertion`** JWT changes, or when the agent access token `jti` / `exp` / `permission_version` / `company_binding_version` no longer match.
+
+**AI follow-up (field names):** rely on top-level **`revocation_policy_version`** and the same claim inside the verified **`revocation_assertion`**; pair with agent token **`permission_version`**, **`global_company_id`**, **`company_binding_version`**, **`setup_expires_at`** (when present), **`jti`**, and **`exp`**.
+
+Identity tests use `apps.agents.trusted_revocation.parse_trusted_revocation_poll_response_identity` as a reference parser when shellui exposes a matching contract.
 
 ## Call logs
 
@@ -191,6 +205,10 @@ Access tokens include:
 | `agent_id` | Agent uuid |
 | `company_id` | Company id |
 | `scope` | Space-separated service ids |
+| `permission_version` | Bumps when company-scoped MCP permissions invalidate session Allow grants |
+| `global_company_id` | SaaS global company uuid when the regional agent is bound |
+| `company_binding_version` | SaaS binding generation for that global company |
+| `setup_context_company_id` / `setup_expires_at` / `setup_context_exp` | New-company setup window on the regional token (legacy `setup_context_exp` mirrors `setup_expires_at`) |
 | `mcp_access` | `read_only`, `ask`, or `full` |
 | `mcp_read` | `safe` or `sensitive` |
 | `mcp_destructive` | Allow destructive without asking |

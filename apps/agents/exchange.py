@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone as dt_timezone
 from typing import Any
 
 from django.conf import settings
@@ -91,6 +91,77 @@ def _parse_optional_bool(value) -> bool | None:
     if text in {'0', 'false', 'no', 'off'}:
         return False
     return None
+
+
+def _parse_setup_context_from_global_claims(
+    claims: dict[str, Any], *, regional_company_id: int
+) -> tuple[int | None, datetime | None]:
+    """
+    Optional server-authorized new-company setup window from the global subject token.
+
+    Expected (global mint, saas-service): ``setup_flow``, ``setup_context_company_id`` matching
+    the regional exchange target, and an absolute deadline as ``setup_expires_at`` (preferred) or
+    legacy ``setup_context_exp`` (unix seconds, after ``iat``). Optional ``mcp_session_ttl_seconds``
+    (600-900). Identity stores the company id and absolute expiry on the regional ``Agent``; the
+    gateway copies ``mcp_session_ttl_seconds`` into approval assertions for session Allow.
+    """
+    flow = claims.get('setup_flow')
+    if isinstance(flow, str):
+        flow_ok = flow.strip().lower() in ('1', 'true', 'yes', 'setup', 'setup_flow', 'new_company')
+    else:
+        flow_ok = bool(flow)
+    if not flow_ok:
+        return None, None
+
+    try:
+        ctx_company = int(claims.get('setup_context_company_id'))
+    except (TypeError, ValueError):
+        return None, None
+    if ctx_company != regional_company_id:
+        return None, None
+
+    ctx_exp_unix = None
+    raw_setup_deadline = claims.get('setup_expires_at')
+    if raw_setup_deadline is not None and raw_setup_deadline != '':
+        try:
+            ctx_exp_unix = int(raw_setup_deadline)
+        except (TypeError, ValueError):
+            return None, None
+    else:
+        try:
+            ctx_exp_unix = int(claims.get('setup_context_exp'))
+        except (TypeError, ValueError):
+            return None, None
+    try:
+        iat = int(claims.get('iat'))
+    except (TypeError, ValueError):
+        return None, None
+    if ctx_exp_unix is None or ctx_exp_unix <= iat:
+        return None, None
+
+    ctx_exp = datetime.fromtimestamp(ctx_exp_unix, tz=dt_timezone.utc)
+    return ctx_company, ctx_exp
+
+
+def _parse_global_company_binding(claims: dict[str, Any]) -> tuple[uuid.UUID | None, int | None]:
+    """SaaS-signed global company id and binding generation; both or neither."""
+    raw_gid = claims.get('global_company_id')
+    raw_ver = claims.get('company_binding_version')
+    if raw_gid is None or raw_gid == '':
+        return None, None
+    try:
+        gid = uuid.UUID(str(raw_gid))
+    except (TypeError, ValueError):
+        return None, None
+    if raw_ver is None or raw_ver == '':
+        return None, None
+    try:
+        ver = int(raw_ver)
+    except (TypeError, ValueError):
+        return None, None
+    if ver < 0:
+        return None, None
+    return gid, ver
 
 
 def handle_agent_token_exchange(request, *, data: dict[str, Any] | None = None) -> JsonResponse:
@@ -210,6 +281,9 @@ def handle_agent_token_exchange(request, *, data: dict[str, Any] | None = None) 
 
     agent_name = str(claims.get('agent_name') or claims.get('name') or 'Global agent')[:255]
 
+    setup_company_id, setup_expires_at = _parse_setup_context_from_global_claims(claims, regional_company_id=company.pk)
+    global_company_id, company_binding_version = _parse_global_company_binding(claims)
+
     with transaction.atomic():
         agent = (
             Agent.objects.select_for_update()
@@ -226,14 +300,33 @@ def handle_agent_token_exchange(request, *, data: dict[str, Any] | None = None) 
                 read_level=read_level,
                 allow_destructive_without_asking=destructive,
                 services_allowed=narrowed_services,
+                setup_company_id=setup_company_id,
+                setup_context_expires_at=setup_expires_at,
+                global_company_id=global_company_id,
+                company_binding_version=company_binding_version,
             )
         else:
             if not agent.is_active:
                 return _error('invalid_grant', 'The regional agent is paused, revoked, or expired.')
+            if agent.global_company_id and global_company_id and agent.global_company_id != global_company_id:
+                return _error('invalid_grant', 'The global company binding does not match this agent.')
+            if agent.global_company_id and not global_company_id:
+                return _error('invalid_grant', 'The global company binding is missing from the subject token.')
+            if global_company_id is not None:
+                agent.global_company_id = global_company_id
+            if company_binding_version is not None:
+                if (
+                    agent.company_binding_version is not None
+                    and company_binding_version < agent.company_binding_version
+                ):
+                    return _error('invalid_grant', 'The company binding version is stale.')
+                agent.company_binding_version = company_binding_version
             agent.access_mode = access_mode
             agent.read_level = read_level
             agent.allow_destructive_without_asking = destructive
             agent.services_allowed = narrowed_services
+            agent.setup_company_id = setup_company_id
+            agent.setup_context_expires_at = setup_expires_at
             if agent.created_by_id is None:
                 agent.created_by = user
             agent.save(
@@ -242,6 +335,10 @@ def handle_agent_token_exchange(request, *, data: dict[str, Any] | None = None) 
                     'read_level',
                     'allow_destructive_without_asking',
                     'services_allowed',
+                    'setup_company_id',
+                    'setup_context_expires_at',
+                    'global_company_id',
+                    'company_binding_version',
                     'created_by',
                     'updated_at',
                 ]

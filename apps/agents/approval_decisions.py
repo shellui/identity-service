@@ -134,11 +134,27 @@ def client_allow_session(
     ttl_seconds = resolve_session_grant_ttl_seconds(
         caller_name=caller_name,
         assertion_claims=assertion_claims,
+        agent=row.agent,
     )
-    grant_session_write(agent=row.agent, connection_id=connection_id, ttl_seconds=ttl_seconds)
-    return approve_pending(
-        row,
-        decided_by=None,
-        audit_status=APPROVAL_AUDIT_CLIENT_SESSION_ALLOWED,
-        actor_email=actor_email,
-    )
+    with transaction.atomic():
+        row_locked = McpApprovalRequest.objects.select_for_update().select_related('agent').get(pk=row.pk)
+        _ensure_pending(row_locked)
+        if row_locked.is_destructive:
+            raise ApprovalDecisionError('Destructive actions cannot use session allow.', status=409)
+        row_locked.status = McpApprovalRequest.STATUS_APPROVED
+        row_locked.decided_at = timezone.now()
+        row_locked.decided_by = None
+        row_locked.save(update_fields=['status', 'decided_at', 'decided_by'])
+        record_approval_decision_event(
+            row_locked,
+            status=APPROVAL_AUDIT_CLIENT_SESSION_ALLOWED,
+            actor_email=actor_email,
+            user=None,
+        )
+        grant_session_write(
+            agent=row_locked.agent,
+            connection_id=connection_id,
+            ttl_seconds=ttl_seconds,
+        )
+    row_locked.refresh_from_db()
+    return ApprovalDecisionResult(row=row_locked, audit_status=APPROVAL_AUDIT_CLIENT_SESSION_ALLOWED)

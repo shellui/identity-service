@@ -2,11 +2,21 @@
 
 from __future__ import annotations
 
+from django.db.models import Max
 from django.utils import timezone
 
 from apps.agents.models import Agent
 
 REVOCATION_CACHE_SECONDS = 30
+
+
+def active_max_permission_version(*, company_id: int | None = None) -> int:
+    """Largest Agent.permission_version for non-revoked agents; drives policy fingerprint for active tenants."""
+    qs = Agent.objects.filter(revoked_at__isnull=True)
+    if company_id is not None:
+        qs = qs.filter(company_id=company_id)
+    val = qs.aggregate(m=Max('permission_version')).get('m')
+    return int(val or 0)
 
 
 def revoked_agent_ids(*, company_id: int | None = None) -> list[str]:
@@ -52,6 +62,7 @@ def blocked_agent_snapshots(*, company_id: int | None = None) -> list[dict]:
                 'company_id': agent.company_id,
                 'is_active': agent.is_active,
                 'paused': agent.paused_at is not None,
+                'permission_version': int(getattr(agent, 'permission_version', 0) or 0),
             }
         )
     return rows

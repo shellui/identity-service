@@ -86,7 +86,14 @@ def encode_personal_agent_access_token(
         'iat': int(now.timestamp()),
         'exp': int(expires_at.timestamp()),
         'aud': audience,
+        'permission_version': int(getattr(agent, 'permission_version', 0) or 0),
     }
+    gc = getattr(agent, 'global_company_id', None)
+    if gc is not None:
+        claims['global_company_id'] = str(gc)
+    cb = getattr(agent, 'company_binding_version', None)
+    if cb is not None:
+        claims['company_binding_version'] = int(cb)
     if api_settings.ISSUER:
         claims['iss'] = api_settings.ISSUER
     headers = {}

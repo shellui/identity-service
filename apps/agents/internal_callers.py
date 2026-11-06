@@ -135,9 +135,17 @@ def verify_caller_assertion(raw_token: str, *, audience: str, scope: str, target
         material = caller_verification_material(caller)
     except IdentityJwksError as exc:
         raise InternalAssertionError('Caller verification key is unavailable.', status=503) from exc
-    max_lifetime = (
-        _approval_assertion_max_lifetime_seconds() if scope == APPROVAL_SCOPE else INTERNAL_ASSERTION_MAX_LIFETIME_SECONDS
-    )
+    if scope == APPROVAL_SCOPE:
+        # Longer internal approval JWTs are only needed for ai-service setup flows. Other callers
+        # stay at the shellui-django default (60s) so service-signed assertions cannot be stretched
+        # without a separate explicit contract.
+        max_lifetime = (
+            _approval_assertion_max_lifetime_seconds()
+            if caller.name == 'ai'
+            else INTERNAL_ASSERTION_MAX_LIFETIME_SECONDS
+        )
+    else:
+        max_lifetime = INTERNAL_ASSERTION_MAX_LIFETIME_SECONDS
     claims = verify_mcp_internal_assertion(
         token,
         material,
