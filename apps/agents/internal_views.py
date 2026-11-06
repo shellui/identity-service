@@ -31,6 +31,7 @@ from apps.agents.approval_decisions import (
 )
 from apps.agents.approval_internal import (
     approval_binding_from_claims,
+    approval_lookup_filter,
     lookup_approval_row,
     public_approval_status,
 )
@@ -43,11 +44,24 @@ from apps.agents.approval_session import (
 from apps.agents.approval_authority import (
     agent_matches_approval_authority,
     approval_row_stale_for_agent,
+    approval_row_stale_for_authority_only,
     parse_approval_authority_claims,
+)
+from apps.agents.approval_global import (
+    ensure_global_approval_claims,
+    global_agent_revoked,
+    global_approval_live_binding_ok,
+    is_global_placeholder_company_id,
+    provisioned_company_for_global_uuid,
+    global_user_sub_is_company_owner,
 )
 from apps.agents.internal_callers import verify_caller_assertion, verify_delegated_authority_assertion
 from apps.agents.call_log_internal import fixed_resource_label_for_service, safe_operation_title
-from apps.agents.call_log_outcome import canonical_outcome_ingest
+from apps.agents.call_log_outcome import (
+    OUTCOME_ALLOWED,
+    OUTCOME_SESSION_USED,
+    canonical_outcome_ingest,
+)
 from apps.agents.json_strict import strict_json_int_for_company_id, strict_non_negative_int
 from apps.agents.mcp_claims import strict_bool_claim
 from apps.agents.mcp_audit_codes import sanitize_error_code
@@ -95,6 +109,32 @@ def _approval_live_authority(claims: dict, binding: dict) -> Response | None:
     if err:
         return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
     assert auth is not None
+    if binding.get('is_global'):
+        meta = binding.get('global_meta') or {}
+        meta2 = ensure_global_approval_claims(claims)
+        if meta2 is None:
+            return Response({'error': 'Invalid global approval claims.'}, status=status.HTTP_400_BAD_REQUEST)
+        if (
+            meta.get('global_agent_id') != meta2.get('global_agent_id')
+            or meta.get('global_company_id') != meta2.get('global_company_id')
+            or meta.get('company_binding_version') != meta2.get('company_binding_version')
+            or meta.get('global_user_sub') != meta2.get('global_user_sub')
+        ):
+            return Response({'error': 'Global approval metadata mismatch.'}, status=status.HTTP_400_BAD_REQUEST)
+        if global_agent_revoked(meta2['global_agent_id']):
+            return Response({'error': 'Global agent is revoked.'}, status=status.HTTP_403_FORBIDDEN)
+        gv = int(auth['grant_version'])
+        if not global_approval_live_binding_ok(meta2, authority_grant_version=gv):
+            return Response({'error': 'Global approval authority mismatch.'}, status=status.HTTP_409_CONFLICT)
+        pc = provisioned_company_for_global_uuid(meta2['global_company_id'])
+        assert pc is not None
+        if not global_user_sub_is_company_owner(global_user_sub=meta2['global_user_sub'], company=pc.company):
+            return Response({'error': 'Actor is not a verified company owner.'}, status=status.HTTP_403_FORBIDDEN)
+        return None
+
+    cid = binding['company_id']
+    if is_global_placeholder_company_id(cid):
+        return Response({'error': 'Invalid binding.'}, status=status.HTTP_400_BAD_REQUEST)
     try:
         agent = Agent.objects.only(
             'id',
@@ -102,7 +142,7 @@ def _approval_live_authority(claims: dict, binding: dict) -> Response | None:
             'global_company_id',
             'company_binding_version',
             'company_id',
-        ).get(pk=binding['agent_id'], company_id=binding['company_id'])
+        ).get(pk=binding['agent_id'], company_id=cid)
     except Agent.DoesNotExist:
         return Response({'error': 'Agent not found.'}, status=status.HTTP_404_NOT_FOUND)
     if not agent_matches_approval_authority(agent, auth):
@@ -184,6 +224,85 @@ class McpRevocationListView(APIView):
 
 _ALLOWED_DELEGATED_AUTHORITY_CALLERS = frozenset({'storage', 'hosting', 'email', 'ai'})
 
+_DELEGATED_AUTHORITY_BODY_KEYS = frozenset(
+    {
+        'agent_id',
+        'company_id',
+        'global_company_id',
+        'grant_version',
+        'company_binding_version',
+    }
+)
+
+
+def _delegated_authority_assertion_error_response(exc: InternalAssertionError) -> Response:
+    if getattr(exc, 'message', None) == 'Missing assertion.':
+        return Response({'error': 'Missing assertion.'}, status=status.HTTP_404_NOT_FOUND)
+    return Response({'error': exc.message}, status=exc.status)
+
+
+def _delegated_authority_mismatch_response(
+    *,
+    agent_id: str,
+    company_id: int,
+    global_company_id: str,
+    grant_version: int,
+    company_binding_version: int,
+) -> Response:
+    """Matching triple does not hold; caller is genuine so return safe row-shaped denial (no echo of request beyond the checked ids)."""
+    return Response(
+        {
+            'authorized': False,
+            'active': False,
+            'revoked': False,
+            'paused': False,
+            'agent_id': agent_id,
+            'company_id': company_id,
+            'global_company_id': global_company_id,
+            'grant_version': grant_version,
+            'company_binding_version': company_binding_version,
+        }
+    )
+
+
+def _delegated_authority_live_payload(agent: Agent) -> dict:
+    """Authoritative state from the Agent row plus global revocation registry."""
+    row_gc = agent.global_company_id
+    row_cb = agent.company_binding_version
+    ga = agent.global_agent_id
+    assert ga is not None and row_gc is not None and row_cb is not None
+    gv = int(agent.grant_version or 0)
+    paused = agent.paused_at is not None
+    row_revoked = agent.revoked_at is not None
+    global_row_revoked = GlobalAgentRevocation.objects.filter(global_agent_id=ga).exists()
+    revoked = bool(row_revoked or global_row_revoked)
+    active = bool(agent.is_active and not revoked)
+    authorized = bool(active and not paused)
+    out: dict = {
+        'authorized': authorized,
+        'active': active,
+        'revoked': revoked,
+        'paused': paused,
+        'agent_id': str(agent.id),
+        'company_id': int(agent.company_id),
+        'global_company_id': str(row_gc),
+        'grant_version': gv,
+        'company_binding_version': int(row_cb),
+        'global_agent_id': str(ga),
+    }
+    if row_revoked and agent.revoked_at is not None:
+        out['revoked_at'] = int(agent.revoked_at.timestamp())
+    elif global_row_revoked:
+        grev = (
+            GlobalAgentRevocation.objects.filter(global_agent_id=ga)
+            .order_by('-revoked_at')
+            .values_list('revoked_at', flat=True)
+            .first()
+        )
+        if grev is not None:
+            out['revoked_at'] = int(grev.timestamp())
+    return out
+
 
 class McpInternalDelegatedAgentAuthorityView(APIView):
     """Storage, hosting, email, and ai-service: verify live delegated agent binding (not revocation-only)."""
@@ -198,17 +317,20 @@ class McpInternalDelegatedAgentAuthorityView(APIView):
                 target=_identity_origin(),
             )
         except InternalAssertionError as exc:
-            return Response({'error': exc.message}, status=exc.status)
+            return _delegated_authority_assertion_error_response(exc)
         if verified.caller.name not in _ALLOWED_DELEGATED_AUTHORITY_CALLERS:
             return Response({'error': 'Caller not allowed for delegated authority checks.'}, status=status.HTTP_403_FORBIDDEN)
         body = request.data if isinstance(request.data, dict) else {}
+        unknown = set(body.keys()) - _DELEGATED_AUTHORITY_BODY_KEYS
+        if unknown:
+            return Response({'error': 'Unexpected request fields.'}, status=status.HTTP_400_BAD_REQUEST)
         raw_aid = body.get('agent_id')
         try:
             agent_uuid = uuid.UUID(str(raw_aid).strip())
         except (TypeError, ValueError, AttributeError):
             return Response({'error': 'agent_id must be a uuid string.'}, status=status.HTTP_400_BAD_REQUEST)
         cid = strict_json_int_for_company_id(body.get('company_id'))
-        if cid is None or cid == 0:
+        if cid is None or cid <= 0:
             return Response({'error': 'company_id must be a positive JSON integer.'}, status=status.HTTP_400_BAD_REQUEST)
         raw_gc = body.get('global_company_id')
         if type(raw_gc) is not str or not raw_gc.strip():
@@ -234,37 +356,20 @@ class McpInternalDelegatedAgentAuthorityView(APIView):
 
         if agent.global_agent_id is None:
             return Response({'error': 'Agent is not a delegated exchange agent.'}, status=status.HTTP_404_NOT_FOUND)
-        if GlobalAgentRevocation.objects.filter(global_agent_id=agent.global_agent_id).exists():
-            return Response(
-                {'error': 'Global agent is revoked.', 'authorized': False},
-                status=status.HTTP_403_FORBIDDEN,
-            )
-        if not agent.is_active:
-            return Response({'error': 'Agent inactive.', 'authorized': False}, status=status.HTTP_403_FORBIDDEN)
         row_gc = getattr(agent, 'global_company_id', None)
         row_cb = getattr(agent, 'company_binding_version', None)
         if row_gc is None or row_cb is None:
-            return Response({'error': 'Agent has no SaaS company binding.', 'authorized': False}, status=status.HTTP_403_FORBIDDEN)
-        if row_gc != body_gc:
-            return Response({'error': 'global_company_id mismatch.', 'authorized': False}, status=status.HTTP_403_FORBIDDEN)
-        if int(agent.grant_version or 0) != int(gv):
-            return Response({'error': 'grant_version mismatch.', 'authorized': False}, status=status.HTTP_403_FORBIDDEN)
-        if int(row_cb) != int(cb):
-            return Response({'error': 'company_binding_version mismatch.', 'authorized': False}, status=status.HTTP_403_FORBIDDEN)
+            return Response({'error': 'Agent has no SaaS company binding.'}, status=status.HTTP_404_NOT_FOUND)
+        if row_gc != body_gc or int(agent.grant_version or 0) != int(gv) or int(row_cb) != int(cb):
+            return _delegated_authority_mismatch_response(
+                agent_id=str(agent_uuid),
+                company_id=cid,
+                global_company_id=str(body_gc),
+                grant_version=gv,
+                company_binding_version=cb,
+            )
 
-        return Response(
-            {
-                'authorized': True,
-                'revoked': False,
-                'paused': False,
-                'agent_id': str(agent.id),
-                'company_id': int(agent.company_id),
-                'global_agent_id': str(agent.global_agent_id),
-                'global_company_id': str(row_gc),
-                'grant_version': int(agent.grant_version or 0),
-                'company_binding_version': int(row_cb),
-            }
-        )
+        return Response(_delegated_authority_live_payload(agent))
 
 
 class McpInternalApprovalCreateView(APIView):
@@ -285,15 +390,23 @@ class McpInternalApprovalCreateView(APIView):
         binding = approval_binding_from_claims(claims)
         if binding is None:
             return Response({'error': 'Invalid assertion claims.'}, status=status.HTTP_400_BAD_REQUEST)
-        try:
-            agent = Agent.objects.get(pk=binding['agent_id'], company_id=binding['company_id'])
-        except Agent.DoesNotExist:
-            return Response({'error': 'Agent not found.'}, status=status.HTTP_404_NOT_FOUND)
-        if not agent.is_active:
-            return Response({'error': 'Agent inactive.'}, status=status.HTTP_403_FORBIDDEN)
-        delegated_err = _delegated_approval_caller_conflict(agent=agent, caller_name=verified.caller.name)
-        if delegated_err is not None:
-            return delegated_err
+        agent_probe: Agent | None = None
+        if binding.get('is_global'):
+            if verified.caller.name != 'dashboard':
+                return Response(
+                    {'error': 'Global MCP approvals require a dashboard-signed assertion.'},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+        else:
+            try:
+                agent_probe = Agent.objects.get(pk=binding['agent_id'], company_id=binding['company_id'])
+            except Agent.DoesNotExist:
+                return Response({'error': 'Agent not found.'}, status=status.HTTP_404_NOT_FOUND)
+            if not agent_probe.is_active:
+                return Response({'error': 'Agent inactive.'}, status=status.HTTP_403_FORBIDDEN)
+            delegated_err = _delegated_approval_caller_conflict(agent=agent_probe, caller_name=verified.caller.name)
+            if delegated_err is not None:
+                return delegated_err
         live_err = _approval_live_authority(claims, binding)
         if live_err is not None:
             return live_err
@@ -319,27 +432,63 @@ class McpInternalApprovalCreateView(APIView):
         else:
             is_destructive = False
         expires_at = timezone.now() + timedelta(minutes=10)
-        snap_gv = int(agent.grant_version or 0)
-        snap_gc = agent.global_company_id
-        snap_cb = agent.company_binding_version
-        row, created = McpApprovalRequest.objects.get_or_create(
-            agent=agent,
-            arguments_hash=binding['arguments_hash'],
-            service=binding['service'],
-            action=binding['action'],
-            status=McpApprovalRequest.STATUS_PENDING,
-            defaults={
-                'company_id': binding['company_id'],
-                'target': target,
-                'arguments_redacted': {},
-                'expires_at': expires_at,
-                'is_destructive': is_destructive,
-                'short_action_summary': short_action_summary,
-                'authority_grant_version': snap_gv,
-                'authority_global_company_id': snap_gc,
-                'authority_company_binding_version': snap_cb,
-            },
-        )
+        auth_parsed, auth_err = parse_approval_authority_claims(claims)
+        assert auth_err is None and auth_parsed is not None
+
+        if binding.get('is_global'):
+            meta = binding['global_meta']
+            setup_exp = meta.get('setup_expires_at')
+            snap_gv = int(auth_parsed['grant_version'])
+            snap_gc = meta['global_company_id']
+            snap_cb = int(meta['company_binding_version'])
+            row, created = McpApprovalRequest.objects.get_or_create(
+                agent=None,
+                company=None,
+                arguments_hash=binding['arguments_hash'],
+                service=binding['service'],
+                action=binding['action'],
+                status=McpApprovalRequest.STATUS_PENDING,
+                global_agent_id=meta['global_agent_id'],
+                global_company_id=meta['global_company_id'],
+                company_binding_version=meta['company_binding_version'],
+                global_user_sub=meta['global_user_sub'],
+                defaults={
+                    'target': target,
+                    'arguments_redacted': {},
+                    'expires_at': expires_at,
+                    'is_destructive': is_destructive,
+                    'short_action_summary': short_action_summary,
+                    'authority_grant_version': snap_gv,
+                    'authority_global_company_id': snap_gc,
+                    'authority_company_binding_version': snap_cb,
+                    'setup_expires_at': setup_exp,
+                    'is_company_owner_actor': True,
+                },
+            )
+        else:
+            agent = agent_probe
+            assert agent is not None
+            snap_gv = int(agent.grant_version or 0)
+            snap_gc = agent.global_company_id
+            snap_cb = agent.company_binding_version
+            row, created = McpApprovalRequest.objects.get_or_create(
+                agent=agent,
+                arguments_hash=binding['arguments_hash'],
+                service=binding['service'],
+                action=binding['action'],
+                status=McpApprovalRequest.STATUS_PENDING,
+                defaults={
+                    'company_id': binding['company_id'],
+                    'target': target,
+                    'arguments_redacted': {},
+                    'expires_at': expires_at,
+                    'is_destructive': is_destructive,
+                    'short_action_summary': short_action_summary,
+                    'authority_grant_version': snap_gv,
+                    'authority_global_company_id': snap_gc,
+                    'authority_company_binding_version': snap_cb,
+                },
+            )
         if not created:
             if row.expires_at <= timezone.now():
                 row.expires_at = expires_at
@@ -385,12 +534,18 @@ class McpInternalApprovalStateView(APIView):
         row = lookup_approval_row(binding)
         if row is None:
             return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
-        try:
-            agent = Agent.objects.get(pk=binding['agent_id'], company_id=binding['company_id'])
-        except Agent.DoesNotExist:
-            return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
-        if approval_row_stale_for_agent(agent, row):
-            return Response({'error': 'Approval authority stale.'}, status=status.HTTP_409_CONFLICT)
+        auth_parsed, auth_err = parse_approval_authority_claims(claims)
+        assert auth_err is None and auth_parsed is not None
+        if binding.get('is_global'):
+            if approval_row_stale_for_authority_only(row, auth_parsed):
+                return Response({'error': 'Approval authority stale.'}, status=status.HTTP_409_CONFLICT)
+        else:
+            try:
+                agent = Agent.objects.get(pk=binding['agent_id'], company_id=binding['company_id'])
+            except Agent.DoesNotExist:
+                return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+            if approval_row_stale_for_agent(agent, row):
+                return Response({'error': 'Approval authority stale.'}, status=status.HTTP_409_CONFLICT)
         now = timezone.now()
         public_status = public_approval_status(row, now=now)
         if public_status == 'expired':
@@ -423,19 +578,26 @@ class McpInternalApprovalDecideView(APIView):
         connection_id = str(body.get('connection_id') or '').strip()
         if not approval_id:
             return Response({'error': 'approval_id required.'}, status=status.HTTP_400_BAD_REQUEST)
+        flt = {'pk': approval_id, **approval_lookup_filter(binding)}
+        if binding.get('is_global'):
+            flt['agent_id__isnull'] = True
+            flt['company_id__isnull'] = True
         try:
-            row = McpApprovalRequest.objects.select_related('agent').get(
-                pk=approval_id,
-                agent_id=binding['agent_id'],
-                company_id=binding['company_id'],
-                service=binding['service'],
-                action=binding['action'],
-                arguments_hash=binding['arguments_hash'],
-            )
+            row = McpApprovalRequest.objects.select_related('agent').get(**flt)
         except McpApprovalRequest.DoesNotExist:
             return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
-        if approval_row_stale_for_agent(row.agent, row):
-            return Response({'error': 'Approval authority stale.'}, status=status.HTTP_409_CONFLICT)
+        auth_parsed, auth_err = parse_approval_authority_claims(claims)
+        assert auth_err is None and auth_parsed is not None
+        if binding.get('is_global'):
+            if approval_row_stale_for_authority_only(row, auth_parsed):
+                return Response({'error': 'Approval authority stale.'}, status=status.HTTP_409_CONFLICT)
+        else:
+            if row.agent_id is None:
+                return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+            if approval_row_stale_for_agent(row.agent, row):
+                return Response({'error': 'Approval authority stale.'}, status=status.HTTP_409_CONFLICT)
+        if binding.get('is_global') and decision in ('allow_session', 'session'):
+            return Response({'error': 'Session allow requires a regional agent.'}, status=status.HTTP_400_BAD_REQUEST)
         try:
             if decision in ('allow', 'approve'):
                 result = client_allow(row, actor_email=actor_email)
@@ -466,6 +628,11 @@ class McpInternalApprovalSessionCheckView(APIView):
             return err
         binding = approval_binding_from_claims(claims)
         assert binding is not None
+        if binding.get('is_global'):
+            return Response(
+                {'error': 'Session grants apply to regional agent approvals only.', 'session_allowed': False},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         body = request.data if isinstance(request.data, dict) else {}
         connection_id = str(body.get('connection_id') or '').strip()
         if 'is_destructive' in body:
@@ -551,6 +718,8 @@ class McpInternalApprovalSessionRevokeView(APIView):
             return err
         binding = approval_binding_from_claims(claims)
         assert binding is not None
+        if binding.get('is_global'):
+            return Response({'error': 'Session grants apply to regional agent approvals only.'}, status=status.HTTP_400_BAD_REQUEST)
         body = request.data if isinstance(request.data, dict) else {}
         connection_id = str(body.get('connection_id') or '').strip()
         updated = revoke_session_grant(
@@ -581,22 +750,23 @@ class McpInternalApprovalConsumeView(APIView):
         now = timezone.now()
         with transaction.atomic():
             try:
-                row = (
-                    McpApprovalRequest.objects.select_for_update()
-                    .filter(
-                        pk=approval_id_str,
-                        agent_id=binding['agent_id'],
-                        company_id=binding['company_id'],
-                        service=binding['service'],
-                        action=binding['action'],
-                        arguments_hash=binding['arguments_hash'],
-                    )
-                    .get()
-                )
+                flt = {'pk': approval_id_str, **approval_lookup_filter(binding)}
+                if binding.get('is_global'):
+                    flt['agent_id__isnull'] = True
+                    flt['company_id__isnull'] = True
+                row = McpApprovalRequest.objects.select_for_update().select_related('agent').filter(**flt).get()
             except McpApprovalRequest.DoesNotExist:
                 return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
-            if approval_row_stale_for_agent(row.agent, row):
-                return Response({'error': 'Approval authority stale.', 'consumed': False}, status=status.HTTP_409_CONFLICT)
+            auth_parsed, auth_err = parse_approval_authority_claims(claims)
+            assert auth_err is None and auth_parsed is not None
+            if binding.get('is_global'):
+                if approval_row_stale_for_authority_only(row, auth_parsed):
+                    return Response({'error': 'Approval authority stale.', 'consumed': False}, status=status.HTTP_409_CONFLICT)
+            else:
+                if row.agent_id is None:
+                    return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+                if approval_row_stale_for_agent(row.agent, row):
+                    return Response({'error': 'Approval authority stale.', 'consumed': False}, status=status.HTTP_409_CONFLICT)
             if row.status == McpApprovalRequest.STATUS_EXECUTED:
                 return Response(
                     {'error': 'Approval already consumed.', 'consumed': False},
@@ -611,6 +781,22 @@ class McpInternalApprovalConsumeView(APIView):
             row.executed_at = now
             row.save(update_fields=['status', 'executed_at'])
         return Response({'consumed': True})
+
+
+def _call_log_matches_approval_row(agent: Agent, appr: McpApprovalRequest) -> bool:
+    if appr.agent_id is None or appr.company_id is None:
+        return False
+    if str(appr.agent_id) != str(agent.id) or int(appr.company_id) != int(agent.company_id):
+        return False
+    if int(getattr(appr, 'authority_grant_version', 0) or 0) != int(agent.grant_version or 0):
+        return False
+    agc = getattr(agent, 'global_company_id', None)
+    agcb = getattr(agent, 'company_binding_version', None)
+    snap_gc = getattr(appr, 'authority_global_company_id', None)
+    snap_cb = getattr(appr, 'authority_company_binding_version', None)
+    if agc is None:
+        return snap_gc is None and snap_cb is None
+    return snap_gc == agc and snap_cb is not None and int(snap_cb) == int(agcb or 0)
 
 
 class McpInternalCallLogView(APIView):
@@ -637,6 +823,48 @@ class McpInternalCallLogView(APIView):
             agent = Agent.objects.get(pk=agent_id, company_id=cid)
         except Agent.DoesNotExist:
             return Response({'error': 'Agent not found.'}, status=status.HTTP_404_NOT_FOUND)
+        gv_body = strict_non_negative_int(body.get('grant_version'))
+        if gv_body is None:
+            return Response({'error': 'grant_version required in JSON body.'}, status=status.HTTP_400_BAD_REQUEST)
+        raw_gc_body = body.get('global_company_id')
+        raw_cb_body = body.get('company_binding_version')
+        delegated = agent.global_agent_id is not None
+        if delegated:
+            if raw_gc_body is None or raw_gc_body == '':
+                return Response(
+                    {'error': 'global_company_id required for delegated agents.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            cb_body = strict_non_negative_int(raw_cb_body)
+            if cb_body is None:
+                return Response(
+                    {'error': 'company_binding_version required for delegated agents.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if type(raw_gc_body) is not str or not str(raw_gc_body).strip():
+                return Response({'error': 'global_company_id must be a uuid string.'}, status=status.HTTP_400_BAD_REQUEST)
+            try:
+                gc_body = uuid.UUID(str(raw_gc_body).strip())
+            except (ValueError, TypeError):
+                return Response({'error': 'Invalid global_company_id.'}, status=status.HTTP_400_BAD_REQUEST)
+            row_gc = getattr(agent, 'global_company_id', None)
+            row_cb = getattr(agent, 'company_binding_version', None)
+            if row_gc is None or row_cb is None:
+                return Response({'error': 'Agent has no SaaS company binding.'}, status=status.HTTP_404_NOT_FOUND)
+            if (
+                int(gv_body) != int(agent.grant_version or 0)
+                or gc_body != row_gc
+                or int(cb_body) != int(row_cb)
+            ):
+                return Response({'error': 'Call log authority mismatch.'}, status=status.HTTP_409_CONFLICT)
+        else:
+            if raw_gc_body not in (None, '') or raw_cb_body not in (None, ''):
+                return Response(
+                    {'error': 'global_company_id and company_binding_version apply to delegated agents only.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if int(gv_body) != int(agent.grant_version or 0):
+                return Response({'error': 'Call log authority mismatch.'}, status=status.HTTP_409_CONFLICT)
         if 'arguments' in body:
             return Response({'error': 'arguments not accepted.'}, status=status.HTTP_400_BAD_REQUEST)
         if 'arguments_redacted' in body:
@@ -665,6 +893,7 @@ class McpInternalCallLogView(APIView):
             return Response({'error': 'Invalid access_kind.'}, status=status.HTTP_400_BAD_REQUEST)
         if not access_kind:
             access_kind = 'unknown'
+        destructive_write = bool(access_kind == 'destructive')
         if body.get('resource_label') not in (None, ''):
             return Response({'error': 'resource_label not accepted.'}, status=status.HTTP_400_BAD_REQUEST)
         service_id_raw = str(body.get('service') or '')[:32]
@@ -674,25 +903,65 @@ class McpInternalCallLogView(APIView):
         if resource_label is None:
             return Response({'error': 'Invalid path for service.'}, status=status.HTTP_400_BAD_REQUEST)
         company_name = company_name_for_agent(agent)
-        approval_id = None
+        if destructive_write and not bool(getattr(agent, 'global_max_destructive', False)):
+            return Response(
+                {'error': 'Destructive tools are not allowed for this agent.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        approval_uuid: uuid.UUID | None = None
         raw_approval = body.get('approval_id')
         if raw_approval not in (None, ''):
             try:
-                approval_id = uuid.UUID(str(raw_approval))
+                approval_uuid = uuid.UUID(str(raw_approval))
             except (ValueError, TypeError):
                 return Response({'error': 'Invalid approval_id.'}, status=status.HTTP_400_BAD_REQUEST)
             try:
-                appr = McpApprovalRequest.objects.get(pk=approval_id)
+                appr_try = McpApprovalRequest.objects.get(pk=approval_uuid)
             except McpApprovalRequest.DoesNotExist:
-                approval_id = None
-            else:
-                if (
-                    str(appr.agent_id) != str(agent.id)
-                    or int(appr.company_id) != int(cid)
-                    or str(appr.service or '') != service_id_raw
-                    or str(appr.action or '')[:255] != tool_s[:255]
-                ):
-                    approval_id = None
+                return Response({'error': 'approval row not found.'}, status=status.HTTP_404_NOT_FOUND)
+            if (
+                str(appr_try.service or '') != service_id_raw
+                or str(appr_try.action or '')[:255] != tool_s[:255]
+                or not _call_log_matches_approval_row(agent, appr_try)
+            ):
+                return Response({'error': 'approval_id does not match this call.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if destructive_write:
+            if outcome not in (OUTCOME_SESSION_USED, OUTCOME_ALLOWED):
+                return Response(
+                    {
+                        'error': (
+                            'destructive access_kind requires outcome allowed or session_used '
+                            'with a matching destructive approval.'
+                        )
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if approval_uuid is None:
+                return Response(
+                    {'error': 'approval_id required for destructive tools.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            appr_d = McpApprovalRequest.objects.get(pk=approval_uuid)
+            if not appr_d.is_destructive:
+                return Response(
+                    {'error': 'approval_id must reference a destructive approval for destructive access_kind.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if appr_d.status != McpApprovalRequest.STATUS_APPROVED:
+                return Response(
+                    {'error': 'approval must be approved for destructive call log.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        elif approval_uuid is not None:
+            appr_nd = McpApprovalRequest.objects.get(pk=approval_uuid)
+            if appr_nd.is_destructive:
+                return Response(
+                    {'error': 'destructive approval_id requires access_kind destructive.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        approval_id = approval_uuid
         error_code_raw = body.get('error_code')
         error_code_val = sanitize_error_code(error_code_raw) or ''
         row = McpCallLog.objects.create(

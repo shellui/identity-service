@@ -6,11 +6,14 @@ import uuid
 from datetime import datetime, timezone as dt_timezone
 from typing import Any
 
+from django.conf import settings
 from django.utils import timezone
 
 from apps.agents.json_strict import strict_non_negative_int
 from apps.agents.models import Agent, McpApprovalRequest
 from apps.agents.global_revocation import global_agent_exchange_blocked
+from apps.companies.models import Company
+from apps.federation.models import ProvisionedCompany, UpstreamAccount
 
 
 GLOBAL_PLACEHOLDER_COMPANY_ID = 0
@@ -41,7 +44,11 @@ def global_agent_revoked(global_agent_id: uuid.UUID | None) -> bool:
 
 
 def ensure_global_approval_claims(claims: dict[str, Any]) -> dict[str, Any] | None:
-    """Validate dashboard-forwarded global approval assertion claims."""
+    """Validate global-scope approval assertion claims (company_id=0 placeholder).
+
+    Requires explicit ``global_user_sub`` (global IdP subject). Identity does not trust a forwarded
+    ``is_company_owner`` flag; owner checks use ``UpstreamAccount`` + regional ``Company.owners``.
+    """
     ga = parse_uuid(claims.get('global_agent_id'))
     gc = parse_uuid(claims.get('global_company_id'))
     if ga is None or gc is None:
@@ -56,21 +63,14 @@ def ensure_global_approval_claims(claims: dict[str, Any]) -> dict[str, Any] | No
         return None
     if setup_exp is not None and setup_exp <= timezone.now():
         return None
-    gsub = str(claims.get('global_user_sub') or claims.get('sub') or '').strip()
+    gsub = str(claims.get('global_user_sub') or '').strip()
     if not gsub:
         return None
-
-    owner_raw = claims.get('is_company_owner')
-    if isinstance(owner_raw, bool):
-        is_owner = owner_raw
-    else:
-        is_owner = str(owner_raw or '').strip().lower() in ('1', 'true', 'yes')
     return {
         'global_agent_id': ga,
         'global_company_id': gc,
         'company_binding_version': ver,
         'setup_expires_at': setup_exp,
-        'is_company_owner': is_owner,
         'global_user_sub': gsub,
     }
 
@@ -91,11 +91,43 @@ def link_global_approval_to_regional_agent(row: McpApprovalRequest, agent: Agent
     row.save(update_fields=['agent', 'company'])
 
 
-def user_trusted_for_global_approval(
-    user,
-    *,
-    global_company_id: uuid.UUID,
-    is_company_owner: bool,
-) -> bool:
-    """Fallback: global SaaS forwarded owner flag (dashboard assertions only)."""
-    return is_company_owner
+def _global_issuer() -> str:
+    return (getattr(settings, 'GLOBAL_ISSUER_URL', '') or '').strip().rstrip('/')
+
+
+def provisioned_company_for_global_uuid(global_company_id: uuid.UUID) -> ProvisionedCompany | None:
+    """Regional company row provisioned for this SaaS global id."""
+    return (
+        ProvisionedCompany.objects.select_related('company')
+        .filter(global_company_id=str(global_company_id))
+        .first()
+    )
+
+
+def global_user_sub_is_company_owner(*, global_user_sub: str, company: Company) -> bool:
+    """True when ``global_user_sub`` is the global IdP subject for a regional company owner."""
+    issuer = _global_issuer()
+    if not issuer:
+        return False
+    link = UpstreamAccount.objects.filter(issuer=issuer, sub=global_user_sub).select_related('user').first()
+    if link is None:
+        return False
+    return company.owners.filter(pk=link.user_id).exists()
+
+
+def global_approval_live_binding_ok(meta: dict[str, Any], *, authority_grant_version: int) -> bool:
+    """``company_binding_version`` and ``grant_version`` in the assertion match provisioned state."""
+    gc = meta.get('global_company_id')
+    if not isinstance(gc, uuid.UUID):
+        return False
+    cb = meta.get('company_binding_version')
+    if not isinstance(cb, int) or cb < 0:
+        return False
+    pc = provisioned_company_for_global_uuid(gc)
+    if pc is None:
+        return False
+    if int(pc.limits_version) != int(cb):
+        return False
+    if int(pc.limits_version) != int(authority_grant_version):
+        return False
+    return True

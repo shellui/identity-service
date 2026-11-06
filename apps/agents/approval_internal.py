@@ -67,8 +67,13 @@ def lookup_approval_row(binding: dict[str, Any]) -> McpApprovalRequest | None:
 
 
 def approval_lookup_filter(binding: dict[str, Any]) -> dict:
-    base = {
-        'agent_id': binding['agent_id'],
+    """Lookup key for pending approval rows.
+
+    Global rows (``company_id`` placeholder ``0``) store no regional ``Agent`` foreign key; they key
+    on ``global_agent_id`` + SaaS binding + ``global_user_sub`` instead. Do not filter on
+    ``agent_id`` for those rows (it is always null).
+    """
+    service_action_hash = {
         'service': binding['service'],
         'action': binding['action'],
         'arguments_hash': binding['arguments_hash'],
@@ -76,13 +81,17 @@ def approval_lookup_filter(binding: dict[str, Any]) -> dict:
     if binding.get('is_global'):
         meta = binding.get('global_meta') or {}
         return {
-            **base,
-            'company_id__isnull': True,
+            **service_action_hash,
             'global_agent_id': meta.get('global_agent_id'),
             'global_company_id': meta.get('global_company_id'),
             'company_binding_version': meta.get('company_binding_version'),
+            'global_user_sub': meta.get('global_user_sub'),
         }
-    return {**base, 'company_id': binding['company_id']}
+    return {
+        **service_action_hash,
+        'agent_id': binding['agent_id'],
+        'company_id': binding['company_id'],
+    }
 
 
 def get_bound_approval(approval_id: str, binding: dict[str, Any]) -> McpApprovalRequest | None:

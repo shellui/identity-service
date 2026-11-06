@@ -29,6 +29,11 @@ from apps.agents.mcp_delegated_authority import (
 
 _JTI_CACHE_PREFIX = 'mcp:internal-assertion:jti:'
 
+# Only these JWT claims may appear on verified internal assertions (no extra subject or tool claims).
+_DELEGATED_AUTHORITY_ASSERTION_KEYS = frozenset(
+    {'iss', 'aud', 'sub', 'scope', 'target', 'iat', 'exp', 'jti', 'nbf'}
+)
+
 # Services that sign with their own key and publish it at ``{origin}/.well-known/jwks.json``.
 JWKS_CALLERS = ('storage', 'hosting', 'email')
 
@@ -181,10 +186,14 @@ def verify_caller_assertion(
 
 def verify_delegated_authority_assertion(raw_token: str, *, target: str) -> VerifiedAssertion:
     """RS256 internal assertion for live delegated-agent authority (storage, hosting, email, ai)."""
-    return verify_caller_assertion(
+    verified = verify_caller_assertion(
         raw_token,
         audience=DELEGATED_AGENT_AUTHORITY_AUDIENCE,
         scope=DELEGATED_AGENT_AUTHORITY_SCOPE,
         target=target,
         enforce_approval_service_match=False,
     )
+    extra = set(verified.claims.keys()) - _DELEGATED_AUTHORITY_ASSERTION_KEYS
+    if extra:
+        raise InternalAssertionError('Invalid assertion.')
+    return verified

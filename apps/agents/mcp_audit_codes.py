@@ -17,6 +17,7 @@ ALLOWED_ERROR_CODES = frozenset(
         'unknown',
         'denied',
         'pending_approval',
+        'waiting_approval',
         'expired',
         'out_of_sync',
         'identity_unreachable',

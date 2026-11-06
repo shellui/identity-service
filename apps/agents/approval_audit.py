@@ -24,7 +24,7 @@ def record_approval_decision_event(
     if event is None:
         return
     tool_name = row.action
-    agent_name = row.agent.name
+    agent_name = row.agent.name if row.agent_id is not None else ''
     email = (actor_email or '').strip() or None
     record_event(
         event,

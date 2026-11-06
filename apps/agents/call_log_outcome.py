@@ -6,7 +6,7 @@ from __future__ import annotations
 OUTCOME_ALLOWED = 'allowed'
 OUTCOME_FAILED = 'failed'
 OUTCOME_DENIED = 'denied'
-OUTCOME_PENDING_APPROVAL = 'pending_approval'
+OUTCOME_WAITING_APPROVAL = 'waiting_approval'
 OUTCOME_SESSION_USED = 'session_used'
 
 CANONICAL_OUTCOMES = frozenset(
@@ -14,7 +14,7 @@ CANONICAL_OUTCOMES = frozenset(
         OUTCOME_ALLOWED,
         OUTCOME_FAILED,
         OUTCOME_DENIED,
-        OUTCOME_PENDING_APPROVAL,
+        OUTCOME_WAITING_APPROVAL,
         OUTCOME_SESSION_USED,
     }
 )
@@ -25,6 +25,8 @@ LEGACY_OUTCOME_ALIASES: dict[str, str] = {
     'error': OUTCOME_FAILED,
     'rate_limited': OUTCOME_FAILED,
     'timeout': OUTCOME_FAILED,
+    # Older name for waiting on human approval (avoid "pending" as an ingest value).
+    'pending_approval': OUTCOME_WAITING_APPROVAL,
 }
 
 
@@ -43,6 +45,8 @@ def canonical_outcome_ingest(raw: str | None) -> str | None:
 def display_outcome_for_read(stored: str | None, *, result: str, status_code: int, error_code: str) -> str:
     """Map stored rows and legacy strings to the five canonical labels for UIs."""
     s = (stored or '').strip().lower()
+    if s == 'pending_approval':
+        return OUTCOME_WAITING_APPROVAL
     if s in CANONICAL_OUTCOMES:
         return s
     if s in LEGACY_OUTCOME_ALIASES:

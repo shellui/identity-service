@@ -83,6 +83,32 @@ def agent_matches_approval_authority(agent: Agent, auth: dict[str, Any]) -> bool
     return True
 
 
+def approval_row_stale_for_authority_only(row, auth: dict[str, Any]) -> bool:
+    """Stale when the row snapshot does not match ``auth`` from the assertion (global or pre-link rows)."""
+    from apps.agents.models import McpApprovalRequest
+
+    if not isinstance(row, McpApprovalRequest):
+        return True
+    agv = getattr(row, 'authority_grant_version', None)
+    if (agv if agv is not None else 0) != auth['grant_version']:
+        return True
+    row_gc = getattr(row, 'authority_global_company_id', None)
+    auth_gc = auth['global_company_id']
+    if row_gc is None and auth_gc is None:
+        return False
+    if row_gc is None or auth_gc is None:
+        return True
+    if row_gc != auth_gc:
+        return True
+    row_cb = getattr(row, 'authority_company_binding_version', None)
+    auth_cb = auth['company_binding_version']
+    if row_cb is None and auth_cb is None:
+        return False
+    if row_cb is None or auth_cb is None:
+        return True
+    return row_cb != auth_cb
+
+
 def approval_row_stale_for_agent(agent: Agent, row) -> bool:
     """True when the row was created under an older grant or SaaS binding than the current agent."""
     from apps.agents.models import McpApprovalRequest

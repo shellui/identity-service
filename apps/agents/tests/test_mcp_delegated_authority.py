@@ -15,7 +15,7 @@ from apps.agents.mcp_delegated_authority import (
     DELEGATED_AGENT_AUTHORITY_AUDIENCE,
     DELEGATED_AGENT_AUTHORITY_SCOPE,
 )
-from apps.agents.models import Agent, McpOAuthClient
+from apps.agents.models import Agent, GlobalAgentRevocation, McpOAuthClient
 from apps.agents.tests.mcp_test_settings import (
     TRUSTED_AI_TEST_CALLER_SETTINGS,
     TRUSTED_TEST_CALLER_SETTINGS,
@@ -86,14 +86,15 @@ class McpDelegatedAgentAuthorityTests(TestCase):
             global_allowed_services=['storage', 'ai'],
         )
 
-    def _post(self, body: dict, *, issuer: str | None = None, sub: str = 'service'):
+    def _post(self, body: dict, *, path: str | None = None, issuer: str | None = None, sub: str = 'service'):
         assertion = _delegated_authority_assertion(
             audience_url='https://identity.test',
             issuer=issuer,
             sub=sub,
         )
+        url = path or '/api/v1/mcp/internal/mcp-agent-delegated-authority'
         return self.client.post(
-            '/api/v1/mcp/internal/mcp-agent-delegated-authority',
+            url,
             data=json.dumps(body),
             content_type='application/json',
             HTTP_AUTHORIZATION=f'Bearer {assertion}',
@@ -113,24 +114,57 @@ class McpDelegatedAgentAuthorityTests(TestCase):
         self.assertEqual(r.status_code, 200)
         data = r.json()
         self.assertTrue(data['authorized'])
+        self.assertTrue(data['active'])
         self.assertFalse(data['revoked'])
         self.assertFalse(data['paused'])
+        self.assertEqual(data['global_agent_id'], str(self.gid))
         self.assertEqual(data['global_company_id'], str(self.saas_gc))
         self.assertEqual(data['grant_version'], 0)
         self.assertEqual(data['company_binding_version'], 0)
 
-    def test_grant_version_mismatch_403(self):
+    def test_alias_paths_same_handler(self):
+        body = self._ok_body()
+        p1 = '/api/v1/mcp/internal/mcp-delegated-authority'
+        p2 = '/api/v1/mcp/internal/mcp-delegated-agent-authority'
+        a = self._post(body, path=p1)
+        b = self._post(body, path=p2)
+        self.assertEqual(a.status_code, 200, a.content)
+        self.assertEqual(b.status_code, 200, b.content)
+        self.assertEqual(a.json()['global_agent_id'], b.json()['global_agent_id'])
+
+    def test_missing_assertion_404(self):
+        r = self.client.post(
+            '/api/v1/mcp/internal/mcp-agent-delegated-authority',
+            data=json.dumps(self._ok_body()),
+            content_type='application/json',
+        )
+        self.assertEqual(r.status_code, 404)
+
+    def test_unknown_body_key_400(self):
+        body = {**self._ok_body(), 'global_agent_id': str(self.gid)}
+        r = self._post(body)
+        self.assertEqual(r.status_code, 400)
+
+    def test_grant_version_mismatch_200_inactive(self):
         body = self._ok_body()
         body['grant_version'] = 1
         r = self._post(body)
-        self.assertEqual(r.status_code, 403)
-        self.assertFalse(r.json().get('authorized', True))
+        self.assertEqual(r.status_code, 200)
+        d = r.json()
+        self.assertFalse(d['authorized'])
+        self.assertFalse(d['active'])
+        self.assertEqual(d['agent_id'], str(self.agent.id))
+        self.assertEqual(d['company_id'], self.company.pk)
+        self.assertEqual(d['global_company_id'], str(self.saas_gc))
+        self.assertEqual(d['grant_version'], 1)
+        self.assertEqual(d['company_binding_version'], 0)
 
-    def test_global_company_mismatch_403(self):
+    def test_global_company_mismatch_200_inactive(self):
         body = self._ok_body()
         body['global_company_id'] = str(uuid.uuid4())
         r = self._post(body)
-        self.assertEqual(r.status_code, 403)
+        self.assertEqual(r.status_code, 200)
+        self.assertFalse(r.json()['authorized'])
 
     def test_personal_agent_404(self):
         self.agent.global_agent_id = None
@@ -138,12 +172,55 @@ class McpDelegatedAgentAuthorityTests(TestCase):
         r = self._post(self._ok_body())
         self.assertEqual(r.status_code, 404)
 
-    def test_paused_403(self):
+    def test_paused_200_unauthorized(self):
         self.agent.paused_at = timezone.now()
         self.agent.save(update_fields=['paused_at'])
         r = self._post(self._ok_body())
-        self.assertEqual(r.status_code, 403)
-        self.assertFalse(r.json()['authorized'])
+        self.assertEqual(r.status_code, 200)
+        d = r.json()
+        self.assertFalse(d['authorized'])
+        self.assertFalse(d['active'])
+        self.assertFalse(d['revoked'])
+        self.assertTrue(d['paused'])
+
+    def test_global_registry_revoked_200(self):
+        GlobalAgentRevocation.objects.create(global_agent_id=self.gid)
+        r = self._post(self._ok_body())
+        self.assertEqual(r.status_code, 200)
+        d = r.json()
+        self.assertFalse(d['authorized'])
+        self.assertFalse(d['active'])
+        self.assertTrue(d['revoked'])
+        self.assertIn('revoked_at', d)
+
+    def test_extra_assertion_claim_401(self):
+        signing = TEST_CALLER_SIGNING
+        now = int(time.time())
+        claims = {
+            'iss': signing['issuer'],
+            'aud': DELEGATED_AGENT_AUTHORITY_AUDIENCE,
+            'sub': 'service',
+            'scope': DELEGATED_AGENT_AUTHORITY_SCOPE,
+            'target': 'https://identity.test',
+            'iat': now,
+            'exp': now + 60,
+            'jti': uuid.uuid4().hex,
+            'extra': 'nope',
+        }
+        token = jwt.encode(
+            claims,
+            signing['private_key_pem'],
+            algorithm='RS256',
+            headers={'kid': signing['kid']},
+        )
+        token = token.decode('utf-8') if isinstance(token, bytes) else token
+        r = self.client.post(
+            '/api/v1/mcp/internal/mcp-agent-delegated-authority',
+            data=json.dumps(self._ok_body()),
+            content_type='application/json',
+            HTTP_AUTHORIZATION=f'Bearer {token}',
+        )
+        self.assertEqual(r.status_code, 401)
 
     def test_invalid_types_400(self):
         for body in (

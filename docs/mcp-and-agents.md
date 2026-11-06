@@ -51,11 +51,13 @@ Global MCP OAuth bound the user to a SaaS company (company binding on the global
 
 The flow uses OAuth 2.0 Token Exchange (RFC 8693) at `POST /oauth/token` on the regional identity server (`POST /oauth/mcp/token` is the same handler). The endpoint answers **404** unless the role is `region` and `GLOBAL_ISSUER_URL`, `GLOBAL_JWKS`, and `GLOBAL_AGENT_ACCESS_TOKEN_AUDIENCE` are set.
 
+Export `SUBJECT_TOKEN` to the global MCP agent access JWT, then run:
+
 ```bash
 curl -sS -X POST "https://identity.example.com/oauth/token" \
   -H "Content-Type: application/x-www-form-urlencoded" \
   --data-urlencode "grant_type=urn:ietf:params:oauth:grant-type:token-exchange" \
-  --data-urlencode "subject_token=PASTE_GLOBAL_AGENT_JWT" \
+  --data-urlencode "subject_token=${SUBJECT_TOKEN}" \
   --data-urlencode "subject_token_type=urn:ietf:params:oauth:token-type:access_token" \
   --data-urlencode "company_id=42" \
   --data-urlencode "resource=https://ai.example.com/c/42/mcp" \
@@ -127,12 +129,17 @@ Optional: `agent_name` for the regional agent display name.
 
 When a write needs human confirmation, the service creates an approval through Identity:
 
-- `POST /api/v1/mcp/internal/mcp-approval-requests` with a short-lived assertion (audience `shellui-mcp-approval`, scope `mcp.approval.create`), same pattern as [company deletion](company-deletion.md). The assertion JWT carries `agent_id`, `company_id` (JSON integer, not a bool), `service`, `action`, `arguments_hash`, and live authority fields as strict JSON types: `grant_version` (integer), and when the agent is company-bound, `global_company_id` (uuid string) and `company_binding_version` (integer, `0` valid). When the agent is not company-bound, omit both binding claims. Only **ai-service** may use a longer assertion JWT lifetime (see `MCP_APPROVAL_ASSERTION_MAX_LIFETIME_SECONDS`); storage, hosting, and email stay near 60 seconds. ai-service may add `setup_flow` and `mcp_session_ttl_seconds` (600 to 900) on signed assertions during new-company setup. Identity extends session Allow **only** when the regional `Agent` still has server-stored setup context from global token exchange (`setup_company_id`, `setup_context_expires_at`) and the gateway assertion passes the usual checks (`mcp_session_ttl_seconds` in band, `<= exp - iat`, and grant ends by `setup_context_expires_at`). Other callers and HTTP bodies cannot rely on those claims for a longer grant. The JSON body is optional for `is_destructive` only. Identity does not accept `arguments`, `target`, or `short_action_summary` from the client: `target` is set to `{service}:{action}` and `arguments_redacted` stays `{}`.
+- `POST /api/v1/mcp/internal/mcp-approval-requests` with a short-lived assertion (audience `shellui-mcp-approval`, scope `mcp.approval.create`), same pattern as [company deletion](company-deletion.md). The JSON body is optional for `is_destructive` only. Identity does not accept `arguments`, `target`, or `short_action_summary` from the client: `target` is set to `{service}:{action}` and `arguments_redacted` stays `{}`.
+  - **Regional row** (normal MCP agent): `company_id` is a JSON **positive** integer (regional tenant). `agent_id` is the regional `Agent` uuid string. Live authority: `grant_version` (JSON integer). If that agent is company-bound (`global_company_id` on the row), the assertion must also carry `global_company_id` (uuid string) and `company_binding_version` (JSON integer, `0` valid) and they must match the live `Agent`. If the agent is not company-bound, omit both binding claims.
+  - **Global account row** (SaaS dashboard before a regional `Agent` exists): only **dashboard** (`PROVISIONING_ISSUER` / `PROVISIONING_PUBLIC_KEY`) may create. Use `company_id` **`0`** (JSON integer) and `agent_id` set to the **same** uuid string as `global_agent_id` (the assertion `sub` may be `agent:<global_agent_id>`). Required claims: `global_agent_id` (uuid string), `global_company_id` (uuid string), `global_user_sub` (non-empty string, global IdP `sub` for the acting user), `company_binding_version` (JSON integer), `grant_version` (JSON integer). Identity does **not** trust a forwarded owner flag; it checks ownership by resolving `UpstreamAccount` for `(issuer=GLOBAL_ISSUER_URL, sub=global_user_sub)` and requiring that user in `Company.owners` for the region `ProvisionedCompany` with that `global_company_id`. **Grant authority:** `grant_version` and `company_binding_version` must both equal the region **`ProvisionedCompany.limits_version`** for that `global_company_id`. `GlobalAgentRevocation` for `global_agent_id` blocks create. Optional `setup_expires_at` (JSON non-negative unix seconds, strictly in the future) must match the global subject token when that token carries setup expiry; if present and invalid, create fails. Global rows store `agent_id` and `company_id` as null on the approval row; lookups use the global ids and `global_user_sub`, not a regional agent id. **`allow_session` / session check / session revoke** internal routes return **400** for global bindings (session grants require a regional `Agent`).
+  Only **ai-service** may use a longer assertion JWT lifetime (see `MCP_APPROVAL_ASSERTION_MAX_LIFETIME_SECONDS`); storage, hosting, and email stay near 60 seconds. ai-service may add `setup_flow` and `mcp_session_ttl_seconds` (600 to 900) on signed assertions during new-company **regional** setup. Identity extends session Allow **only** when the regional `Agent` still has server-stored setup context from global token exchange (`setup_company_id`, `setup_context_expires_at`) and the gateway assertion passes the usual checks (`mcp_session_ttl_seconds` in band, `<= exp - iat`, and grant ends by `setup_context_expires_at`). Other callers and HTTP bodies cannot rely on those claims for a longer grant.
 - `POST /api/v1/mcp/internal/mcp-approval-state` with the same approval assertion (no GET). Identity looks up the latest row matching all assertion fields and returns `pending`, `approved`, `denied`, or `expired`. `404` when no row exists. Approved responses include `id` (approval uuid) for consume.
-- `POST /api/v1/mcp/internal/mcp-approval-consume` with the same approval assertion. JSON body: `{ "approval_id": "<uuid>" }`. Identity loads the row with `id`, `company_id`, `agent_id`, `service`, and `arguments_hash` from the assertion; any mismatch returns `404`. Consumption is atomic (`select_for_update`) and single use; `{ "consumed": true }` only while the row is approved and younger than 10 minutes.
-- One pending row per agent and arguments hash, **expires after 10 minutes**, runs once, never standing.
+- `POST /api/v1/mcp/internal/mcp-approval-consume` with the same approval assertion. JSON body: `{ "approval_id": "<uuid>" }`. Identity loads the row using the same binding as state (regional: `approval_id` plus `agent_id`, `company_id`, `service`, `arguments_hash`; global: `approval_id` plus global binding fields). Any mismatch returns `404`. Consumption is atomic (`select_for_update`) and single use; `{ "consumed": true }` only while the row is approved and younger than 10 minutes.
+- One pending row per binding and arguments hash, **expires after 10 minutes**, runs once, never standing. Regional binding is `(agent_id, company_id, service, action, arguments_hash)`. Global binding is `(global_agent_id, global_company_id, company_binding_version, global_user_sub, service, action, arguments_hash)`.
 
 Storage, hosting, and email must use this contract exactly (assertion fields on state and consume, `approval_id` in the consume body).
+
+**Delegated agents (`global_agent_id` set):** direct internal approval routes from storage, hosting, or email return **409** with `error_code` **`out_of_sync`**. Route those approvals through the **regional ai-service gateway** for that company, or use a **personal** agent credential when a human-owned direct flow is appropriate. That rule is intentional; hosting docs that describe a user-owned credential for direct service calls stay valid.
 
 ### Trusted callers for internal assertions
 
@@ -150,33 +157,46 @@ A caller with no issuer set is not trusted. Unknown issuers and wrong keys get `
 
 ### Live delegated agent authority (canonical)
 
-Use this route to verify a regional **delegated** agent row against the live SaaS binding before trusting a downstream MCP token or approval path. Do **not** substitute revocation polling alone; this check reads the current `Agent` row.
+Use this route to verify a regional **delegated** agent row against the live SaaS binding before trusting a downstream MCP token or approval path. Do **not** substitute revocation polling alone; this check reads the current `Agent` row. The response never echoes untrusted fields beyond the five body ids; it is always derived from the live row.
 
-- **Endpoint:** `POST /api/v1/mcp/internal/mcp-agent-delegated-authority`
+- **Endpoints (same handler):**
+  - **Canonical:** `POST /api/v1/mcp/internal/mcp-agent-delegated-authority`
+  - **Aliases:** `POST /api/v1/mcp/internal/mcp-delegated-authority` and `POST /api/v1/mcp/internal/mcp-delegated-agent-authority`
 - **Authorization:** `Bearer` RS256 assertion (`shellui_django.mcp.internal` verification rules), same pattern as other internal routes
   - `aud`: **`shellui-mcp-agent-delegated-authority`**
   - `scope`: **`mcp.agent.delegated.authority.read`**
   - `target`: Identity issuer (`JWT_ISSUER`, same as other internal assertions)
   - `iss`: the regional service issuer (`STORAGE_SERVICE_ISSUER`, `HOSTING_SERVICE_ISSUER`, `EMAIL_SERVICE_ISSUER`, or `AI_SERVICE_ISSUER`)
   - `sub`: `service`, `iat`, `exp`, `jti` as usual
+  - **Only** these claims are allowed on the JWT. Extra claims (for example copied subject tool fields) are rejected with **401**.
 - **Callers allowed:** storage, hosting, email, and ai-service only (`403` for dashboard and other issuers).
-- **JSON body (strict types):**
-  - `agent_id`: uuid string
-  - `company_id`: JSON integer (regional company)
-  - `global_company_id`: uuid string (SaaS)
+- **JSON body (strict, only these keys):**
+  - `agent_id`: uuid string (regional `Agent` primary key)
+  - `company_id`: JSON **positive** integer (regional company)
+  - `global_company_id`: uuid string (SaaS binding, non-empty)
   - `grant_version`: JSON non-negative integer (`0` valid)
   - `company_binding_version`: JSON non-negative integer (`0` valid)
 
-**200** when the row matches exactly (live delegated agent, active, not expired, binding matches, and not globally revoked):
+**HTTP**
 
-- `authorized`: `true`
-- `revoked`: `false`
-- `paused`: `false`
-- `agent_id`, `company_id`, `global_agent_id`, `global_company_id`, `grant_version`, `company_binding_version`
+| Situation | Status |
+| --- | --- |
+| Malformed or unsigned assertion; unknown issuer; wrong audience, scope, target, signature, lifetime, or replayed `jti`; extra JWT claims | **401** |
+| No `Authorization: Bearer` assertion (empty body path) | **404** |
+| Unknown JSON fields; wrong scalar types | **400** |
+| Caller not in the allowlist (for example dashboard) | **403** |
+| Agent row missing; `global_agent_id` null (personal agent) | **404** |
 
-**404** when the agent is missing, or when `global_agent_id` is null (not a delegated exchange agent). **400** on malformed body types. **403** when the agent is inactive, global revocation applies to that global agent id, or any of `global_company_id`, `grant_version`, or `company_binding_version` does not match the live row.
+**200** response (always includes the state fields below). Identity loads the agent by **`agent_id` and `company_id`** (body must match the row).
 
-Downstream services should **retire** any alternate paths (for example `mcp-delegated-agent-authority` vs `mcp-agent-delegated-authority`); only this URL is canonical on Identity.
+- When **`global_company_id` / `grant_version` / `company_binding_version`** match the live delegated row: **`authorized`** is `true` only if the agent is **active** in the ordinary sense (not paused, not expired, not revoked) **and** not blocked by **`GlobalAgentRevocation`** for that `global_agent_id`. Otherwise **`authorized`** is `false`.
+- When those three binding fields **do not** match the live row: **`200`** with **`authorized`:** `false`, **`active`:** `false`, **`revoked`:** `false`, **`paused`:** `false` (triple mismatch: treat as inactive for authorization without revealing which field failed).
+- **`active`:** `true` only when the row would issue tokens: not paused, not expired, not revoked, and not globally blocked. If **`revoked`** is `true`, **`active`** is always `false`.
+- **`global_agent_id`:** included from the live row when the agent is delegated (do not accept a client-supplied global id as proof).
+
+**200 body (fixed keys):** `authorized`, `active`, `revoked`, `paused`, `agent_id`, `company_id`, `global_company_id`, `grant_version`, `company_binding_version`, `global_agent_id`. When revocation applies, **`revoked_at`** (unix seconds) may be present from the row or global registry.
+
+This route is **not** cached on Identity.
 
 Company owners and the member who created the agent approve or deny in Settings or via human user tokens:
 
@@ -212,7 +232,7 @@ Identity tests use `apps.agents.trusted_revocation.parse_trusted_revocation_poll
 
 ## Call logs
 
-Services forward MCP call audit rows to `POST /api/v1/mcp/internal/mcp-call-logs` (assertion audience `shellui-mcp-call-log`). Identity stores them and emits `identity.mcp.call` security events. The body must include `outcome` as one of `allowed`, `failed`, `denied`, `pending_approval`, or `session_used` (legacy `success`, `error`, `rate_limited`, and `timeout` are accepted on ingest and normalized to the five values). Omitting `outcome` or sending an unknown string returns `400`. Identity does not infer an outcome from HTTP status alone. `company_id` must be a JSON integer in the body (same rule as the assertion). `arguments`, `arguments_redacted`, and untrusted `operation_title` / `resource_label` are rejected; new rows store `arguments_redacted` as `{}`.
+Services forward MCP call audit rows to `POST /api/v1/mcp/internal/mcp-call-logs` (assertion audience `shellui-mcp-call-log`). Identity stores them and emits `identity.mcp.call` security events. The body must include `outcome` as one of `allowed`, `failed`, `denied`, `waiting_approval`, or `session_used` (legacy `success`, `error`, `rate_limited`, `timeout`, and **`pending_approval`** are accepted on ingest and normalized to the five canonical values). Omitting `outcome` or sending an unknown string returns `400`. Identity does not infer an outcome from HTTP status alone. `company_id` must be a JSON integer in the body (same rule as the assertion). **Authority (required):** `grant_version` as a JSON integer must match the regional `Agent.grant_version`. For **delegated** agents (`global_agent_id` on the row), also send `global_company_id` (uuid string) and `company_binding_version` (JSON integer); they must match the agent row exactly. A mismatch returns **409** so a gateway cannot attach global ids from one SaaS binding to another regional agent. Personal agents must not send `global_company_id` / `company_binding_version`. **Destructive audit:** `access_kind` **`destructive`** is accepted only when the agent row allows destructive tools (`global_max_destructive`), `outcome` is **`allowed`** or **`session_used`**, and `approval_id` is present, refers to an **approved** row with `is_destructive` true, and matches the same agent, company, service, tool, and authority snapshot as internal approvals. **Approval link:** when `approval_id` is present it must match the row (same agent, company, service, tool, and authority snapshot); wrong tool or row returns **400**. `arguments`, `arguments_redacted`, and client-supplied `operation_title` / `resource_label` are rejected; Identity derives labels from `tool`, `method`, `path`, and `service`. Query strings are stripped from `path` before validation. New rows store `arguments_redacted` as `{}`.
 
 Activity and admin list APIs map legacy stored values to the five labels. Use `error_code` (allowlisted) for timeout or rate limit detail; outcome stays `failed` for those cases.
 
@@ -236,7 +256,7 @@ On Identity `/mcp`, the `list_services` tool returns MCP URLs discovered from ex
 - Storage: `STORAGE_SERVICE_URL` + `/mcp`
 - Hosting: `HOSTING_SERVICE_URL` + `/mcp`
 - Email: `EMAIL_SERVICE_URL` + `/mcp` when `EMAIL_SERVICE_API_KEY` is set
-- SaaS: `SAAS_SERVICE_URL` + `/mcp`
+- SaaS: `SAAS_SERVICE_URL` + `/mcp` (use the configured public **https** origin from env; do not paste git remote URLs or other non-HTTP values into this setting)
 - AI gateway (company clients): `{AI_SERVICE_URL}/c/<company_id>/mcp` (same host and path pattern as OAuth `resource`; not the plain `{AI_SERVICE_URL}/mcp` root)
 
 Downstream minting uses only these configured origins (never a URL from the client).

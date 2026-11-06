@@ -19,7 +19,11 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 - Global subject tokens must include ``mcp_authority: global_delegated``. Regional tokens from exchange include ``mcp_authority: delegated``. ``mcp-approval-session-check`` returns live ``global_company_id``, ``company_binding_version``, and ``grant_version`` on success when the agent is delegated; internal approval create rejects ``arguments_redacted`` in the JSON body and refuses non-JSON ``is_destructive``.
 
-- New internal route ``POST /api/v1/mcp/internal/mcp-agent-delegated-authority`` (assertion audience ``shellui-mcp-agent-delegated-authority``, scope ``mcp.agent.delegated.authority.read``) for storage, hosting, email, and ai-service to verify live delegated agent binding. Migration ``0021`` clears legacy ``arguments_redacted`` on MCP approval and call log rows.
+- Live delegated agent authority: ``POST /api/v1/mcp/internal/mcp-agent-delegated-authority`` plus aliases ``.../mcp-delegated-authority`` and ``.../mcp-delegated-agent-authority`` (assertion audience ``shellui-mcp-agent-delegated-authority``, scope ``mcp.agent.delegated.authority.read``). **200** responses include ``authorized``, ``active``, ``revoked``, ``paused``, and binding fields; assertion JWTs must not carry extra claims; missing bearer assertion returns **404**. MCP call log ingest uses ``waiting_approval`` (alias ``pending_approval`` on ingest); migration ``0022`` renames stored rows.
+
+- MCP internal call log ingest requires ``grant_version`` in the JSON body to match the ``Agent``; delegated agents must also send ``global_company_id`` and ``company_binding_version`` matching the row (otherwise **409**). ``access_kind`` ``destructive`` requires an approved destructive ``approval_id``; wrong tool or row match returns **400** instead of accepting the log with a dropped approval link.
+
+- Migration ``0021`` clears legacy ``arguments_redacted`` on MCP approval and call log rows.
 
 ### 🐛 Bug Fixes
 

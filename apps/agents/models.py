@@ -353,10 +353,11 @@ class McpCallLog(models.Model):
         ('allowed', 'Allowed'),
         ('failed', 'Failed'),
         ('denied', 'Denied'),
-        ('pending_approval', 'Pending approval'),
+        ('waiting_approval', 'Waiting approval'),
         ('session_used', 'Session used'),
         ('success', 'Success (legacy)'),
         ('error', 'Error (legacy)'),
+        ('pending_approval', 'Pending approval (legacy)'),
     )
 
     id = models.BigAutoField(primary_key=True)

@@ -54,9 +54,11 @@ class McpInternalCallLogTests(TestCase):
         )
 
     def _post(self, body: dict):
+        base = {'grant_version': 0}
+        base.update(body)
         return self.client.post(
             _PATH,
-            data=json.dumps(body),
+            data=json.dumps(base),
             content_type='application/json',
             HTTP_AUTHORIZATION=f'Bearer {self._assertion()}',
         )
@@ -225,6 +227,102 @@ class McpInternalCallLogTests(TestCase):
                 'approval_id': str(row.id),
             }
         )
-        self.assertEqual(r_bad.status_code, 201)
-        log2 = McpCallLog.objects.order_by('-id').first()
-        self.assertIsNone(log2.approval_id)
+        self.assertEqual(r_bad.status_code, 400, r_bad.content)
+
+    def test_delegated_requires_binding_triplet(self):
+        import uuid as uuid_mod
+
+        gc = uuid_mod.uuid4()
+        self.agent.global_agent_id = uuid_mod.uuid4()
+        self.agent.global_company_id = gc
+        self.agent.company_binding_version = 2
+        self.agent.grant_version = 5
+        self.agent.save(
+            update_fields=[
+                'global_agent_id',
+                'global_company_id',
+                'company_binding_version',
+                'grant_version',
+            ]
+        )
+        r_ok = self._post(
+            {
+                'agent_id': str(self.agent.id),
+                'company_id': self.company.pk,
+                'service': 'storage',
+                'tool': 'list_buckets',
+                'method': 'POST',
+                'path': '/mcp',
+                'status': 200,
+                'duration_ms': 1,
+                'outcome': 'allowed',
+                'grant_version': 5,
+                'global_company_id': str(gc),
+                'company_binding_version': 2,
+            }
+        )
+        self.assertEqual(r_ok.status_code, 201, r_ok.content)
+        r_conflict = self._post(
+            {
+                'agent_id': str(self.agent.id),
+                'company_id': self.company.pk,
+                'service': 'storage',
+                'tool': 'list_buckets',
+                'method': 'POST',
+                'path': '/mcp',
+                'status': 200,
+                'duration_ms': 1,
+                'outcome': 'allowed',
+                'grant_version': 5,
+                'global_company_id': str(uuid_mod.uuid4()),
+                'company_binding_version': 2,
+            }
+        )
+        self.assertEqual(r_conflict.status_code, 409, r_conflict.content)
+
+    def test_destructive_requires_approved_destructive_approval(self):
+        self.agent.global_max_destructive = True
+        self.agent.save(update_fields=['global_max_destructive'])
+        row = McpApprovalRequest.objects.create(
+            agent=self.agent,
+            company=self.company,
+            service='storage',
+            action='wipe_bucket',
+            arguments_hash='b' * 64,
+            short_action_summary='x',
+            expires_at=timezone.now() + __import__('datetime').timedelta(minutes=5),
+            status=McpApprovalRequest.STATUS_APPROVED,
+            is_destructive=True,
+            **approval_authority_snapshot_for_agent(self.agent),
+        )
+        r_ok = self._post(
+            {
+                'agent_id': str(self.agent.id),
+                'company_id': self.company.pk,
+                'service': 'storage',
+                'tool': 'wipe_bucket',
+                'method': 'POST',
+                'path': '/mcp',
+                'status': 200,
+                'duration_ms': 1,
+                'outcome': 'allowed',
+                'access_kind': 'destructive',
+                'approval_id': str(row.id),
+            }
+        )
+        self.assertEqual(r_ok.status_code, 201, r_ok.content)
+        r_no_appr = self._post(
+            {
+                'agent_id': str(self.agent.id),
+                'company_id': self.company.pk,
+                'service': 'storage',
+                'tool': 'wipe_bucket',
+                'method': 'POST',
+                'path': '/mcp',
+                'status': 200,
+                'duration_ms': 1,
+                'outcome': 'allowed',
+                'access_kind': 'destructive',
+            }
+        )
+        self.assertEqual(r_no_appr.status_code, 400, r_no_appr.content)

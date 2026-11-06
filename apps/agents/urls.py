@@ -32,6 +32,16 @@ urlpatterns = [
         internal_views.McpInternalDelegatedAgentAuthorityView.as_view(),
         name='mcp-internal-agent-delegated-authority',
     ),
+    path(
+        'internal/mcp-delegated-authority',
+        internal_views.McpInternalDelegatedAgentAuthorityView.as_view(),
+        name='mcp-internal-delegated-authority',
+    ),
+    path(
+        'internal/mcp-delegated-agent-authority',
+        internal_views.McpInternalDelegatedAgentAuthorityView.as_view(),
+        name='mcp-internal-delegated-agent-authority',
+    ),
     path('internal/mcp-approval-requests', internal_views.McpInternalApprovalCreateView.as_view(), name='mcp-internal-approval'),
     path('internal/mcp-approval-state', internal_views.McpInternalApprovalStateView.as_view(), name='mcp-internal-approval-state'),
     path('internal/mcp-approval-consume', internal_views.McpInternalApprovalConsumeView.as_view(), name='mcp-internal-approval-consume'),
