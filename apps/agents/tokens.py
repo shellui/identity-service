@@ -68,12 +68,35 @@ def build_agent_access_token(agent: Agent, *, resource: str) -> dict:
         claims['iss'] = api_settings.ISSUER
     setup_until = getattr(agent, 'setup_context_expires_at', None)
     setup_cid = getattr(agent, 'setup_company_id', None)
-    if (
+    new_company = bool(getattr(agent, 'setup_new_company_grant', False))
+    setup_ttl = getattr(agent, 'setup_mcp_session_ttl_seconds', None)
+    gc_bound = getattr(agent, 'global_company_id', None)
+    cb_ver = getattr(agent, 'company_binding_version', None)
+    setup_active = (
+        new_company
+        and gc_bound is not None
+        and cb_ver is not None
+        and setup_ttl is not None
+        and setup_until is not None
+        and setup_cid is not None
+        and int(setup_cid) == int(agent.company_id)
+        and setup_until > now
+    )
+    if setup_active:
+        su = int(setup_until.timestamp())
+        claims['setup_flow'] = True
+        claims['mcp_new_company_grant'] = True
+        claims['mcp_session_ttl_seconds'] = int(setup_ttl)
+        claims['setup_context_company_id'] = int(setup_cid)
+        claims['setup_expires_at'] = su
+        claims['setup_context_exp'] = su
+    elif (
         setup_until is not None
         and setup_cid is not None
         and int(setup_cid) == int(agent.company_id)
         and setup_until > now
     ):
+        # Legacy echo: pre-bound agents may still carry a deadline without the new-company grant flag.
         su = int(setup_until.timestamp())
         claims['setup_context_company_id'] = int(setup_cid)
         claims['setup_context_exp'] = su

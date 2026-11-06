@@ -49,6 +49,7 @@ from apps.agents.approval_authority import (
 )
 from apps.agents.internal_callers import verify_caller_assertion
 from apps.agents.call_log_outcome import CANONICAL_OUTCOMES, canonical_outcome, normalized_resource_label
+from apps.agents.mcp_audit_codes import sanitize_error_code
 from apps.agents.models import Agent, McpApprovalRequest, McpCallLog
 from apps.agents.tokens import company_name_for_agent
 from apps.agents.revocation import (
@@ -388,6 +389,8 @@ class McpInternalApprovalSessionCheckView(APIView):
                 'company_binding_version',
                 'setup_company_id',
                 'setup_context_expires_at',
+                'setup_new_company_grant',
+                'setup_mcp_session_ttl_seconds',
                 'company_id',
             ).get(pk=binding['agent_id'])
             pv = int(getattr(agent, 'grant_version', 0) or 0)
@@ -396,7 +399,22 @@ class McpInternalApprovalSessionCheckView(APIView):
             setup_cid = getattr(agent, 'setup_company_id', None)
             setup_until = getattr(agent, 'setup_context_expires_at', None)
             setup_unix = None
-            if (
+            new_grant = bool(getattr(agent, 'setup_new_company_grant', False))
+            setup_ttl = getattr(agent, 'setup_mcp_session_ttl_seconds', None)
+            gc = getattr(agent, 'global_company_id', None)
+            setup_extended = (
+                new_grant
+                and gc is not None
+                and cb is not None
+                and setup_ttl is not None
+                and setup_cid is not None
+                and setup_until is not None
+                and int(setup_cid) == int(binding['company_id'])
+                and setup_until > now
+            )
+            if setup_extended:
+                setup_unix = int(setup_until.timestamp())
+            elif (
                 setup_cid is not None
                 and setup_until is not None
                 and int(setup_cid) == int(binding['company_id'])
@@ -408,7 +426,11 @@ class McpInternalApprovalSessionCheckView(APIView):
             if cb is not None:
                 payload['company_binding_version'] = int(cb)
             if setup_unix is not None:
-                payload['setup_expires_at'] = int(setup_until.timestamp())
+                payload['setup_expires_at'] = setup_unix
+            if setup_extended:
+                payload['setup_flow'] = True
+                payload['mcp_new_company_grant'] = True
+                payload['mcp_session_ttl_seconds'] = int(setup_ttl)
         return Response(payload)
 
 
@@ -516,19 +538,21 @@ class McpInternalCallLogView(APIView):
         tool_s = str(body.get('tool') or '')[:255]
         method_s = str(body.get('method') or '')[:10]
         path_s = str(body.get('path') or '')[:500]
+        path_s = path_s.split('?', 1)[0].split('#', 1)[0].strip()[:500]
         outcome_raw = str(body.get('outcome') or '').strip().lower()
         if outcome_raw and outcome_raw not in CANONICAL_OUTCOMES:
             return Response({'error': 'Invalid outcome.'}, status=status.HTTP_400_BAD_REQUEST)
         outcome = canonical_outcome(outcome_raw or None, status_code=status_code)
-        operation_title = str(body.get('operation_title') or '').strip()[:500]
+        operation_title = str(body.get('operation_title') or '').strip()[:200]
         if not operation_title:
-            operation_title = (tool_s or path_s or 'mcp_call')[:500]
+            operation_title = (tool_s or path_s or 'mcp_call')[:200]
         access_kind = str(body.get('access_kind') or '').strip().lower()[:32]
         if access_kind not in ('read', 'write', 'destructive', 'unknown', ''):
             return Response({'error': 'Invalid access_kind.'}, status=status.HTTP_400_BAD_REQUEST)
         if not access_kind:
             access_kind = 'unknown'
         resource_label_in = str(body.get('resource_label') or '').strip()[:500]
+        resource_label_in = resource_label_in.split('?', 1)[0].split('#', 1)[0].strip()[:500]
         resource_label = resource_label_in or normalized_resource_label(tool_s, method_s, path_s)
         company_name_in = str(body.get('company_name') or '').strip()[:255]
         company_name = company_name_in or company_name_for_agent(agent)
@@ -539,6 +563,19 @@ class McpInternalCallLogView(APIView):
                 approval_id = uuid.UUID(str(raw_approval))
             except (ValueError, TypeError):
                 return Response({'error': 'Invalid approval_id.'}, status=status.HTTP_400_BAD_REQUEST)
+            try:
+                appr = McpApprovalRequest.objects.get(pk=approval_id)
+            except McpApprovalRequest.DoesNotExist:
+                approval_id = None
+            else:
+                if (
+                    str(appr.agent_id) != str(agent.id)
+                    or int(appr.company_id) != int(company_id)
+                    or str(appr.service or '') != str(body.get('service') or '')[:32]
+                ):
+                    approval_id = None
+        error_code_raw = body.get('error_code')
+        error_code_val = sanitize_error_code(error_code_raw) or ''
         row = McpCallLog.objects.create(
             agent=agent,
             company_id=company_id,
@@ -555,6 +592,7 @@ class McpInternalCallLogView(APIView):
             resource_label=resource_label,
             company_name=company_name,
             approval_id=approval_id,
+            error_code=error_code_val,
             client_ip=client_ip,
             arguments_redacted=redact_mapping(args, read_sensitive=False),
         )

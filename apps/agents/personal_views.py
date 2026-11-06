@@ -278,10 +278,13 @@ def _activity_row(row: McpCallLog) -> dict:
         'company_name': row.company_name or '',
         'duration_ms': row.duration_ms,
         'service': row.service,
+        'tool': row.tool,
         'client_ip': row.client_ip,
     }
     if row.approval_id is not None:
-        row_out['approval_id'] = str(row.approval_id)
+        row_out['approval_request_id'] = str(row.approval_id)
+    if row.error_code:
+        row_out['error_code'] = row.error_code
     return row_out
 
 

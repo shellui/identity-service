@@ -5,20 +5,14 @@ from __future__ import annotations
 from django.conf import settings
 from django.utils import timezone
 
+from apps.agents.approval_authority import agent_matches_approval_authority, parse_approval_authority_claims
+from apps.agents.mcp_claims import strict_bool_claim
 from apps.agents.models import Agent
-
-
-def _truthy_setup_flow(raw) -> bool:
-    if isinstance(raw, bool):
-        return raw
-    if isinstance(raw, str):
-        return raw.strip().lower() in ('1', 'true', 'yes', 'setup', 'setup_flow', 'new_company')
-    return False
 
 
 def trusted_setup_mcp_session_ttl_seconds_from_claims(claims: dict) -> int | None:
     """Return signed mcp_session_ttl_seconds when setup_flow is set; otherwise None."""
-    if not _truthy_setup_flow(claims.get('setup_flow')):
+    if not strict_bool_claim(claims.get('setup_flow')):
         return None
     raw = claims.get('mcp_session_ttl_seconds')
     try:
@@ -76,12 +70,28 @@ def resolve_session_grant_ttl_seconds(
         return base
 
     claims = assertion_claims or {}
+    if not strict_bool_claim(claims.get('setup_flow')):
+        return base
+
+    auth, err = parse_approval_authority_claims(claims)
+    if err or auth is None or not agent_matches_approval_authority(agent, auth):
+        return base
+
+    if not bool(getattr(agent, 'setup_new_company_grant', False)):
+        return base
+    if getattr(agent, 'global_company_id', None) is None:
+        return base
+
     setup_ttl = trusted_setup_mcp_session_ttl_seconds_from_claims(claims)
     if setup_ttl is None:
         return base
 
     lo, hi = session_allow_ttl_bound_seconds()
     if setup_ttl < lo or setup_ttl > hi:
+        return base
+
+    stored_band = getattr(agent, 'setup_mcp_session_ttl_seconds', None)
+    if stored_band is not None and int(stored_band) != int(setup_ttl):
         return base
 
     max_from_assertion = None

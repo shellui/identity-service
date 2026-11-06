@@ -85,6 +85,14 @@ class Agent(models.Model):
         blank=True,
         help_text='SaaS company binding version last accepted at token exchange.',
     )
+    # Caps from the last verified global subject token (never widened by regional exchange).
+    global_allowed_services = models.JSONField(
+        default=list,
+        help_text='Service ids allowed by the last global subject token scope (exchange cap).',
+    )
+    global_max_access_mode = models.CharField(max_length=20, default=ACCESS_ASK)
+    global_max_read_level = models.CharField(max_length=20, default=READ_SAFE)
+    global_max_destructive = models.BooleanField(default=False)
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='mcp_agents')
     name = models.CharField(max_length=255)
     oauth_client = models.ForeignKey(
@@ -125,6 +133,15 @@ class Agent(models.Model):
         null=True,
         blank=True,
         help_text='Absolute end of new-company setup for this agent from the global subject token.',
+    )
+    setup_new_company_grant = models.BooleanField(
+        default=False,
+        help_text='True when setup context came from a delegated new-company grant on the global token.',
+    )
+    setup_mcp_session_ttl_seconds = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text='mcp_session_ttl_seconds copied from global subject during active setup.',
     )
     grant_version = models.PositiveIntegerField(
         default=0,
@@ -322,6 +339,7 @@ class McpCallLog(models.Model):
     resource_label = models.CharField(max_length=500, blank=True, default='')
     company_name = models.CharField(max_length=255, blank=True, default='')
     approval_id = models.UUIDField(null=True, blank=True)
+    error_code = models.CharField(max_length=64, blank=True, default='')
     client_ip = models.GenericIPAddressField(null=True, blank=True)
     arguments_redacted = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)

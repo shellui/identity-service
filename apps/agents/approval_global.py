@@ -19,14 +19,6 @@ def is_global_placeholder_company_id(company_id: int | None) -> bool:
     return company_id is not None and int(company_id) == GLOBAL_PLACEHOLDER_COMPANY_ID
 
 
-def truthy_setup_flow(raw: Any) -> bool:
-    if isinstance(raw, bool):
-        return raw
-    if isinstance(raw, str):
-        return raw.strip().lower() in ('1', 'true', 'yes', 'setup', 'setup_flow', 'new_company')
-    return False
-
-
 def parse_uuid(raw: Any) -> uuid.UUID | None:
     try:
         return uuid.UUID(str(raw))

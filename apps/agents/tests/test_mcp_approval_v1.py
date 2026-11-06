@@ -60,7 +60,22 @@ class McpApprovalV1Tests(TestCase):
         now = timezone.now()
         agent.setup_company_id = self.company.id
         agent.setup_context_expires_at = now + timedelta(minutes=minutes)
-        agent.save(update_fields=['setup_company_id', 'setup_context_expires_at'])
+        agent.setup_new_company_grant = True
+        agent.setup_mcp_session_ttl_seconds = 600
+        if agent.global_company_id is None:
+            agent.global_company_id = uuid.uuid4()
+        if agent.company_binding_version is None:
+            agent.company_binding_version = 1
+        agent.save(
+            update_fields=[
+                'setup_company_id',
+                'setup_context_expires_at',
+                'setup_new_company_grant',
+                'setup_mcp_session_ttl_seconds',
+                'global_company_id',
+                'company_binding_version',
+            ]
+        )
 
     def _token(self, user):
         from apps.authapi.views import _issue_shellui_tokens
@@ -109,6 +124,8 @@ class McpApprovalV1Tests(TestCase):
         }
         if extra_claims:
             claims.update(extra_claims)
+        if claims.get('setup_flow') is True and 'mcp_new_company_grant' not in claims:
+            claims['mcp_new_company_grant'] = True
         token = jwt.encode(claims, signing['private_key_pem'], algorithm='RS256', headers={'kid': signing['kid']})
         return token.decode('utf-8') if isinstance(token, bytes) else token
 
@@ -339,8 +356,8 @@ class McpApprovalV1Tests(TestCase):
 
     def test_setup_session_uses_600_seconds_when_ai_mints_setup_claims(self):
         h = 's' * 64
-        created = self._create_via_internal(args_hash=h)
         self._enable_agent_setup_context(self.agent)
+        created = self._create_via_internal(args_hash=h)
         assertion = self._ai_assertion(
             self.agent,
             args_hash=h,
@@ -401,8 +418,8 @@ class McpApprovalV1Tests(TestCase):
     def test_setup_ttl_falls_back_when_remaining_under_band(self):
         """Under 600s left to setup deadline (or JWT), extended setup band is not used."""
         h = 's3' * 32
-        created = self._create_via_internal(args_hash=h)
         self._enable_agent_setup_context(self.agent, minutes=5)
+        created = self._create_via_internal(args_hash=h)
         assertion = self._ai_assertion(
             self.agent,
             args_hash=h,
@@ -422,8 +439,8 @@ class McpApprovalV1Tests(TestCase):
 
     def test_setup_ttl_respects_ceiling_when_both_remaining_exceed_band(self):
         h = 's3b' * 20 + 'aa'
-        created = self._create_via_internal(args_hash=h)
         self._enable_agent_setup_context(self.agent, minutes=30)
+        created = self._create_via_internal(args_hash=h)
         assertion = self._ai_assertion(
             self.agent,
             args_hash=h,

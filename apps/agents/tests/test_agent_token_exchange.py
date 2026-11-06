@@ -107,13 +107,17 @@ class AgentTokenExchangeTests(_CryptoMixin, TestCase):
     def test_setup_context_stored_and_echoed_on_regional_access_token(self):
         user = self._member()
         now = unix_now()
-        setup_exp = now + 900
+        setup_exp = now + 240
+        gc = uuid.uuid4()
         response = self._post(
             self._global_agent_token(
                 setup_flow=True,
+                mcp_new_company_grant=True,
                 setup_context_company_id=self.company.pk,
                 setup_expires_at=setup_exp,
                 mcp_session_ttl_seconds=600,
+                global_company_id=str(gc),
+                company_binding_version=1,
             ),
         )
         self.assertEqual(response.status_code, 200, response.content)
@@ -121,10 +125,14 @@ class AgentTokenExchangeTests(_CryptoMixin, TestCase):
         claims = jwt.decode(body['access_token'], options={'verify_signature': False})
         self.assertEqual(claims.get('setup_context_company_id'), self.company.pk)
         self.assertEqual(claims.get('setup_expires_at'), setup_exp)
-        self.assertEqual(claims.get('setup_context_exp'), setup_exp)
+        self.assertTrue(claims.get('setup_flow'))
+        self.assertTrue(claims.get('mcp_new_company_grant'))
+        self.assertEqual(claims.get('mcp_session_ttl_seconds'), 600)
         agent = Agent.objects.get(company=self.company, global_agent_id=self.global_agent_id)
         self.assertEqual(agent.setup_company_id, self.company.pk)
         self.assertIsNotNone(agent.setup_context_expires_at)
+        self.assertTrue(agent.setup_new_company_grant)
+        self.assertEqual(agent.setup_mcp_session_ttl_seconds, 600)
         self.assertAlmostEqual(
             agent.setup_context_expires_at.timestamp(),
             float(setup_exp),
@@ -134,12 +142,17 @@ class AgentTokenExchangeTests(_CryptoMixin, TestCase):
     def test_setup_context_legacy_setup_context_exp_still_accepted(self):
         self._member()
         now = unix_now()
-        setup_exp = now + 900
+        setup_exp = now + 240
+        gc = uuid.uuid4()
         response = self._post(
             self._global_agent_token(
                 setup_flow=True,
+                mcp_new_company_grant=True,
                 setup_context_company_id=self.company.pk,
                 setup_context_exp=setup_exp,
+                mcp_session_ttl_seconds=600,
+                global_company_id=str(gc),
+                company_binding_version=1,
             ),
         )
         self.assertEqual(response.status_code, 200, response.content)
@@ -163,11 +176,16 @@ class AgentTokenExchangeTests(_CryptoMixin, TestCase):
     def test_mismatched_setup_context_company_is_ignored(self):
         user = self._member()
         now = unix_now()
+        gc = uuid.uuid4()
         response = self._post(
             self._global_agent_token(
                 setup_flow=True,
+                mcp_new_company_grant=True,
                 setup_context_company_id=self.other_company.pk,
                 setup_context_exp=now + 900,
+                mcp_session_ttl_seconds=600,
+                global_company_id=str(gc),
+                company_binding_version=1,
             ),
         )
         self.assertEqual(response.status_code, 200)
@@ -299,3 +317,74 @@ class AgentTokenExchangeTests(_CryptoMixin, TestCase):
         )
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json()['error'], 'invalid_grant')
+
+    def test_exchange_keeps_narrower_services_when_body_omitted(self):
+        self._member()
+        gc = uuid.uuid4()
+        first = self._post(
+            self._global_agent_token(
+                scope='identity storage',
+                global_company_id=str(gc),
+                company_binding_version=1,
+            )
+        )
+        self.assertEqual(first.status_code, 200)
+        agent = Agent.objects.get(global_agent_id=self.global_agent_id)
+        self.assertEqual(agent.services_allowed, ['identity', 'storage'])
+        second = self._post(
+            self._global_agent_token(
+                scope='identity storage hosting',
+                global_company_id=str(gc),
+                company_binding_version=1,
+            )
+        )
+        self.assertEqual(second.status_code, 200)
+        agent.refresh_from_db()
+        self.assertEqual(agent.services_allowed, ['identity', 'storage'])
+
+    def test_requested_services_intersects_with_existing_allowed(self):
+        self._member()
+        gc = uuid.uuid4()
+        first = self._post(
+            self._global_agent_token(
+                scope='identity storage hosting',
+                global_company_id=str(gc),
+                company_binding_version=1,
+            )
+        )
+        self.assertEqual(first.status_code, 200)
+        second = self._post(
+            self._global_agent_token(
+                scope='identity storage email',
+                global_company_id=str(gc),
+                company_binding_version=1,
+            ),
+            services=['storage'],
+        )
+        self.assertEqual(second.status_code, 200)
+        agent = Agent.objects.get(global_agent_id=self.global_agent_id)
+        self.assertEqual(agent.services_allowed, ['storage'])
+
+    def test_exchange_refuses_broadening_past_initial_global_cap(self):
+        self._member()
+        gc = uuid.uuid4()
+        narrow = self._post(
+            self._global_agent_token(
+                scope='identity',
+                mcp_access='read_only',
+                global_company_id=str(gc),
+                company_binding_version=1,
+            ),
+            access_mode='read_only',
+        )
+        self.assertEqual(narrow.status_code, 200)
+        wide = self._post(
+            self._global_agent_token(
+                scope='identity',
+                mcp_access='full',
+                global_company_id=str(gc),
+                company_binding_version=1,
+            )
+        )
+        self.assertEqual(wide.status_code, 400)
+        self.assertEqual(wide.json()['error'], 'invalid_grant')
