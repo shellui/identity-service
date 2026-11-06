@@ -561,20 +561,21 @@ class McpApprovalV1Tests(TestCase):
     def test_session_invalid_after_permission_invalidation(self):
         h = 'pv' * 32
         created = self._create_via_internal(args_hash=h)
-        assertion = self._assertion(self.agent, args_hash=h)
+        # Fresh assertion per request: internal assertions are single-use (jti).
+        decide_assertion = self._assertion(self.agent, args_hash=h)
         self.client.post(
             '/api/v1/mcp/internal/mcp-approval-decide',
             data=json.dumps(
                 {'approval_id': created['id'], 'decision': 'allow_session', 'connection_id': 'perm-ver'}
             ),
             content_type='application/json',
-            HTTP_AUTHORIZATION=f'Bearer {assertion}',
+            HTTP_AUTHORIZATION=f'Bearer {decide_assertion}',
         )
         ok = self.client.post(
             '/api/v1/mcp/internal/mcp-approval-session-check',
             data=json.dumps({'connection_id': 'perm-ver', 'is_destructive': False}),
             content_type='application/json',
-            HTTP_AUTHORIZATION=f'Bearer {assertion}',
+            HTTP_AUTHORIZATION=f'Bearer {self._assertion(self.agent, args_hash=h)}',
         )
         self.assertTrue(ok.json()['session_allowed'])
         invalidate_agent_session_grants(self.agent)
@@ -582,7 +583,7 @@ class McpApprovalV1Tests(TestCase):
             '/api/v1/mcp/internal/mcp-approval-session-check',
             data=json.dumps({'connection_id': 'perm-ver', 'is_destructive': False}),
             content_type='application/json',
-            HTTP_AUTHORIZATION=f'Bearer {assertion}',
+            HTTP_AUTHORIZATION=f'Bearer {self._assertion(self.agent, args_hash=h)}',
         )
         self.assertFalse(bad.json()['session_allowed'])
 
@@ -593,14 +594,14 @@ class McpApprovalV1Tests(TestCase):
         self.agent.global_company_id = gid
         self.agent.company_binding_version = 1
         self.agent.save(update_fields=['global_company_id', 'company_binding_version'])
-        assertion = self._assertion(self.agent, args_hash=h)
+        decide_assertion = self._assertion(self.agent, args_hash=h)
         self.client.post(
             '/api/v1/mcp/internal/mcp-approval-decide',
             data=json.dumps(
                 {'approval_id': created['id'], 'decision': 'allow_session', 'connection_id': 'bind'}
             ),
             content_type='application/json',
-            HTTP_AUTHORIZATION=f'Bearer {assertion}',
+            HTTP_AUTHORIZATION=f'Bearer {decide_assertion}',
         )
         self.agent.company_binding_version = 2
         self.agent.save(update_fields=['company_binding_version'])
@@ -608,21 +609,21 @@ class McpApprovalV1Tests(TestCase):
             '/api/v1/mcp/internal/mcp-approval-session-check',
             data=json.dumps({'connection_id': 'bind', 'is_destructive': False}),
             content_type='application/json',
-            HTTP_AUTHORIZATION=f'Bearer {assertion}',
+            HTTP_AUTHORIZATION=f'Bearer {self._assertion(self.agent, args_hash=h)}',
         )
         self.assertFalse(check.json()['session_allowed'])
 
     def test_session_invalid_when_services_allowed_changes(self):
         h = 'svc' * 20 + 'aa'
         created = self._create_via_internal(args_hash=h)
-        assertion = self._assertion(self.agent, args_hash=h)
+        decide_assertion = self._assertion(self.agent, args_hash=h)
         self.client.post(
             '/api/v1/mcp/internal/mcp-approval-decide',
             data=json.dumps(
                 {'approval_id': created['id'], 'decision': 'allow_session', 'connection_id': 'svc-ch'}
             ),
             content_type='application/json',
-            HTTP_AUTHORIZATION=f'Bearer {assertion}',
+            HTTP_AUTHORIZATION=f'Bearer {decide_assertion}',
         )
         self.agent.services_allowed = ['identity']
         self.agent.save(update_fields=['services_allowed'])
@@ -630,6 +631,6 @@ class McpApprovalV1Tests(TestCase):
             '/api/v1/mcp/internal/mcp-approval-session-check',
             data=json.dumps({'connection_id': 'svc-ch', 'is_destructive': False}),
             content_type='application/json',
-            HTTP_AUTHORIZATION=f'Bearer {assertion}',
+            HTTP_AUTHORIZATION=f'Bearer {self._assertion(self.agent, args_hash=h)}',
         )
         self.assertFalse(check.json()['session_allowed'])
