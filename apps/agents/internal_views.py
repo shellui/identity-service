@@ -121,13 +121,14 @@ def _approval_live_authority(claims: dict, binding: dict) -> Response | None:
             or meta.get('global_user_sub') != meta2.get('global_user_sub')
         ):
             return Response({'error': 'Global approval metadata mismatch.'}, status=status.HTTP_400_BAD_REQUEST)
+        pc = provisioned_company_for_global_uuid(meta2['global_company_id'])
+        if pc is None:
+            return Response({'error': 'Company binding not provisioned.'}, status=status.HTTP_400_BAD_REQUEST)
         if global_agent_revoked(meta2['global_agent_id']):
             return Response({'error': 'Global agent is revoked.'}, status=status.HTTP_403_FORBIDDEN)
         gv = int(auth['grant_version'])
         if not global_approval_live_binding_ok(meta2, authority_grant_version=gv):
             return Response({'error': 'Global approval authority mismatch.'}, status=status.HTTP_409_CONFLICT)
-        pc = provisioned_company_for_global_uuid(meta2['global_company_id'])
-        assert pc is not None
         if not global_user_sub_is_company_owner(global_user_sub=meta2['global_user_sub'], company=pc.company):
             return Response({'error': 'Actor is not a verified company owner.'}, status=status.HTTP_403_FORBIDDEN)
         return None
@@ -278,8 +279,10 @@ def _delegated_authority_fixed_payload(
     global_row_revoked = GlobalAgentRevocation.objects.filter(global_agent_id=ga).exists()
     revoked = bool(row_revoked or global_row_revoked)
     services = sorted(str(s) for s in (agent.services_allowed or []))
-    # Delegated exchange agents never get destructive without asking on the regional JWT.
+    global_sv = sorted(str(s) for s in (agent.global_allowed_services or []))
+    # Delegated exchange agents never get destructive MCP scope on the regional JWT.
     allow_dest = False
+    allow_dest_without_ask = bool(getattr(agent, 'allow_destructive_without_asking', False))
     out = {
         'authorized': authorized,
         'active': active,
@@ -294,7 +297,9 @@ def _delegated_authority_fixed_payload(
         'access_mode': str(agent.access_mode),
         'read_level': str(agent.read_level),
         'allow_destructive': allow_dest,
+        'allow_destructive_without_asking': allow_dest_without_ask,
         'services_allowed': services,
+        'global_allowed_services': global_sv,
         'revoked_at': _delegated_authority_revoked_at(agent),
     }
     return out
@@ -467,6 +472,14 @@ class McpInternalApprovalCreateView(APIView):
             snap_gv = int(auth_parsed['grant_version'])
             snap_gc = meta['global_company_id']
             snap_cb = int(meta['company_binding_version'])
+            pc = provisioned_company_for_global_uuid(snap_gc)
+            assert pc is not None
+            owner_verified = global_user_sub_is_company_owner(
+                global_user_sub=meta['global_user_sub'],
+                company=pc.company,
+            )
+            if not owner_verified:
+                return Response({'error': 'Actor is not a verified company owner.'}, status=status.HTTP_403_FORBIDDEN)
             row, created = McpApprovalRequest.objects.get_or_create(
                 agent=None,
                 company=None,
@@ -488,7 +501,7 @@ class McpInternalApprovalCreateView(APIView):
                     'authority_global_company_id': snap_gc,
                     'authority_company_binding_version': snap_cb,
                     'setup_expires_at': setup_exp,
-                    'is_company_owner_actor': True,
+                    'is_company_owner_actor': owner_verified,
                 },
             )
         else:

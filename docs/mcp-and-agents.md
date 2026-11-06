@@ -51,13 +51,12 @@ Global MCP OAuth bound the user to a SaaS company (company binding on the global
 
 The flow uses OAuth 2.0 Token Exchange (RFC 8693) at `POST /oauth/token` on the regional identity server (`POST /oauth/mcp/token` is the same handler). The endpoint answers **404** unless the role is `region` and `GLOBAL_ISSUER_URL`, `GLOBAL_JWKS`, and `GLOBAL_AGENT_ACCESS_TOKEN_AUDIENCE` are set.
 
-Export `SUBJECT_TOKEN` to the global MCP agent access JWT, then run:
+Export a shell variable to the global MCP agent access JWT (for example `GLOBAL_MCP_AGENT_JWT`), then run:
 
 ```bash
 curl -sS -X POST "https://identity.example.com/oauth/token" \
   -H "Content-Type: application/x-www-form-urlencoded" \
   --data-urlencode "grant_type=urn:ietf:params:oauth:grant-type:token-exchange" \
-  --data-urlencode "subject_token=${SUBJECT_TOKEN}" \
   --data-urlencode "subject_token_type=urn:ietf:params:oauth:token-type:access_token" \
   --data-urlencode "company_id=42" \
   --data-urlencode "resource=https://ai.example.com/c/42/mcp" \
@@ -65,7 +64,8 @@ curl -sS -X POST "https://identity.example.com/oauth/token" \
   --data-urlencode "read_level=safe" \
   --data-urlencode "allow_destructive=false" \
   --data-urlencode "services=identity" \
-  --data-urlencode "services=storage"
+  --data-urlencode "services=storage" \
+  --data-urlencode "subject_token=$GLOBAL_MCP_AGENT_JWT"  # gitleaks:allow OAuth RFC 8693 parameter name subject_token; value is a shell variable, not a pasted secret
 ```
 
 Optional `access_mode`, `read_level`, `allow_destructive`, and repeated `services` keys may only **narrow** the global agent (never broaden). Each `services` value is one MCP tool service id (for example `identity`, `storage`). You do **not** need to repeat `ai` in that list: capability to use the AI gateway comes from the global subject token `scope` (OAuth-style space-separated service ids), not from the exchange body. When `services` is omitted on a later exchange, Identity intersects the new global scope with the regional agent's current `services_allowed` (it does not default back to the full global list). `allow_destructive` must be JSON `true` or `false` when present (string numerics are rejected); regional access tokens never set `mcp_destructive` true for delegated agents. The `resource` must be exactly this region's configured AI gateway for that company (`{AI_SERVICE_URL}/c/your_company_id_here/mcp`, host and path must match `AI_SERVICE_URL`). Identity, storage, hosting, email, dashboard, or another region's host are rejected. The global user must already own or belong to `company_id` in this region (enabled membership). Global staff are refused, same as user token exchange.
@@ -190,12 +190,14 @@ Use this route to verify a regional **delegated** agent row against the live Saa
 **200** response. Identity loads the agent by **`agent_id` and `company_id`** (body must match the row).
 
 - When **`global_company_id` / `grant_version` / `company_binding_version`** match the live delegated row: **`authorized`** is `true` only if the agent would issue tokens: not paused, not expired, not revoked, and not globally blocked for that `global_agent_id`. Otherwise **`authorized`** is `false`.
-- When those three binding fields **do not** match the live row: **`200`** with **`authorized`:** `false`, **`active`:** `false` (fail closed). **`revoked`**, **`paused`**, **`revoked_at`**, **`access_mode`**, **`read_level`**, **`allow_destructive`**, and **`services_allowed`** still reflect the **live** row.
+- When those three binding fields **do not** match the live row: **`200`** with **`authorized`:** `false`, **`active`:** `false` (fail closed). **`revoked`**, **`paused`**, **`revoked_at`**, **`access_mode`**, **`read_level`**, **`allow_destructive`**, **`allow_destructive_without_asking`**, **`services_allowed`**, and **`global_allowed_services`** still reflect the **live** row.
 - **`allow_destructive`:** always `false` for delegated agents in this response (destructive tools still require a human approval per call).
-- **`services_allowed`:** sorted list of service ids from the agent row.
+- **`allow_destructive_without_asking`:** from the live agent row (expected `false` for delegated rows created under current rules; included so gateways see the same field as non-delegated authority checks).
+- **`services_allowed`:** sorted list of service ids from the agent row (effective regional allow list after exchange narrowing).
+- **`global_allowed_services`:** sorted list from the agent row (cap from the last verified global subject token scope; exchange cannot widen past this).
 - **`global_agent_id`:** always from the live row (never from the request body).
 
-**200 body (fixed keys):** `authorized`, `active`, `revoked`, `paused`, `agent_id`, `company_id`, `global_agent_id`, `global_company_id`, `grant_version`, `company_binding_version`, `access_mode`, `read_level`, `allow_destructive`, `services_allowed`, `revoked_at` (unix seconds or JSON `null`).
+**200 body (fixed keys):** `authorized`, `active`, `revoked`, `paused`, `agent_id`, `company_id`, `global_agent_id`, `global_company_id`, `grant_version`, `company_binding_version`, `access_mode`, `read_level`, `allow_destructive`, `allow_destructive_without_asking`, `services_allowed`, `global_allowed_services`, `revoked_at` (unix seconds or JSON `null`).
 
 This route is **not** cached on Identity.
 

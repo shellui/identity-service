@@ -140,6 +140,23 @@ class McpGlobalApprovalCreateTests(TestCase):
             )
         self.assertEqual(r.status_code, 403, r.content)
 
+    def test_unprovisioned_global_company_rejected(self):
+        unprovisioned = uuid.uuid4()
+        with self._settings():
+            assertion = _build_dashboard_approval_assertion(
+                claims_extra=self._claims(global_company_id=str(unprovisioned)),
+                private_pem=self._dash_key.private_pem,
+                kid=self._dash_key.kid,
+            )
+            r = self.client.post(
+                '/api/v1/mcp/internal/mcp-approval-requests',
+                data=json.dumps({}),
+                content_type='application/json',
+                HTTP_AUTHORIZATION=f'Bearer {assertion}',
+            )
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn('not provisioned', r.json().get('error', '').lower())
+
     def test_state_finds_global_row(self):
         """State and consume routes must match global rows by global_agent_id, not agent_id."""
         claims = self._claims()

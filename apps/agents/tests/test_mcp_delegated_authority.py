@@ -127,7 +127,9 @@ class McpDelegatedAgentAuthorityTests(TestCase):
             'access_mode',
             'read_level',
             'allow_destructive',
+            'allow_destructive_without_asking',
             'services_allowed',
+            'global_allowed_services',
             'revoked_at',
         }
         self.assertEqual(set(data.keys()), fixed_keys)
@@ -174,7 +176,7 @@ class McpDelegatedAgentAuthorityTests(TestCase):
         r = self._post(body)
         self.assertEqual(r.status_code, 200)
         d = r.json()
-        self.assertEqual(len(d), 15)
+        self.assertEqual(len(d), 17)
         self.assertFalse(d['authorized'])
         self.assertFalse(d['active'])
         self.assertEqual(d['agent_id'], str(self.agent.id))
@@ -192,7 +194,7 @@ class McpDelegatedAgentAuthorityTests(TestCase):
         r = self._post(body)
         self.assertEqual(r.status_code, 200)
         d = r.json()
-        self.assertEqual(len(d), 15)
+        self.assertEqual(len(d), 17)
         self.assertFalse(d['authorized'])
         self.assertFalse(d['active'])
         self.assertEqual(d['global_company_id'], wrong_gc)
@@ -211,7 +213,7 @@ class McpDelegatedAgentAuthorityTests(TestCase):
         r = self._post(self._ok_body())
         self.assertEqual(r.status_code, 200)
         d = r.json()
-        self.assertEqual(len(d), 15)
+        self.assertEqual(len(d), 17)
         self.assertFalse(d['authorized'])
         self.assertFalse(d['active'])
         self.assertFalse(d['revoked'])
@@ -223,7 +225,7 @@ class McpDelegatedAgentAuthorityTests(TestCase):
         r = self._post(self._ok_body())
         self.assertEqual(r.status_code, 200)
         d = r.json()
-        self.assertEqual(len(d), 15)
+        self.assertEqual(len(d), 17)
         self.assertFalse(d['authorized'])
         self.assertFalse(d['active'])
         self.assertTrue(d['revoked'])
