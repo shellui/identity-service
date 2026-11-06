@@ -15,7 +15,9 @@ from django.http import JsonResponse
 from django.utils import timezone
 
 from apps.agents.global_revocation import global_agent_exchange_blocked
+from apps.agents.json_strict import strict_non_negative_int
 from apps.agents.mcp_resources import (
+    GATEWAY_SERVICE_ID,
     is_regional_gateway_resource_for_company,
     resolve_mcp_resource,
     resource_company_id,
@@ -111,43 +113,62 @@ def _parse_setup_context_from_global_claims(
     subject_has_global_binding: bool,
 ) -> tuple[int | None, datetime | None, bool, int | None, str | None]:
     """
-    Optional new-company setup from the global subject token (SaaS-signed).
+    Optional new-company setup from the global subject token (global issuer, SaaS-signed).
 
-    SaaS does **not** mint ``mcp_new_company_grant``; Identity derives that server-side when setup
-    validates. If ``setup_flow`` is JSON ``false`` or absent, setup is cleared. If ``setup_flow``
-    is JSON ``true``, every required field must validate or the exchange is rejected (no downgrade
-    to ordinary authority).
+    When ``setup_flow`` is absent and ``mcp_new_company_grant`` is absent, setup is cleared.
+
+    When ``setup_flow`` is JSON ``false``, setup is cleared; ``mcp_new_company_grant`` must not appear.
+
+    When ``setup_flow`` is JSON ``true``, require ``mcp_new_company_grant`` JSON ``true`` (no string or
+    numeric truthiness), plus the usual setup fields, or the exchange is rejected.
     """
-    if 'mcp_new_company_grant' in claims:
-        return None, None, False, None, 'Unexpected mcp_new_company_grant on global subject token.'
     if 'setup_context_exp' in claims:
         return None, None, False, None, 'Legacy setup_context_exp is not accepted on global subject tokens.'
 
-    setup_raw = claims.get('setup_flow')
-    setup_flow = strict_bool_claim(setup_raw)
-    if setup_raw is not None and not setup_flow:
-        return None, None, False, None, None
-    if not setup_flow:
+    has_sf = 'setup_flow' in claims
+    has_grant_claim = 'mcp_new_company_grant' in claims
+
+    if not has_sf:
+        if has_grant_claim:
+            return None, None, False, None, 'mcp_new_company_grant requires setup_flow on the global subject token.'
         return None, None, False, None, None
 
-    try:
-        ctx_company = int(claims.get('setup_context_company_id'))
-    except (TypeError, ValueError):
-        return None, None, False, None, 'Invalid setup_context_company_id.'
+    sf_raw = claims.get('setup_flow')
+    if sf_raw is not True and sf_raw is not False:
+        return None, None, False, None, 'setup_flow must be JSON true or false on the global subject token.'
+    if sf_raw is False:
+        if has_grant_claim:
+            return None, None, False, None, 'mcp_new_company_grant must not appear when setup_flow is false.'
+        return None, None, False, None, None
+
+    # setup_flow is JSON true
+    grant_raw = claims.get('mcp_new_company_grant')
+    if not strict_bool_claim(grant_raw):
+        return (
+            None,
+            None,
+            False,
+            None,
+            'mcp_new_company_grant must be JSON true when setup_flow is true on the global subject token.',
+        )
+
+    raw_ctx = claims.get('setup_context_company_id')
+    ctx_co = strict_non_negative_int(raw_ctx)
+    if ctx_co is None or ctx_co == 0:
+        return None, None, False, None, 'setup_context_company_id must be a positive JSON integer.'
+    ctx_company = ctx_co
     if ctx_company != regional_company_id:
         return None, None, False, None, 'setup_context_company_id does not match token exchange company.'
 
     raw_deadline = claims.get('setup_expires_at')
-    if raw_deadline is None or raw_deadline == '':
+    ctx_exp_unix = strict_non_negative_int(raw_deadline)
+    if ctx_exp_unix is None:
         return None, None, False, None, 'setup_expires_at is required when setup_flow is true.'
-    try:
-        ctx_exp_unix = int(raw_deadline)
-    except (TypeError, ValueError):
-        return None, None, False, None, 'setup_expires_at must be a unix second integer.'
-    try:
-        iat = int(claims.get('iat'))
-    except (TypeError, ValueError):
+    iat_raw = claims.get('iat')
+    iat_val = strict_non_negative_int(iat_raw)
+    if iat_val is None:
         return None, None, False, None, 'Invalid iat on global subject token.'
+    iat = iat_val
     if ctx_exp_unix <= iat:
         return None, None, False, None, 'setup_expires_at must be after iat.'
     if global_exp_unix is not None and ctx_exp_unix > int(global_exp_unix):
@@ -157,9 +178,8 @@ def _parse_setup_context_from_global_claims(
         return None, None, False, None, 'setup_expires_at is in the past.'
 
     raw_ttl = claims.get('mcp_session_ttl_seconds')
-    try:
-        setup_ttl = int(raw_ttl)
-    except (TypeError, ValueError):
+    setup_ttl = strict_non_negative_int(raw_ttl)
+    if setup_ttl is None:
         return None, None, False, None, 'mcp_session_ttl_seconds must be an integer when setup_flow is true.'
     lo = int(getattr(settings, 'MCP_APPROVAL_SETUP_SESSION_TTL_MIN_SECONDS', 600) or 600)
     hi = int(getattr(settings, 'MCP_APPROVAL_SETUP_SESSION_TTL_MAX_SECONDS', 900) or 900)
@@ -437,6 +457,11 @@ def handle_agent_token_exchange(request, *, data: dict[str, Any] | None = None) 
         narrowed_services = services_within(effective_global_services, requested_services)
     if not narrowed_services:
         return _error('invalid_grant', 'Requested services are not allowed for this global agent.')
+    if service_id == GATEWAY_SERVICE_ID and GATEWAY_SERVICE_ID not in claimed_scope_set:
+        return _error(
+            'invalid_grant',
+            'The global agent scope must include the ai service for the regional AI gateway resource.',
+        )
     if service_id not in claimed_scope_set:
         return _error('invalid_grant', 'The MCP resource is not included in allowed services.')
 
@@ -498,18 +523,17 @@ def handle_agent_token_exchange(request, *, data: dict[str, Any] | None = None) 
     setup_expires_at: datetime | None = None
     setup_new_company_flag = False
     setup_ttl_stored: int | None = None
-    clear_setup = 'setup_flow' not in claims
-    if not clear_setup:
-        setup_company_id, setup_expires_at, setup_new_company_flag, setup_ttl_stored, setup_parse_err = (
-            _parse_setup_context_from_global_claims(
-                claims,
-                regional_company_id=company.pk,
-                global_exp_unix=global_exp_unix,
-                subject_has_global_binding=subject_has_global_binding,
-            )
+    setup_company_id, setup_expires_at, setup_new_company_flag, setup_ttl_stored, setup_parse_err = (
+        _parse_setup_context_from_global_claims(
+            claims,
+            regional_company_id=company.pk,
+            global_exp_unix=global_exp_unix,
+            subject_has_global_binding=subject_has_global_binding,
         )
-        if setup_parse_err:
-            return _error('invalid_grant', setup_parse_err)
+    )
+    if setup_parse_err:
+        return _error('invalid_grant', setup_parse_err)
+    clear_setup = not setup_new_company_flag
 
     with transaction.atomic():
         agent = (

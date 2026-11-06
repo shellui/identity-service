@@ -154,6 +154,7 @@ class AgentTokenExchangeTests(_CryptoMixin, TestCase):
         response = self._post(
             self._global_agent_token(
                 setup_flow=True,
+                mcp_new_company_grant=True,
                 setup_context_company_id=self.company.pk,
                 setup_expires_at=setup_exp,
                 mcp_session_ttl_seconds=600,
@@ -178,6 +179,73 @@ class AgentTokenExchangeTests(_CryptoMixin, TestCase):
             delta=2,
         )
 
+    def test_global_token_requires_json_true_mcp_new_company_grant_with_setup_flow(self):
+        self._member()
+        now = unix_now()
+        setup_exp = now + 240
+        response = self._post(
+            self._global_agent_token(
+                setup_flow=True,
+                setup_context_company_id=self.company.pk,
+                setup_expires_at=setup_exp,
+                mcp_session_ttl_seconds=600,
+            ),
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()['error'], 'invalid_grant')
+
+    def test_global_token_rejects_non_boolean_mcp_new_company_grant(self):
+        self._member()
+        now = unix_now()
+        setup_exp = now + 240
+        response = self._post(
+            self._global_agent_token(
+                setup_flow=True,
+                mcp_new_company_grant='true',
+                setup_context_company_id=self.company.pk,
+                setup_expires_at=setup_exp,
+                mcp_session_ttl_seconds=600,
+            ),
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()['error'], 'invalid_grant')
+
+    def test_global_token_rejects_mcp_new_company_grant_without_setup_flow(self):
+        self._member()
+        response = self._post(self._global_agent_token(mcp_new_company_grant=True))
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()['error'], 'invalid_grant')
+
+    def test_global_token_setup_flow_false_clears_stored_setup(self):
+        self._member()
+        now = unix_now()
+        setup_exp = now + 240
+        first = self._post(
+            self._global_agent_token(
+                setup_flow=True,
+                mcp_new_company_grant=True,
+                setup_context_company_id=self.company.pk,
+                setup_expires_at=setup_exp,
+                mcp_session_ttl_seconds=600,
+            ),
+        )
+        self.assertEqual(first.status_code, 200, first.content)
+        agent = Agent.objects.get(company=self.company, global_agent_id=self.global_agent_id)
+        self.assertTrue(agent.setup_new_company_grant)
+        second = self._post(self._global_agent_token(setup_flow=False))
+        self.assertEqual(second.status_code, 200, second.content)
+        agent.refresh_from_db()
+        self.assertFalse(agent.setup_new_company_grant)
+        self.assertIsNone(agent.setup_company_id)
+        self.assertIsNone(agent.setup_context_expires_at)
+        self.assertIsNone(agent.setup_mcp_session_ttl_seconds)
+
+    def test_ai_gateway_requires_ai_in_global_scope(self):
+        self._member()
+        response = self._post(self._global_agent_token(scope='identity storage'))
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()['error'], 'invalid_grant')
+
     def test_rejects_legacy_setup_context_exp_on_global_token(self):
         self._member()
         now = unix_now()
@@ -185,6 +253,7 @@ class AgentTokenExchangeTests(_CryptoMixin, TestCase):
         response = self._post(
             self._global_agent_token(
                 setup_flow=True,
+                mcp_new_company_grant=True,
                 setup_context_company_id=self.company.pk,
                 setup_context_exp=setup_exp,
                 mcp_session_ttl_seconds=600,
@@ -213,6 +282,7 @@ class AgentTokenExchangeTests(_CryptoMixin, TestCase):
         response = self._post(
             self._global_agent_token(
                 setup_flow=True,
+                mcp_new_company_grant=True,
                 setup_context_company_id=self.other_company.pk,
                 setup_expires_at=now + 240,
                 mcp_session_ttl_seconds=600,

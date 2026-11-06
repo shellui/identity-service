@@ -94,8 +94,9 @@ def encode_personal_agent_access_token(
     cb = getattr(agent, 'company_binding_version', None)
     if cb is not None:
         claims['company_binding_version'] = int(cb)
-    if api_settings.ISSUER:
-        claims['iss'] = api_settings.ISSUER
+    _issuer = api_settings.ISSUER or getattr(settings, 'JWT_ISSUER', None)
+    if _issuer:
+        claims['iss'] = _issuer
     headers = {}
     kid = getattr(settings, 'JWT_ACTIVE_KEY_ID', '')
     if kid:

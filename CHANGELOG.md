@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 - MCP session Allow TTL stays **60 seconds** by default. ai-service can sign longer approval assertions (other issuers stay near 60 second ``exp - iat``) and include ``setup_flow`` with ``mcp_session_ttl_seconds`` between **600** and **900** during new-company setup when the regional ``Agent`` has stored setup context from global token exchange (global subject token: ``setup_context_company_id`` and signed ``setup_expires_at``). Extended grants apply only when both remaining time to access token ``exp`` and remaining time to ``setup_context_expires_at`` are at least ``MCP_APPROVAL_SETUP_SESSION_TTL_MIN_SECONDS`` (default 600); otherwise Identity falls back to the default TTL. Regional access tokens echo ``setup_expires_at``. Revocation poll responses include ``revocation_policy_version`` (and the same claim in ``revocation_assertion``) so gateways drop positive cache when grants are revoked or company permissions change without pausing the agent. Other callers and HTTP bodies cannot extend the grant; destructive actions still need an approval each time.
 
+- Global agent token exchange: the global subject token ``scope`` must include ``ai`` for ``{AI_SERVICE_URL}/c/<company_id>/mcp``. First-company setup on the global token requires ``setup_flow`` and ``mcp_new_company_grant`` both JSON ``true`` (pairing and strict integer deadlines); absent setup claims clear any stored setup on the regional agent. Personal MCP agent access tokens set ``iss`` from ``SIMPLE_JWT['ISSUER']`` or ``JWT_ISSUER`` for the same behavior as company agents.
+
 ### 🐛 Bug Fixes
 
 - Identity ``/mcp`` local ``tools/call`` rows store elapsed ``duration_ms`` in the admin call log.
