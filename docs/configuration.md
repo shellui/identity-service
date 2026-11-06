@@ -256,6 +256,7 @@ Leave `SHELLUI_INSTANCE_ROLE` unset for a standalone deployment. `global` turns 
 | `DASHBOARD_WEBHOOK_URL` | empty | saas-service region webhook (`https://<dashboard>/api/v1/webhooks/<region>`) that receives `identity.company.deleted` |
 | `DASHBOARD_WEBHOOK_INTERNAL_URL` | empty | Server-to-server URL for that webhook POST. Unset uses `DASHBOARD_WEBHOOK_URL` |
 | `DASHBOARD_WEBHOOK_SECRET` | empty | Signing secret for that webhook. Same value as the region's webhook secret in saas-service |
+| `DASHBOARD_PUBLIC_URL` | empty | Optional public ShellUI dashboard origin (`https://…`, path-less). When set, `GET /api/v1/mcp/personal/status` includes `global_mcp_url` as `{DASHBOARD_PUBLIC_URL}/mcp` for global account MCP discovery. Independent of regional `mcp_url` |
 
 ## Related
 

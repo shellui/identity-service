@@ -192,6 +192,11 @@ OPTIONAL = (
     Var('DASHBOARD_WEBHOOK_URL', ''),
     Var('DASHBOARD_WEBHOOK_INTERNAL_URL', '', 'Server-to-server saas webhook URL (defaults to DASHBOARD_WEBHOOK_URL)'),
     Var('DASHBOARD_WEBHOOK_SECRET', ''),
+    Var(
+        'DASHBOARD_PUBLIC_URL',
+        '',
+        'Optional public ShellUI dashboard origin (https) for global MCP URL hint on personal status',
+    ),
 )
 
 ROLES = ('standalone', 'global', 'region')

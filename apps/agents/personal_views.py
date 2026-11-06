@@ -13,7 +13,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.agents.models import Agent, McpCallLog, PersonalAgentCredential
-from apps.agents.mcp_resources import company_mcp_resource_url, mcp_enabled_for_company
+from apps.agents.mcp_resources import company_mcp_resource_url, global_mcp_url, mcp_enabled_for_company
 from apps.agents.permissions import require_company_member
 from apps.agents.personal_agent_tokens import (
     create_personal_agent_credential,
@@ -89,7 +89,13 @@ class PersonalMcpStatusView(APIView):
         if err:
             return err
         url = company_mcp_resource_url(company.id)
-        return Response({'mcp_enabled': bool(url), 'mcp_url': url})
+        return Response(
+            {
+                'mcp_enabled': bool(url),
+                'mcp_url': url,
+                'global_mcp_url': global_mcp_url(),
+            }
+        )
 
 
 @extend_schema_view(

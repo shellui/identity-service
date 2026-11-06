@@ -21,6 +21,41 @@ _LOOPBACK_HOSTS = ('127.0.0.1', 'localhost', '::1')
 GATEWAY_SERVICE_ID = 'ai'
 
 
+def _trusted_https_origin(raw: str | None) -> str | None:
+    """Return normalized https origin (or loopback http) or None if not a safe public base URL."""
+    s = str(raw or '').strip()
+    if not s or '#' in s or '?' in s:
+        return None
+    s = s.rstrip('/')
+    try:
+        parsed = urlsplit(s)
+    except ValueError:
+        return None
+    if parsed.scheme not in ('http', 'https') or not parsed.netloc or parsed.username or parsed.password:
+        return None
+    host = (parsed.hostname or '').lower()
+    if parsed.scheme == 'http' and host not in _LOOPBACK_HOSTS:
+        return None
+    if parsed.scheme == 'https' and host in _LOOPBACK_HOSTS:
+        return None
+    if parsed.path not in ('', '/'):
+        return None
+    return f'{parsed.scheme}://{parsed.netloc}'
+
+
+def global_mcp_url() -> str | None:
+    """
+    Optional global ShellUI account MCP URL: ``DASHBOARD_PUBLIC_URL`` + ``/mcp``.
+
+    Independent of regional ``mcp_url`` (ai-service gateway). Unset or invalid settings
+    return None (callers show nothing).
+    """
+    base = _trusted_https_origin(getattr(settings, 'DASHBOARD_PUBLIC_URL', '') or '')
+    if not base:
+        return None
+    return f'{base}/mcp'
+
+
 def _normalize_company_resource(raw: str | None) -> str | None:
     s = str(raw or '').strip()
     if not s or '#' in s or '?' in s:
