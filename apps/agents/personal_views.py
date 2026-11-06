@@ -31,7 +31,7 @@ from apps.authapi.throttling import check_rate_limit
 
 
 def _setup_from_access_token(request, company) -> tuple[bool | None, int | None]:
-    """Setup window from validated ShellUI access token (must match this company)."""
+    """Setup window from validated Shellui access token (must match this company)."""
     token = getattr(request, 'auth', None)
     if token is None or not hasattr(token, 'get'):
         return None, None

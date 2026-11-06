@@ -12,7 +12,7 @@ Identity exposes its **own** MCP tools at `POST /mcp` on the identity origin (fo
 
 Each company has its own MCP URL on ai-service: `{AI_SERVICE_URL}/c/<company_id>/mcp` (for example `https://ai.example.com/c/42/mcp`). The company comes from the URL, so the user never picks one and there is no default company. Plain `{AI_SERVICE_URL}/mcp` answers with an error that points to the per-company URL.
 
-`GET /api/v1/mcp/personal/status` (company member Bearer token) returns `mcp_enabled` and optional regional `mcp_url` as today, plus optional `global_mcp_url`. When `DASHBOARD_PUBLIC_URL` is set to the trusted ShellUI dashboard origin (https, no path), `global_mcp_url` is `{DASHBOARD_PUBLIC_URL}/mcp`. It does not depend on whether the regional gateway URL is configured.
+`GET /api/v1/mcp/personal/status` (company member Bearer token) returns `mcp_enabled` and optional regional `mcp_url` as today, plus optional `global_mcp_url`. When `DASHBOARD_PUBLIC_URL` is set to the trusted Shellui dashboard origin (https, no path), `global_mcp_url` is `{DASHBOARD_PUBLIC_URL}/mcp`. It does not depend on whether the regional gateway URL is configured.
 
 1. Add the per-company URL as a connector in ChatGPT, Claude, Grok, MCP Inspector, or another MCP client.
 2. The client reads protected resource metadata from ai-service (`/.well-known/oauth-protected-resource/c/<company_id>/mcp`), then authorization server metadata on identity (`/.well-known/oauth-authorization-server`).

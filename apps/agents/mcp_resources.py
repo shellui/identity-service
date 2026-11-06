@@ -45,7 +45,7 @@ def _trusted_https_origin(raw: str | None) -> str | None:
 
 def global_mcp_url() -> str | None:
     """
-    Optional global ShellUI account MCP URL: ``DASHBOARD_PUBLIC_URL`` + ``/mcp``.
+    Optional global Shellui account MCP URL: ``DASHBOARD_PUBLIC_URL`` + ``/mcp``.
 
     Independent of regional ``mcp_url`` (ai-service gateway). Unset or invalid settings
     return None (callers show nothing).

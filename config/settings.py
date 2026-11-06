@@ -532,7 +532,7 @@ DASHBOARD_WEBHOOK_URL = os.getenv('DASHBOARD_WEBHOOK_URL', '').strip()
 DASHBOARD_WEBHOOK_INTERNAL_URL = os.getenv('DASHBOARD_WEBHOOK_INTERNAL_URL', '').strip()
 DASHBOARD_WEBHOOK_HTTP_URL = internal_origin(DASHBOARD_WEBHOOK_URL, DASHBOARD_WEBHOOK_INTERNAL_URL)
 DASHBOARD_WEBHOOK_SECRET = os.getenv('DASHBOARD_WEBHOOK_SECRET', '').strip()
-# Public ShellUI dashboard origin (saas). Used for optional ``global_mcp_url`` on MCP personal status only.
+# Public Shellui dashboard origin (saas). Used for optional ``global_mcp_url`` on MCP personal status only.
 DASHBOARD_PUBLIC_URL = (os.getenv('DASHBOARD_PUBLIC_URL', '') or '').strip().rstrip('/')
 
 JWT_ACCESS_TOKEN_LIFETIME = _env_duration('JWT_ACCESS_TOKEN_LIFETIME', timedelta(minutes=5))

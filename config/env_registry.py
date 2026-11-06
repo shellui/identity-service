@@ -195,7 +195,7 @@ OPTIONAL = (
     Var(
         'DASHBOARD_PUBLIC_URL',
         '',
-        'Optional public ShellUI dashboard origin (https) for global MCP URL hint on personal status',
+        'Optional public Shellui dashboard origin (https) for global MCP URL hint on personal status',
     ),
 )
 
