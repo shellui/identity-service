@@ -30,6 +30,7 @@ class McpOAuthMetadataTests(TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(data['issuer'], 'https://identity.test')
+        self.assertEqual(data['token_endpoint'], 'https://identity.test/oauth/token')
         self.assertIn('registration_endpoint', data)
         self.assertEqual(data['code_challenge_methods_supported'], ['S256'])
         self.assertTrue(data.get('resource_indicators_supported'))

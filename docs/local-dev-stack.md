@@ -63,7 +63,7 @@ Compose prefixes clash-prone secrets in `.env.local.example` (for example `IDENT
 | `IDENTITY_ALLOWED_HOSTS` | `ALLOWED_HOSTS` | `localhost,127.0.0.1,identity` |
 | `IDENTITY_CSRF_TRUSTED_ORIGINS` | `CSRF_TRUSTED_ORIGINS` | see table above |
 
-Optional service URLs for MCP and company deletion follow the public/internal split in the table. Region or global instance roles need the same extra settings as production; see [Instance roles](instance-roles.md).
+Optional service URLs for MCP and company deletion follow the public/internal split in the table. `SHELLUI_INSTANCE_ROLE` defaults to unset (**standalone**): browser MCP OAuth against this container works, but **global agent token exchange** (`RFC 8693` to a regional agent JWT) and **regional user token exchange** stay off until you set **`SHELLUI_INSTANCE_ROLE=region`** and the pinned `GLOBAL_*` variables from [Instance roles](instance-roles.md). Use the same role value in local compose as in production for the flows you want to exercise.
 
 With `DEBUG=true`, `REDIS_URL` is recommended (rate limits and OAuth state) but not required; the dev entrypoint does not start Gunicorn or the Celery scheduler. For scheduled jobs locally, set `REDIS_URL` and run the production image in `web` mode, or use the repo's `docker-compose.yml`.
 

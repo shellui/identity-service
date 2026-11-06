@@ -92,6 +92,11 @@ class PersonalAgentTokenCreateSerializer(serializers.Serializer):
     allow_destructive = serializers.BooleanField(default=False)
     expires_at = serializers.DateTimeField()
 
+    def validate_allow_destructive(self, value):
+        if value:
+            raise serializers.ValidationError('Destructive tools always need a separate human approval.')
+        return value
+
 
 @extend_schema_view(
     get=extend_schema(

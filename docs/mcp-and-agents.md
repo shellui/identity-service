@@ -10,22 +10,24 @@ Identity exposes its **own** MCP tools at `POST /mcp` on the identity origin (fo
 
 ## Connect a client (one URL per company)
 
-Each company has its own MCP URL on ai-service: `{AI_SERVICE_URL}/c/<company_id>/mcp` (for example `https://ai.example.com/c/42/mcp`). The company comes from the URL, so the user never picks one and there is no default company. Plain `{AI_SERVICE_URL}/mcp` answers with an error that points to the per-company URL.
+Each company has its own MCP URL on ai-service: `{AI_SERVICE_URL}/c/your_company_id_here/mcp` (for example `https://ai.example.com/c/42/mcp`). The company comes from the URL, so the user never picks one and there is no default company. Plain `{AI_SERVICE_URL}/mcp` answers with an error that points to the per-company URL.
 
 `GET /api/v1/mcp/personal/status` (company member Bearer token) returns `mcp_enabled` and optional regional `mcp_url` as today, plus optional `global_mcp_url`. When `DASHBOARD_PUBLIC_URL` is set to the trusted Shellui dashboard origin (https, no path), `global_mcp_url` is `{DASHBOARD_PUBLIC_URL}/mcp`. It does not depend on whether the regional gateway URL is configured.
+
+The authorization server metadata lists `token_endpoint` as `POST /oauth/token` on the Identity host. `POST /oauth/mcp/token` is the same MCP handler for clients that still use the old path.
 
 1. Add the per-company URL as a connector in ChatGPT, Claude, Grok, MCP Inspector, or another MCP client.
 2. The client reads protected resource metadata from ai-service (`/.well-known/oauth-protected-resource/c/<company_id>/mcp`), then authorization server metadata on identity (`/.well-known/oauth-authorization-server`).
 3. The client registers with **dynamic client registration** (`POST /oauth/mcp/register`) unless an operator disabled it (`MCP_DYNAMIC_CLIENT_REGISTRATION=false` or `Company.mcp_allow_dynamic_registration=false`). Registration is limited to `AUTH_RATE_LIMIT_MCP_REGISTER` per hour per IP.
-4. The browser opens `GET /oauth/mcp/authorize` with PKCE S256 and RFC 8707 `resource={AI_SERVICE_URL}/c/<company_id>/mcp`. A signed-out user lands on identity's own sign-in page (`/oauth/mcp/signin`) and asks for an email sign-in link. That page never shows the company name or its sign-in methods, and it looks the same for every company id, known or not, so nobody can map ids to companies. The link is sent only when the company exists and turned the email link on. Staff accounts can't use the email link and can't authorize MCP clients. The page is limited to `AUTH_RATE_LIMIT_MCP_SIGNIN` requests per 5 minutes per IP.
+4. The browser opens `GET /oauth/mcp/authorize` with PKCE S256 and RFC 8707 `resource={AI_SERVICE_URL}/c/your_company_id_here/mcp`. A signed-out user lands on identity's own sign-in page (`/oauth/mcp/signin`) and asks for an email sign-in link. That page never shows the company name or its sign-in methods, and it looks the same for every company id, known or not, so nobody can map ids to companies. The link is sent only when the company exists and turned the email link on. Staff accounts can't use the email link and can't authorize MCP clients. The page is limited to `AUTH_RATE_LIMIT_MCP_SIGNIN` requests per 5 minutes per IP.
 5. After sign-in, identity checks that the user is a member of the company, then shows the consent page with the company name. An unknown company answers 404 only at this point. The user picks services, access level, and read level, then clicks **Approve**. Identity never approves on its own.
-6. The client exchanges the code at `POST /oauth/mcp/token` with the same `resource`. The access token's `aud` is the per-company URL and its `company_id` is that company. Refresh tokens stay bound to the same resource.
+6. The client exchanges the code at `POST /oauth/token` (or `POST /oauth/mcp/token`) with the same `resource`. Send **RFC 6749 form** (`application/x-www-form-urlencoded`); repeated keys are preserved. JSON bodies are also accepted. The access token's `aud` is the per-company URL and its `company_id` is that company. Refresh tokens stay bound to the same resource.
 
 ### What the sign-in and consent pages show
 
 Both pages exist to stop phishing, so they show before anything else:
 
-- why the user is here: "`<client>` wants to access your company through the Shellui MCP connector" before sign-in, and with the company name on consent;
+- why the user is here: "the MCP client wants to access your company through the Shellui MCP connector" before sign-in, and with the company name on consent;
 - the client name, marked as chosen by the client and not verified;
 - the full host of the return address, before sign-in;
 - a warning not to continue if the user didn't start the connection.
@@ -45,26 +47,28 @@ Downstream services keep their own `{origin}/mcp` resource. ai-service reaches t
 
 ## Global agent token exchange (region role)
 
-A user who authorized an MCP agent on the global console can exchange that **global agent access token** for a **regional agent access token** bound to one company in this region, without a second browser consent on the region. The flow uses OAuth 2.0 Token Exchange (RFC 8693) at `POST /oauth/mcp/token` on the regional identity server. The endpoint answers **404** unless the role is `region` and `GLOBAL_ISSUER_URL`, `GLOBAL_JWKS`, and `GLOBAL_AGENT_ACCESS_TOKEN_AUDIENCE` are set.
+Global MCP OAuth bound the user to a SaaS company (company binding on the global agent token). There is no second regional browser consent for exchanging that token: the subject proves they already completed global MCP consent. The regional server still checks enabled membership for `company_id`.
 
+The flow uses OAuth 2.0 Token Exchange (RFC 8693) at `POST /oauth/token` on the regional identity server (`POST /oauth/mcp/token` is the same handler). The endpoint answers **404** unless the role is `region` and `GLOBAL_ISSUER_URL`, `GLOBAL_JWKS`, and `GLOBAL_AGENT_ACCESS_TOKEN_AUDIENCE` are set.
+
+```bash
+curl -sS -X POST "https://identity.example.com/oauth/token" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  --data-urlencode "grant_type=urn:ietf:params:oauth:grant-type:token-exchange" \
+  --data-urlencode "subject_token=PASTE_GLOBAL_AGENT_JWT" \
+  --data-urlencode "subject_token_type=urn:ietf:params:oauth:token-type:access_token" \
+  --data-urlencode "company_id=42" \
+  --data-urlencode "resource=https://ai.example.com/c/42/mcp" \
+  --data-urlencode "access_mode=read_only" \
+  --data-urlencode "read_level=safe" \
+  --data-urlencode "allow_destructive=false" \
+  --data-urlencode "services=identity" \
+  --data-urlencode "services=storage"
 ```
-POST /oauth/mcp/token
-Content-Type: application/json
 
-{
-  "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
-  "subject_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhZ2VudCIsImFnZW50X2lkIjoiLi4uIn0.signature",
-  "subject_token_type": "urn:ietf:params:oauth:token-type:access_token",
-  "company_id": 42,
-  "resource": "https://ai.example.com/c/42/mcp",
-  "access_mode": "read_only",
-  "read_level": "safe",
-  "allow_destructive": false,
-  "services": ["identity", "storage"]
-}
-```
+Optional `access_mode`, `read_level`, `allow_destructive`, and repeated `services` keys may only **narrow** the global agent (never broaden). Each `services` value is one MCP tool service id (for example `identity`, `storage`). You do **not** need to repeat `ai` in that list: capability to use the AI gateway comes from the global subject token `scope` (OAuth-style space-separated service ids), not from the exchange body. When `services` is omitted on a later exchange, Identity intersects the new global scope with the regional agent's current `services_allowed` (it does not default back to the full global list). `allow_destructive` must be JSON `true` or `false` when present (string numerics are rejected); regional access tokens never set `mcp_destructive` true for delegated agents. The `resource` must be exactly this region's configured AI gateway for that company (`{AI_SERVICE_URL}/c/your_company_id_here/mcp`, host and path must match `AI_SERVICE_URL`). Identity, storage, hosting, email, dashboard, or another region's host are rejected. The global user must already own or belong to `company_id` in this region (enabled membership). Global staff are refused, same as user token exchange.
 
-Optional `access_mode`, `read_level`, `allow_destructive`, and `services` may only **narrow** the global agent (never broaden). `services` is a JSON list of MCP tool service ids (for example `identity`, `storage`), not an OAuth scope string. You do **not** need to put `ai` in that list: capability to use the AI gateway comes from the global subject token `scope` (OAuth-style space-separated service ids), not from the exchange body. When `services` is omitted on a later exchange, Identity intersects the new global scope with the regional agent's current `services_allowed` (it does not default back to the full global list). `allow_destructive` must be JSON `true` or `false` when present (string numerics are rejected). The `resource` must be exactly this region's configured AI gateway for that company (`{AI_SERVICE_URL}/c/<company_id>/mcp`, host and path must match `AI_SERVICE_URL`). Identity, storage, hosting, email, dashboard, or another region's host are rejected. The global user must already own or belong to `company_id` in this region (enabled membership). Global staff are refused, same as user token exchange.
+`company_id` must be a **JSON integer** in a JSON body, or **digits only** in form bodies (no floats or signed strings).
 
 The global subject token `scope` must include **`ai`** when exchanging for that AI gateway resource. Without `ai` in `scope`, exchange is denied even if the body lists other services.
 
@@ -86,7 +90,7 @@ Global agent tokens are RS256 JWTs from the global identity issuer. Mint them af
 | `mcp_authority` | Always `global_delegated` (required; no legacy omission) |
 | `email`, `email_verified` | Owner email; `email_verified` must be boolean `true` |
 | `user_metadata.is_staff` | Boolean `false` for non-staff; staff exchange is refused |
-| `scope` | Space-separated OAuth-style service ids (`identity`, `storage`, `ai`, …); include `ai` when the user enabled that capability (required for `{AI_SERVICE_URL}/c/<company_id>/mcp` exchange) |
+| `scope` | Space-separated OAuth-style service ids (`identity`, `storage`, `ai`, …); include `ai` when the user enabled that capability (required for `{AI_SERVICE_URL}/c/your_company_id_here/mcp` exchange) |
 | `mcp_access`, `mcp_read`, `mcp_destructive` | Same semantics as regional agent JWTs |
 | `jti`, `iat`, `exp` | Short lifetime (match global MCP access TTL) |
 
@@ -98,7 +102,9 @@ Optional: `agent_name` for the regional agent display name.
 
 **Delegated agents and internal approvals:** agents with `global_agent_id` (token exchange) must use approvals signed by **ai-service**. Storage, hosting, and email get **409** with `error_code` `out_of_sync` if they try to create an approval for that agent.
 
-**Regional agent access tokens (after exchange):** include **`mcp_authority: delegated`**, **`global_agent_id`**, and the SaaS binding echo **`global_company_id`** / **`company_binding_version`** when the row is company-bound. OAuth-consent agents without `global_agent_id` omit `mcp_authority` (personal long-lived tokens stay unchanged).
+**Regional agent access tokens (after exchange):** include **`mcp_authority: delegated`** (this is **not** `global_delegated` on the global subject token), **`global_agent_id`**, and the SaaS binding echo **`global_company_id`** / **`company_binding_version`** when the row is company-bound. OAuth-consent agents without `global_agent_id` omit `mcp_authority` (personal long-lived tokens stay unchanged). Regional access tokens minted through `POST /api/v1/mcp/internal/mcp-downstream-access-token` use the same claim builder, so delegated agents keep **`mcp_authority: delegated`** on every downstream resource token.
+
+**Personal regional tokens:** omit `mcp_authority` unless the agent row is delegated; when present, `mcp_authority` is always **`delegated`** (never `global_delegated`).
 
 ## Access levels
 
@@ -108,7 +114,7 @@ Optional: `agent_name` for the regional agent display name.
 | Ask before changes | `ask` (default) | Writes create a pending approval |
 | Full access | `full` | Writes run immediately unless the tool is marked destructive |
 
-**Destructive without asking:** separate flag (`allow_destructive_without_asking`, default off). When off, destructive tools still require approval even in full access mode.
+**Destructive changes:** Identity never grants destructive tools without a separate human approval. OAuth consent no longer offers "destructive without asking". Settings and the personal-token API reject attempts to enable it; `mcp_destructive` is always `false` on regional JWTs for delegated (`mcp_authority: delegated`) agents. Legacy rows may still store the old flag until an operator narrows the agent.
 
 ## Read levels
 
@@ -161,12 +167,12 @@ Use this route to verify a regional **delegated** agent row against the live Saa
   - `grant_version`: JSON non-negative integer (`0` valid)
   - `company_binding_version`: JSON non-negative integer (`0` valid)
 
-**200** when the row matches exactly:
+**200** when the row matches exactly (live delegated agent, active, not expired, binding matches, and not globally revoked):
 
 - `authorized`: `true`
-- `revoked` / `paused`: booleans from the row
+- `revoked`: `false`
+- `paused`: `false`
 - `agent_id`, `company_id`, `global_agent_id`, `global_company_id`, `grant_version`, `company_binding_version`
-- `services_allowed`, `global_allowed_services`, `access_mode`, `read_level`, `allow_destructive_without_asking`
 
 **404** when the agent is missing, or when `global_agent_id` is null (not a delegated exchange agent). **400** on malformed body types. **403** when the agent is inactive, global revocation applies to that global agent id, or any of `global_company_id`, `grant_version`, or `company_binding_version` does not match the live row.
 
@@ -252,9 +258,9 @@ Access tokens include:
 | `setup_context_company_id` / `setup_expires_at` / `setup_flow` / `mcp_new_company_grant` / `mcp_session_ttl_seconds` | New-company setup window on the regional token (from global exchange when valid) |
 | `mcp_access` | `read_only`, `ask`, or `full` |
 | `mcp_read` | `safe` or `sensitive` |
-| `mcp_destructive` | Boolean; allows destructive tools without a separate approval when true (always false on regional tokens for delegated exchange; the global subject cap still stores on `global_max_destructive` for narrowing checks) |
+| `mcp_destructive` | Boolean on the JWT; `true` only for non-delegated agents that still have legacy `allow_destructive_without_asking`. Always `false` when `mcp_authority` is **`delegated`**. |
 
-Refresh tokens use `grant_type=refresh_token` at `/oauth/mcp/token` with the same `resource` parameter. Each refresh token is bound to one resource.
+Refresh tokens use `grant_type=refresh_token` at `POST /oauth/token` (or `POST /oauth/mcp/token`) with the same `resource` parameter. Each refresh token is bound to one resource.
 
 Regional Identity deployments scope agents to the company only (no `project_scope` in consent or JWT). Project binding for SaaS is enforced in saas-service.
 

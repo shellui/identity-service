@@ -25,6 +25,30 @@ def strict_json_int_for_company_id(raw: Any) -> int | None:
     return strict_non_negative_int(raw)
 
 
+def strict_positive_company_id_for_oauth_form(raw: Any) -> int | None:
+    """Regional id for OAuth token bodies: JSON positive int, or form urlencoded digit-only string.
+
+    Rejects bools, floats, signed numbers, and strings with non-digits (no silent coercion).
+    """
+    if raw is None or raw == '':
+        return None
+    if isinstance(raw, bool):
+        return None
+    if type(raw) is int:
+        if raw <= 0:
+            return None
+        return raw
+    if isinstance(raw, str):
+        text = raw.strip()
+        if not text.isdigit():
+            return None
+        value = int(text)
+        if value <= 0:
+            return None
+        return value
+    return None
+
+
 _ALL_DECODE_ALGOS = (
     'HS256',
     'HS384',

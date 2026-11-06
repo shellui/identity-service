@@ -120,6 +120,42 @@ class AgentTokenExchangeTests(_CryptoMixin, TestCase):
         self.assertEqual(agent.services_allowed, ['ai', 'identity', 'storage'])
         self.assertFalse(agent.allow_destructive_without_asking)
 
+    def test_oauth_token_and_oauth_mcp_token_equivalent_for_agent_exchange(self):
+        self._member()
+        # Each successful exchange consumes one global subject token; use two mints.
+        a = self.client.post(
+            '/oauth/token',
+            data=json.dumps(
+                {
+                    'grant_type': GRANT_TYPE,
+                    'subject_token': self._global_agent_token(),
+                    'subject_token_type': ACCESS_TOKEN_TYPE,
+                    'company_id': self.company.pk,
+                    'resource': self._gateway_mcp,
+                }
+            ),
+            content_type='application/json',
+        )
+        b = self.client.post(
+            '/oauth/mcp/token',
+            data=json.dumps(
+                {
+                    'grant_type': GRANT_TYPE,
+                    'subject_token': self._global_agent_token(),
+                    'subject_token_type': ACCESS_TOKEN_TYPE,
+                    'company_id': self.company.pk,
+                    'resource': self._gateway_mcp,
+                }
+            ),
+            content_type='application/json',
+        )
+        self.assertEqual(a.status_code, 200, a.content)
+        self.assertEqual(b.status_code, 200, b.content)
+        ca = jwt.decode(a.json()['access_token'], options={'verify_signature': False})
+        cb = jwt.decode(b.json()['access_token'], options={'verify_signature': False})
+        for key in ('agent_id', 'company_id', 'aud', 'global_agent_id'):
+            self.assertEqual(ca.get(key), cb.get(key), msg=key)
+
     def test_delegated_exchange_never_sets_destructive_without_asking(self):
         self._member()
         response = self._post(self._global_agent_token(mcp_destructive=True))

@@ -15,7 +15,7 @@ from django.http import JsonResponse
 from django.utils import timezone
 
 from apps.agents.global_revocation import global_agent_exchange_blocked
-from apps.agents.json_strict import strict_non_negative_int
+from apps.agents.json_strict import strict_non_negative_int, strict_positive_company_id_for_oauth_form
 from apps.agents.mcp_resources import (
     GATEWAY_SERVICE_ID,
     is_regional_gateway_resource_for_company,
@@ -91,9 +91,12 @@ def _membership_ok(company: Company, user) -> bool:
 
 
 def _resolve_company(data: dict[str, Any]) -> Company | None:
+    cid = strict_positive_company_id_for_oauth_form(data.get('company_id'))
+    if cid is None:
+        return None
     try:
-        return Company.objects.get(pk=int(str(data.get('company_id') or '').strip()))
-    except (Company.DoesNotExist, TypeError, ValueError):
+        return Company.objects.get(pk=cid)
+    except Company.DoesNotExist:
         return None
 
 

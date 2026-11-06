@@ -55,6 +55,7 @@ def build_agent_access_token(agent: Agent, *, resource: str) -> dict:
     now = timezone.now()
     exp = now + mcp_access_lifetime()
     jti = uuid.uuid4().hex
+    ga = getattr(agent, 'global_agent_id', None)
     claims = {
         'token_type': 'access',
         'agent_id': str(agent.id),
@@ -63,14 +64,15 @@ def build_agent_access_token(agent: Agent, *, resource: str) -> dict:
         'company_name': company_name_for_agent(agent),
         'mcp_access': agent.access_mode,
         'mcp_read': agent.read_level,
-        'mcp_destructive': bool(agent.allow_destructive_without_asking),
+        'mcp_destructive': bool(agent.allow_destructive_without_asking)
+        if ga is None
+        else False,
         'scope': agent_services_scope(agent),
         'jti': jti,
         'iat': int(now.timestamp()),
         'exp': int(exp.timestamp()),
         'aud': audience,
     }
-    ga = getattr(agent, 'global_agent_id', None)
     if ga is not None:
         claims['mcp_authority'] = 'delegated'
     # Tests often override ``JWT_ISSUER`` without refreshing ``SIMPLE_JWT['ISSUER']``;

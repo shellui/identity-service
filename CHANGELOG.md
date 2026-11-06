@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ### ✨ Feature
 
+- `/.well-known/oauth-authorization-server` lists `token_endpoint` as `POST /oauth/token`. **Region** instances dispatch that path to MCP token grants and to RFC 8693 user session token exchange (agent exchange is routed by unverified `token_type=agent_access` or `mcp_authority=global_delegated` on the subject JWT). **Global** instances keep OpenID code exchange on `POST /oauth/token`. **Standalone** instances answer MCP grants on `POST /oauth/token` (empty body returns **400**, not 404).
+
 - Optional `global_mcp_url` on `GET /api/v1/mcp/personal/status` when `DASHBOARD_PUBLIC_URL` is set (Shellui dashboard origin); value is `{DASHBOARD_PUBLIC_URL}/mcp`, independent of regional `mcp_url`.
 
 - MCP session Allow TTL stays **60 seconds** by default. ai-service can sign longer approval assertions (other issuers stay near 60 second ``exp - iat``) and include ``setup_flow`` with ``mcp_session_ttl_seconds`` between **600** and **900** during new-company setup when the regional ``Agent`` has stored setup context from global token exchange (global subject token: ``setup_context_company_id`` and signed ``setup_expires_at``). Extended grants apply only when both remaining time to access token ``exp`` and remaining time to ``setup_context_expires_at`` are at least ``MCP_APPROVAL_SETUP_SESSION_TTL_MIN_SECONDS`` (default 600); otherwise Identity falls back to the default TTL. Regional access tokens echo ``setup_expires_at``. Revocation poll responses include ``revocation_policy_version`` (and the same claim in ``revocation_assertion``) so gateways drop positive cache when grants are revoked or company permissions change without pausing the agent. Other callers and HTTP bodies cannot extend the grant; destructive actions still need an approval each time.
@@ -39,7 +41,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 - Agents admin APIs for approvals, call logs, and revocation (`/api/v1/mcp/`).
 - OpenAPI descriptions for MCP registry and agent-friendly admin APIs.
 - SaaS and AI in agent service consent; `POST /api/v1/mcp/internal/mcp-downstream-access-token` mints downstream agent JWTs for ai-service (RS256 delegation, single-use `jti`, rate limits).
-- **Agent token exchange:** Regional `POST /oauth/mcp/token` (RFC 8693) exchanges a global MCP agent JWT for a company-scoped regional agent token; provisioning `POST /api/v1/provisioning/global-agents/revoke` revokes linked regional agents.
+- **Agent token exchange:** Regional `POST /oauth/token` (RFC 8693; `POST /oauth/mcp/token` is the same handler) exchanges a global MCP agent JWT for a company-scoped regional agent token; provisioning `POST /api/v1/provisioning/global-agents/revoke` revokes linked regional agents.
 - **Per-company MCP URL:** `/oauth/mcp/authorize` takes the company from `resource={AI_SERVICE_URL}/c/<company_id>/mcp`. Agent tokens are bound to that company, and authorize, token, refresh, and exchange refuse a resource from another company.
 - **MCP sign-in page:** identity renders its own sign-in page at `/oauth/mcp/signin` (email sign-in link), then the consent page. Before sign-in the page shows the client and return host but never the company, and looks the same for unknown company ids (rate limited per IP with `AUTH_RATE_LIMIT_MCP_SIGNIN`). Consent shows the company to signed-in members only (EN/FR).
 - MCP consent needs an explicit Approve or Deny click and logs each approval to the agent call log.

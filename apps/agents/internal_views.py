@@ -255,19 +255,14 @@ class McpInternalDelegatedAgentAuthorityView(APIView):
         return Response(
             {
                 'authorized': True,
-                'revoked': agent.revoked_at is not None,
-                'paused': agent.paused_at is not None,
+                'revoked': False,
+                'paused': False,
                 'agent_id': str(agent.id),
                 'company_id': int(agent.company_id),
                 'global_agent_id': str(agent.global_agent_id),
                 'global_company_id': str(row_gc),
                 'grant_version': int(agent.grant_version or 0),
                 'company_binding_version': int(row_cb),
-                'services_allowed': list(agent.services_allowed or []),
-                'global_allowed_services': list(agent.global_allowed_services or []),
-                'access_mode': agent.access_mode,
-                'read_level': agent.read_level,
-                'allow_destructive_without_asking': bool(agent.allow_destructive_without_asking),
             }
         )
 

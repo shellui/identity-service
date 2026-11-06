@@ -16,6 +16,7 @@ from shellui_django.mcp.delegation import (
 from shellui_django.mcp.identity_jwks import IdentityJwksError
 from shellui_django.mcp.rate_limit import check_agent_rate_limit
 from apps.agents.mcp_resources import normalize_mcp_resource as normalize_resource_indicator
+from apps.agents.json_strict import strict_json_int_for_company_id
 
 from apps.agents.ai_service_config import (
     ai_service_delegation_enabled,
@@ -92,10 +93,9 @@ class McpDownstreamAccessTokenView(APIView):
 
         if str(claims.get('agent_id') or '').strip() != agent_id:
             return Response({'error': 'Request body does not match delegation JWT.'}, status=status.HTTP_400_BAD_REQUEST)
-        try:
-            claim_company = int(claims.get('company_id'))
-            body_company = int(company_raw)
-        except (TypeError, ValueError):
+        claim_company = strict_json_int_for_company_id(claims.get('company_id'))
+        body_company = strict_json_int_for_company_id(company_raw)
+        if claim_company is None or claim_company == 0 or body_company is None or body_company == 0:
             return Response({'error': 'Invalid company_id.'}, status=status.HTTP_400_BAD_REQUEST)
         if claim_company != body_company:
             return Response({'error': 'Request body does not match delegation JWT.'}, status=status.HTTP_400_BAD_REQUEST)
