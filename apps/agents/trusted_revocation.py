@@ -58,13 +58,22 @@ def parse_trusted_revocation_poll_response_identity(
     )
     if claims.get('scope') != REVOCATION_LIST_SCOPE:
         raise ValueError('Invalid revocation list scope')
+    for key in (
+        'revoked_agent_ids',
+        'agents',
+        'cache_seconds',
+        'revocation_policy_version',
+        'max_active_grant_version',
+    ):
+        if key not in body or key not in claims or body[key] != claims[key]:
+            raise ValueError('Revocation list body mismatch')
     raw_ids = claims.get('revoked_agent_ids') or []
     if not isinstance(raw_ids, list):
         raise ValueError('Invalid revoked_agent_ids')
     agents = claims.get('agents')
-    if agents is not None and not isinstance(agents, list):
+    if not isinstance(agents, list):
         raise ValueError('Invalid agents')
-    cache = int(claims.get('cache_seconds') or body.get('cache_seconds') or 0)
+    cache = int(claims['cache_seconds'])
     policy_ver = int(claims['revocation_policy_version'])
     revoked_frozen = frozenset(str(x) for x in raw_ids)
-    return revoked_frozen, cache, list(agents or []), policy_ver
+    return revoked_frozen, cache, list(agents), policy_ver

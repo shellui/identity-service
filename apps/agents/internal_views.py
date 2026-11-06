@@ -56,6 +56,7 @@ from apps.agents.approval_global import (
     global_user_sub_is_company_owner,
 )
 from apps.agents.internal_callers import verify_caller_assertion, verify_delegated_authority_assertion
+from apps.agents.call_log_global import claims_use_global_audit, ingest_global_dashboard_activity
 from apps.agents.call_log_internal import fixed_resource_label_for_service, safe_operation_title
 from apps.agents.call_log_outcome import (
     OUTCOME_ALLOWED,
@@ -74,7 +75,7 @@ from apps.agents.revocation import (
     REVOCATION_CACHE_SECONDS,
     active_max_grant_version,
     blocked_agent_ids,
-    blocked_agent_snapshots,
+    regional_agent_snapshots,
 )
 from apps.agents.revocation_jwt import compute_revocation_policy_version, sign_revocation_list_response
 from apps.federation.signing import TokenError
@@ -192,7 +193,7 @@ class McpRevocationListView(APIView):
         company_id = request.query_params.get('company_id')
         cid = int(company_id) if company_id and str(company_id).isdigit() else None
         revoked_ids = blocked_agent_ids(company_id=cid)
-        agents = blocked_agent_snapshots(company_id=cid)
+        agents = regional_agent_snapshots(company_id=cid)
         max_gv = active_max_grant_version(company_id=cid)
         policy_ver = compute_revocation_policy_version(
             revoked_ids=revoked_ids,
@@ -218,6 +219,7 @@ class McpRevocationListView(APIView):
             'agents': agents,
             'cache_seconds': REVOCATION_CACHE_SECONDS,
             'revocation_policy_version': policy_ver,
+            'max_active_grant_version': max_gv,
             'revocation_assertion': revocation_assertion,
         }
         response = Response(payload)
@@ -870,7 +872,7 @@ class McpInternalCallLogView(APIView):
 
     def post(self, request):
         try:
-            verify_caller_assertion(
+            verified = verify_caller_assertion(
                 _assertion_from_request(request),
                 audience=CALL_LOG_AUDIENCE,
                 scope=CALL_LOG_SCOPE,
@@ -879,6 +881,8 @@ class McpInternalCallLogView(APIView):
         except InternalAssertionError as exc:
             return Response({'error': exc.message}, status=exc.status)
         body = request.data if isinstance(request.data, dict) else {}
+        if claims_use_global_audit(verified.claims):
+            return ingest_global_dashboard_activity(request, verified, body)
         agent_id = str(body.get('agent_id') or '')
         company_id_raw = body.get('company_id')
         cid = strict_json_int_for_company_id(company_id_raw)
