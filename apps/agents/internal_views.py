@@ -75,7 +75,7 @@ from apps.agents.revocation import (
     REVOCATION_CACHE_SECONDS,
     active_max_grant_version,
     blocked_agent_ids,
-    blocked_agent_snapshots,
+    regional_agent_snapshots,
 )
 from apps.agents.revocation_jwt import compute_revocation_policy_version, sign_revocation_list_response
 from apps.federation.signing import TokenError
@@ -193,7 +193,7 @@ class McpRevocationListView(APIView):
         company_id = request.query_params.get('company_id')
         cid = int(company_id) if company_id and str(company_id).isdigit() else None
         revoked_ids = blocked_agent_ids(company_id=cid)
-        agents = blocked_agent_snapshots(company_id=cid)
+        agents = regional_agent_snapshots(company_id=cid)
         max_gv = active_max_grant_version(company_id=cid)
         policy_ver = compute_revocation_policy_version(
             revoked_ids=revoked_ids,
@@ -219,6 +219,7 @@ class McpRevocationListView(APIView):
             'agents': agents,
             'cache_seconds': REVOCATION_CACHE_SECONDS,
             'revocation_policy_version': policy_ver,
+            'max_active_grant_version': max_gv,
             'revocation_assertion': revocation_assertion,
         }
         response = Response(payload)

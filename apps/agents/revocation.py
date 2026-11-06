@@ -48,26 +48,36 @@ def blocked_agent_ids(*, company_id: int | None = None) -> list[str]:
     return sorted(ids)
 
 
+def agent_snapshot(agent: Agent) -> dict:
+    """One regional agent row. ``agent_id`` is the regional primary key, never a global agent id."""
+    snap: dict = {
+        'agent_id': str(agent.id),
+        'company_id': int(agent.company_id),
+        'is_active': bool(agent.is_active),
+        'paused': agent.paused_at is not None,
+        'grant_version': int(getattr(agent, 'grant_version', 0) or 0),
+    }
+    gc = getattr(agent, 'global_company_id', None)
+    cb = getattr(agent, 'company_binding_version', None)
+    if gc is not None:
+        snap['global_company_id'] = str(gc)
+    if cb is not None:
+        snap['company_binding_version'] = int(cb)
+    return snap
+
+
+def regional_agent_snapshots(*, company_id: int | None = None) -> list[dict]:
+    """Every regional agent for this poll, including active rows consumers authorize against."""
+    qs = Agent.objects.all().order_by('id')
+    if company_id is not None:
+        qs = qs.filter(company_id=company_id)
+    return [agent_snapshot(agent) for agent in qs]
+
+
 def blocked_agent_snapshots(*, company_id: int | None = None) -> list[dict]:
-    """Blocked agents with fields services use to cross-check tenant binding."""
+    """Blocked subset only. The poll response uses ``regional_agent_snapshots``."""
     ids = blocked_agent_ids(company_id=company_id)
     if not ids:
         return []
     qs = Agent.objects.filter(pk__in=ids).order_by('id')
-    rows: list[dict] = []
-    for agent in qs:
-        gc = getattr(agent, 'global_company_id', None)
-        cb = getattr(agent, 'company_binding_version', None)
-        snap: dict = {
-            'agent_id': str(agent.id),
-            'company_id': agent.company_id,
-            'is_active': agent.is_active,
-            'paused': agent.paused_at is not None,
-            'grant_version': int(getattr(agent, 'grant_version', 0) or 0),
-        }
-        if gc is not None:
-            snap['global_company_id'] = str(gc)
-        if cb is not None:
-            snap['company_binding_version'] = int(cb)
-        rows.append(snap)
-    return rows
+    return [agent_snapshot(agent) for agent in qs]

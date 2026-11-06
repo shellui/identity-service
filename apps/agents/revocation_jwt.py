@@ -28,7 +28,7 @@ def compute_revocation_policy_version(
     max_active_grant_version: int,
 ) -> int:
     """
-    Fingerprint for positive gateway cache: changes when block list or agent snapshots change.
+    Fingerprint for positive gateway cache: changes when the blocked id set or any agent snapshot changes.
 
     Includes delegated binding snapshots (``global_company_id``, ``company_binding_version``) per
     django-commons 0.4.1 expectations: consumers verify the signed JWT and treat policy drift as

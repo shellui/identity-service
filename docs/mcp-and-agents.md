@@ -221,9 +221,12 @@ Pause or revoke agents with:
 
 Services poll `GET /api/v1/mcp/internal/mcp-revocations` with a signed assertion (audience `shellui-mcp-revocation`, scope `mcp.revocation.read`, cache **30 seconds** on the consumer) so revocation is effective almost immediately. Optional `?company_id=` filters the list to one tenant. The JSON body includes:
 
-- `revoked_agent_ids`, `agents` (snapshots for **blocked** agents: `agent_id`, `company_id`, `is_active`, `paused`, `grant_version`), `cache_seconds`
-- **`revocation_policy_version`**: integer fingerprint that changes when the blocked set changes, when any blocked agent snapshot changes, or when company-scoped **permission invalidation** bumps `Agent.grant_version` on an active agent (session Allow revoked, membership disabled, grant revoked, or agent `access_mode` / `read_level` / `allow_destructive_without_asking` / `services_allowed` updated)
-- `revocation_assertion`: RS256 JWT (scope `mcp.revocation.list`, short `exp`) whose payload repeats `revoked_agent_ids`, `agents`, `cache_seconds`, and **`revocation_policy_version`**
+- `revoked_agent_ids`: blocked regional agent ids only (revoked, paused, or expired). Unchanged. Not every agent.
+- `agents`: every regional `Agent` in the same `company_id` filter (omit the filter to list the region). Each object is `agent_id` (regional primary key), `company_id`, `is_active`, `paused`, `grant_version`. `global_company_id` and `company_binding_version` are present only when that row has them. No other keys. `agent_id` is never a global agent uuid.
+- `cache_seconds`: `30`
+- `max_active_grant_version`: integer, the largest `grant_version` among agents with `revoked_at` null, or `0` when there is none. The JSON value and the signed claim are the same integer.
+- **`revocation_policy_version`**: integer fingerprint of `revoked_agent_ids`, every agent snapshot, `cache_seconds`, and `max_active_grant_version`. It changes when a blocked id set changes, when any snapshot changes (`is_active`, `paused`, `grant_version`, or SaaS binding), or when the active grant cap changes.
+- `revocation_assertion`: RS256 JWT (scope `mcp.revocation.list`, short `exp`) whose payload repeats `revoked_agent_ids`, `agents`, `cache_seconds`, `revocation_policy_version`, and `max_active_grant_version`. A body that omits or disagrees with any of those claims fails closed (`Revocation list body mismatch`). There is no feature flag.
 
 Verify `revocation_assertion` with RS256 against Identity `/.well-known/jwks.json` (issuer `JWT_ISSUER`, audience `shellui-mcp-revocation`). Gateways that cache **positive** decisions (agent not in `revoked_agent_ids`) must treat the cache as stale when **`revocation_policy_version`** or the signed **`revocation_assertion`** JWT changes, or when the agent access token `jti` / `exp` / `grant_version` / `company_binding_version` no longer match.
 
