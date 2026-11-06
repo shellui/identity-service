@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ### ✨ Feature
 
+- Dashboard-only global company activity on `POST /api/v1/mcp/internal/mcp-call-logs`. The normal call-log JWT gains `agent_audit_scope: global_company` plus signed `global_agent_id`, `global_company_id`, `global_user_sub`, `grant_version`, and `company_binding_version`. Identity checks the provisioned company and owner. It does not create company id `0` or copy the global agent id into `Agent.id`. Unbound first-company approvals are not stored. Regional call logs and the 15-key delegated-authority response are unchanged.
+
 - `/.well-known/oauth-authorization-server` lists `token_endpoint` as `POST /oauth/token`. **Region** instances dispatch that path to MCP token grants and to RFC 8693 user session token exchange (agent exchange is routed by unverified `token_type=agent_access` or `mcp_authority=global_delegated` on the subject JWT). **Global** instances keep OpenID code exchange on `POST /oauth/token`. **Standalone** instances answer MCP grants on `POST /oauth/token` (empty body returns **400**, not 404).
 
 - Optional `global_mcp_url` on `GET /api/v1/mcp/personal/status` when `DASHBOARD_PUBLIC_URL` is set (Shellui dashboard origin); value is `{DASHBOARD_PUBLIC_URL}/mcp`, independent of regional `mcp_url`.

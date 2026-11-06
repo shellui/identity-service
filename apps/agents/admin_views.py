@@ -324,27 +324,31 @@ class McpCallLogListView(APIView):
                 status_code=row.status_code,
                 error_code=row.error_code,
             )
-            rows.append(
-                {
-                    'id': row.id,
-                    'agent_id': str(row.agent_id),
-                    'agent_name': row.agent.name,
-                    'service': row.service,
-                    'tool': row.tool,
-                    'operation_title': row.operation_title or row.tool or row.path or 'mcp_call',
-                    'access_kind': row.access_kind or 'unknown',
-                    'outcome': outcome_display,
-                    'resource_label': row.resource_label or row.tool or row.path or '',
-                    'company_name': row.company_name or '',
-                    'approval_id': str(row.approval_id) if row.approval_id is not None else None,
-                    'method': row.http_method,
-                    'path': row.path,
-                    'status_code': row.status_code,
-                    'duration_ms': row.duration_ms,
-                    'arguments': row.arguments_redacted,
-                    'created_at': row.created_at.isoformat(),
-                }
-            )
+            agent = row.agent
+            item = {
+                'id': row.id,
+                'agent_id': str(agent.id) if agent is not None else None,
+                'agent_name': agent.name if agent is not None else '',
+                'service': row.service,
+                'tool': row.tool,
+                'operation_title': row.operation_title or row.tool or row.path or 'mcp_call',
+                'access_kind': row.access_kind or 'unknown',
+                'outcome': outcome_display,
+                'resource_label': row.resource_label or row.tool or row.path or '',
+                'company_name': row.company_name or '',
+                'approval_id': str(row.approval_id) if row.approval_id is not None else None,
+                'method': row.http_method,
+                'path': row.path,
+                'status_code': row.status_code,
+                'duration_ms': row.duration_ms,
+                'arguments': row.arguments_redacted,
+                'created_at': row.created_at.isoformat(),
+            }
+            if row.global_agent_id is not None:
+                item['agent_audit_scope'] = 'global_company'
+                item['global_agent_id'] = str(row.global_agent_id)
+                item['global_company_id'] = str(row.global_company_id) if row.global_company_id is not None else None
+            rows.append(item)
         return Response({'call_logs': rows})
 
 

@@ -239,6 +239,31 @@ Activity and admin list APIs map legacy stored values to the five labels. Use `e
 
 Owners read logs with `GET /api/v1/mcp/call-logs`.
 
+### Global dashboard activity
+
+`shellui-django` 0.4.0 `build_mcp_call_log_assertion` signs the normal call-log JWT (`aud` `shellui-mcp-call-log`, `scope` `mcp.call_log.create`, `sub` `service`) and does not add company claims. The SaaS dashboard, and only that caller (`PROVISIONING_ISSUER` / `PROVISIONING_PUBLIC_KEY`), adds these claims on that same JWT when the activity is for a provisioned global company:
+
+| Claim | JSON type |
+| --- | --- |
+| `agent_audit_scope` | string `global_company` |
+| `global_agent_id` | uuid string |
+| `global_company_id` | uuid string |
+| `global_user_sub` | non-empty string, global IdP `sub` of the company owner |
+| `grant_version` | non-negative integer |
+| `company_binding_version` | non-negative integer |
+
+`grant_version` and `company_binding_version` must both equal `ProvisionedCompany.limits_version` for that `global_company_id`. Identity checks the owner with `UpstreamAccount` (`issuer` `GLOBAL_ISSUER_URL`, `sub` `global_user_sub`) and `Company.owners` on the provisioned regional company. It does not trust an owner flag. A revoked global agent is rejected. Any other caller that sends `agent_audit_scope` receives **403**. A partial claim set receives **400**. No `ProvisionedCompany` receives **404**.
+
+The log is stored on that regional company. Identity does not create a company with id `0` and does not copy `global_agent_id` into `Agent.id`. One active regional `Agent` with that `global_agent_id`, regional company, `global_company_id`, and both versions is linked. No such row leaves `agent` null. More than one active match returns **409**.
+
+The JSON body must not include `arguments`, `arguments_redacted`, `query`, `body`, `email`, `client_ip`, or `result`, and the URL must not include a query string. Optional `company_id` must be the provisioned company's numeric id. Optional `agent_id` must equal the signed `global_agent_id` and is not used as a regional primary key. `GET /api/v1/mcp/call-logs` adds `agent_audit_scope`, `global_agent_id`, and `global_company_id` only on these rows. Regional rows keep the previous keys. Personal activity is unchanged. The delegated-authority **200** body stays 15 keys.
+
+`approval_id` is accepted only when that one regional agent matches the approval fingerprint (`agent`, company, service, tool, grant, SaaS binding). Identity does not invent an approval. Destructive outcomes follow the regional rules above, including `executed` after consume.
+
+### Unbound first company
+
+Identity does not accept a `create_first_company` approval or activity row before a `ProvisionedCompany` exists. Settings approvals (`GET /api/v1/mcp/approvals`) and the approval fallback page load a regional `Company` and `Agent`. A null company row is not listed there, and `user_may_manage_approval` reads `row.agent`. Writing that row would not be owner-visible, so Identity does not write it and does not invent a regional company or agent to force it onto the list. After SaaS creates the company and the provisioned row exists, use the global dashboard activity assertion above. Existing global approval create (claim `company_id` `0` as a placeholder, real `ProvisionedCompany` required) is unchanged and is not a first-company bootstrap.
+
 ## Downstream access tokens (ai-service)
 
 When ai-service forwards `tools/call` to storage, hosting, email, SaaS, or Identity, it asks Identity to mint a regional agent access token for that downstream `/mcp` URL.
