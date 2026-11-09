@@ -51,8 +51,13 @@ def verify_pinned(
     audience: str,
     issuer_url: str,
     require: list[str] | None = None,
+    jwks: dict | None = None,
 ) -> dict[str, Any]:
-    """Verify RS256 against GLOBAL_JWKS. No network fetch."""
+    """Verify RS256 against one pinned JWKS. No network fetch.
+
+    ``jwks`` defaults to ``GLOBAL_JWKS``. ``kid`` is resolved only in that document,
+    so a key pinned for another issuer cannot verify this token.
+    """
     required = require or ['exp', 'iat', 'iss', 'aud']
     try:
         header = jwt.get_unverified_header(token)
@@ -63,7 +68,8 @@ def verify_pinned(
     kid = header.get('kid')
     if not isinstance(kid, str) or not kid:
         raise TokenError('invalid_token')
-    jwk = _pinned_jwk(kid)
+    document = jwks if jwks is not None else (getattr(settings, 'GLOBAL_JWKS', None) or {})
+    jwk = _jwk_for_kid(document, kid)
     if jwk is None:
         raise TokenError('invalid_token')
     try:
@@ -81,6 +87,17 @@ def verify_pinned(
         raise TokenError('invalid_token') from exc
     if not isinstance(claims, dict):
         raise TokenError('invalid_token')
+    if str(claims.get('iss') or '').rstrip('/') != issuer_url.rstrip('/'):
+        raise TokenError('invalid_token')
+    audience_claim = claims.get('aud')
+    if isinstance(audience_claim, str):
+        audiences = {audience_claim}
+    elif isinstance(audience_claim, list):
+        audiences = {item for item in audience_claim if isinstance(item, str)}
+    else:
+        raise TokenError('invalid_token')
+    if audience not in audiences:
+        raise TokenError('invalid_token')
     return claims
 
 
@@ -92,8 +109,7 @@ def unix_now() -> int:
     return int(timezone.now().timestamp())
 
 
-def _pinned_jwk(kid: str) -> dict | None:
-    document = getattr(settings, 'GLOBAL_JWKS', None) or {}
+def _jwk_for_kid(document: Any, kid: str) -> dict | None:
     keys = document.get('keys') if isinstance(document, dict) else None
     if not isinstance(keys, list):
         return None

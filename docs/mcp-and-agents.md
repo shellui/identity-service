@@ -95,9 +95,16 @@ The Settings > MCP / AI agents screen can keep listing and revoking these connec
 
 ## Global agent token exchange (region role)
 
-Global MCP OAuth bound the user to a SaaS company (company binding on the global agent token). There is no second regional browser consent for exchanging that token: the subject proves they already completed global MCP consent. The regional server still checks enabled membership for `company_id`.
+A region trusts two global issuers. Each exchange checks `iss`, `aud`, and `kid` against one of them:
 
-The flow uses OAuth 2.0 Token Exchange (RFC 8693) at `POST /oauth/token` on the regional identity server (`POST /oauth/mcp/token` is the same handler). The endpoint answers **404** unless the role is `region` and `GLOBAL_ISSUER_URL`, `GLOBAL_JWKS`, and `GLOBAL_AGENT_ACCESS_TOKEN_AUDIENCE` are set.
+- **User tokens** are issued by the global identity server (`identity-global`, role `global`). User token exchange at `POST /oauth/token` verifies `GLOBAL_ISSUER_URL`, `GLOBAL_JWKS`, and `GLOBAL_ACCESS_TOKEN_AUDIENCE`.
+- **Agent tokens** are issued by saas-service, the OAuth authorization server for the global MCP. saas-service puts its public URL in `iss` (that deployment's `GLOBAL_ISSUER_URL`) and advertises it on `/.well-known/oauth-authorization-server`. Pin that URL as `GLOBAL_AGENT_ISSUER_URL` and the matching keys as `GLOBAL_AGENT_JWKS`.
+
+Leave `GLOBAL_AGENT_ISSUER_URL` and `GLOBAL_AGENT_JWKS` empty to verify agent tokens with `GLOBAL_ISSUER_URL` and `GLOBAL_JWKS`. Set only one of them and that value is used, with the other falling back. A token from the user issuer is rejected at agent exchange, and a token from the agent issuer is rejected at user exchange. A `kid` that exists only in the other JWKS is rejected. Identity does not fetch a JWKS URL for either issuer.
+
+Global MCP OAuth bound the account to a SaaS company (company binding on the global agent token). There is no second regional browser consent for exchanging that token: the subject proves they already completed global MCP consent. The regional server still checks enabled membership for `company_id`.
+
+The flow uses OAuth 2.0 Token Exchange (RFC 8693) at `POST /oauth/token` on the regional identity server (`POST /oauth/mcp/token` is the same handler for an agent-shaped subject token). Agent exchange answers **404** unless the role is `region`, `GLOBAL_AGENT_ACCESS_TOKEN_AUDIENCE` is set, and the effective agent issuer and pinned JWKS are non-empty.
 
 Export `SUBJECT_TOKEN` to the global MCP agent access JWT, then run:
 
@@ -122,17 +129,17 @@ Optional `access_mode`, `read_level`, `allow_destructive`, and repeated `service
 
 The global subject token `scope` must include **`ai`** when exchanging for that AI gateway resource. Without `ai` in `scope`, exchange is denied even if the body lists other services.
 
-Identity verifies the subject token offline against `GLOBAL_JWKS` (`iss`, `aud`, `exp`, `jti` replay cache). It creates or reuses one regional `Agent` row per `(company_id, global_agent_id)` and issues the usual MCP access and refresh tokens for the requested `resource`. Paused or revoked regional agents cannot exchange again until an operator unpauses them.
+Identity verifies the subject token offline against the agent issuer's pinned JWKS (`iss`, `aud`, `kid`, `exp`, `jti` replay cache). When both agent settings are set, that check does not use `GLOBAL_ISSUER_URL` or `GLOBAL_JWKS`. It creates or reuses one regional `Agent` row per `(company_id, global_agent_id)` and issues the usual MCP access and refresh tokens for the requested `resource`. The regional account link stays `GLOBAL_ISSUER_URL` and `sub` (the global user id). Agent exchange does not store `GLOBAL_AGENT_ISSUER_URL` as an upstream account issuer. Paused or revoked regional agents cannot exchange again until an operator unpauses them.
 
 When a global agent is revoked on saas-service, saas must call `POST /api/v1/provisioning/global-agents/revoke` on each region with `{ "global_agent_id": "<uuid>" }` and the usual provisioning assertion. That records the global id as revoked, revokes every linked regional agent and its refresh sessions, and refuses further exchange for that id even when no regional row existed yet. Short-lived global agent JWTs limit exposure if the webhook is delayed.
 
 ### Global agent access token claims (saas-service)
 
-Global agent tokens are RS256 JWTs from the global identity issuer. Mint them after global MCP OAuth consent. Required claims:
+Global agent tokens are RS256 JWTs from saas-service. Mint them after global MCP OAuth consent. Required claims:
 
 | Claim | Meaning |
 | --- | --- |
-| `iss` | Global issuer (`GLOBAL_ISSUER_URL` on regions) |
+| `iss` | Agent issuer (`GLOBAL_AGENT_ISSUER_URL` when set, otherwise `GLOBAL_ISSUER_URL`) |
 | `aud` | `GLOBAL_AGENT_ACCESS_TOKEN_AUDIENCE` on regions (separate from user `GLOBAL_ACCESS_TOKEN_AUDIENCE`) |
 | `sub` | Global user id (agent owner) |
 | `agent_id` | Global agent uuid |

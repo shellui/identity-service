@@ -1,4 +1,10 @@
-"""OAuth 2.0 Token Exchange (RFC 8693) for global MCP agent tokens on a regional server."""
+"""OAuth 2.0 Token Exchange (RFC 8693) for global MCP agent tokens on a regional server.
+
+Verification uses ``GLOBAL_AGENT_ISSUER_URL`` and ``GLOBAL_AGENT_JWKS`` when those
+are set, and otherwise ``GLOBAL_ISSUER_URL`` and ``GLOBAL_JWKS``. User token
+exchange does not use the agent issuer. ``kid`` is resolved only in the JWKS
+selected here.
+"""
 
 from __future__ import annotations
 
@@ -49,12 +55,35 @@ GLOBAL_AGENT_TOKEN_TYPE = 'agent_access'
 GLOBAL_AGENT_MCP_AUTHORITY = 'global_delegated'
 
 
+def _jwks_with_keys(document: Any) -> dict | None:
+    if isinstance(document, dict) and isinstance(document.get('keys'), list) and document['keys']:
+        return document
+    return None
+
+
+def global_agent_trust() -> tuple[str, dict]:
+    """Issuer and pinned JWKS for global MCP agent tokens.
+
+    An empty ``GLOBAL_AGENT_ISSUER_URL`` uses ``GLOBAL_ISSUER_URL``.
+    An empty ``GLOBAL_AGENT_JWKS`` uses ``GLOBAL_JWKS``. Each value falls back
+    on its own. User token exchange does not call this.
+    """
+    issuer = (getattr(settings, 'GLOBAL_AGENT_ISSUER_URL', '') or '').strip().rstrip('/')
+    if not issuer:
+        issuer = (getattr(settings, 'GLOBAL_ISSUER_URL', '') or '').strip().rstrip('/')
+    document = _jwks_with_keys(getattr(settings, 'GLOBAL_AGENT_JWKS', None))
+    if document is None:
+        document = _jwks_with_keys(getattr(settings, 'GLOBAL_JWKS', None)) or {'keys': []}
+    return issuer, document
+
+
 def agent_exchange_enabled() -> bool:
+    issuer_url, document = global_agent_trust()
     return bool(
         is_region()
-        and (getattr(settings, 'GLOBAL_ISSUER_URL', '') or '').strip()
+        and issuer_url
         and (getattr(settings, 'GLOBAL_AGENT_ACCESS_TOKEN_AUDIENCE', '') or '').strip()
-        and (getattr(settings, 'GLOBAL_JWKS', {}) or {}).get('keys')
+        and document.get('keys')
     )
 
 
@@ -368,11 +397,13 @@ def handle_agent_token_exchange(request, *, data: dict[str, Any] | None = None) 
     if resource_company is not None and resource_company != company.id:
         return _error('invalid_target', 'The MCP resource belongs to another company.')
 
+    issuer_url, agent_jwks = global_agent_trust()
     try:
         claims = verify_pinned(
             subject_token,
             audience=settings.GLOBAL_AGENT_ACCESS_TOKEN_AUDIENCE,
-            issuer_url=settings.GLOBAL_ISSUER_URL,
+            issuer_url=issuer_url,
+            jwks=agent_jwks,
             require=['exp', 'iat', 'iss', 'aud', 'sub', 'email', 'jti', 'agent_id'],
         )
     except TokenError:
@@ -504,8 +535,10 @@ def handle_agent_token_exchange(request, *, data: dict[str, Any] | None = None) 
         return _error('invalid_grant', 'Destructive access is not allowed for this global agent.')
 
     metadata = claims.get('user_metadata') if isinstance(claims.get('user_metadata'), dict) else {}
+    # ``sub`` is the global identity user id. The signing issuer may be saas-service.
+    # Keep the account link on GLOBAL_ISSUER_URL so owner checks stay on that issuer.
     link_claims = {
-        'iss': claims.get('iss'),
+        'iss': (getattr(settings, 'GLOBAL_ISSUER_URL', '') or '').strip().rstrip('/'),
         'sub': claims.get('sub'),
         'email': claims.get('email'),
         'email_verified': True,

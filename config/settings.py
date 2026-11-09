@@ -570,6 +570,10 @@ GLOBAL_REDIRECT_URI = (os.getenv('GLOBAL_REDIRECT_URI', '') or '').strip()
 GLOBAL_ACCESS_TOKEN_AUDIENCE = (os.getenv('GLOBAL_ACCESS_TOKEN_AUDIENCE', '') or '').strip()
 # Agent token exchange (RFC 8693, role region): `aud` of global MCP agent access tokens.
 GLOBAL_AGENT_ACCESS_TOKEN_AUDIENCE = (os.getenv('GLOBAL_AGENT_ACCESS_TOKEN_AUDIENCE', '') or '').strip()
+# saas-service signs those agent tokens (its public URL is `iss`). Empty values fall
+# back to GLOBAL_ISSUER_URL / GLOBAL_JWKS. User token exchange does not read these.
+GLOBAL_AGENT_ISSUER_URL = (os.getenv('GLOBAL_AGENT_ISSUER_URL', '') or '').strip().rstrip('/')
+GLOBAL_AGENT_JWKS = parse_jwks(os.getenv('GLOBAL_AGENT_JWKS', ''), label='GLOBAL_AGENT_JWKS')
 
 # Regional provisioning API (role region). The dashboard (saas-service) signs each call with its
 # provisioning key; pin the public key here. Unset key or issuer leaves the API answering 404.
