@@ -93,6 +93,7 @@ Pick the row that matches what you are doing today:
 | Trust one upstream identity provider, or be that provider | [Instance roles](instance-roles.md) |
 | Restrict who can join a company | [Company access](company-access.md) |
 | Verify Shellui tokens in another service | [JWT and JWKS](jwks.md) |
+| Connect a headless MCP agent without pasting a token | [MCP device login](mcp-device-flow.md) |
 | Run automation when users join or leave | [Webhooks](actions.md) and [n8n](n8n.md) |
 | Audit sign-ins and changes | [Event log](event-log.md) |
 | Harden a production install | [Security hardening](security-hardening.md) |

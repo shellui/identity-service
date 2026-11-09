@@ -24,6 +24,7 @@ from drf_spectacular.views import (
 )
 
 from apps.agents import mcp_views as agents_mcp_views
+from apps.agents.oauth_device import DeviceAuthorizationView, mcp_device_verification
 from apps.agents.oauth_views import (
     OAuthAuthorizationServerMetadataView,
     OAuthProtectedResourceMetadataView,
@@ -67,6 +68,8 @@ urlpatterns = [
     path('oauth/token', oauth_token_dispatch, name='oauth-token-dispatch'),
     path('oauth/', include(oauth_urlpatterns)),
     path('oauth/mcp/register', mcp_register, name='mcp-oauth-register'),
+    path('oauth/mcp/device/code', DeviceAuthorizationView.as_view(), name='mcp-oauth-device-code'),
+    path('oauth/mcp/device', mcp_device_verification, name='mcp-oauth-device'),
     path('oauth/mcp/authorize', mcp_authorize, name='mcp-oauth-authorize'),
     path('oauth/mcp/signin', mcp_signin, name='mcp-oauth-signin'),
     path('oauth/mcp/signin/complete', mcp_signin_complete, name='mcp-oauth-signin-complete'),

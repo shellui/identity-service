@@ -367,6 +367,10 @@ SPECTACULAR_SETTINGS = {
         {'name': 'companies', 'description': 'Company membership and company settings endpoints.'},
         {'name': 'mcp-tools', 'description': 'Operations exposed to MCP agents (Shellui admin and list_services).'},
         {'name': 'mcp-admin', 'description': 'Human-only MCP agent administration (approvals, pause, revoke).'},
+        {
+            'name': 'mcp-oauth',
+            'description': 'MCP OAuth authorization server, including the device authorization grant.',
+        },
         {'name': 'scim', 'description': 'SCIM provisioning configuration and bearer tokens.'},
         {'name': 'auth-admin', 'description': 'Company auth method toggles and sign-in configuration.'},
         {'name': 'oauth-redirects', 'description': 'OAuth redirect URI allowlist.'},
@@ -385,6 +389,9 @@ MCP_DYNAMIC_CLIENT_REGISTRATION = _env_bool('MCP_DYNAMIC_CLIENT_REGISTRATION', T
 MCP_ACCESS_TOKEN_LIFETIME = _env_duration('MCP_ACCESS_TOKEN_LIFETIME', timedelta(minutes=15))
 MCP_REFRESH_TOKEN_LIFETIME = _env_duration('MCP_REFRESH_TOKEN_LIFETIME', timedelta(days=30))
 MCP_PERSONAL_AGENT_MAX_LIFETIME_DAYS = _env_int('MCP_PERSONAL_AGENT_MAX_LIFETIME_DAYS', 90)
+# RFC 8628 device codes. Short access tokens still use MCP_ACCESS_TOKEN_LIFETIME.
+MCP_DEVICE_CODE_LIFETIME_SECONDS = max(60, min(_env_int('MCP_DEVICE_CODE_LIFETIME_SECONDS', 600), 1800))
+MCP_DEVICE_CODE_INTERVAL_SECONDS = max(5, min(_env_int('MCP_DEVICE_CODE_INTERVAL_SECONDS', 5), 60))
 MCP_AGENT_ACTIVITY_RETENTION_DAYS = _env_int('MCP_AGENT_ACTIVITY_RETENTION_DAYS', 90)
 MCP_APPROVAL_SESSION_TTL_SECONDS = max(30, min(_env_int('MCP_APPROVAL_SESSION_TTL_SECONDS', 60), 60))
 # shellui-django caps internal assertion JWT ``exp - iat`` at 60 seconds by default. Only ai-service
@@ -729,6 +736,8 @@ AUTH_RATE_LIMITS = {
     'magic_link': {'limit': _env_int('AUTH_RATE_LIMIT_MAGIC_LINK', 10), 'window': 60},
     'token_exchange': {'limit': _env_int('AUTH_RATE_LIMIT_TOKEN_EXCHANGE', 30), 'window': 60},
     'mcp_personal_agent': {'limit': _env_int('AUTH_RATE_LIMIT_MCP_PERSONAL_AGENT', 10), 'window': 3600},
+    'mcp_device_code': {'limit': _env_int('AUTH_RATE_LIMIT_MCP_DEVICE_CODE', 30), 'window': 300},
+    'mcp_device_verify': {'limit': _env_int('AUTH_RATE_LIMIT_MCP_DEVICE_VERIFY', 8), 'window': 300},
     'invitation': {'limit': _env_int('AUTH_RATE_LIMIT_INVITATION', 30), 'window': 300},
 }
 

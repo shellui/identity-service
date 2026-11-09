@@ -78,6 +78,10 @@ def mcp_saas_return(request: HttpRequest) -> HttpResponse:
         return render_message(request, copy['not_member'].format(company=company.name), 403, user=user)
     login(request, user, backend=SESSION_BACKEND)
     request.session[MCP_SAAS_GLOBAL_VERIFIED_KEY] = True
+    if pending.get('device_grant_id'):
+        from apps.agents.oauth_device import complete_pending_device_consent
+
+        return complete_pending_device_consent(request, user=user, company=company, pending=pending)
     from apps.agents.oauth_views import complete_pending_mcp_consent
 
     return complete_pending_mcp_consent(request, user=user, company=company, pending=pending)

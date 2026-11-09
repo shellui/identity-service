@@ -1,12 +1,30 @@
 from django.contrib import admin
 
-from apps.agents.models import Agent, McpApprovalRequest, McpApprovalSessionGrant, McpCallLog, McpOAuthClient
+from apps.agents.models import (
+    Agent,
+    McpApprovalRequest,
+    McpApprovalSessionGrant,
+    McpCallLog,
+    McpDeviceAuthorization,
+    McpOAuthClient,
+)
 
 
 @admin.register(McpOAuthClient)
 class McpOAuthClientAdmin(admin.ModelAdmin):
     list_display = ('client_id', 'client_name', 'created_at')
     search_fields = ('client_id', 'client_name')
+
+
+@admin.register(McpDeviceAuthorization)
+class McpDeviceAuthorizationAdmin(admin.ModelAdmin):
+    list_display = ('id', 'status', 'company', 'client', 'expires_at', 'created_at')
+    list_filter = ('status',)
+    raw_id_fields = ('client', 'company', 'user', 'agent')
+    exclude = ('device_code_digest', 'user_code_digest')
+
+    def has_add_permission(self, request):
+        return False
 
 
 @admin.register(Agent)

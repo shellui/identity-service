@@ -45,6 +45,54 @@ Company ids in the URL are integers. Companies have no public non-sequential id 
 
 Downstream services keep their own `{origin}/mcp` resource. ai-service reaches them with short-lived downstream tokens, so clients only need the per-company URL.
 
+## Device login for headless agents
+
+Headless agents (a CLI, or an assistant such as Hermes) use the [OAuth 2.0 device authorization grant](https://www.rfc-editor.org/rfc/rfc8628) so a token is never pasted into chat. The agent learns it is connected by polling the token endpoint. Identity does not push a callback.
+
+The curl walkthrough is in [MCP device login](mcp-device-flow.md). Summary:
+
+| Step | Where |
+| --- | --- |
+| Start | `POST /oauth/mcp/device/code` with `client_id` and `resource` (the company MCP URL) |
+| Browser | `verification_uri` (`/oauth/mcp/device`). `verification_uri_complete` adds `user_code` |
+| Poll | `POST /oauth/token` or `POST /oauth/mcp/token` with `grant_type=urn:ietf:params:oauth:grant-type:device_code` |
+| Discovery | `device_authorization_endpoint` and that grant type on `GET /.well-known/oauth-authorization-server` |
+
+`user_code` is eight characters from an unambiguous alphabet, shown as `XXXX-XXXX`. `device_code` and `user_code` are stored as SHA-256 hashes and are not written to logs. Access logs keep the path only, with no query string. The device code expires in about 10 minutes (`expires_in`, default 600 seconds) and is single-use. Poll at `interval` (default 5 seconds). Faster polls return `slow_down`; the client adds 5 seconds before the next request. `authorization_pending` means the person has not finished. `access_denied` means they denied it. `expired_token` means the code expired. After approval the token response matches the authorization-code grant: a short-lived access token and a refresh token. `aud` is the company MCP URL.
+
+The browser page uses the same sign-in and consent screens as `/oauth/mcp/authorize` for that company (email link and the company's SSO home realm, then services, access level, and read level). Staff accounts cannot approve. A person who is not a member of that company cannot approve. Code entry is limited to `AUTH_RATE_LIMIT_MCP_DEVICE_VERIFY` attempts per 5 minutes per IP (default 8).
+
+Approval creates a normal agent row (`created_by` is the member, `oauth_client` is the registered client). It shows up in `GET /api/v1/mcp/personal/agents` as `kind: oauth` and is revoked with `POST /api/v1/mcp/personal/agents/{id}/revoke`. `expires_at` is capped by `MCP_PERSONAL_AGENT_MAX_LIFETIME_DAYS` (default 90). Access tokens stay short-lived (`MCP_ACCESS_TOKEN_LIFETIME`). Refresh uses `grant_type=refresh_token` and the same `resource`. Each approval writes `oauth.device.approved` to the agent call log, with no code or token.
+
+Token claims are the same as other OAuth agent access tokens: `agent_id`, `company_id`, `aud` (the company MCP URL), `mcp_access`, `mcp_read`, `mcp_destructive`, `scope`, `grant_version`, `sub` (`agent:{uuid}`).
+
+### What ai-service must advertise
+
+Identity does not serve the company MCP resource. ai-service does. Clients discover the device grant by following protected-resource metadata to identity, then reading authorization-server metadata. ai-service should keep returning, for each company:
+
+`GET /.well-known/oauth-protected-resource/c/<company_id>/mcp`
+
+```json
+{
+  "resource": "https://ai.example.com/c/42/mcp",
+  "authorization_servers": ["https://identity.example.com"],
+  "scopes_supported": ["mcp"],
+  "bearer_methods_supported": ["header"]
+}
+```
+
+`authorization_servers` must be identity's issuer, the same string as `issuer` on identity's `GET /.well-known/oauth-authorization-server`. A 401 from `POST {AI_SERVICE_URL}/c/<company_id>/mcp` should send:
+
+```http
+WWW-Authenticate: Bearer realm="mcp", resource_metadata="https://ai.example.com/.well-known/oauth-protected-resource/c/42/mcp", scope="mcp"
+```
+
+Do not put `device_authorization_endpoint` on the protected-resource document. That field is on the authorization server metadata identity already serves. If `authorization_servers` already points at identity, ai-service does not need a new metadata field for device login. It does need the `resource_metadata` challenge so the client can find that document.
+
+### What Settings needs next
+
+The Settings > MCP / AI agents screen can keep listing and revoking these connections with the existing personal-agent APIs. Replace a prompt that contains a raw token with an instructions prompt that has only the company MCP URL and tells the agent to use device login. The prompt must not include an access token, a refresh token, a device code, or a user code. The agent registers if it needs a `client_id`, calls the device authorization endpoint, shows the user code, and polls until the token response arrives.
+
 ## Global agent token exchange (region role)
 
 Global MCP OAuth bound the user to a SaaS company (company binding on the global agent token). There is no second regional browser consent for exchanging that token: the subject proves they already completed global MCP consent. The regional server still checks enabled membership for `company_id`.

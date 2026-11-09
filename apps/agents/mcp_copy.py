@@ -52,6 +52,19 @@ COPY = {
         'access_full': 'Full access',
         'read_safe': 'Safe (personal data masked)',
         'read_sensitive': 'Sensitive data',
+        'device_title': 'Enter the code from your agent',
+        'device_lead': 'Your agent showed a code. Enter it here to connect it to your company.',
+        'device_lead_prefilled': 'Confirm the code from your agent. Change it if it does not match.',
+        'device_code_label': 'Code',
+        'device_code_hint': 'Eight letters or digits, with or without the hyphen.',
+        'device_continue': 'Continue',
+        'device_approved_title': 'Agent connected',
+        'device_approved': (
+            'You approved this agent. You can close this page. The agent finishes connecting from its side.'
+        ),
+        'device_lifetime_note': (
+            'This connection expires after {days} days. You can revoke it sooner in Settings → MCP / AI agents.'
+        ),
     },
     'fr': {
         'signin_title': 'Connectez-vous pour relier un agent',
@@ -104,6 +117,21 @@ COPY = {
         'access_full': 'Accès complet',
         'read_safe': 'Standard (données personnelles masquées)',
         'read_sensitive': 'Données sensibles',
+        'device_title': 'Saisissez le code de votre agent',
+        'device_lead': 'Votre agent a affiché un code. Saisissez-le ici pour le connecter à votre entreprise.',
+        'device_lead_prefilled': "Confirmez le code de votre agent. Modifiez-le s'il ne correspond pas.",
+        'device_code_label': 'Code',
+        'device_code_hint': "Huit lettres ou chiffres, avec ou sans le trait d'union.",
+        'device_continue': 'Continuer',
+        'device_approved_title': 'Agent connecté',
+        'device_approved': (
+            'Vous avez approuvé cet agent. Vous pouvez fermer cette page. '
+            "L'agent termine la connexion de son côté."
+        ),
+        'device_lifetime_note': (
+            'Cette connexion expire au bout de {days} jours. '
+            'Vous pouvez la révoquer plus tôt dans Réglages → MCP / agents IA.'
+        ),
     },
 }
 
@@ -116,6 +144,10 @@ ERRORS = {
         'unknown_company': 'This company is not available.',
         'invalid_request': 'The request is missing a required value.',
         'registration_disabled': 'This company does not allow new MCP clients.',
+        'device_code_invalid': 'That code is not valid. Check it and try again.',
+        'device_code_expired': 'That code has expired. Start again from the agent.',
+        'device_code_used': 'That code was already used.',
+        'device_code_denied': 'That request was denied. Start again from the agent.',
     },
     'fr': {
         'invalid_client': "Ce client MCP est inconnu. Shellui ne vous a redirigé nulle part.",
@@ -125,6 +157,10 @@ ERRORS = {
         'unknown_company': "Cette entreprise n'est pas disponible.",
         'invalid_request': 'Il manque une valeur obligatoire dans la requête.',
         'registration_disabled': "Cette entreprise n'autorise pas de nouveaux clients MCP.",
+        'device_code_invalid': "Ce code n'est pas valide. Vérifiez-le et réessayez.",
+        'device_code_expired': "Ce code a expiré. Relancez la demande depuis l'agent.",
+        'device_code_used': 'Ce code a déjà été utilisé.',
+        'device_code_denied': "Cette demande a été refusée. Relancez-la depuis l'agent.",
     },
 }
 

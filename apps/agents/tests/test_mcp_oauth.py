@@ -32,6 +32,11 @@ class McpOAuthMetadataTests(TestCase):
         self.assertEqual(data['issuer'], 'https://identity.test')
         self.assertEqual(data['token_endpoint'], 'https://identity.test/oauth/token')
         self.assertIn('registration_endpoint', data)
+        self.assertEqual(
+            data['device_authorization_endpoint'],
+            'https://identity.test/oauth/mcp/device/code',
+        )
+        self.assertIn('urn:ietf:params:oauth:grant-type:device_code', data['grant_types_supported'])
         self.assertEqual(data['code_challenge_methods_supported'], ['S256'])
         self.assertTrue(data.get('resource_indicators_supported'))
 
