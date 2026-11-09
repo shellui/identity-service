@@ -1,5 +1,5 @@
 ---
-description: Run identity-service on its own, as an OpenID Provider, or as a relying party that trusts one upstream provider.
+description: Run identity-service on its own, as an OpenID Provider, or as a relying party that trusts the global identity server.
 ---
 
 # Instance roles
@@ -10,7 +10,7 @@ description: Run identity-service on its own, as an OpenID Provider, or as a rel
 | --- | --- |
 | unset | Standalone. Nothing on this page is active |
 | `global` | OpenID Provider. Other deployments can trust this issuer |
-| `region` | Relying party. This deployment trusts one upstream identity provider |
+| `region` | Relying party. Trusts the global identity server for sign-in and user tokens. Agent tokens can use a second issuer |
 
 Use a distinct `JWT_AUDIENCE` on each deployment, and do not copy `JWT_PRIVATE_KEY` or `SECRET_KEY` from one deployment to another. `SESSION_COOKIE_DOMAIN` and `CSRF_COOKIE_DOMAIN` stay unset, so session cookies are host-only.
 
@@ -65,7 +65,7 @@ Payloads do not include tokens, authorization codes, or sign-in links.
 
 ## Relying party (`region`)
 
-The relying party trusts one upstream provider from the environment. This is not a per-company OAuth application, and the company sign-in page does not grow a button for it.
+The relying party trusts one upstream identity provider from the environment for browser sign-in and user tokens. This is not a per-company OAuth application, and the company sign-in page does not grow a button for it. Global MCP agent tokens may pin a second issuer. That split is in [MCP and agents](mcp-and-agents.md).
 
 | Variable | Purpose |
 | --- | --- |
@@ -118,7 +118,9 @@ Checks on the subject token, all offline:
 - `email_verified` is the boolean `true`
 - `user_metadata.is_staff` is the boolean `false`, and no `is_staff` or `is_superuser` flag is set. Global staff are refused with `invalid_grant`: staff use local accounts on the region
 
-The user is then linked exactly like the upstream silent sign-in (`iss` and `sub`, local staff accounts refused, new accounts never staff) and the company join rules apply as on any sign-in: an invite-only company refuses a user who has no membership.
+The account is then linked exactly like the upstream silent sign-in (`iss` and `sub`, local staff accounts refused, new accounts never staff) and the company join rules apply as on any sign-in: an invite-only company refuses an account that has no membership.
+
+Global MCP agent tokens are a separate issuer. Agent exchange checks `iss`, `aud` (`GLOBAL_AGENT_ACCESS_TOKEN_AUDIENCE`), and `kid` against `GLOBAL_AGENT_ISSUER_URL` and `GLOBAL_AGENT_JWKS`. Whichever of those is empty falls back to `GLOBAL_ISSUER_URL` or `GLOBAL_JWKS`. User token exchange still requires `GLOBAL_ISSUER_URL`, `GLOBAL_JWKS`, and `GLOBAL_ACCESS_TOKEN_AUDIENCE`, and it rejects the agent issuer. Agent exchange rejects the user issuer. The regional account link stays `GLOBAL_ISSUER_URL` plus `sub`. Claim rules are in [MCP and agents](mcp-and-agents.md).
 
 Errors follow RFC 6749: `invalid_request`, `invalid_target` (unknown `company_id`), `invalid_grant` (token or user refused, with `error_description`). An `Origin` that is not in `OIDC_CORS_ALLOWED_ORIGINS` gets **403**, and only those origins get CORS headers, so list every shell origin there (for example `https://dashboard.shellui.com`, and `http://localhost:4000` for local testing). Tokens are never logged.
 

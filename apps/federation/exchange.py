@@ -2,9 +2,10 @@
 
 A shell signed in to the global identity server sends its global access token
 here and gets a session for one regional company. The global token is checked
-offline against the pinned GLOBAL_JWKS. The user is linked exactly like the
-upstream silent sign-in does, and the company join rules are the same.
-Tokens are never logged.
+offline against the pinned GLOBAL_JWKS and GLOBAL_ISSUER_URL. Agent tokens
+use a separate issuer and JWKS and are rejected here. The user is linked
+exactly like the upstream silent sign-in does, and the company join rules
+are the same. Tokens are never logged.
 """
 
 from __future__ import annotations
@@ -74,6 +75,7 @@ def handle_token_exchange(request) -> Response:
             subject_token,
             audience=settings.GLOBAL_ACCESS_TOKEN_AUDIENCE,
             issuer_url=settings.GLOBAL_ISSUER_URL,
+            jwks=getattr(settings, 'GLOBAL_JWKS', None) or {'keys': []},
             require=['exp', 'iat', 'iss', 'aud', 'sub', 'email', 'jti'],
         )
     except TokenError:
