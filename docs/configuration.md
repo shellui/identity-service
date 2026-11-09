@@ -212,7 +212,7 @@ See [Security hardening](security-hardening.md) for the rate limit defaults, pro
 
 ## Instance role
 
-Leave `SHELLUI_INSTANCE_ROLE` unset for a standalone deployment. `global` turns this process into an OpenID Provider. `region` trusts one upstream identity provider configured with `GLOBAL_ISSUER_URL`, a pinned `GLOBAL_JWKS`, and `GLOBAL_CLIENT_ID` / `GLOBAL_CLIENT_SECRET`. Endpoints, assertions, and the production host check are in [Instance roles](instance-roles.md).
+Leave `SHELLUI_INSTANCE_ROLE` unset for a standalone deployment. `global` turns this process into an OpenID Provider. `region` trusts the global identity server for browser sign-in and user token exchange, using `GLOBAL_ISSUER_URL`, a pinned `GLOBAL_JWKS`, and `GLOBAL_CLIENT_ID` / `GLOBAL_CLIENT_SECRET`. Global MCP agent tokens can use a second issuer: set `GLOBAL_AGENT_ISSUER_URL` and `GLOBAL_AGENT_JWKS`, or leave both empty to verify those tokens with `GLOBAL_ISSUER_URL` and `GLOBAL_JWKS`. Endpoints, assertions, and the production host check are in [Instance roles](instance-roles.md). Agent exchange is in [MCP and agents](mcp-and-agents.md).
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
@@ -230,6 +230,8 @@ Leave `SHELLUI_INSTANCE_ROLE` unset for a standalone deployment. `global` turns 
 | `GLOBAL_REDIRECT_URI` | `{JWT_ISSUER}/oauth/upstream-callback` | Upstream redirect URI when the public URL differs |
 | `GLOBAL_ACCESS_TOKEN_AUDIENCE` | empty | `aud` of global access tokens (the global server's `JWT_AUDIENCE`). Turns on token exchange at `POST /oauth/token`. Empty answers 404 |
 | `GLOBAL_AGENT_ACCESS_TOKEN_AUDIENCE` | empty | `aud` of global MCP agent access tokens. Turns on agent token exchange at `POST /oauth/token` (MCP authorization server `token_endpoint`; `POST /oauth/mcp/token` is the same handler). Empty answers 404 |
+| `GLOBAL_AGENT_ISSUER_URL` | empty | `iss` of those agent tokens: the saas-service public URL. Empty uses `GLOBAL_ISSUER_URL`. User token exchange ignores it |
+| `GLOBAL_AGENT_JWKS` | empty | Pinned JWKS JSON for `GLOBAL_AGENT_ISSUER_URL`. Empty uses `GLOBAL_JWKS`. Keys are not fetched. User token exchange ignores it |
 | `PROVISIONING_PUBLIC_KEY` | empty | Dashboard provisioning public key (PEM), region role. Empty turns the provisioning API off |
 | `PROVISIONING_KEY_ID` | empty | Expected assertion `kid` when set |
 | `PROVISIONING_ISSUER` | empty | Expected assertion `iss` (the dashboard) |

@@ -166,6 +166,16 @@ OPTIONAL = (
     Var('GLOBAL_REDIRECT_URI', ''),
     Var('GLOBAL_ACCESS_TOKEN_AUDIENCE', ''),
     Var('GLOBAL_AGENT_ACCESS_TOKEN_AUDIENCE', ''),
+    Var(
+        'GLOBAL_AGENT_ISSUER_URL',
+        '',
+        'iss of global MCP agent tokens. Empty uses GLOBAL_ISSUER_URL. Not used for user token exchange',
+    ),
+    Var(
+        'GLOBAL_AGENT_JWKS',
+        '',
+        'Pinned JWKS JSON for GLOBAL_AGENT_ISSUER_URL. Empty uses GLOBAL_JWKS. Not fetched from the network',
+    ),
     Var('PROVISIONING_PUBLIC_KEY', '', 'Provisioning API (region role; empty PROVISIONING_PUBLIC_KEY turns it off)'),
     Var('PROVISIONING_KEY_ID', ''),
     Var('PROVISIONING_ISSUER', ''),
