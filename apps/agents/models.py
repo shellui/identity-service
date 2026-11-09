@@ -191,6 +191,66 @@ class McpAuthorizationCode(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
 
+class McpDeviceAuthorization(models.Model):
+    """RFC 8628 device grant for one company MCP resource.
+
+    ``device_code`` and ``user_code`` are stored as SHA-256 digests only. The plaintext
+    values are returned once to the client (device code) or shown once to the user (user code).
+    """
+
+    STATUS_PENDING = 'pending'
+    STATUS_APPROVED = 'approved'
+    STATUS_DENIED = 'denied'
+    STATUS_EXPIRED = 'expired'
+    STATUS_CONSUMED = 'consumed'
+    STATUS_CHOICES = [
+        (STATUS_PENDING, 'Pending'),
+        (STATUS_APPROVED, 'Approved'),
+        (STATUS_DENIED, 'Denied'),
+        (STATUS_EXPIRED, 'Expired'),
+        (STATUS_CONSUMED, 'Consumed'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    device_code_digest = models.CharField(max_length=64, unique=True)
+    user_code_digest = models.CharField(max_length=64, unique=True)
+    client = models.ForeignKey(McpOAuthClient, on_delete=models.CASCADE, related_name='device_authorizations')
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='device_authorizations')
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='mcp_device_authorizations',
+    )
+    agent = models.ForeignKey(
+        Agent,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='device_authorizations',
+    )
+    resource = models.CharField(max_length=500)
+    scope = models.CharField(max_length=500, blank=True, default='')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    poll_interval = models.PositiveSmallIntegerField(default=5)
+    last_poll_at = models.DateTimeField(null=True, blank=True)
+    expires_at = models.DateTimeField()
+    approved_at = models.DateTimeField(null=True, blank=True)
+    denied_at = models.DateTimeField(null=True, blank=True)
+    consumed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['status', 'expires_at']),
+        ]
+
+    def __str__(self) -> str:
+        return f'{self.company_id}:{self.status}'
+
+
 class AgentRefreshSession(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     agent = models.ForeignKey(Agent, on_delete=models.CASCADE, related_name='refresh_sessions')

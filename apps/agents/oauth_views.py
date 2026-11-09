@@ -44,6 +44,7 @@ from apps.agents.mcp_signin import (
 )
 from apps.agents.staff import is_mcp_oauth_refused_user
 from apps.agents.exchange import GRANT_TYPE as AGENT_EXCHANGE_GRANT
+from apps.agents.oauth_device import DEVICE_CODE_GRANT, device_authorization_endpoint
 from apps.authapi.serializers import ShellUIOpenAPISerializer
 
 
@@ -76,8 +77,14 @@ class OAuthAuthorizationServerMetadataView(APIView):
             'authorization_endpoint': f'{base}/oauth/mcp/authorize',
             'token_endpoint': f'{base}/oauth/token',
             'registration_endpoint': f'{base}/oauth/mcp/register',
+            'device_authorization_endpoint': device_authorization_endpoint(base),
             'response_types_supported': ['code'],
-            'grant_types_supported': ['authorization_code', 'refresh_token', AGENT_EXCHANGE_GRANT],
+            'grant_types_supported': [
+                'authorization_code',
+                'refresh_token',
+                DEVICE_CODE_GRANT,
+                AGENT_EXCHANGE_GRANT,
+            ],
             'code_challenge_methods_supported': ['S256'],
             'token_endpoint_auth_methods_supported': ['none'],
             'scopes_supported': ['mcp'],

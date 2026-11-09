@@ -35,6 +35,7 @@ logger = logging.getLogger(__name__)
 
 AUTHORIZE_SESSION_KEY = 'mcp_oauth_authorize_path'
 COMPANY_SESSION_KEY = 'mcp_oauth_company_id'
+DEVICE_GRANT_SESSION_KEY = 'mcp_device_grant_id'
 SIGNIN_COMPLETE_PATH = '/oauth/mcp/signin/complete'
 AUTHORIZE_PATH = '/oauth/mcp/authorize'
 SESSION_BACKEND = 'django.contrib.auth.backends.ModelBackend'
@@ -268,6 +269,14 @@ def is_company_member(company: Company, user) -> bool:
 def remember_authorize(request: HttpRequest, path: str, company_id: int) -> None:
     request.session[AUTHORIZE_SESSION_KEY] = path
     request.session[COMPANY_SESSION_KEY] = int(company_id)
+    request.session.pop(DEVICE_GRANT_SESSION_KEY, None)
+
+
+def remember_device_grant(request: HttpRequest, grant_id: str) -> None:
+    """Bind this browser to a device grant. The id is not a secret; codes stay hashed in the database."""
+    request.session[DEVICE_GRANT_SESSION_KEY] = str(grant_id)
+    request.session.pop(AUTHORIZE_SESSION_KEY, None)
+    request.session.pop(COMPANY_SESSION_KEY, None)
 
 
 def _saved_authorize(request: HttpRequest) -> tuple[str | None, AuthorizeRequest | None]:
@@ -287,7 +296,9 @@ def finish_mcp_signin(request: HttpRequest, *, user, company: Company) -> HttpRe
     """Called by the magic link and OAuth/SSO flows when ``redirect_to`` is the MCP landing."""
     path, parsed = _saved_authorize(request)
     if not path or parsed is None:
-        return render_message(request, copy_for(page_language(request, user))['session_lost'], 400, user=user)
+        from apps.agents.oauth_device import finish_device_signin
+
+        return finish_device_signin(request, user=user, company=company)
     copy = copy_for(page_language(request, user))
     if parsed.company is None or parsed.company.id != company.id:
         return render_message(request, copy['session_lost'], 400, user=user)
@@ -359,13 +370,21 @@ def mcp_signin(request: HttpRequest) -> HttpResponse:
     if limited:
         return limited
     path, parsed = _saved_authorize(request)
-    if not path or parsed is None:
+    from apps.agents.oauth_device import device_grant_for_signin
+
+    device_grant, device_error = device_grant_for_signin(request)
+    if parsed is None and device_grant is None:
+        if device_error and not path:
+            return render_error(request, device_error, 400)
         return render_error(request, 'invalid_request', 400)
     if request.user.is_authenticated and not is_mcp_oauth_refused_user(request.user):
-        return HttpResponseRedirect(path)
-    # Nothing on this page depends on the company: no name, no configured methods. Known and
-    # unknown company ids give the same page, status, and amount of work.
-    company = parsed.company
+        if path and parsed is not None:
+            return HttpResponseRedirect(path)
+        if device_grant is not None:
+            return HttpResponseRedirect(reverse('mcp-oauth-device'))
+    # Nothing on this page depends on the company name. Device grants already bound a company
+    # from the user code, and the email step uses that company's sign-in methods only.
+    company = parsed.company if parsed is not None else device_grant.company
     lang = page_language(request)
     copy = copy_for(lang)
     sent = False
@@ -393,7 +412,12 @@ def mcp_signin(request: HttpRequest) -> HttpResponse:
             if limited is not None:
                 return limited
         sent = True
-    client_name = parsed.client.client_name or parsed.client.client_id
+    if parsed is not None:
+        client_name = parsed.client.client_name or parsed.client.client_id
+        cancel_url = mcp_cancel_return_url(parsed)
+    else:
+        client_name = device_grant.client.client_name or device_grant.client.client_id
+        cancel_url = reverse('mcp-oauth-device')
     login_host = identity_login_host(request)
     strings = mcp_signin_page_strings(
         request, copy=copy, client_name=client_name, login_host=login_host
@@ -406,7 +430,7 @@ def mcp_signin(request: HttpRequest) -> HttpResponse:
             'copy': copy,
             'client_name': client_name,
             'login_host': login_host,
-            'cancel_url': mcp_cancel_return_url(parsed),
+            'cancel_url': cancel_url,
             'sent': sent,
             **strings,
         },
@@ -421,6 +445,11 @@ def mcp_signin_complete(request: HttpRequest) -> HttpResponse:
     path, parsed = _saved_authorize(request)
     if path and parsed is not None and request.user.is_authenticated:
         return HttpResponseRedirect(path)
+    from apps.agents.oauth_device import device_grant_for_signin
+
+    grant, _error = device_grant_for_signin(request)
+    if grant is not None and request.user.is_authenticated:
+        return HttpResponseRedirect(reverse('mcp-oauth-device'))
     return render_message(request, copy_for(page_language(request))['session_lost'], 400)
 
 
