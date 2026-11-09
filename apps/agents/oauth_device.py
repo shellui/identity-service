@@ -31,6 +31,7 @@ from apps.agents.mcp_resources import GATEWAY_SERVICE_ID, resolve_mcp_resource, 
 from apps.agents.mcp_signin import (
     DEVICE_GRANT_SESSION_KEY,
     SESSION_BACKEND,
+    clear_device_grant,
     is_company_member,
     page_language,
     plain_response,
@@ -303,8 +304,10 @@ def handle_device_code_grant(body: dict) -> JsonResponse:
     digest = hash_authorization_code(device_code)
     with transaction.atomic():
         try:
+            # agent/user are nullable → LEFT OUTER JOIN. Postgres rejects FOR UPDATE on
+            # that side; of=('self',) locks only the device row (same as approval locks).
             row = (
-                McpDeviceAuthorization.objects.select_for_update()
+                McpDeviceAuthorization.objects.select_for_update(of=('self',))
                 .select_related('client', 'agent', 'user', 'company')
                 .get(device_code_digest=digest)
             )
@@ -767,14 +770,24 @@ def _render_grant_state(request: HttpRequest, grant: McpDeviceAuthorization) -> 
     if grant.expires_at <= now or grant.status == McpDeviceAuthorization.STATUS_EXPIRED:
         if grant.status != McpDeviceAuthorization.STATUS_EXPIRED:
             with transaction.atomic():
-                locked = McpDeviceAuthorization.objects.select_for_update().select_related('agent').get(pk=grant.pk)
+                locked = (
+                    McpDeviceAuthorization.objects.select_for_update(of=('self',))
+                    .select_related('agent')
+                    .get(pk=grant.pk)
+                )
                 _expire_locked(locked, now)
+        # Finished grants must not stick in the session — otherwise a later Hermes
+        # attempt shows "Agent connected" while a new user_code is still pending.
+        clear_device_grant(request)
         return render_error(request, 'device_code_expired', 400, user=user)
     if grant.status == McpDeviceAuthorization.STATUS_DENIED:
+        clear_device_grant(request)
         return _render_result(request, title=copy['denied'], message='', user=user)
     if grant.status == McpDeviceAuthorization.STATUS_CONSUMED:
+        clear_device_grant(request)
         return render_error(request, 'device_code_used', 400, user=user)
     if grant.status == McpDeviceAuthorization.STATUS_APPROVED:
+        clear_device_grant(request)
         return _render_result(
             request,
             title=copy['device_approved_title'],
@@ -782,6 +795,7 @@ def _render_grant_state(request: HttpRequest, grant: McpDeviceAuthorization) -> 
             user=user,
         )
     if grant.status != McpDeviceAuthorization.STATUS_PENDING:
+        clear_device_grant(request)
         return render_error(request, 'device_code_invalid', 400, user=user)
     if not request.user.is_authenticated:
         return HttpResponseRedirect(reverse('mcp-oauth-signin'))
@@ -829,6 +843,8 @@ def mcp_device_verification(request: HttpRequest) -> HttpResponse:
         return _post_user_code(request)
     prefill_raw = str(request.GET.get('user_code') or '')
     if prefill_raw.strip():
+        # New code from Hermes — drop any prior approved grant left in the session.
+        clear_device_grant(request)
         return _render_code_form(request, prefill=_safe_prefill(prefill_raw))
     grant = _grant_from_session(request)
     if grant is None:

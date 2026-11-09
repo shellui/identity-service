@@ -91,6 +91,20 @@ class CompanyResourceTests(TestCase):
             url, _code = resolve_mcp_resource(raw)
             self.assertIsNone(url, raw)
 
+    def test_private_ip_http_gateway_resource(self):
+        from apps.agents.mcp_resources import company_mcp_resource_url, gateway_resource_for_company
+
+        with self.settings(AI_SERVICE_URL='http://100.127.19.94:8006'):
+            self.assertEqual(
+                gateway_resource_for_company(7),
+                'http://100.127.19.94:8006/c/7/mcp',
+            )
+            self.assertEqual(company_mcp_resource_url(7), 'http://100.127.19.94:8006/c/7/mcp')
+            self.assertEqual(
+                resolve_mcp_resource('http://100.127.19.94:8006/c/7/mcp'),
+                ('http://100.127.19.94:8006/c/7/mcp', 'ai'),
+            )
+
 
 @override_settings(**SETTINGS)
 class CompanySigninFlowTests(TestCase):

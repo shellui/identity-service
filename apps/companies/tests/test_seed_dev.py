@@ -66,6 +66,17 @@ class SeedDevTests(TestCase):
         self.assertEqual(User.objects.filter(username='admin').count(), 1)
         self.assertEqual(CompanyOAuthRedirect.objects.filter(company=company).count(), 5)
 
+    @mock.patch.dict(os.environ, {'IDENTITY_DEV_SEED': 'true', 'IDENTITY_DEV_PUBLIC_HOST': '100.127.19.94'})
+    def test_seeds_extra_public_host_oauth_origins(self):
+        call_command('seed_dev', stdout=mock.MagicMock())
+        company = Company.objects.get(pk=1)
+        self.assertTrue(
+            CompanyOAuthRedirect.objects.filter(
+                company=company, base_url='http://100.127.19.94:4000'
+            ).exists()
+        )
+        self.assertEqual(CompanyOAuthRedirect.objects.filter(company=company).count(), 10)
+
     @override_settings(EMAIL_SERVICE_API_KEY='', EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
     def test_dev_user_gets_magic_link_for_shell(self):
         cache.clear()

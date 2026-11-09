@@ -8,6 +8,7 @@ URL and never from a default.
 
 from __future__ import annotations
 
+import ipaddress
 import re
 from urllib.parse import urlsplit
 
@@ -17,12 +18,35 @@ from apps.agents.services import list_mcp_services
 from shellui_django.mcp.resources import mcp_resource_from_origin, normalize_resource_indicator
 
 _COMPANY_PATH = re.compile(r'^/c/([1-9][0-9]{0,18})/mcp$')
-_LOOPBACK_HOSTS = ('127.0.0.1', 'localhost', '::1')
+_LOOPBACK_HOSTS = frozenset({'127.0.0.1', 'localhost', '::1'})
+# RFC 6598 shared space (Tailscale etc.). Not `is_private` on modern Python.
+_CGNAT_SHARED = ipaddress.ip_network('100.64.0.0/10')
 GATEWAY_SERVICE_ID = 'ai'
 
 
+def _http_dev_host_allowed(host: str | None) -> bool:
+    """True for loopback names/IPs and private/CGNAT IP literals (LAN, Tailscale, etc.).
+
+    Public hostnames over plain HTTP stay rejected — MCP resource URLs must not
+    advertise cleartext origins on the public internet.
+    """
+    h = (host or '').lower()
+    if h in _LOOPBACK_HOSTS:
+        return True
+    try:
+        ip = ipaddress.ip_address(h)
+    except ValueError:
+        return False
+    return bool(
+        ip.is_loopback
+        or ip.is_private
+        or ip.is_link_local
+        or ip in _CGNAT_SHARED
+    )
+
+
 def _trusted_https_origin(raw: str | None) -> str | None:
-    """Return normalized https origin (or loopback http) or None if not a safe public base URL."""
+    """Return normalized https origin (or private/loopback http) or None if not a safe base URL."""
     s = str(raw or '').strip()
     if not s or '#' in s or '?' in s:
         return None
@@ -34,7 +58,7 @@ def _trusted_https_origin(raw: str | None) -> str | None:
     if parsed.scheme not in ('http', 'https') or not parsed.netloc or parsed.username or parsed.password:
         return None
     host = (parsed.hostname or '').lower()
-    if parsed.scheme == 'http' and host not in _LOOPBACK_HOSTS:
+    if parsed.scheme == 'http' and not _http_dev_host_allowed(host):
         return None
     if parsed.scheme == 'https' and host in _LOOPBACK_HOSTS:
         return None
@@ -69,7 +93,7 @@ def _normalize_company_resource(raw: str | None) -> str | None:
         return None
     if not _COMPANY_PATH.match(parsed.path):
         return None
-    if parsed.scheme == 'http' and (parsed.hostname or '').lower() not in _LOOPBACK_HOSTS:
+    if parsed.scheme == 'http' and not _http_dev_host_allowed(parsed.hostname):
         return None
     return s
 

@@ -28,6 +28,10 @@ class GlobalMcpUrlTests(SimpleTestCase):
     def test_non_loopback_http_rejected(self):
         self.assertIsNone(global_mcp_url())
 
+    @override_settings(DASHBOARD_PUBLIC_URL='http://100.127.19.94:5174')
+    def test_private_ip_http_allowed(self):
+        self.assertEqual(global_mcp_url(), 'http://100.127.19.94:5174/mcp')
+
     @override_settings(DASHBOARD_PUBLIC_URL='https://app.shellui.com/nested')
     def test_path_with_segments_rejected(self):
         self.assertIsNone(global_mcp_url())

@@ -21,13 +21,28 @@ ADMIN_PASSWORD = 'admin'
 ADMIN_EMAIL = 'admin@localhost'
 DEV_USERNAME = 'dev'
 DEV_EMAIL = 'dev@localhost'
-DEV_ORIGINS = (
-    ('http://localhost:4000', 'Shell'),
-    ('http://localhost:5173', 'Admin'),
-    ('http://localhost:5174', 'Dashboard'),
-    ('http://localhost:5175', 'Files'),
-    ('http://localhost:5176', 'Playground'),
+# Loopback origins always seeded. IDENTITY_DEV_PUBLIC_HOST adds the same ports on a
+# LAN/Tailscale host so OAuth redirect_uri checks match browsers that are not on localhost.
+_DEV_ORIGIN_PORTS = (
+    (4000, 'Shell'),
+    (5173, 'Admin'),
+    (5174, 'Dashboard'),
+    (5175, 'Files'),
+    (5176, 'Playground'),
 )
+
+
+def _dev_oauth_origins() -> list[tuple[str, str]]:
+    hosts = ['localhost']
+    extra = os.getenv('IDENTITY_DEV_PUBLIC_HOST', '').strip()
+    if extra and extra.lower() not in {'localhost', '127.0.0.1'} and extra not in hosts:
+        hosts.append(extra)
+    origins: list[tuple[str, str]] = []
+    for host in hosts:
+        for port, label in _DEV_ORIGIN_PORTS:
+            suffix = '' if host == 'localhost' else f' ({host})'
+            origins.append((f'http://{host}:{port}', f'{label}{suffix}'))
+    return origins
 
 
 def seed_allowed() -> bool:
@@ -52,7 +67,7 @@ class Command(BaseCommand):
             )
             if created:
                 self._fix_sequence()
-            for base_url, label in DEV_ORIGINS:
+            for base_url, label in _dev_oauth_origins():
                 CompanyOAuthRedirect.objects.get_or_create(
                     company=company, base_url=base_url, defaults={'label': label}
                 )

@@ -279,6 +279,11 @@ def remember_device_grant(request: HttpRequest, grant_id: str) -> None:
     request.session.pop(COMPANY_SESSION_KEY, None)
 
 
+def clear_device_grant(request: HttpRequest) -> None:
+    """Drop the browser↔device-grant binding (after a finished grant or a new user_code)."""
+    request.session.pop(DEVICE_GRANT_SESSION_KEY, None)
+
+
 def _saved_authorize(request: HttpRequest) -> tuple[str | None, AuthorizeRequest | None]:
     path = safe_authorize_path(request.session.get(AUTHORIZE_SESSION_KEY))
     if not path:

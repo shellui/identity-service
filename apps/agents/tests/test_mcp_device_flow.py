@@ -9,6 +9,7 @@ from datetime import timedelta
 import jwt
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
+from django.db import connection
 from django.test import Client, TestCase, override_settings
 from django.utils import timezone
 
@@ -91,6 +92,20 @@ class McpDeviceFlowTests(TestCase):
             },
         )
 
+    def test_device_token_lock_targets_device_row_only(self):
+        """Nullable agent/user joins must not be locked (Postgres FOR UPDATE outer-join ban)."""
+        qs = (
+            McpDeviceAuthorization.objects.select_for_update(of=('self',))
+            .select_related('client', 'agent', 'user', 'company')
+            .order_by()
+        )
+        self.assertTrue(qs.query.select_for_update)
+        self.assertEqual(tuple(qs.query.select_for_update_of), ('self',))
+        if connection.vendor == 'postgresql':
+            sql = str(qs.query).upper()
+            self.assertIn('FOR UPDATE OF', sql)
+            self.assertIn('MCPDEVICEAUTHORIZATION', sql.replace('"', ''))
+
     def test_metadata_and_code_response(self):
         meta = self.client.get('/.well-known/oauth-authorization-server')
         self.assertEqual(meta.status_code, 200)
@@ -155,6 +170,12 @@ class McpDeviceFlowTests(TestCase):
         done = self.client.get('/oauth/mcp/device')
         self.assertContains(done, 'Agent connected')
         self.assertContains(done, 'You approved this agent')
+        # Terminal grant is dropped from the session so a later Hermes attempt is not
+        # masked by a sticky "Agent connected" page.
+        again = self.client.get('/oauth/mcp/device')
+        self.assertEqual(again.status_code, 200)
+        self.assertContains(again, 'name="user_code"')
+        self.assertNotContains(again, 'Agent connected')
 
         token = self._poll(issued)
         self.assertEqual(token.status_code, 200, token.content)
