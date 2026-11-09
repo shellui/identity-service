@@ -263,10 +263,16 @@ def record_login_event(
     client_device_id: str | None = None,
     client_country: str | None = None,
     client_city: str | None = None,
+    device_kind: str = '',
+    audit_ip: str | None = None,
+    audit_user_agent: str | None = None,
 ) -> EventLog:
     """Record a sign-in attempt (``outcome`` is ``LoginOutcome.SUCCESS`` or ``FAILURE``) in the event log."""
-    ip = get_client_ip(request)
-    ua = truncate_user_agent(request.META.get('HTTP_USER_AGENT'))
+    ip = audit_ip if audit_ip is not None else get_client_ip(request)
+    if audit_user_agent is not None:
+        ua = truncate_user_agent(audit_user_agent)
+    else:
+        ua = truncate_user_agent(request.META.get('HTTP_USER_AGENT'))
     tz = normalize_client_timezone(client_timezone) or normalize_client_timezone(
         request.META.get('HTTP_X_CLIENT_TIMEZONE') or request.META.get('HTTP_X_SHELLUI_CLIENT_TIMEZONE')
     )
@@ -280,20 +286,24 @@ def record_login_event(
     )
     city = _sanitize_geo_field(geo_city if client_city is None else client_city, 128)
 
+    payload = {
+        'provider': str(provider).lower()[:32] if provider else 'unknown',
+        'failure_reason': sanitize_failure_reason(failure_reason),
+        'is_staff_at_event': is_staff,
+        'ip_hash': hash_ip(ip),
+        'user_agent': ua,
+        'client_timezone': tz,
+        'client_device_id_hash': device_hash,
+        'client_country': country,
+        'client_city': city,
+    }
+    kind = str(device_kind or '').strip().lower()[:32]
+    if kind:
+        payload['device_kind'] = kind
     return record_event(
         get_event_type(LOGIN_EVENT_TYPES[outcome]),
         company,
-        {
-            'provider': str(provider).lower()[:32] if provider else 'unknown',
-            'failure_reason': sanitize_failure_reason(failure_reason),
-            'is_staff_at_event': is_staff,
-            'ip_hash': hash_ip(ip),
-            'user_agent': ua,
-            'client_timezone': tz,
-            'client_device_id_hash': device_hash,
-            'client_country': country,
-            'client_city': city,
-        },
+        payload,
         user=user,
     )
 

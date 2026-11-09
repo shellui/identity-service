@@ -25,6 +25,12 @@ from drf_spectacular.views import (
 
 from apps.agents import mcp_views as agents_mcp_views
 from apps.agents.oauth_device import DeviceAuthorizationView, mcp_device_verification
+from apps.authapi.cli_device import (
+    CliDeviceAuthorizationView,
+    cli_device_signin,
+    cli_device_signin_complete,
+    cli_device_verification,
+)
 from apps.agents.oauth_views import (
     OAuthAuthorizationServerMetadataView,
     OAuthProtectedResourceMetadataView,
@@ -70,6 +76,10 @@ urlpatterns = [
     path('oauth/mcp/register', mcp_register, name='mcp-oauth-register'),
     path('oauth/mcp/device/code', DeviceAuthorizationView.as_view(), name='mcp-oauth-device-code'),
     path('oauth/mcp/device', mcp_device_verification, name='mcp-oauth-device'),
+    path('oauth/cli/device/code', CliDeviceAuthorizationView.as_view(), name='cli-oauth-device-code'),
+    path('oauth/cli/device', cli_device_verification, name='cli-oauth-device'),
+    path('oauth/cli/signin', cli_device_signin, name='cli-oauth-signin'),
+    path('oauth/cli/signin/complete', cli_device_signin_complete, name='cli-oauth-signin-complete'),
     path('oauth/mcp/authorize', mcp_authorize, name='mcp-oauth-authorize'),
     path('oauth/mcp/signin', mcp_signin, name='mcp-oauth-signin'),
     path('oauth/mcp/signin/complete', mcp_signin_complete, name='mcp-oauth-signin-complete'),

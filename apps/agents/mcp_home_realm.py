@@ -66,6 +66,8 @@ def home_realm_signin_redirect(
     *,
     company: Company,
     email: str,
+    redirect_to: str | None = None,
+    code_challenge: str | None = None,
 ) -> HttpResponseRedirect | None:
     client_row = resolve_home_realm_client(company, email_domain(email))
     if client_row is None:
@@ -76,8 +78,9 @@ def home_realm_signin_redirect(
     location = _build_shellui_authorize_url(
         request,
         company=company,
-        redirect_to=signin_complete_url(request),
+        redirect_to=redirect_to or signin_complete_url(request),
         provider=provider,
         company_oauth_client_id=client_row.pk,
+        code_challenge=code_challenge,
     )
     return HttpResponseRedirect(location)

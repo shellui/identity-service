@@ -175,6 +175,9 @@ The entrypoint sets `--worker-tmp-dir /dev/shm` (the heartbeat file lives in mem
 | `AUTH_RATE_LIMIT_MCP_PERSONAL_AGENT` | `10` | Personal MCP agent token creations per hour, per user |
 | `AUTH_RATE_LIMIT_MCP_DEVICE_CODE` | `30` | Device authorization requests per 5 minutes, per client IP |
 | `AUTH_RATE_LIMIT_MCP_DEVICE_VERIFY` | `8` | Device user-code attempts per 5 minutes, per client IP |
+| `AUTH_RATE_LIMIT_CLI_DEVICE_CODE` | `30` | CLI device authorization requests per 5 minutes, per client IP |
+| `AUTH_RATE_LIMIT_CLI_DEVICE_VERIFY` | `8` | CLI device user-code and password attempts per 5 minutes, per client IP |
+| `CLI_STAFF_SESSION_MAX_AGE` | `12h` | Refresh lifetime cap for a staff Shellui CLI session. Non-staff CLI sessions use `JWT_REFRESH_TOKEN_LIFETIME` |
 | `MCP_DYNAMIC_CLIENT_REGISTRATION` | `true` | MCP OAuth dynamic client registration |
 | `MCP_ACCESS_TOKEN_LIFETIME` | `15m` | MCP agent access JWT lifetime |
 | `MCP_REFRESH_TOKEN_LIFETIME` | `30d` | MCP agent refresh token lifetime |
@@ -201,6 +204,7 @@ See [Security hardening](security-hardening.md) for the rate limit defaults, pro
 | `DEBUG` | `false` | Optional. Unset or empty means `false`, so production does not need to set it. Set `true` only for local development (`.env.example` and `docker-compose.yml` do). Required in `.env.example` for local runs |
 | `SETUP_TOKEN` | empty | One-time token for the web form that creates the first superuser with `DEBUG=false`. Prefer `createsuperuser` |
 | `IDENTITY_DEV_SEED` | `false` | Local dev only. With `DEBUG=true`, the dev entrypoint runs `manage.py seed_dev` (company 1, `admin` / `admin`, `dev@localhost`). Never set in production |
+| `IDENTITY_DEV_PUBLIC_HOST` | empty | Local dev only. Hostname `seed_dev` adds to the OAuth redirect origins, on the same ports as localhost, so a LAN or Tailscale browser can sign in. Never set in production |
 | `IDENTITY_SERVICE_PORT` | `8000` | Host port in `docker-compose.yml` only |
 | `LOG_LEVEL` | `INFO`, `DEBUG` with `DEBUG=true` | App log level on stdout. Django errors and warnings (500 errors, `DisallowedHost`, CSRF failures) are always printed |
 | `SLOW_REQUEST_THRESHOLD_SECONDS` | `2` | Log a warning for slower requests. `0` turns it off |

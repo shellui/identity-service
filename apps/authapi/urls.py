@@ -26,6 +26,7 @@ from .saml.views import (
     ShellUISAMLMetadataView,
     ShellUISAMLSLSView,
 )
+from .session_views import ShellUISessionListView, ShellUISessionRevokeView
 from .views import (
     ShellUIAdminGroupDetailView,
     ShellUIAdminGroupListView,
@@ -72,6 +73,8 @@ urlpatterns = [
     path('oauth/session', ShellUIOAuthSessionView.as_view(), name='shellui-oauth-session'),
     path('token', ShellUITokenView.as_view(), name='shellui-token'),
     path('logout', ShellUILogoutView.as_view(), name='shellui-logout'),
+    path('sessions', ShellUISessionListView.as_view(), name='shellui-sessions'),
+    path('sessions/<uuid:session_id>/revoke', ShellUISessionRevokeView.as_view(), name='shellui-session-revoke'),
     path('user', ShellUIUserView.as_view(), name='shellui-user'),
     path('groups', ShellUIAdminGroupListView.as_view(), name='shellui-admin-groups'),
     path('groups/<int:pk>', ShellUIAdminGroupDetailView.as_view(), name='shellui-admin-group-detail'),

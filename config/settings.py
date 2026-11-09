@@ -742,8 +742,14 @@ AUTH_RATE_LIMITS = {
     'mcp_personal_agent': {'limit': _env_int('AUTH_RATE_LIMIT_MCP_PERSONAL_AGENT', 10), 'window': 3600},
     'mcp_device_code': {'limit': _env_int('AUTH_RATE_LIMIT_MCP_DEVICE_CODE', 30), 'window': 300},
     'mcp_device_verify': {'limit': _env_int('AUTH_RATE_LIMIT_MCP_DEVICE_VERIFY', 8), 'window': 300},
+    'cli_device_code': {'limit': _env_int('AUTH_RATE_LIMIT_CLI_DEVICE_CODE', 30), 'window': 300},
+    'cli_device_verify': {'limit': _env_int('AUTH_RATE_LIMIT_CLI_DEVICE_VERIFY', 8), 'window': 300},
     'invitation': {'limit': _env_int('AUTH_RATE_LIMIT_INVITATION', 30), 'window': 300},
 }
+
+# Staff Shellui CLI sessions use this as the refresh-token cap. Non-staff CLI sessions
+# use JWT_REFRESH_TOKEN_LIFETIME. Access tokens stay on JWT_ACCESS_TOKEN_LIFETIME.
+CLI_STAFF_SESSION_MAX_AGE = _env_duration('CLI_STAFF_SESSION_MAX_AGE', timedelta(hours=12))
 
 # Scheduled jobs (Celery worker + beat, started by the Docker entrypoint).
 # See docs/scheduled-jobs.md. The broker is REDIS_URL unless CELERY_BROKER_URL is set.

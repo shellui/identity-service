@@ -2,7 +2,7 @@ import json
 import logging
 import uuid
 import urllib.request
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
 
 from django.conf import settings
@@ -812,9 +812,15 @@ def _issue_shellui_tokens(
     prior_app_metadata: dict | None = None,
     prior_auth_time: int | None = None,
     family_id: uuid.UUID | None = None,
+    refresh_lifetime: timedelta | None = None,
+    session_max_exp: int | None = None,
+    session_kind: str = '',
+    session_user_agent: str = '',
 ) -> dict:
     _refuse_deleting_company(company)
     refresh = ShellUIRefreshToken.for_user(user)
+    if refresh_lifetime is not None:
+        refresh.set_exp(lifetime=refresh_lifetime)
     preferences = _user_preferences_payload(user)
     resolved_avatar = _resolve_avatar_url_for_jwt(user, avatar_url)
     user_metadata = {
@@ -851,11 +857,15 @@ def _issue_shellui_tokens(
     refresh['user_metadata'] = user_metadata
     refresh['company_id'] = company.id
     refresh['app_metadata'] = app_metadata
+    if session_max_exp is not None:
+        refresh['cli_staff_session_exp'] = int(session_max_exp)
     session = register_refresh_session(
         user=user,
         company=company,
         refresh=refresh,
         family_id=family_id,
+        kind=session_kind,
+        user_agent=session_user_agent,
     )
     bind_access_session(access=access, session_id=session.id)
     now_ts = int(datetime.now(timezone.utc).timestamp())
@@ -1122,6 +1132,22 @@ def _finalize_shellui_oauth_login(
     code_challenge: str | None = None,
 ) -> HttpResponse:
     from apps.agents.mcp_signin import finish_mcp_signin, is_mcp_signin_redirect
+    from apps.authapi.cli_device import finish_cli_signin, is_cli_signin_redirect
+
+    if is_cli_signin_redirect(redirect_to):
+        response = finish_cli_signin(request, user=user, company=company, auth_method=provider)
+        if response.status_code in (301, 302):
+            auth_metrics.record_successful_login(provider, company_id=company.id)
+            record_login_event(
+                request=request,
+                outcome=LoginOutcome.SUCCESS,
+                provider=provider,
+                user=user,
+                company=company,
+                client_timezone=client_tz,
+                client_device_id=client_dev,
+            )
+        return response
 
     if is_mcp_signin_redirect(redirect_to):
         # MCP connector sign-in: start the identity session, issue no app tokens.
@@ -2961,6 +2987,22 @@ class ShellUITokenView(APIView):
         touch_user_last_seen(user)
 
         assert session is not None
+        refresh_lifetime = None
+        session_max_exp = None
+        staff_cap = refresh.get('cli_staff_session_exp')
+        if staff_cap is not None:
+            try:
+                cap_i = int(staff_cap)
+            except (TypeError, ValueError):
+                cap_i = None
+            now_i = int(datetime.now(timezone.utc).timestamp())
+            if cap_i is None or cap_i <= now_i:
+                revoke_refresh_session(session)
+                return Response({'error': 'Refresh token expired.'}, status=status.HTTP_401_UNAUTHORIZED)
+            remaining = max(1, cap_i - now_i)
+            normal = settings.SIMPLE_JWT['REFRESH_TOKEN_LIFETIME']
+            refresh_lifetime = min(normal, timedelta(seconds=remaining)) if isinstance(normal, timedelta) else timedelta(seconds=remaining)
+            session_max_exp = cap_i
         revoke_refresh_session(session)
         prior_auth_int = None
         if prior_auth_time is not None:
@@ -2975,6 +3017,10 @@ class ShellUITokenView(APIView):
             prior_app_metadata=prior_app if isinstance(prior_app, dict) else None,
             prior_auth_time=prior_auth_int,
             family_id=session.family_id,
+            refresh_lifetime=refresh_lifetime,
+            session_max_exp=session_max_exp,
+            session_kind=session.kind,
+            session_user_agent=session.user_agent,
         )
         return Response(payload)
 
