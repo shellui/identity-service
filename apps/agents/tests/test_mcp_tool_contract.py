@@ -30,10 +30,13 @@ from apps.companies.access import set_company_access
 from apps.companies.models import Company
 
 # Writes that do not delete, revoke, change access, or send data outside.
+# Creating or updating a webhook rule only stores the rule. Nothing is sent until an event fires.
 NON_DESTRUCTIVE_WRITES = frozenset(
     {
+        'identity_create_action_rules',
         'identity_create_groups',
         'identity_replace_groups',
+        'identity_update_action_rules',
         'identity_update_groups',
     }
 )

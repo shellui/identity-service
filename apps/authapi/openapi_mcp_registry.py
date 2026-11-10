@@ -357,8 +357,7 @@ MCP_SPECS: dict[str, _McpSpec] = {
     'identity_create_action_rules': _McpSpec(
         'Creates a webhook rule for event_type that posts to url, and returns the rule. The signing secret is shown once on the admin HTTP response and is masked in this result.',
         'Creates a webhook rule for event_type that posts to url, and returns the rule. The signing secret is shown once on the admin HTTP response and is masked in this result.',
-        'Inserts rule with encrypted secret.',
-        destructive=True,
+        'Inserts rule with encrypted secret. Nothing is sent until an event fires.',
         sensitive=True,
         read_only=False,
     ),
@@ -370,8 +369,7 @@ MCP_SPECS: dict[str, _McpSpec] = {
     'identity_update_action_rules': _McpSpec(
         'Updates webhook rule id, including url, enabled, event_type, or the request headers. Returns the updated rule.',
         'Updates webhook rule id, including url, enabled, event_type, or the request headers. Returns the updated rule.',
-        'Updates rule row.',
-        destructive=True,
+        'Updates rule row. Nothing is sent until an event fires.',
         read_only=False,
     ),
     'identity_delete_action_rules': _McpSpec(

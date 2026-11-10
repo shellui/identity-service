@@ -59,7 +59,7 @@
     },
     "annotations": {
       "readOnlyHint": false,
-      "destructiveHint": true
+      "destructiveHint": false
     }
   },
   {
@@ -1483,7 +1483,7 @@
     },
     "annotations": {
       "readOnlyHint": false,
-      "destructiveHint": true
+      "destructiveHint": false
     }
   },
   {
