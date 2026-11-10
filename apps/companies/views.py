@@ -13,23 +13,23 @@ from .serializers import CompanySerializer, CompanyUpdateSerializer
 @extend_schema_view(
     list=extend_schema(
         tags=['companies'],
-        **mcp_extend_schema_kwargs('api_v1_companies_list'),
+        **mcp_extend_schema_kwargs('identity_list_companies'),
         responses={200: CompanySerializer(many=True), **ADMIN_API_ERRORS},
     ),
     retrieve=extend_schema(
         tags=['companies'],
-        **mcp_extend_schema_kwargs('api_v1_companies_retrieve'),
+        **mcp_extend_schema_kwargs('identity_get_companies'),
         responses={200: CompanySerializer, **ADMIN_API_ERRORS},
     ),
     partial_update=extend_schema(
         tags=['companies'],
-        **mcp_extend_schema_kwargs('api_v1_companies_partial_update'),
+        **mcp_extend_schema_kwargs('identity_update_companies'),
         request=CompanyUpdateSerializer,
         responses={200: CompanySerializer, **ADMIN_API_ERRORS},
     ),
     update=extend_schema(
         tags=['companies'],
-        **mcp_extend_schema_kwargs('api_v1_companies_update'),
+        **mcp_extend_schema_kwargs('identity_replace_companies'),
         request=CompanyUpdateSerializer,
         responses={200: CompanySerializer, **ADMIN_API_ERRORS},
     ),

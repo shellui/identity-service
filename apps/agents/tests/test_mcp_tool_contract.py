@@ -76,6 +76,12 @@ class McpToolContractTests(TestCase):
             self.assertIn('const', schema['properties']['path'], tool['name'])
             self.assertIn('enum', schema['properties']['method'], tool['name'])
 
+    def test_tool_names_use_identity_prefix(self):
+        for tool in self._tools_list():
+            name = tool['name']
+            self.assertFalse(name.startswith('api_v1_'), name)
+            self.assertTrue(name.startswith('identity_'), name)
+
     def test_access_flags_match_registry(self):
         schema = SchemaGenerator().get_schema(request=None, public=True)
         by_name = {tool['name']: tool for tool in tools_from_schema(schema)}

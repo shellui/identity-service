@@ -54,7 +54,7 @@ class McpIdentityEndpointTests(TestCase):
         self.assertEqual(response.status_code, 200)
         post.assert_not_called()
         names = {t['name'] for t in response.json()['result']['tools']}
-        self.assertIn('api_v1_mcp_services_list', names)
+        self.assertIn('identity_list_services', names)
 
     @patch('requests.post')
     def test_agent_claims_as_plain_dict_are_accepted(self, post):

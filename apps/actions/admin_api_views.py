@@ -133,7 +133,7 @@ def _sample_payload(event_type: str, company) -> dict:
 
 @extend_schema_view(
     get=extend_schema(
-        **mcp_extend_schema_kwargs('api_v1_actions_events_list'),
+        **mcp_extend_schema_kwargs('identity_list_action_events'),
         responses={**ADMIN_API_ERRORS},
         tags=['actions-admin'],
     ),
@@ -164,12 +164,12 @@ class ShellUIAdminActionEventsView(APIView):
 
 @extend_schema_view(
     get=extend_schema(
-        **mcp_extend_schema_kwargs('api_v1_actions_rules_list'),
+        **mcp_extend_schema_kwargs('identity_list_action_rules'),
         responses={**ADMIN_API_ERRORS},
         tags=['actions-admin'],
     ),
     post=extend_schema(
-        **mcp_extend_schema_kwargs('api_v1_actions_rules_create'),
+        **mcp_extend_schema_kwargs('identity_create_action_rules'),
         tags=['actions-admin'],
         request=ActionRuleCreateSerializer,
         responses={**ADMIN_API_ERRORS, 
@@ -219,18 +219,18 @@ class ShellUIAdminActionRuleListCreateView(APIView):
 
 @extend_schema_view(
     get=extend_schema(
-        **mcp_extend_schema_kwargs('api_v1_actions_rules_retrieve'),
+        **mcp_extend_schema_kwargs('identity_get_action_rules'),
         responses={**ADMIN_API_ERRORS},
         tags=['actions-admin'],
     ),
     patch=extend_schema(
-        **mcp_extend_schema_kwargs('api_v1_actions_rules_partial_update'),
+        **mcp_extend_schema_kwargs('identity_update_action_rules'),
         responses={**ADMIN_API_ERRORS},
         tags=['actions-admin'],
         request=ActionRuleUpdateSerializer,
     ),
     delete=extend_schema(
-        **mcp_extend_schema_kwargs('api_v1_actions_rules_destroy'),
+        **mcp_extend_schema_kwargs('identity_delete_action_rules'),
         responses={**ADMIN_API_ERRORS},
         tags=['actions-admin'],
     ),
@@ -282,7 +282,7 @@ class ShellUIAdminActionRuleDetailView(APIView):
 
 @extend_schema_view(
     post=extend_schema(
-        **mcp_extend_schema_kwargs('api_v1_actions_rules_send_test'),
+        **mcp_extend_schema_kwargs('identity_send_test_rule'),
         tags=['actions-admin'],
         responses={**ADMIN_API_ERRORS, 
             200: OpenApiResponse(description='Sample webhook accepted by the endpoint'),
@@ -313,7 +313,7 @@ class ShellUIAdminActionRuleSendTestView(APIView):
 
 @extend_schema_view(
     post=extend_schema(
-        **mcp_extend_schema_kwargs('api_v1_actions_rules_rotate_secret'),
+        **mcp_extend_schema_kwargs('identity_rotate_rule_secret'),
         tags=['actions-admin'],
         responses={**ADMIN_API_ERRORS, 
             200: OpenApiResponse(
@@ -345,7 +345,7 @@ class ShellUIAdminActionRuleRotateSecretView(APIView):
 
 @extend_schema_view(
     get=extend_schema(
-        **mcp_extend_schema_kwargs('api_v1_actions_deliveries_list'),
+        **mcp_extend_schema_kwargs('identity_list_action_deliveries'),
         tags=['actions-admin'],
         parameters=[
             OpenApiParameter(name='status', type=str, location=OpenApiParameter.QUERY, required=False),
@@ -448,7 +448,7 @@ class ShellUIAdminActionDeliveryListView(APIView):
 
 @extend_schema_view(
     get=extend_schema(
-        **mcp_extend_schema_kwargs('api_v1_actions_deliveries_retrieve'),
+        **mcp_extend_schema_kwargs('identity_get_action_deliveries'),
         responses={**ADMIN_API_ERRORS},
         tags=['actions-admin'],
     ),
@@ -470,7 +470,7 @@ class ShellUIAdminActionDeliveryDetailView(APIView):
 
 @extend_schema_view(
     post=extend_schema(
-        **mcp_extend_schema_kwargs('api_v1_actions_deliveries_requeue'),
+        **mcp_extend_schema_kwargs('identity_requeue_action_deliveries'),
         responses={**ADMIN_API_ERRORS},
         tags=['actions-admin'],
     ),

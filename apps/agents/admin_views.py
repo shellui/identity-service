@@ -355,7 +355,7 @@ class McpCallLogListView(APIView):
 @extend_schema_view(
     get=extend_schema(
         tags=['mcp-tools'],
-        **mcp_extend_schema_kwargs('api_v1_mcp_services_list'),
+        **mcp_extend_schema_kwargs('identity_list_services'),
         responses={200: OpenApiResponse(description='Connected Shellui MCP services'), **ADMIN_API_ERRORS},
     ),
 )
@@ -363,7 +363,7 @@ class McpListServicesView(APIView):
     serializer_class = ShellUIOpenAPISerializer
 
     @mcp_expose_tool(
-        name='api_v1_mcp_services_list',
+        name='identity_list_services',
         description='Return MCP URLs for connected Shellui services.',
     )
     def get(self, request):
