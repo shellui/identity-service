@@ -176,18 +176,17 @@ class McpToolCallTests(TestCase):
     def _arguments(self, name: str, *, path_params=None, body=None, query=None) -> dict:
         tool = self.tools[name]
         props = tool['inputSchema']['properties']
-        arguments = {
-            'path': props['path']['const'],
-            'method': props['method']['enum'][0],
-        }
-        required = props.get('path_params', {}).get('required') or []
-        if required:
-            self.assertIsNotNone(path_params, name)
-            arguments['path_params'] = {key: str(path_params[key]) for key in required}
-        if body is not None:
-            arguments['body'] = body
-        if query is not None:
-            arguments['query'] = query
+        arguments = {}
+        if path_params:
+            for key, value in path_params.items():
+                self.assertIn(key, props, name)
+                arguments[key] = value if isinstance(value, (str, int, bool)) else str(value)
+        if body:
+            arguments.update(body)
+        if query:
+            arguments.update(query)
+        for key in tool['inputSchema'].get('required') or []:
+            self.assertIn(key, arguments, name)
         return arguments
 
     def _needs_approval(self, payload: dict) -> bool:
@@ -195,6 +194,28 @@ class McpToolCallTests(TestCase):
         text = (result.get('content') or [{}])[0].get('text') or ''
         meta = result.get('meta') or {}
         return bool(result.get('isError') and meta.get('status') == 'pending' and 'Approval required' in text)
+
+    def test_audience_filter_uses_query_arguments(self):
+        disabled = self.call(
+            'identity_get_users_audience',
+            query={'access': 'disabled', 'count_only': True},
+        )
+        self.assertEqual(disabled.get('count'), 0)
+        owners = self.call(
+            'identity_get_users_audience',
+            query={'access': 'enabled', 'roles': ['owner'], 'count_only': True},
+        )
+        self.assertGreaterEqual(owners.get('count'), 1)
+
+    def test_legacy_nested_arguments_still_run(self):
+        payload = self._post(
+            'identity_list_groups',
+            {'path': '/api/v1/groups', 'method': 'GET'},
+        )
+        result = payload['result']
+        self.assertFalse(result.get('isError'), result)
+        body = json.loads(result['content'][0]['text'])
+        self.assertIn('Ops', json.dumps(body))
 
     def call(self, name: str, *, path_params=None, body=None, query=None) -> dict:
         arguments = self._arguments(name, path_params=path_params, body=body, query=query)

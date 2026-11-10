@@ -377,6 +377,9 @@ SPECTACULAR_SETTINGS = {
         {'name': 'actions-admin', 'description': 'Shellui Actions webhook rules and deliveries.'},
         {'name': 'scheduled-jobs', 'description': 'Internal scheduled job introspection (staff).'},
     ],
+    # Choice fields keep their own help text. The generated "* `value` - label"
+    # list is not a description an agent can use.
+    'ENUM_GENERATE_CHOICE_DESCRIPTION': False,
     'POSTPROCESSING_HOOKS': [
         'apps.authapi.spectacular_hooks.postprocess_mcp_tool_tags',
     ],

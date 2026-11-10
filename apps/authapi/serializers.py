@@ -58,7 +58,7 @@ class ShellUIInvitationCreateSerializer(serializers.Serializer):
         required=False,
         allow_blank=True,
         max_length=35,
-        help_text='Invitation email language (en or fr; tags like "fr-FR" accepted). Defaults to en.',
+        help_text='Email language: en or fr.',
     )
     app_url = serializers.CharField(
         required=False,
@@ -187,13 +187,13 @@ class ShellUIAdminOAuthSocialAppCreateSerializer(serializers.Serializer):
         required=False,
         allow_blank=True,
         max_length=128,
-        help_text='Catalog slug, for example github. Required when provider is omitted.',
+        help_text='Catalog provider slug, for example github. Required when provider is omitted.',
     )
     provider = serializers.CharField(
         required=False,
         allow_blank=True,
         max_length=64,
-        help_text='Alias of docs_slug. Required when docs_slug is omitted.',
+        help_text='Same catalog slugs as docs_slug. Required when docs_slug is omitted.',
     )
     client_id = serializers.CharField(max_length=191)
     client_secret = serializers.CharField(max_length=191)
@@ -230,6 +230,7 @@ class ShellUIAdminOAuthRedirectCreateSerializer(serializers.Serializer):
         choices=['manual', 'hosting'],
         required=False,
         default='manual',
+        help_text='Who created the redirect: manual or hosting.',
     )
 
 
@@ -258,9 +259,15 @@ class ShellUIAdminOAuthRedirectUpdateSerializer(serializers.Serializer):
 
 
 class ShellUIHostingOAuthRedirectSyncSerializer(serializers.Serializer):
-    base_url = serializers.CharField(max_length=500)
-    label = serializers.CharField(required=False, allow_blank=True, max_length=150)
+    base_url = serializers.CharField(
+        max_length=500,
+        help_text='Redirect origin to sync, including scheme and host.',
+    )
+    label = serializers.CharField(required=False, allow_blank=True, max_length=150, help_text='Label stored on the redirect.')
 
 
 class ShellUIHostingOAuthRedirectDeleteSerializer(serializers.Serializer):
-    base_url = serializers.CharField(max_length=500)
+    base_url = serializers.CharField(
+        max_length=500,
+        help_text='Redirect origin to remove, including scheme and host.',
+    )

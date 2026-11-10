@@ -59,10 +59,28 @@ def _moment(raw: str, field: str, *, end_of_day: bool = False) -> datetime | Non
     return moment
 
 
+def _query_tokens(params, field: str) -> set[str]:
+    if hasattr(params, 'getlist'):
+        raw_items = params.getlist(field)
+    else:
+        raw = params.get(field, '')
+        raw_items = raw if isinstance(raw, (list, tuple)) else [raw]
+    tokens: set[str] = set()
+    for item in raw_items:
+        if item is None:
+            continue
+        pieces = item if isinstance(item, (list, tuple)) else str(item).split(',')
+        for piece in pieces:
+            text = str(piece).strip()
+            if text:
+                tokens.add(text)
+    return tokens
+
+
 def audience_queryset(company, params):
     """Members of ``company`` matching every given filter, plus any ``user_ids``."""
     group_ids = _ids(params.get('group_ids', ''), 'group_ids')
-    roles = {item.strip() for item in (params.get('roles') or '').split(',') if item.strip()}
+    roles = _query_tokens(params, 'roles')
     if roles - ROLES:
         raise AudienceError('roles')
     access = (params.get('access') or 'enabled').strip()
@@ -128,8 +146,17 @@ def _row(user) -> dict:
         tags=['directory-users'],
         parameters=[
             OpenApiParameter(name='group_ids', type=str, description='Comma-separated group ids. Nested groups count.'),
-            OpenApiParameter(name='roles', type=str, description='Comma-separated: owner, staff, member.'),
-            OpenApiParameter(name='access', type=str, description='enabled (default), disabled, or any.'),
+            OpenApiParameter(
+                name='roles',
+                type=str,
+                description='Roles to match. One or more of owner, staff, or member.',
+            ),
+            OpenApiParameter(
+                name='access',
+                type=str,
+                enum=['enabled', 'disabled', 'any'],
+                description='Membership filter. enabled is the default.',
+            ),
             OpenApiParameter(name='joined_after', type=str, description='ISO date or datetime.'),
             OpenApiParameter(name='joined_before', type=str, description='ISO date or datetime, inclusive.'),
             OpenApiParameter(name='seen_after', type=str, description='ISO date or datetime.'),
