@@ -37,7 +37,7 @@ class AgentAdmin(admin.ModelAdmin):
 
 @admin.register(McpApprovalRequest)
 class McpApprovalRequestAdmin(admin.ModelAdmin):
-    list_display = ('id', 'agent', 'service', 'action', 'status', 'expires_at', 'created_at')
+    list_display = ('id', 'agent', 'service', 'action', 'status', 'consent', 'client_name', 'expires_at', 'created_at')
     list_filter = ('status', 'service')
     raw_id_fields = ('agent', 'company', 'decided_by')
 

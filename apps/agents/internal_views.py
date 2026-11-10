@@ -25,10 +25,12 @@ from apps.actions.registry import get_event_type
 from apps.agents.approval_audit import record_approval_expired_once
 from apps.agents.approval_decisions import (
     ApprovalDecisionError,
+    ConsentFieldError,
     client_allow,
     client_allow_session,
     client_deny,
     lock_approval_for_update,
+    parse_decision_consent,
 )
 from apps.agents.approval_internal import (
     approval_binding_from_claims,
@@ -666,10 +668,14 @@ class McpInternalApprovalDecideView(APIView):
         if binding.get('is_global') and decision in ('allow_session', 'session'):
             return Response({'error': 'Session allow requires a regional agent.'}, status=status.HTTP_400_BAD_REQUEST)
         try:
+            consent, client_name = parse_decision_consent(body)
+        except ConsentFieldError as exc:
+            return Response({'error': exc.message}, status=status.HTTP_400_BAD_REQUEST)
+        try:
             if decision in ('allow', 'approve'):
-                result = client_allow(row, actor_email=actor_email)
+                result = client_allow(row, actor_email=actor_email, consent=consent, client_name=client_name)
             elif decision in ('deny', 'reject'):
-                result = client_deny(row, actor_email=actor_email)
+                result = client_deny(row, actor_email=actor_email, consent=consent, client_name=client_name)
             elif decision in ('allow_session', 'session'):
                 result = client_allow_session(
                     row,
@@ -677,12 +683,23 @@ class McpInternalApprovalDecideView(APIView):
                     actor_email=actor_email,
                     caller_name=caller.name,
                     assertion_claims=claims,
+                    consent=consent,
+                    client_name=client_name,
                 )
             else:
                 return Response({'error': 'decision must be allow, deny, or allow_session.'}, status=status.HTTP_400_BAD_REQUEST)
         except ApprovalDecisionError as exc:
             return Response({'error': exc.message}, status=exc.status)
-        return Response({'approval_id': str(result.row.id), 'status': result.row.status, 'audit_status': result.audit_status})
+        payload = {
+            'approval_id': str(result.row.id),
+            'status': result.row.status,
+            'audit_status': result.audit_status,
+        }
+        if result.row.consent:
+            payload['consent'] = result.row.consent
+        if result.row.client_name:
+            payload['client_name'] = result.row.client_name
+        return Response(payload)
 
 
 class McpInternalApprovalSessionCheckView(APIView):

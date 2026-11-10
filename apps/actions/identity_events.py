@@ -363,7 +363,8 @@ register_event(
         label='MCP approval decision',
         description=(
             'A human or client decided an MCP tool approval. '
-            'Summary form: {actor_email} {status} {tool_name} for {agent_name}.'
+            'Summary form: {actor_email} {status} {tool_name} for {agent_name}. '
+            'When the caller sent them, data also includes consent (in_chat or link) and client_name.'
         ),
         payload_fields=(
             EventFieldDoc('approval_id', 'Approval uuid', '00000000-0000-0000-0000-000000000001'),
@@ -376,6 +377,8 @@ register_event(
             EventFieldDoc('tool_name', 'Tool or action name', 'delete_object'),
             EventFieldDoc('agent_name', 'Agent display name', 'ChatGPT connector'),
             EventFieldDoc('service', 'Service id', 'storage'),
+            EventFieldDoc('consent', 'Decision channel when known: in_chat or link', 'in_chat'),
+            EventFieldDoc('client_name', 'MCP client name when known', 'Claude'),
         ),
         webhook=False,
     )

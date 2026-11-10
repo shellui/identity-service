@@ -26,17 +26,22 @@ def record_approval_decision_event(
     tool_name = row.action
     agent_name = row.agent.name if row.agent_id is not None else ''
     email = (actor_email or '').strip() or None
+    payload = {
+        'approval_id': str(row.id),
+        'actor_email': email,
+        'status': status,
+        'tool_name': tool_name,
+        'agent_name': agent_name,
+        'service': row.service,
+    }
+    if row.consent:
+        payload['consent'] = row.consent
+    if row.client_name:
+        payload['client_name'] = row.client_name
     record_event(
         event,
         row.company,
-        {
-            'approval_id': str(row.id),
-            'actor_email': email,
-            'status': status,
-            'tool_name': tool_name,
-            'agent_name': agent_name,
-            'service': row.service,
-        },
+        payload,
         user=user,
     )
 
