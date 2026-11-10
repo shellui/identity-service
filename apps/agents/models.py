@@ -278,6 +278,13 @@ class McpApprovalRequest(models.Model):
     STATUS_REJECTED = 'rejected'
     STATUS_EXPIRED = 'expired'
     STATUS_EXECUTED = 'executed'
+    CONSENT_IN_CHAT = 'in_chat'
+    CONSENT_LINK = 'link'
+    CONSENT_CHOICES = [
+        (CONSENT_IN_CHAT, 'In chat'),
+        (CONSENT_LINK, 'Link'),
+    ]
+    CLIENT_NAME_MAX = 80
     STATUS_CHOICES = [
         (STATUS_PENDING, 'Pending'),
         (STATUS_APPROVED, 'Approved'),
@@ -327,6 +334,19 @@ class McpApprovalRequest(models.Model):
     )
     executed_at = models.DateTimeField(null=True, blank=True)
     is_destructive = models.BooleanField(default=False)
+    consent = models.CharField(
+        max_length=16,
+        blank=True,
+        default='',
+        choices=CONSENT_CHOICES,
+        help_text='How this request was decided: in_chat or link. Empty when the decision did not say.',
+    )
+    client_name = models.CharField(
+        max_length=CLIENT_NAME_MAX,
+        blank=True,
+        default='',
+        help_text='MCP client that asked for this decision. Empty when the caller did not send a name.',
+    )
     short_action_summary = models.CharField(max_length=500, blank=True)
     expired_event_logged = models.BooleanField(default=False)
     authority_grant_version = models.PositiveIntegerField(default=0)

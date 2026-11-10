@@ -39,6 +39,10 @@ def _approval_row(row: McpApprovalRequest, *, request=None) -> dict:
     }
     if row.status == McpApprovalRequest.STATUS_PENDING and row.expires_at > timezone.now():
         payload['approval_url'] = approval_link(str(row.id), request=request)['approval_url']
+    if row.consent:
+        payload['consent'] = row.consent
+    if row.client_name:
+        payload['client_name'] = row.client_name
     return payload
 
 

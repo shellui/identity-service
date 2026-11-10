@@ -298,7 +298,26 @@ The MCP client card (ai-service) calls `POST /api/v1/mcp/internal/mcp-approval-d
 
 Browser page: `GET /oauth/mcp/approval/{id}?token=…` (the path inside `approval_url`). It shows the company, the agent name, the OAuth client name when the agent has one, the service, the tool, the argument summary, whether the tool is destructive, and the expiry time in UTC. Approve and Deny are CSRF-protected POSTs. One decision only: a later POST does not change an approved or denied row, and repeating the same decision shows that result again. A signed-out visitor signs in with that company's magic link and OAuth methods on `/oauth/mcp/signin`, then returns to this page. The identity session offers **Continue as** and **Use another account**. Only a company owner, or the member who created the agent, can decide. Staff accounts are refused, the same rule as other MCP pages. An expired, already decided, or unknown link shows that state and no buttons. A global approval row (no regional company or agent) explains that it cannot be decided on this page. The page is English or French from `Accept-Language`.
 
-Audit event `identity.mcp.approval_decision` uses status `approved`, `denied`, `expired`, `client_allowed`, `client_denied`, or `client_session_allowed` with `{actor_email} {status} {tool_name} for {agent_name}`.
+Audit event `identity.mcp.approval_decision` uses status `approved`, `denied`, `expired`, `client_allowed`, `client_denied`, or `client_session_allowed` with `{actor_email} {status} {tool_name} for {agent_name}`. When the decide call stored them, the event data and `GET /api/v1/mcp/approvals/{id}` also include `consent` (`in_chat` or `link`) and `client_name`. The company event log (`GET /api/v1/events?event_type=identity.mcp.approval_decision`) is the approvals history. Empty values are omitted.
+
+**Decide body.** `POST /api/v1/mcp/internal/mcp-approval-decide` keeps `approval_id`, `decision` (`allow`, `deny`, or `allow_session`), optional `actor_email`, and optional `connection_id` for session allow. It also accepts:
+
+- `consent`: optional JSON string, exactly `in_chat` or `link`. Any other type or value is **400**. `consent` `in_chat` on a destructive row is **409** with `{"error": "In-chat consent is not allowed for a destructive tool."}` and the row stays pending. `link` is allowed for destructive and non-destructive rows.
+- `client_name`: optional JSON string. Control characters become spaces, then whitespace is collapsed. The result must be at most 80 characters. A non-string is **400**. A longer string is **400**. A blank string is stored as omitted.
+
+**200 decide response** keeps `approval_id`, `status` (the row status, `approved` or `rejected`), and `audit_status` (`client_allowed`, `client_denied`, or `client_session_allowed`). `consent` and `client_name` are included only when they were stored:
+
+```json
+{
+  "approval_id": "<uuid>",
+  "status": "approved",
+  "audit_status": "client_allowed",
+  "consent": "in_chat",
+  "client_name": "Claude"
+}
+```
+
+A call that omits both fields returns only `approval_id`, `status`, and `audit_status`.
 
 ## Revocation
 
