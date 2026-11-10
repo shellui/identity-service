@@ -124,7 +124,7 @@ def _row(user) -> dict:
 
 @extend_schema_view(
     get=extend_schema(
-        **mcp_extend_schema_kwargs('api_v1_users_audience'),
+        **mcp_extend_schema_kwargs('identity_get_users_audience'),
         tags=['directory-users'],
         parameters=[
             OpenApiParameter(name='group_ids', type=str, description='Comma-separated group ids. Nested groups count.'),

@@ -3388,7 +3388,7 @@ class ShellUIPreferenceView(APIView):
 
 @extend_schema_view(
     get=extend_schema(
-        **mcp_extend_schema_kwargs('api_v1_users_list'),
+        **mcp_extend_schema_kwargs('identity_list_users'),
         responses={**ADMIN_API_ERRORS},
         tags=['directory-users'],
         parameters=[
@@ -3452,18 +3452,18 @@ class ShellUIAdminUserListView(APIView):
 
 @extend_schema_view(
     get=extend_schema(
-        **mcp_extend_schema_kwargs('api_v1_users_retrieve'),
+        **mcp_extend_schema_kwargs('identity_get_users'),
         responses={**ADMIN_API_ERRORS},
         tags=['directory-users'],
     ),
     put=extend_schema(
-        **mcp_extend_schema_kwargs('api_v1_users_update'),
+        **mcp_extend_schema_kwargs('identity_replace_users'),
         responses={**ADMIN_API_ERRORS},
         tags=['directory-users'],
         request=ShellUIAdminUserUpdateSerializer,
     ),
     delete=extend_schema(
-        **mcp_extend_schema_kwargs('api_v1_users_destroy'),
+        **mcp_extend_schema_kwargs('identity_delete_users'),
         tags=['directory-users'],
         responses={**ADMIN_API_ERRORS, 
             204: OpenApiResponse(description='User removed from the company'),
@@ -3706,12 +3706,12 @@ def _forbid_scim_group_admin_mutation(group: CompanyGroup) -> Response | None:
 
 @extend_schema_view(
     get=extend_schema(
-        **mcp_extend_schema_kwargs('api_v1_groups_list'),
+        **mcp_extend_schema_kwargs('identity_list_groups'),
         responses={**ADMIN_API_ERRORS},
         tags=['directory-groups'],
     ),
     post=extend_schema(
-        **mcp_extend_schema_kwargs('api_v1_groups_create'),
+        **mcp_extend_schema_kwargs('identity_create_groups'),
         responses={**ADMIN_API_ERRORS},
         tags=['directory-groups'],
         request=ShellUIAdminGroupCreateSerializer,
@@ -3770,24 +3770,24 @@ class ShellUIAdminGroupListView(APIView):
 
 @extend_schema_view(
     get=extend_schema(
-        **mcp_extend_schema_kwargs('api_v1_groups_retrieve'),
+        **mcp_extend_schema_kwargs('identity_get_groups'),
         responses={**ADMIN_API_ERRORS},
         tags=['directory-groups'],
     ),
     put=extend_schema(
-        **mcp_extend_schema_kwargs('api_v1_groups_update'),
+        **mcp_extend_schema_kwargs('identity_replace_groups'),
         responses={**ADMIN_API_ERRORS},
         tags=['directory-groups'],
         request=ShellUIAdminGroupUpdateSerializer,
     ),
     patch=extend_schema(
-        **mcp_extend_schema_kwargs('api_v1_groups_partial_update'),
+        **mcp_extend_schema_kwargs('identity_update_groups'),
         responses={**ADMIN_API_ERRORS},
         tags=['directory-groups'],
         request=ShellUIAdminGroupUpdateSerializer,
     ),
     delete=extend_schema(
-        **mcp_extend_schema_kwargs('api_v1_groups_destroy'),
+        **mcp_extend_schema_kwargs('identity_delete_groups'),
         responses={**ADMIN_API_ERRORS},
         tags=['directory-groups'],
     ),
@@ -3871,12 +3871,12 @@ class ShellUIAdminGroupDetailView(APIView):
 
 @extend_schema_view(
     get=extend_schema(
-        **mcp_extend_schema_kwargs('api_v1_oauth_clients_list'),
+        **mcp_extend_schema_kwargs('identity_list_oauth_clients'),
         responses={**ADMIN_API_ERRORS},
         tags=['oauth-clients'],
     ),
     post=extend_schema(
-        **mcp_extend_schema_kwargs('api_v1_oauth_clients_create'),
+        **mcp_extend_schema_kwargs('identity_create_oauth_clients'),
         responses={**ADMIN_API_ERRORS},
         tags=['oauth-clients'],
         request=ShellUIAdminOAuthClientCreateSerializer,
@@ -3950,7 +3950,7 @@ class ShellUIAdminOAuthClientListView(APIView):
 
 @extend_schema_view(
     get=extend_schema(
-        **mcp_extend_schema_kwargs('api_v1_oauth_provider_catalog_retrieve'),
+        **mcp_extend_schema_kwargs('identity_get_oauth_provider_catalog'),
         responses={**ADMIN_API_ERRORS},
         tags=['oauth-social-apps'],
         parameters=[
@@ -4002,12 +4002,12 @@ class ShellUIAdminOAuthProviderCatalogView(APIView):
 
 @extend_schema_view(
     get=extend_schema(
-        **mcp_extend_schema_kwargs('api_v1_oauth_social_apps_list'),
+        **mcp_extend_schema_kwargs('identity_list_oauth_social_apps'),
         responses={**ADMIN_API_ERRORS},
         tags=['oauth-social-apps'],
     ),
     post=extend_schema(
-        **mcp_extend_schema_kwargs('api_v1_oauth_social_apps_create'),
+        **mcp_extend_schema_kwargs('identity_create_oauth_social_apps'),
         responses={**ADMIN_API_ERRORS},
         tags=['oauth-social-apps'],
         request=ShellUIAdminOAuthSocialAppCreateSerializer,
@@ -4140,13 +4140,13 @@ class ShellUIAdminOAuthSocialAppListView(APIView):
 
 @extend_schema_view(
     put=extend_schema(
-        **mcp_extend_schema_kwargs('api_v1_oauth_social_apps_update'),
+        **mcp_extend_schema_kwargs('identity_replace_oauth_social_apps'),
         responses={**ADMIN_API_ERRORS},
         tags=['oauth-social-apps'],
         request=ShellUIAdminOAuthSocialAppUpdateSerializer,
     ),
     delete=extend_schema(
-        **mcp_extend_schema_kwargs('api_v1_oauth_social_apps_destroy'),
+        **mcp_extend_schema_kwargs('identity_delete_oauth_social_apps'),
         responses={**ADMIN_API_ERRORS},
         tags=['oauth-social-apps'],
     ),
@@ -4272,18 +4272,18 @@ class ShellUIAdminOAuthSocialAppDetailView(APIView):
 
 @extend_schema_view(
     get=extend_schema(
-        **mcp_extend_schema_kwargs('api_v1_oauth_clients_retrieve'),
+        **mcp_extend_schema_kwargs('identity_get_oauth_clients'),
         responses={**ADMIN_API_ERRORS},
         tags=['oauth-clients'],
     ),
     put=extend_schema(
-        **mcp_extend_schema_kwargs('api_v1_oauth_clients_update'),
+        **mcp_extend_schema_kwargs('identity_replace_oauth_clients'),
         responses={**ADMIN_API_ERRORS},
         tags=['oauth-clients'],
         request=ShellUIAdminOAuthClientUpdateSerializer,
     ),
     delete=extend_schema(
-        **mcp_extend_schema_kwargs('api_v1_oauth_clients_destroy'),
+        **mcp_extend_schema_kwargs('identity_delete_oauth_clients'),
         responses={**ADMIN_API_ERRORS},
         tags=['oauth-clients'],
     ),
@@ -4374,12 +4374,12 @@ def _oauth_redirect_payload(row: CompanyOAuthRedirect) -> dict:
 
 @extend_schema_view(
     get=extend_schema(
-        **mcp_extend_schema_kwargs('api_v1_oauth_redirects_list'),
+        **mcp_extend_schema_kwargs('identity_list_oauth_redirects'),
         responses={**ADMIN_API_ERRORS},
         tags=['oauth-redirects'],
     ),
     post=extend_schema(
-        **mcp_extend_schema_kwargs('api_v1_oauth_redirects_create'),
+        **mcp_extend_schema_kwargs('identity_create_oauth_redirects'),
         responses={**ADMIN_API_ERRORS},
         tags=['oauth-redirects'],
         request=ShellUIAdminOAuthRedirectCreateSerializer,
@@ -4424,18 +4424,18 @@ class ShellUIAdminOAuthRedirectListView(APIView):
 
 @extend_schema_view(
     get=extend_schema(
-        **mcp_extend_schema_kwargs('api_v1_oauth_redirects_retrieve'),
+        **mcp_extend_schema_kwargs('identity_get_oauth_redirects'),
         responses={**ADMIN_API_ERRORS},
         tags=['oauth-redirects'],
     ),
     patch=extend_schema(
-        **mcp_extend_schema_kwargs('api_v1_oauth_redirects_partial_update'),
+        **mcp_extend_schema_kwargs('identity_update_oauth_redirects'),
         responses={**ADMIN_API_ERRORS},
         tags=['oauth-redirects'],
         request=ShellUIAdminOAuthRedirectUpdateSerializer,
     ),
     delete=extend_schema(
-        **mcp_extend_schema_kwargs('api_v1_oauth_redirects_destroy'),
+        **mcp_extend_schema_kwargs('identity_delete_oauth_redirects'),
         responses={**ADMIN_API_ERRORS},
         tags=['oauth-redirects'],
     ),
@@ -4498,13 +4498,13 @@ class ShellUIAdminOAuthRedirectDetailView(APIView):
 
 @extend_schema_view(
     put=extend_schema(
-        **mcp_extend_schema_kwargs('api_v1_hosting_oauth_redirects_update'),
+        **mcp_extend_schema_kwargs('identity_replace_hosting_oauth_redirects'),
         responses={**ADMIN_API_ERRORS},
         tags=['oauth-redirects'],
         request=ShellUIHostingOAuthRedirectSyncSerializer,
     ),
     delete=extend_schema(
-        **mcp_extend_schema_kwargs('api_v1_hosting_oauth_redirects_destroy'),
+        **mcp_extend_schema_kwargs('identity_delete_hosting_oauth_redirects'),
         responses={**ADMIN_API_ERRORS},
         tags=['oauth-redirects'],
         request=ShellUIHostingOAuthRedirectDeleteSerializer,
@@ -4573,12 +4573,12 @@ class ShellUIHostingOAuthRedirectSyncView(APIView):
 
 @extend_schema_view(
     get=extend_schema(
-        **mcp_extend_schema_kwargs('api_v1_personal_access_tokens_list'),
+        **mcp_extend_schema_kwargs('identity_list_personal_access_tokens'),
         responses={**ADMIN_API_ERRORS},
         tags=['personal-access-tokens'],
     ),
     post=extend_schema(
-        **mcp_extend_schema_kwargs('api_v1_personal_access_tokens_create'),
+        **mcp_extend_schema_kwargs('identity_create_personal_access_tokens'),
         responses={**ADMIN_API_ERRORS},
         tags=['personal-access-tokens'],
         request=ShellUIPersonalAccessTokenCreateSerializer,
@@ -4625,7 +4625,7 @@ class ShellUIPersonalAccessTokenListCreateView(APIView):
 
 @extend_schema_view(
     post=extend_schema(
-        **mcp_extend_schema_kwargs('api_v1_personal_access_tokens_revoke'),
+        **mcp_extend_schema_kwargs('identity_revoke_personal_access_tokens'),
         responses={**ADMIN_API_ERRORS},
         tags=['personal-access-tokens'],
     ),
@@ -4652,7 +4652,7 @@ class ShellUIPersonalAccessTokenRevokeView(APIView):
 
 @extend_schema_view(
     get=extend_schema(
-        **mcp_extend_schema_kwargs('api_v1_scim_status'),
+        **mcp_extend_schema_kwargs('identity_get_scim_status'),
         responses={**ADMIN_API_ERRORS},
         tags=['scim'],
     ),
@@ -4670,12 +4670,12 @@ class ShellUIAdminScimStatusView(APIView):
 
 @extend_schema_view(
     get=extend_schema(
-        **mcp_extend_schema_kwargs('api_v1_scim_tokens_list'),
+        **mcp_extend_schema_kwargs('identity_list_scim_tokens'),
         responses={**ADMIN_API_ERRORS},
         tags=['scim'],
     ),
     post=extend_schema(
-        **mcp_extend_schema_kwargs('api_v1_scim_tokens_create'),
+        **mcp_extend_schema_kwargs('identity_create_scim_tokens'),
         responses={**ADMIN_API_ERRORS},
         tags=['scim'],
         request=ShellUIAdminScimTokenCreateSerializer,
@@ -4722,7 +4722,7 @@ class ShellUIAdminScimTokenListCreateView(APIView):
 
 @extend_schema_view(
     post=extend_schema(
-        **mcp_extend_schema_kwargs('api_v1_scim_tokens_revoke'),
+        **mcp_extend_schema_kwargs('identity_revoke_scim_tokens'),
         responses={**ADMIN_API_ERRORS},
         tags=['scim'],
     ),
@@ -4750,18 +4750,18 @@ class ShellUIAdminScimTokenRevokeView(APIView):
 
 @extend_schema_view(
     get=extend_schema(
-        **mcp_extend_schema_kwargs('api_v1_auth_methods_retrieve'),
+        **mcp_extend_schema_kwargs('identity_get_auth_methods'),
         responses={**ADMIN_API_ERRORS},
         tags=['auth-admin'],
     ),
     patch=extend_schema(
-        **mcp_extend_schema_kwargs('api_v1_auth_methods_partial_update'),
+        **mcp_extend_schema_kwargs('identity_update_auth_methods'),
         responses={**ADMIN_API_ERRORS},
         tags=['auth-admin'],
         request=ShellUIAdminAuthMethodsUpdateSerializer,
     ),
     put=extend_schema(
-        **mcp_extend_schema_kwargs('api_v1_auth_methods_update'),
+        **mcp_extend_schema_kwargs('identity_replace_auth_methods'),
         responses={**ADMIN_API_ERRORS},
         tags=['auth-admin'],
         request=ShellUIAdminAuthMethodsUpdateSerializer,

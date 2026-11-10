@@ -154,7 +154,7 @@ _USER_ID_PARAM = OpenApiParameter(
 
 @extend_schema_view(
     get=extend_schema(
-        **mcp_extend_schema_kwargs('api_v1_events_list'),
+        **mcp_extend_schema_kwargs('identity_list_events'),
         tags=['audit-events'],
         parameters=[
             _SCOPE_PARAM,
@@ -212,7 +212,7 @@ class ShellUIAdminEventListView(APIView):
 
 @extend_schema_view(
     get=extend_schema(
-        **mcp_extend_schema_kwargs('api_v1_events_retrieve'),
+        **mcp_extend_schema_kwargs('identity_get_events'),
         tags=['audit-events'],
         parameters=[_SCOPE_PARAM],
         responses={**ADMIN_API_ERRORS, 200: OpenApiResponse(description='Event log row')},
@@ -237,7 +237,7 @@ class ShellUIAdminEventDetailView(APIView):
 
 @extend_schema_view(
     get=extend_schema(
-        **mcp_extend_schema_kwargs('api_v1_events_types_list'),
+        **mcp_extend_schema_kwargs('identity_list_events_types'),
         responses={**ADMIN_API_ERRORS},
         tags=['audit-events'],
     ),
@@ -263,7 +263,7 @@ class ShellUIAdminEventTypesView(APIView):
 
 @extend_schema_view(
     get=extend_schema(
-        **mcp_extend_schema_kwargs('api_v1_events_retention_retrieve'),
+        **mcp_extend_schema_kwargs('identity_get_events_retention'),
         responses={**ADMIN_API_ERRORS},
         tags=['audit-events'],
     ),

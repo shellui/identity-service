@@ -87,7 +87,7 @@ def _open_invitations(company):
 
 @extend_schema_view(
     get=extend_schema(
-        **mcp_extend_schema_kwargs('api_v1_invitations_list'),
+        **mcp_extend_schema_kwargs('identity_list_invitations'),
         tags=['directory-users'],
         responses={**ADMIN_API_ERRORS, 
             200: OpenApiResponse(description='`{"results": [invitation, …]}`'),
@@ -95,7 +95,7 @@ def _open_invitations(company):
         },
     ),
     post=extend_schema(
-        **mcp_extend_schema_kwargs('api_v1_invitations_create'),
+        **mcp_extend_schema_kwargs('identity_create_invitations'),
         tags=['directory-users'],
         request=ShellUIInvitationCreateSerializer,
         responses={**ADMIN_API_ERRORS, 
@@ -266,7 +266,7 @@ def _locked_company_invitation(request, pk: int):
 
 @extend_schema_view(
     delete=extend_schema(
-        **mcp_extend_schema_kwargs('api_v1_invitations_destroy'),
+        **mcp_extend_schema_kwargs('identity_delete_invitations'),
         tags=['directory-users'],
         responses={**ADMIN_API_ERRORS, 
             204: OpenApiResponse(description='Invitation deleted'),
@@ -300,7 +300,7 @@ class ShellUIAdminInvitationDetailView(APIView):
 
 @extend_schema_view(
     post=extend_schema(
-        **mcp_extend_schema_kwargs('api_v1_invitations_revoke'),
+        **mcp_extend_schema_kwargs('identity_revoke_invitations'),
         tags=['directory-users'],
         request=None,
         responses={**ADMIN_API_ERRORS, 

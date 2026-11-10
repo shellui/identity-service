@@ -1,224 +1,6 @@
 [
   {
-    "name": "api_v1_actions_deliveries_list",
-    "description": "List webhook deliveries",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "path": {
-          "type": "string",
-          "const": "/api/v1/actions/deliveries"
-        },
-        "method": {
-          "type": "string",
-          "enum": [
-            "GET"
-          ]
-        },
-        "query": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "action_rule_id": {
-              "type": "integer"
-            },
-            "created_after": {
-              "type": "string"
-            },
-            "created_before": {
-              "type": "string"
-            },
-            "event_type": {
-              "type": "string"
-            },
-            "format": {
-              "type": "string",
-              "enum": [
-                "html",
-                "json"
-              ]
-            },
-            "page": {
-              "type": "integer"
-            },
-            "page_size": {
-              "type": "integer"
-            },
-            "scheduled_job_run_id": {
-              "type": "integer"
-            },
-            "status": {
-              "type": "string"
-            }
-          }
-        },
-        "body": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {}
-        }
-      },
-      "required": [
-        "path",
-        "method"
-      ],
-      "additionalProperties": false
-    }
-  },
-  {
-    "name": "api_v1_actions_deliveries_requeue",
-    "description": "Requeue failed webhook delivery",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "path": {
-          "type": "string",
-          "const": "/api/v1/actions/deliveries/{delivery_id}/requeue"
-        },
-        "method": {
-          "type": "string",
-          "enum": [
-            "POST"
-          ]
-        },
-        "query": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "format": {
-              "type": "string",
-              "enum": [
-                "html",
-                "json"
-              ]
-            }
-          }
-        },
-        "body": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {}
-        },
-        "path_params": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "delivery_id": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "delivery_id"
-          ]
-        }
-      },
-      "required": [
-        "path",
-        "method",
-        "path_params"
-      ],
-      "additionalProperties": false
-    }
-  },
-  {
-    "name": "api_v1_actions_deliveries_retrieve",
-    "description": "Read one webhook delivery",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "path": {
-          "type": "string",
-          "const": "/api/v1/actions/deliveries/{delivery_id}"
-        },
-        "method": {
-          "type": "string",
-          "enum": [
-            "GET"
-          ]
-        },
-        "query": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "format": {
-              "type": "string",
-              "enum": [
-                "html",
-                "json"
-              ]
-            }
-          }
-        },
-        "body": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {}
-        },
-        "path_params": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "delivery_id": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "delivery_id"
-          ]
-        }
-      },
-      "required": [
-        "path",
-        "method",
-        "path_params"
-      ],
-      "additionalProperties": false
-    }
-  },
-  {
-    "name": "api_v1_actions_events_list",
-    "description": "List Actions event types",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "path": {
-          "type": "string",
-          "const": "/api/v1/actions/events"
-        },
-        "method": {
-          "type": "string",
-          "enum": [
-            "GET"
-          ]
-        },
-        "query": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "format": {
-              "type": "string",
-              "enum": [
-                "html",
-                "json"
-              ]
-            }
-          }
-        },
-        "body": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {}
-        }
-      },
-      "required": [
-        "path",
-        "method"
-      ],
-      "additionalProperties": false
-    }
-  },
-  {
-    "name": "api_v1_actions_rules_create",
+    "name": "identity_create_action_rules",
     "description": "Create an Actions webhook rule. The signing secret is shown once in admin, not to the agent.",
     "inputSchema": {
       "type": "object",
@@ -292,7 +74,396 @@
     }
   },
   {
-    "name": "api_v1_actions_rules_destroy",
+    "name": "identity_create_groups",
+    "description": "Create a manual group",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "const": "/api/v1/groups"
+        },
+        "method": {
+          "type": "string",
+          "enum": [
+            "POST"
+          ]
+        },
+        "query": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "format": {
+              "type": "string",
+              "enum": [
+                "html",
+                "json"
+              ]
+            }
+          }
+        },
+        "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "display_name": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "display_name"
+          ]
+        }
+      },
+      "required": [
+        "path",
+        "method"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "identity_create_invitations",
+    "description": "Invite a user by email",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "const": "/api/v1/invitations"
+        },
+        "method": {
+          "type": "string",
+          "enum": [
+            "POST"
+          ]
+        },
+        "query": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "format": {
+              "type": "string",
+              "enum": [
+                "html",
+                "json"
+              ]
+            }
+          }
+        },
+        "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "email": {
+              "type": "string",
+              "format": "email"
+            },
+            "language": {
+              "description": "Invitation email language (en or fr; tags like \"fr-FR\" accepted). Defaults to en.",
+              "type": "string"
+            },
+            "app_url": {
+              "description": "App URL linked from the email. An http(s) origin must match the company redirect allowlist. A desktop app uses the exact custom-scheme URI from that allowlist. Omit to send the email without a link.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "email"
+          ]
+        }
+      },
+      "required": [
+        "path",
+        "method"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "identity_create_oauth_clients",
+    "description": "Attach an OAuth client mapping",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "const": "/api/v1/oauth-clients"
+        },
+        "method": {
+          "type": "string",
+          "enum": [
+            "POST"
+          ]
+        },
+        "query": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "format": {
+              "type": "string",
+              "enum": [
+                "html",
+                "json"
+              ]
+            }
+          }
+        },
+        "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "social_app_id": {
+              "type": "integer"
+            },
+            "is_active": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "social_app_id"
+          ]
+        }
+      },
+      "required": [
+        "path",
+        "method"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "identity_create_oauth_redirects",
+    "description": "Create OAuth redirect URI",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "const": "/api/v1/oauth-redirects"
+        },
+        "method": {
+          "type": "string",
+          "enum": [
+            "POST"
+          ]
+        },
+        "query": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "format": {
+              "type": "string",
+              "enum": [
+                "html",
+                "json"
+              ]
+            }
+          }
+        },
+        "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "base_url": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "is_active": {
+              "type": "boolean"
+            },
+            "source": {
+              "description": "* `manual` - manual\n* `hosting` - hosting",
+              "type": "string",
+              "enum": [
+                "manual",
+                "hosting"
+              ]
+            }
+          },
+          "required": [
+            "base_url"
+          ]
+        }
+      },
+      "required": [
+        "path",
+        "method"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "identity_create_oauth_social_apps",
+    "description": "Create OAuth SocialApp key",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "const": "/api/v1/oauth-social-apps"
+        },
+        "method": {
+          "type": "string",
+          "enum": [
+            "POST"
+          ]
+        },
+        "query": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "format": {
+              "type": "string",
+              "enum": [
+                "html",
+                "json"
+              ]
+            }
+          }
+        },
+        "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "docs_slug": {
+              "description": "Catalog slug, for example github. Required when provider is omitted.",
+              "type": "string"
+            },
+            "provider": {
+              "description": "Alias of docs_slug. Required when docs_slug is omitted.",
+              "type": "string"
+            },
+            "client_id": {
+              "type": "string"
+            },
+            "client_secret": {
+              "type": "string"
+            },
+            "tenant": {
+              "type": "string"
+            },
+            "extra_settings": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": true
+            }
+          },
+          "required": [
+            "client_id",
+            "client_secret"
+          ]
+        }
+      },
+      "required": [
+        "path",
+        "method"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "identity_create_personal_access_tokens",
+    "description": "Create a personal access token. The JWT is shown once in admin, not to the agent.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "const": "/api/v1/personal-access-tokens"
+        },
+        "method": {
+          "type": "string",
+          "enum": [
+            "POST"
+          ]
+        },
+        "query": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "format": {
+              "type": "string",
+              "enum": [
+                "html",
+                "json"
+              ]
+            }
+          }
+        },
+        "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "read_only": {
+              "type": "boolean"
+            },
+            "access_global_metrics": {
+              "type": "boolean"
+            },
+            "name": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "required": [
+        "path",
+        "method"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "identity_create_scim_tokens",
+    "description": "Create a SCIM bearer token. The secret is shown once in admin, not to the agent.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "const": "/api/v1/scim/tokens"
+        },
+        "method": {
+          "type": "string",
+          "enum": [
+            "POST"
+          ]
+        },
+        "query": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "format": {
+              "type": "string",
+              "enum": [
+                "html",
+                "json"
+              ]
+            }
+          }
+        },
+        "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "required": [
+        "path",
+        "method"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "identity_delete_action_rules",
     "description": "Delete Actions webhook rule",
     "inputSchema": {
       "type": "object",
@@ -347,19 +518,74 @@
     }
   },
   {
-    "name": "api_v1_actions_rules_list",
-    "description": "List Actions webhook rules",
+    "name": "identity_delete_groups",
+    "description": "Delete a manual group",
     "inputSchema": {
       "type": "object",
       "properties": {
         "path": {
           "type": "string",
-          "const": "/api/v1/actions/rules"
+          "const": "/api/v1/groups/{id}"
         },
         "method": {
           "type": "string",
           "enum": [
-            "GET"
+            "DELETE"
+          ]
+        },
+        "query": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "format": {
+              "type": "string",
+              "enum": [
+                "html",
+                "json"
+              ]
+            }
+          }
+        },
+        "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {}
+        },
+        "path_params": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id"
+          ]
+        }
+      },
+      "required": [
+        "path",
+        "method",
+        "path_params"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "identity_delete_hosting_oauth_redirects",
+    "description": "Remove hosting OAuth redirects",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "const": "/api/v1/hosting-oauth-redirects"
+        },
+        "method": {
+          "type": "string",
+          "enum": [
+            "DELETE"
           ]
         },
         "query": {
@@ -389,19 +615,19 @@
     }
   },
   {
-    "name": "api_v1_actions_rules_partial_update",
-    "description": "Update Actions webhook rule",
+    "name": "identity_delete_invitations",
+    "description": "Delete an invitation row",
     "inputSchema": {
       "type": "object",
       "properties": {
         "path": {
           "type": "string",
-          "const": "/api/v1/actions/rules/{id}"
+          "const": "/api/v1/invitations/{id}"
         },
         "method": {
           "type": "string",
           "enum": [
-            "PATCH"
+            "DELETE"
           ]
         },
         "query": {
@@ -420,33 +646,7 @@
         "body": {
           "type": "object",
           "additionalProperties": false,
-          "properties": {
-            "name": {
-              "type": "string"
-            },
-            "description": {
-              "type": "string"
-            },
-            "event_type": {
-              "type": "string"
-            },
-            "enabled": {
-              "type": "boolean"
-            },
-            "url": {
-              "type": "string",
-              "format": "uri"
-            },
-            "secret": {
-              "type": "string"
-            },
-            "authorization_header": {
-              "type": "string"
-            },
-            "allow_private_urls": {
-              "type": "boolean"
-            }
-          }
+          "properties": {}
         },
         "path_params": {
           "type": "object",
@@ -470,7 +670,282 @@
     }
   },
   {
-    "name": "api_v1_actions_rules_retrieve",
+    "name": "identity_delete_oauth_clients",
+    "description": "Delete OAuth client mapping",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "const": "/api/v1/oauth-clients/{id}"
+        },
+        "method": {
+          "type": "string",
+          "enum": [
+            "DELETE"
+          ]
+        },
+        "query": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "format": {
+              "type": "string",
+              "enum": [
+                "html",
+                "json"
+              ]
+            }
+          }
+        },
+        "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {}
+        },
+        "path_params": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id"
+          ]
+        }
+      },
+      "required": [
+        "path",
+        "method",
+        "path_params"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "identity_delete_oauth_redirects",
+    "description": "Delete OAuth redirect URI",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "const": "/api/v1/oauth-redirects/{id}"
+        },
+        "method": {
+          "type": "string",
+          "enum": [
+            "DELETE"
+          ]
+        },
+        "query": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "format": {
+              "type": "string",
+              "enum": [
+                "html",
+                "json"
+              ]
+            }
+          }
+        },
+        "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {}
+        },
+        "path_params": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id"
+          ]
+        }
+      },
+      "required": [
+        "path",
+        "method",
+        "path_params"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "identity_delete_oauth_social_apps",
+    "description": "Delete OAuth SocialApp key",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "const": "/api/v1/oauth-social-apps/{id}"
+        },
+        "method": {
+          "type": "string",
+          "enum": [
+            "DELETE"
+          ]
+        },
+        "query": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "format": {
+              "type": "string",
+              "enum": [
+                "html",
+                "json"
+              ]
+            }
+          }
+        },
+        "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {}
+        },
+        "path_params": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id"
+          ]
+        }
+      },
+      "required": [
+        "path",
+        "method",
+        "path_params"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "identity_delete_users",
+    "description": "Remove user from company",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "const": "/api/v1/users/{id}"
+        },
+        "method": {
+          "type": "string",
+          "enum": [
+            "DELETE"
+          ]
+        },
+        "query": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "format": {
+              "type": "string",
+              "enum": [
+                "html",
+                "json"
+              ]
+            }
+          }
+        },
+        "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {}
+        },
+        "path_params": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id"
+          ]
+        }
+      },
+      "required": [
+        "path",
+        "method",
+        "path_params"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "identity_get_action_deliveries",
+    "description": "Read one webhook delivery",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "const": "/api/v1/actions/deliveries/{delivery_id}"
+        },
+        "method": {
+          "type": "string",
+          "enum": [
+            "GET"
+          ]
+        },
+        "query": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "format": {
+              "type": "string",
+              "enum": [
+                "html",
+                "json"
+              ]
+            }
+          }
+        },
+        "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {}
+        },
+        "path_params": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "delivery_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "delivery_id"
+          ]
+        }
+      },
+      "required": [
+        "path",
+        "method",
+        "path_params"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "identity_get_action_rules",
     "description": "Read one Actions webhook rule",
     "inputSchema": {
       "type": "object",
@@ -525,167 +1000,7 @@
     }
   },
   {
-    "name": "api_v1_actions_rules_rotate_secret",
-    "description": "Rotate a webhook signing secret. The new secret is shown once in admin, not to the agent.",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "path": {
-          "type": "string",
-          "const": "/api/v1/actions/rules/{id}/rotate-secret"
-        },
-        "method": {
-          "type": "string",
-          "enum": [
-            "POST"
-          ]
-        },
-        "query": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "format": {
-              "type": "string",
-              "enum": [
-                "html",
-                "json"
-              ]
-            }
-          }
-        },
-        "body": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {}
-        },
-        "path_params": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "id": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "id"
-          ]
-        }
-      },
-      "required": [
-        "path",
-        "method",
-        "path_params"
-      ],
-      "additionalProperties": false
-    }
-  },
-  {
-    "name": "api_v1_actions_rules_send_test",
-    "description": "Send test webhook delivery",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "path": {
-          "type": "string",
-          "const": "/api/v1/actions/rules/{id}/send-test"
-        },
-        "method": {
-          "type": "string",
-          "enum": [
-            "POST"
-          ]
-        },
-        "query": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "format": {
-              "type": "string",
-              "enum": [
-                "html",
-                "json"
-              ]
-            }
-          }
-        },
-        "body": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {}
-        },
-        "path_params": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "id": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "id"
-          ]
-        }
-      },
-      "required": [
-        "path",
-        "method",
-        "path_params"
-      ],
-      "additionalProperties": false
-    }
-  },
-  {
-    "name": "api_v1_auth_methods_partial_update",
-    "description": "Patch auth methods",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "path": {
-          "type": "string",
-          "const": "/api/v1/auth-methods"
-        },
-        "method": {
-          "type": "string",
-          "enum": [
-            "PATCH"
-          ]
-        },
-        "query": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "format": {
-              "type": "string",
-              "enum": [
-                "html",
-                "json"
-              ]
-            }
-          }
-        },
-        "body": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "enable_magic_link": {
-              "description": "Whether email magic-link sign-in is enabled for this company.",
-              "type": "boolean"
-            }
-          },
-          "required": [
-            "enable_magic_link"
-          ]
-        }
-      },
-      "required": [
-        "path",
-        "method"
-      ],
-      "additionalProperties": false
-    }
-  },
-  {
-    "name": "api_v1_auth_methods_retrieve",
+    "name": "identity_get_auth_methods",
     "description": "Read enabled auth methods",
     "inputSchema": {
       "type": "object",
@@ -727,188 +1042,7 @@
     }
   },
   {
-    "name": "api_v1_auth_methods_update",
-    "description": "Replace auth methods",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "path": {
-          "type": "string",
-          "const": "/api/v1/auth-methods"
-        },
-        "method": {
-          "type": "string",
-          "enum": [
-            "PUT"
-          ]
-        },
-        "query": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "format": {
-              "type": "string",
-              "enum": [
-                "html",
-                "json"
-              ]
-            }
-          }
-        },
-        "body": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "enable_magic_link": {
-              "description": "Whether email magic-link sign-in is enabled for this company.",
-              "type": "boolean"
-            }
-          },
-          "required": [
-            "enable_magic_link"
-          ]
-        }
-      },
-      "required": [
-        "path",
-        "method"
-      ],
-      "additionalProperties": false
-    }
-  },
-  {
-    "name": "api_v1_companies_list",
-    "description": "List member companies",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "path": {
-          "type": "string",
-          "const": "/api/v1/companies/"
-        },
-        "method": {
-          "type": "string",
-          "enum": [
-            "GET"
-          ]
-        },
-        "query": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "format": {
-              "type": "string",
-              "enum": [
-                "html",
-                "json"
-              ]
-            }
-          }
-        },
-        "body": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {}
-        }
-      },
-      "required": [
-        "path",
-        "method"
-      ],
-      "additionalProperties": false
-    }
-  },
-  {
-    "name": "api_v1_companies_partial_update",
-    "description": "Patch company settings",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "path": {
-          "type": "string",
-          "const": "/api/v1/companies/{id}/"
-        },
-        "method": {
-          "type": "string",
-          "enum": [
-            "PATCH"
-          ]
-        },
-        "query": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "format": {
-              "type": "string",
-              "enum": [
-                "html",
-                "json"
-              ]
-            }
-          }
-        },
-        "body": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "name": {
-              "type": "string"
-            },
-            "owner_ids": {
-              "type": "array",
-              "items": {
-                "type": "integer"
-              }
-            },
-            "access_mode": {
-              "description": "* `public` - public\n* `domain` - domain\n* `invite` - invite",
-              "type": "string",
-              "enum": [
-                "public",
-                "domain",
-                "invite"
-              ]
-            },
-            "allowed_email_domains": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "desktop_redirect_schemes": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "allow_desktop_dev_scheme": {
-              "type": "boolean"
-            }
-          }
-        },
-        "path_params": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "id": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "id"
-          ]
-        }
-      },
-      "required": [
-        "path",
-        "method",
-        "path_params"
-      ],
-      "additionalProperties": false
-    }
-  },
-  {
-    "name": "api_v1_companies_retrieve",
+    "name": "identity_get_companies",
     "description": "Read company settings",
     "inputSchema": {
       "type": "object",
@@ -963,7 +1097,1234 @@
     }
   },
   {
-    "name": "api_v1_companies_update",
+    "name": "identity_get_events",
+    "description": "Read one event log row",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "const": "/api/v1/events/{id}"
+        },
+        "method": {
+          "type": "string",
+          "enum": [
+            "GET"
+          ]
+        },
+        "query": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "format": {
+              "type": "string",
+              "enum": [
+                "html",
+                "json"
+              ]
+            },
+            "scope": {
+              "type": "string",
+              "enum": [
+                "company",
+                "platform"
+              ]
+            }
+          }
+        },
+        "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {}
+        },
+        "path_params": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id"
+          ]
+        }
+      },
+      "required": [
+        "path",
+        "method",
+        "path_params"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "identity_get_events_retention",
+    "description": "Read event log retention",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "const": "/api/v1/events/retention"
+        },
+        "method": {
+          "type": "string",
+          "enum": [
+            "GET"
+          ]
+        },
+        "query": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "format": {
+              "type": "string",
+              "enum": [
+                "html",
+                "json"
+              ]
+            }
+          }
+        },
+        "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {}
+        }
+      },
+      "required": [
+        "path",
+        "method"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "identity_get_groups",
+    "description": "Read one company group",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "const": "/api/v1/groups/{id}"
+        },
+        "method": {
+          "type": "string",
+          "enum": [
+            "GET"
+          ]
+        },
+        "query": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "format": {
+              "type": "string",
+              "enum": [
+                "html",
+                "json"
+              ]
+            }
+          }
+        },
+        "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {}
+        },
+        "path_params": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id"
+          ]
+        }
+      },
+      "required": [
+        "path",
+        "method",
+        "path_params"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "identity_get_oauth_clients",
+    "description": "Read one OAuth client mapping",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "const": "/api/v1/oauth-clients/{id}"
+        },
+        "method": {
+          "type": "string",
+          "enum": [
+            "GET"
+          ]
+        },
+        "query": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "format": {
+              "type": "string",
+              "enum": [
+                "html",
+                "json"
+              ]
+            }
+          }
+        },
+        "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {}
+        },
+        "path_params": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id"
+          ]
+        }
+      },
+      "required": [
+        "path",
+        "method",
+        "path_params"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "identity_get_oauth_provider_catalog",
+    "description": "Read OAuth provider catalog",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "const": "/api/v1/oauth-provider-catalog"
+        },
+        "method": {
+          "type": "string",
+          "enum": [
+            "GET"
+          ]
+        },
+        "query": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "format": {
+              "type": "string",
+              "enum": [
+                "html",
+                "json"
+              ]
+            },
+            "include_legacy": {
+              "type": "boolean"
+            }
+          }
+        },
+        "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {}
+        }
+      },
+      "required": [
+        "path",
+        "method"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "identity_get_oauth_redirects",
+    "description": "Read one OAuth redirect URI",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "const": "/api/v1/oauth-redirects/{id}"
+        },
+        "method": {
+          "type": "string",
+          "enum": [
+            "GET"
+          ]
+        },
+        "query": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "format": {
+              "type": "string",
+              "enum": [
+                "html",
+                "json"
+              ]
+            }
+          }
+        },
+        "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {}
+        },
+        "path_params": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id"
+          ]
+        }
+      },
+      "required": [
+        "path",
+        "method",
+        "path_params"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "identity_get_scim_status",
+    "description": "Read SCIM provisioning status",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "const": "/api/v1/scim"
+        },
+        "method": {
+          "type": "string",
+          "enum": [
+            "GET"
+          ]
+        },
+        "query": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "format": {
+              "type": "string",
+              "enum": [
+                "html",
+                "json"
+              ]
+            }
+          }
+        },
+        "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {}
+        }
+      },
+      "required": [
+        "path",
+        "method"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "identity_get_users",
+    "description": "Read one company user",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "const": "/api/v1/users/{id}"
+        },
+        "method": {
+          "type": "string",
+          "enum": [
+            "GET"
+          ]
+        },
+        "query": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "format": {
+              "type": "string",
+              "enum": [
+                "html",
+                "json"
+              ]
+            }
+          }
+        },
+        "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {}
+        },
+        "path_params": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id"
+          ]
+        }
+      },
+      "required": [
+        "path",
+        "method",
+        "path_params"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "identity_get_users_audience",
+    "description": "Evaluate user audience filters",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "const": "/api/v1/users/audience"
+        },
+        "method": {
+          "type": "string",
+          "enum": [
+            "GET"
+          ]
+        },
+        "query": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "access": {
+              "type": "string"
+            },
+            "count_only": {
+              "type": "boolean"
+            },
+            "format": {
+              "type": "string",
+              "enum": [
+                "html",
+                "json"
+              ]
+            },
+            "group_ids": {
+              "type": "string"
+            },
+            "joined_after": {
+              "type": "string"
+            },
+            "joined_before": {
+              "type": "string"
+            },
+            "page": {
+              "type": "integer"
+            },
+            "page_size": {
+              "type": "integer"
+            },
+            "roles": {
+              "type": "string"
+            },
+            "seen_after": {
+              "type": "string"
+            },
+            "seen_before": {
+              "type": "string"
+            },
+            "user_ids": {
+              "type": "string"
+            }
+          }
+        },
+        "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {}
+        }
+      },
+      "required": [
+        "path",
+        "method"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "identity_list_action_deliveries",
+    "description": "List webhook deliveries",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "const": "/api/v1/actions/deliveries"
+        },
+        "method": {
+          "type": "string",
+          "enum": [
+            "GET"
+          ]
+        },
+        "query": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "action_rule_id": {
+              "type": "integer"
+            },
+            "created_after": {
+              "type": "string"
+            },
+            "created_before": {
+              "type": "string"
+            },
+            "event_type": {
+              "type": "string"
+            },
+            "format": {
+              "type": "string",
+              "enum": [
+                "html",
+                "json"
+              ]
+            },
+            "page": {
+              "type": "integer"
+            },
+            "page_size": {
+              "type": "integer"
+            },
+            "scheduled_job_run_id": {
+              "type": "integer"
+            },
+            "status": {
+              "type": "string"
+            }
+          }
+        },
+        "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {}
+        }
+      },
+      "required": [
+        "path",
+        "method"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "identity_list_action_events",
+    "description": "List Actions event types",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "const": "/api/v1/actions/events"
+        },
+        "method": {
+          "type": "string",
+          "enum": [
+            "GET"
+          ]
+        },
+        "query": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "format": {
+              "type": "string",
+              "enum": [
+                "html",
+                "json"
+              ]
+            }
+          }
+        },
+        "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {}
+        }
+      },
+      "required": [
+        "path",
+        "method"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "identity_list_action_rules",
+    "description": "List Actions webhook rules",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "const": "/api/v1/actions/rules"
+        },
+        "method": {
+          "type": "string",
+          "enum": [
+            "GET"
+          ]
+        },
+        "query": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "format": {
+              "type": "string",
+              "enum": [
+                "html",
+                "json"
+              ]
+            }
+          }
+        },
+        "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {}
+        }
+      },
+      "required": [
+        "path",
+        "method"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "identity_list_companies",
+    "description": "List member companies",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "const": "/api/v1/companies/"
+        },
+        "method": {
+          "type": "string",
+          "enum": [
+            "GET"
+          ]
+        },
+        "query": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "format": {
+              "type": "string",
+              "enum": [
+                "html",
+                "json"
+              ]
+            }
+          }
+        },
+        "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {}
+        }
+      },
+      "required": [
+        "path",
+        "method"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "identity_list_events",
+    "description": "List identity event log",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "const": "/api/v1/events"
+        },
+        "method": {
+          "type": "string",
+          "enum": [
+            "GET"
+          ]
+        },
+        "query": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "created_after": {
+              "type": "string"
+            },
+            "created_before": {
+              "type": "string"
+            },
+            "event_type": {
+              "type": "string"
+            },
+            "format": {
+              "type": "string",
+              "enum": [
+                "html",
+                "json"
+              ]
+            },
+            "page": {
+              "type": "integer"
+            },
+            "page_size": {
+              "type": "integer"
+            },
+            "scope": {
+              "type": "string",
+              "enum": [
+                "company",
+                "platform"
+              ]
+            },
+            "user": {
+              "type": "string"
+            },
+            "user_id": {
+              "type": "integer"
+            }
+          }
+        },
+        "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {}
+        }
+      },
+      "required": [
+        "path",
+        "method"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "identity_list_events_types",
+    "description": "List event log types",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "const": "/api/v1/events/types"
+        },
+        "method": {
+          "type": "string",
+          "enum": [
+            "GET"
+          ]
+        },
+        "query": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "format": {
+              "type": "string",
+              "enum": [
+                "html",
+                "json"
+              ]
+            }
+          }
+        },
+        "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {}
+        }
+      },
+      "required": [
+        "path",
+        "method"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "identity_list_groups",
+    "description": "List company groups",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "const": "/api/v1/groups"
+        },
+        "method": {
+          "type": "string",
+          "enum": [
+            "GET"
+          ]
+        },
+        "query": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "format": {
+              "type": "string",
+              "enum": [
+                "html",
+                "json"
+              ]
+            }
+          }
+        },
+        "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {}
+        }
+      },
+      "required": [
+        "path",
+        "method"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "identity_list_invitations",
+    "description": "List open invitations",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "const": "/api/v1/invitations"
+        },
+        "method": {
+          "type": "string",
+          "enum": [
+            "GET"
+          ]
+        },
+        "query": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "format": {
+              "type": "string",
+              "enum": [
+                "html",
+                "json"
+              ]
+            }
+          }
+        },
+        "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {}
+        }
+      },
+      "required": [
+        "path",
+        "method"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "identity_list_oauth_clients",
+    "description": "List OAuth client mappings",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "const": "/api/v1/oauth-clients"
+        },
+        "method": {
+          "type": "string",
+          "enum": [
+            "GET"
+          ]
+        },
+        "query": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "format": {
+              "type": "string",
+              "enum": [
+                "html",
+                "json"
+              ]
+            }
+          }
+        },
+        "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {}
+        }
+      },
+      "required": [
+        "path",
+        "method"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "identity_list_oauth_redirects",
+    "description": "List OAuth redirect URIs",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "const": "/api/v1/oauth-redirects"
+        },
+        "method": {
+          "type": "string",
+          "enum": [
+            "GET"
+          ]
+        },
+        "query": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "format": {
+              "type": "string",
+              "enum": [
+                "html",
+                "json"
+              ]
+            }
+          }
+        },
+        "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {}
+        }
+      },
+      "required": [
+        "path",
+        "method"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "identity_list_oauth_social_apps",
+    "description": "List company OAuth SocialApps",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "const": "/api/v1/oauth-social-apps"
+        },
+        "method": {
+          "type": "string",
+          "enum": [
+            "GET"
+          ]
+        },
+        "query": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "format": {
+              "type": "string",
+              "enum": [
+                "html",
+                "json"
+              ]
+            }
+          }
+        },
+        "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {}
+        }
+      },
+      "required": [
+        "path",
+        "method"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "identity_list_personal_access_tokens",
+    "description": "List personal access tokens",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "const": "/api/v1/personal-access-tokens"
+        },
+        "method": {
+          "type": "string",
+          "enum": [
+            "GET"
+          ]
+        },
+        "query": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "format": {
+              "type": "string",
+              "enum": [
+                "html",
+                "json"
+              ]
+            }
+          }
+        },
+        "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {}
+        }
+      },
+      "required": [
+        "path",
+        "method"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "identity_list_scim_tokens",
+    "description": "List SCIM bearer tokens",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "const": "/api/v1/scim/tokens"
+        },
+        "method": {
+          "type": "string",
+          "enum": [
+            "GET"
+          ]
+        },
+        "query": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "format": {
+              "type": "string",
+              "enum": [
+                "html",
+                "json"
+              ]
+            }
+          }
+        },
+        "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {}
+        }
+      },
+      "required": [
+        "path",
+        "method"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "identity_list_services",
+    "description": "List Shellui MCP service URLs",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "const": "/api/v1/mcp/services"
+        },
+        "method": {
+          "type": "string",
+          "enum": [
+            "GET"
+          ]
+        },
+        "query": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "format": {
+              "type": "string",
+              "enum": [
+                "html",
+                "json"
+              ]
+            }
+          }
+        },
+        "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {}
+        }
+      },
+      "required": [
+        "path",
+        "method"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "identity_list_users",
+    "description": "List company users",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "const": "/api/v1/users"
+        },
+        "method": {
+          "type": "string",
+          "enum": [
+            "GET"
+          ]
+        },
+        "query": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "format": {
+              "type": "string",
+              "enum": [
+                "html",
+                "json"
+              ]
+            },
+            "page": {
+              "type": "integer"
+            },
+            "page_size": {
+              "type": "integer"
+            },
+            "q": {
+              "type": "string"
+            }
+          }
+        },
+        "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {}
+        }
+      },
+      "required": [
+        "path",
+        "method"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "identity_replace_auth_methods",
+    "description": "Replace auth methods",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "const": "/api/v1/auth-methods"
+        },
+        "method": {
+          "type": "string",
+          "enum": [
+            "PUT"
+          ]
+        },
+        "query": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "format": {
+              "type": "string",
+              "enum": [
+                "html",
+                "json"
+              ]
+            }
+          }
+        },
+        "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enable_magic_link": {
+              "description": "Whether email magic-link sign-in is enabled for this company.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "enable_magic_link"
+          ]
+        }
+      },
+      "required": [
+        "path",
+        "method"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "identity_replace_companies",
     "description": "Replace company settings",
     "inputSchema": {
       "type": "object",
@@ -1052,486 +2413,7 @@
     }
   },
   {
-    "name": "api_v1_events_list",
-    "description": "List identity event log",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "path": {
-          "type": "string",
-          "const": "/api/v1/events"
-        },
-        "method": {
-          "type": "string",
-          "enum": [
-            "GET"
-          ]
-        },
-        "query": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "created_after": {
-              "type": "string"
-            },
-            "created_before": {
-              "type": "string"
-            },
-            "event_type": {
-              "type": "string"
-            },
-            "format": {
-              "type": "string",
-              "enum": [
-                "html",
-                "json"
-              ]
-            },
-            "page": {
-              "type": "integer"
-            },
-            "page_size": {
-              "type": "integer"
-            },
-            "scope": {
-              "type": "string",
-              "enum": [
-                "company",
-                "platform"
-              ]
-            },
-            "user": {
-              "type": "string"
-            },
-            "user_id": {
-              "type": "integer"
-            }
-          }
-        },
-        "body": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {}
-        }
-      },
-      "required": [
-        "path",
-        "method"
-      ],
-      "additionalProperties": false
-    }
-  },
-  {
-    "name": "api_v1_events_retention_retrieve",
-    "description": "Read event log retention",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "path": {
-          "type": "string",
-          "const": "/api/v1/events/retention"
-        },
-        "method": {
-          "type": "string",
-          "enum": [
-            "GET"
-          ]
-        },
-        "query": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "format": {
-              "type": "string",
-              "enum": [
-                "html",
-                "json"
-              ]
-            }
-          }
-        },
-        "body": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {}
-        }
-      },
-      "required": [
-        "path",
-        "method"
-      ],
-      "additionalProperties": false
-    }
-  },
-  {
-    "name": "api_v1_events_retrieve",
-    "description": "Read one event log row",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "path": {
-          "type": "string",
-          "const": "/api/v1/events/{id}"
-        },
-        "method": {
-          "type": "string",
-          "enum": [
-            "GET"
-          ]
-        },
-        "query": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "format": {
-              "type": "string",
-              "enum": [
-                "html",
-                "json"
-              ]
-            },
-            "scope": {
-              "type": "string",
-              "enum": [
-                "company",
-                "platform"
-              ]
-            }
-          }
-        },
-        "body": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {}
-        },
-        "path_params": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "id": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "id"
-          ]
-        }
-      },
-      "required": [
-        "path",
-        "method",
-        "path_params"
-      ],
-      "additionalProperties": false
-    }
-  },
-  {
-    "name": "api_v1_events_types_list",
-    "description": "List event log types",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "path": {
-          "type": "string",
-          "const": "/api/v1/events/types"
-        },
-        "method": {
-          "type": "string",
-          "enum": [
-            "GET"
-          ]
-        },
-        "query": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "format": {
-              "type": "string",
-              "enum": [
-                "html",
-                "json"
-              ]
-            }
-          }
-        },
-        "body": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {}
-        }
-      },
-      "required": [
-        "path",
-        "method"
-      ],
-      "additionalProperties": false
-    }
-  },
-  {
-    "name": "api_v1_groups_create",
-    "description": "Create a manual group",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "path": {
-          "type": "string",
-          "const": "/api/v1/groups"
-        },
-        "method": {
-          "type": "string",
-          "enum": [
-            "POST"
-          ]
-        },
-        "query": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "format": {
-              "type": "string",
-              "enum": [
-                "html",
-                "json"
-              ]
-            }
-          }
-        },
-        "body": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "display_name": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "display_name"
-          ]
-        }
-      },
-      "required": [
-        "path",
-        "method"
-      ],
-      "additionalProperties": false
-    }
-  },
-  {
-    "name": "api_v1_groups_destroy",
-    "description": "Delete a manual group",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "path": {
-          "type": "string",
-          "const": "/api/v1/groups/{id}"
-        },
-        "method": {
-          "type": "string",
-          "enum": [
-            "DELETE"
-          ]
-        },
-        "query": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "format": {
-              "type": "string",
-              "enum": [
-                "html",
-                "json"
-              ]
-            }
-          }
-        },
-        "body": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {}
-        },
-        "path_params": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "id": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "id"
-          ]
-        }
-      },
-      "required": [
-        "path",
-        "method",
-        "path_params"
-      ],
-      "additionalProperties": false
-    }
-  },
-  {
-    "name": "api_v1_groups_list",
-    "description": "List company groups",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "path": {
-          "type": "string",
-          "const": "/api/v1/groups"
-        },
-        "method": {
-          "type": "string",
-          "enum": [
-            "GET"
-          ]
-        },
-        "query": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "format": {
-              "type": "string",
-              "enum": [
-                "html",
-                "json"
-              ]
-            }
-          }
-        },
-        "body": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {}
-        }
-      },
-      "required": [
-        "path",
-        "method"
-      ],
-      "additionalProperties": false
-    }
-  },
-  {
-    "name": "api_v1_groups_partial_update",
-    "description": "Patch a manual group",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "path": {
-          "type": "string",
-          "const": "/api/v1/groups/{id}"
-        },
-        "method": {
-          "type": "string",
-          "enum": [
-            "PATCH"
-          ]
-        },
-        "query": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "format": {
-              "type": "string",
-              "enum": [
-                "html",
-                "json"
-              ]
-            }
-          }
-        },
-        "body": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "display_name": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "display_name"
-          ]
-        },
-        "path_params": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "id": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "id"
-          ]
-        }
-      },
-      "required": [
-        "path",
-        "method",
-        "path_params"
-      ],
-      "additionalProperties": false
-    }
-  },
-  {
-    "name": "api_v1_groups_retrieve",
-    "description": "Read one company group",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "path": {
-          "type": "string",
-          "const": "/api/v1/groups/{id}"
-        },
-        "method": {
-          "type": "string",
-          "enum": [
-            "GET"
-          ]
-        },
-        "query": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "format": {
-              "type": "string",
-              "enum": [
-                "html",
-                "json"
-              ]
-            }
-          }
-        },
-        "body": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {}
-        },
-        "path_params": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "id": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "id"
-          ]
-        }
-      },
-      "required": [
-        "path",
-        "method",
-        "path_params"
-      ],
-      "additionalProperties": false
-    }
-  },
-  {
-    "name": "api_v1_groups_update",
+    "name": "identity_replace_groups",
     "description": "Rename a manual group",
     "inputSchema": {
       "type": "object",
@@ -1593,49 +2475,7 @@
     }
   },
   {
-    "name": "api_v1_hosting_oauth_redirects_destroy",
-    "description": "Remove hosting OAuth redirects",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "path": {
-          "type": "string",
-          "const": "/api/v1/hosting-oauth-redirects"
-        },
-        "method": {
-          "type": "string",
-          "enum": [
-            "DELETE"
-          ]
-        },
-        "query": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "format": {
-              "type": "string",
-              "enum": [
-                "html",
-                "json"
-              ]
-            }
-          }
-        },
-        "body": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {}
-        }
-      },
-      "required": [
-        "path",
-        "method"
-      ],
-      "additionalProperties": false
-    }
-  },
-  {
-    "name": "api_v1_hosting_oauth_redirects_update",
+    "name": "identity_replace_hosting_oauth_redirects",
     "description": "Sync hosting OAuth redirects",
     "inputSchema": {
       "type": "object",
@@ -1687,463 +2527,7 @@
     }
   },
   {
-    "name": "api_v1_invitations_create",
-    "description": "Invite a user by email",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "path": {
-          "type": "string",
-          "const": "/api/v1/invitations"
-        },
-        "method": {
-          "type": "string",
-          "enum": [
-            "POST"
-          ]
-        },
-        "query": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "format": {
-              "type": "string",
-              "enum": [
-                "html",
-                "json"
-              ]
-            }
-          }
-        },
-        "body": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "email": {
-              "type": "string",
-              "format": "email"
-            },
-            "language": {
-              "description": "Invitation email language (en or fr; tags like \"fr-FR\" accepted). Defaults to en.",
-              "type": "string"
-            },
-            "app_url": {
-              "description": "App URL linked from the email. An http(s) origin must match the company redirect allowlist. A desktop app uses the exact custom-scheme URI from that allowlist. Omit to send the email without a link.",
-              "type": "string"
-            }
-          },
-          "required": [
-            "email"
-          ]
-        }
-      },
-      "required": [
-        "path",
-        "method"
-      ],
-      "additionalProperties": false
-    }
-  },
-  {
-    "name": "api_v1_invitations_destroy",
-    "description": "Delete an invitation row",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "path": {
-          "type": "string",
-          "const": "/api/v1/invitations/{id}"
-        },
-        "method": {
-          "type": "string",
-          "enum": [
-            "DELETE"
-          ]
-        },
-        "query": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "format": {
-              "type": "string",
-              "enum": [
-                "html",
-                "json"
-              ]
-            }
-          }
-        },
-        "body": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {}
-        },
-        "path_params": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "id": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "id"
-          ]
-        }
-      },
-      "required": [
-        "path",
-        "method",
-        "path_params"
-      ],
-      "additionalProperties": false
-    }
-  },
-  {
-    "name": "api_v1_invitations_list",
-    "description": "List open invitations",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "path": {
-          "type": "string",
-          "const": "/api/v1/invitations"
-        },
-        "method": {
-          "type": "string",
-          "enum": [
-            "GET"
-          ]
-        },
-        "query": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "format": {
-              "type": "string",
-              "enum": [
-                "html",
-                "json"
-              ]
-            }
-          }
-        },
-        "body": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {}
-        }
-      },
-      "required": [
-        "path",
-        "method"
-      ],
-      "additionalProperties": false
-    }
-  },
-  {
-    "name": "api_v1_invitations_revoke",
-    "description": "Revoke a pending invitation",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "path": {
-          "type": "string",
-          "const": "/api/v1/invitations/{id}/revoke"
-        },
-        "method": {
-          "type": "string",
-          "enum": [
-            "POST"
-          ]
-        },
-        "query": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "format": {
-              "type": "string",
-              "enum": [
-                "html",
-                "json"
-              ]
-            }
-          }
-        },
-        "body": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {}
-        },
-        "path_params": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "id": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "id"
-          ]
-        }
-      },
-      "required": [
-        "path",
-        "method",
-        "path_params"
-      ],
-      "additionalProperties": false
-    }
-  },
-  {
-    "name": "api_v1_mcp_services_list",
-    "description": "List Shellui MCP service URLs",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "path": {
-          "type": "string",
-          "const": "/api/v1/mcp/services"
-        },
-        "method": {
-          "type": "string",
-          "enum": [
-            "GET"
-          ]
-        },
-        "query": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "format": {
-              "type": "string",
-              "enum": [
-                "html",
-                "json"
-              ]
-            }
-          }
-        },
-        "body": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {}
-        }
-      },
-      "required": [
-        "path",
-        "method"
-      ],
-      "additionalProperties": false
-    }
-  },
-  {
-    "name": "api_v1_oauth_clients_create",
-    "description": "Attach an OAuth client mapping",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "path": {
-          "type": "string",
-          "const": "/api/v1/oauth-clients"
-        },
-        "method": {
-          "type": "string",
-          "enum": [
-            "POST"
-          ]
-        },
-        "query": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "format": {
-              "type": "string",
-              "enum": [
-                "html",
-                "json"
-              ]
-            }
-          }
-        },
-        "body": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "social_app_id": {
-              "type": "integer"
-            },
-            "is_active": {
-              "type": "boolean"
-            }
-          },
-          "required": [
-            "social_app_id"
-          ]
-        }
-      },
-      "required": [
-        "path",
-        "method"
-      ],
-      "additionalProperties": false
-    }
-  },
-  {
-    "name": "api_v1_oauth_clients_destroy",
-    "description": "Delete OAuth client mapping",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "path": {
-          "type": "string",
-          "const": "/api/v1/oauth-clients/{id}"
-        },
-        "method": {
-          "type": "string",
-          "enum": [
-            "DELETE"
-          ]
-        },
-        "query": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "format": {
-              "type": "string",
-              "enum": [
-                "html",
-                "json"
-              ]
-            }
-          }
-        },
-        "body": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {}
-        },
-        "path_params": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "id": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "id"
-          ]
-        }
-      },
-      "required": [
-        "path",
-        "method",
-        "path_params"
-      ],
-      "additionalProperties": false
-    }
-  },
-  {
-    "name": "api_v1_oauth_clients_list",
-    "description": "List OAuth client mappings",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "path": {
-          "type": "string",
-          "const": "/api/v1/oauth-clients"
-        },
-        "method": {
-          "type": "string",
-          "enum": [
-            "GET"
-          ]
-        },
-        "query": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "format": {
-              "type": "string",
-              "enum": [
-                "html",
-                "json"
-              ]
-            }
-          }
-        },
-        "body": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {}
-        }
-      },
-      "required": [
-        "path",
-        "method"
-      ],
-      "additionalProperties": false
-    }
-  },
-  {
-    "name": "api_v1_oauth_clients_retrieve",
-    "description": "Read one OAuth client mapping",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "path": {
-          "type": "string",
-          "const": "/api/v1/oauth-clients/{id}"
-        },
-        "method": {
-          "type": "string",
-          "enum": [
-            "GET"
-          ]
-        },
-        "query": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "format": {
-              "type": "string",
-              "enum": [
-                "html",
-                "json"
-              ]
-            }
-          }
-        },
-        "body": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {}
-        },
-        "path_params": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "id": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "id"
-          ]
-        }
-      },
-      "required": [
-        "path",
-        "method",
-        "path_params"
-      ],
-      "additionalProperties": false
-    }
-  },
-  {
-    "name": "api_v1_oauth_clients_update",
+    "name": "identity_replace_oauth_clients",
     "description": "Update OAuth client mapping",
     "inputSchema": {
       "type": "object",
@@ -2207,501 +2591,7 @@
     }
   },
   {
-    "name": "api_v1_oauth_provider_catalog_retrieve",
-    "description": "Read OAuth provider catalog",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "path": {
-          "type": "string",
-          "const": "/api/v1/oauth-provider-catalog"
-        },
-        "method": {
-          "type": "string",
-          "enum": [
-            "GET"
-          ]
-        },
-        "query": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "format": {
-              "type": "string",
-              "enum": [
-                "html",
-                "json"
-              ]
-            },
-            "include_legacy": {
-              "type": "boolean"
-            }
-          }
-        },
-        "body": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {}
-        }
-      },
-      "required": [
-        "path",
-        "method"
-      ],
-      "additionalProperties": false
-    }
-  },
-  {
-    "name": "api_v1_oauth_redirects_create",
-    "description": "Create OAuth redirect URI",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "path": {
-          "type": "string",
-          "const": "/api/v1/oauth-redirects"
-        },
-        "method": {
-          "type": "string",
-          "enum": [
-            "POST"
-          ]
-        },
-        "query": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "format": {
-              "type": "string",
-              "enum": [
-                "html",
-                "json"
-              ]
-            }
-          }
-        },
-        "body": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "base_url": {
-              "type": "string"
-            },
-            "label": {
-              "type": "string"
-            },
-            "is_active": {
-              "type": "boolean"
-            },
-            "source": {
-              "description": "* `manual` - manual\n* `hosting` - hosting",
-              "type": "string",
-              "enum": [
-                "manual",
-                "hosting"
-              ]
-            }
-          },
-          "required": [
-            "base_url"
-          ]
-        }
-      },
-      "required": [
-        "path",
-        "method"
-      ],
-      "additionalProperties": false
-    }
-  },
-  {
-    "name": "api_v1_oauth_redirects_destroy",
-    "description": "Delete OAuth redirect URI",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "path": {
-          "type": "string",
-          "const": "/api/v1/oauth-redirects/{id}"
-        },
-        "method": {
-          "type": "string",
-          "enum": [
-            "DELETE"
-          ]
-        },
-        "query": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "format": {
-              "type": "string",
-              "enum": [
-                "html",
-                "json"
-              ]
-            }
-          }
-        },
-        "body": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {}
-        },
-        "path_params": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "id": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "id"
-          ]
-        }
-      },
-      "required": [
-        "path",
-        "method",
-        "path_params"
-      ],
-      "additionalProperties": false
-    }
-  },
-  {
-    "name": "api_v1_oauth_redirects_list",
-    "description": "List OAuth redirect URIs",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "path": {
-          "type": "string",
-          "const": "/api/v1/oauth-redirects"
-        },
-        "method": {
-          "type": "string",
-          "enum": [
-            "GET"
-          ]
-        },
-        "query": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "format": {
-              "type": "string",
-              "enum": [
-                "html",
-                "json"
-              ]
-            }
-          }
-        },
-        "body": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {}
-        }
-      },
-      "required": [
-        "path",
-        "method"
-      ],
-      "additionalProperties": false
-    }
-  },
-  {
-    "name": "api_v1_oauth_redirects_partial_update",
-    "description": "Update OAuth redirect URI",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "path": {
-          "type": "string",
-          "const": "/api/v1/oauth-redirects/{id}"
-        },
-        "method": {
-          "type": "string",
-          "enum": [
-            "PATCH"
-          ]
-        },
-        "query": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "format": {
-              "type": "string",
-              "enum": [
-                "html",
-                "json"
-              ]
-            }
-          }
-        },
-        "body": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "base_url": {
-              "description": "Required when label and is_active are omitted.",
-              "type": "string"
-            },
-            "label": {
-              "description": "Required when base_url and is_active are omitted.",
-              "type": "string"
-            },
-            "is_active": {
-              "description": "Required when base_url and label are omitted.",
-              "type": "boolean"
-            }
-          }
-        },
-        "path_params": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "id": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "id"
-          ]
-        }
-      },
-      "required": [
-        "path",
-        "method",
-        "path_params"
-      ],
-      "additionalProperties": false
-    }
-  },
-  {
-    "name": "api_v1_oauth_redirects_retrieve",
-    "description": "Read one OAuth redirect URI",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "path": {
-          "type": "string",
-          "const": "/api/v1/oauth-redirects/{id}"
-        },
-        "method": {
-          "type": "string",
-          "enum": [
-            "GET"
-          ]
-        },
-        "query": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "format": {
-              "type": "string",
-              "enum": [
-                "html",
-                "json"
-              ]
-            }
-          }
-        },
-        "body": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {}
-        },
-        "path_params": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "id": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "id"
-          ]
-        }
-      },
-      "required": [
-        "path",
-        "method",
-        "path_params"
-      ],
-      "additionalProperties": false
-    }
-  },
-  {
-    "name": "api_v1_oauth_social_apps_create",
-    "description": "Create OAuth SocialApp key",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "path": {
-          "type": "string",
-          "const": "/api/v1/oauth-social-apps"
-        },
-        "method": {
-          "type": "string",
-          "enum": [
-            "POST"
-          ]
-        },
-        "query": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "format": {
-              "type": "string",
-              "enum": [
-                "html",
-                "json"
-              ]
-            }
-          }
-        },
-        "body": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "docs_slug": {
-              "description": "Catalog slug, for example github. Required when provider is omitted.",
-              "type": "string"
-            },
-            "provider": {
-              "description": "Alias of docs_slug. Required when docs_slug is omitted.",
-              "type": "string"
-            },
-            "client_id": {
-              "type": "string"
-            },
-            "client_secret": {
-              "type": "string"
-            },
-            "tenant": {
-              "type": "string"
-            },
-            "extra_settings": {
-              "type": "object",
-              "properties": {},
-              "additionalProperties": true
-            }
-          },
-          "required": [
-            "client_id",
-            "client_secret"
-          ]
-        }
-      },
-      "required": [
-        "path",
-        "method"
-      ],
-      "additionalProperties": false
-    }
-  },
-  {
-    "name": "api_v1_oauth_social_apps_destroy",
-    "description": "Delete OAuth SocialApp key",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "path": {
-          "type": "string",
-          "const": "/api/v1/oauth-social-apps/{id}"
-        },
-        "method": {
-          "type": "string",
-          "enum": [
-            "DELETE"
-          ]
-        },
-        "query": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "format": {
-              "type": "string",
-              "enum": [
-                "html",
-                "json"
-              ]
-            }
-          }
-        },
-        "body": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {}
-        },
-        "path_params": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "id": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "id"
-          ]
-        }
-      },
-      "required": [
-        "path",
-        "method",
-        "path_params"
-      ],
-      "additionalProperties": false
-    }
-  },
-  {
-    "name": "api_v1_oauth_social_apps_list",
-    "description": "List company OAuth SocialApps",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "path": {
-          "type": "string",
-          "const": "/api/v1/oauth-social-apps"
-        },
-        "method": {
-          "type": "string",
-          "enum": [
-            "GET"
-          ]
-        },
-        "query": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "format": {
-              "type": "string",
-              "enum": [
-                "html",
-                "json"
-              ]
-            }
-          }
-        },
-        "body": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {}
-        }
-      },
-      "required": [
-        "path",
-        "method"
-      ],
-      "additionalProperties": false
-    }
-  },
-  {
-    "name": "api_v1_oauth_social_apps_update",
+    "name": "identity_replace_oauth_social_apps",
     "description": "Update OAuth SocialApp key",
     "inputSchema": {
       "type": "object",
@@ -2771,14 +2661,90 @@
     }
   },
   {
-    "name": "api_v1_personal_access_tokens_create",
-    "description": "Create a personal access token. The JWT is shown once in admin, not to the agent.",
+    "name": "identity_replace_users",
+    "description": "Update a company user",
     "inputSchema": {
       "type": "object",
       "properties": {
         "path": {
           "type": "string",
-          "const": "/api/v1/personal-access-tokens"
+          "const": "/api/v1/users/{id}"
+        },
+        "method": {
+          "type": "string",
+          "enum": [
+            "PUT"
+          ]
+        },
+        "query": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "format": {
+              "type": "string",
+              "enum": [
+                "html",
+                "json"
+              ]
+            }
+          }
+        },
+        "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "first_name": {
+              "type": "string"
+            },
+            "last_name": {
+              "type": "string"
+            },
+            "is_active": {
+              "type": "boolean"
+            },
+            "data": {
+              "type": "object",
+              "additionalProperties": true,
+              "description": "JSON value"
+            },
+            "group_ids": {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              }
+            }
+          }
+        },
+        "path_params": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id"
+          ]
+        }
+      },
+      "required": [
+        "path",
+        "method",
+        "path_params"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "identity_requeue_action_deliveries",
+    "description": "Requeue failed webhook delivery",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "const": "/api/v1/actions/deliveries/{delivery_id}/requeue"
         },
         "method": {
           "type": "string",
@@ -2802,40 +2768,43 @@
         "body": {
           "type": "object",
           "additionalProperties": false,
+          "properties": {}
+        },
+        "path_params": {
+          "type": "object",
+          "additionalProperties": false,
           "properties": {
-            "read_only": {
-              "type": "boolean"
-            },
-            "access_global_metrics": {
-              "type": "boolean"
-            },
-            "name": {
+            "delivery_id": {
               "type": "string"
             }
-          }
+          },
+          "required": [
+            "delivery_id"
+          ]
         }
       },
       "required": [
         "path",
-        "method"
+        "method",
+        "path_params"
       ],
       "additionalProperties": false
     }
   },
   {
-    "name": "api_v1_personal_access_tokens_list",
-    "description": "List personal access tokens",
+    "name": "identity_revoke_invitations",
+    "description": "Revoke a pending invitation",
     "inputSchema": {
       "type": "object",
       "properties": {
         "path": {
           "type": "string",
-          "const": "/api/v1/personal-access-tokens"
+          "const": "/api/v1/invitations/{id}/revoke"
         },
         "method": {
           "type": "string",
           "enum": [
-            "GET"
+            "POST"
           ]
         },
         "query": {
@@ -2855,17 +2824,30 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {}
+        },
+        "path_params": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id"
+          ]
         }
       },
       "required": [
         "path",
-        "method"
+        "method",
+        "path_params"
       ],
       "additionalProperties": false
     }
   },
   {
-    "name": "api_v1_personal_access_tokens_revoke",
+    "name": "identity_revoke_personal_access_tokens",
     "description": "Revoke personal access token",
     "inputSchema": {
       "type": "object",
@@ -2920,137 +2902,7 @@
     }
   },
   {
-    "name": "api_v1_scim_status",
-    "description": "Read SCIM provisioning status",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "path": {
-          "type": "string",
-          "const": "/api/v1/scim"
-        },
-        "method": {
-          "type": "string",
-          "enum": [
-            "GET"
-          ]
-        },
-        "query": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "format": {
-              "type": "string",
-              "enum": [
-                "html",
-                "json"
-              ]
-            }
-          }
-        },
-        "body": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {}
-        }
-      },
-      "required": [
-        "path",
-        "method"
-      ],
-      "additionalProperties": false
-    }
-  },
-  {
-    "name": "api_v1_scim_tokens_create",
-    "description": "Create a SCIM bearer token. The secret is shown once in admin, not to the agent.",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "path": {
-          "type": "string",
-          "const": "/api/v1/scim/tokens"
-        },
-        "method": {
-          "type": "string",
-          "enum": [
-            "POST"
-          ]
-        },
-        "query": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "format": {
-              "type": "string",
-              "enum": [
-                "html",
-                "json"
-              ]
-            }
-          }
-        },
-        "body": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "name": {
-              "type": "string"
-            }
-          }
-        }
-      },
-      "required": [
-        "path",
-        "method"
-      ],
-      "additionalProperties": false
-    }
-  },
-  {
-    "name": "api_v1_scim_tokens_list",
-    "description": "List SCIM bearer tokens",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "path": {
-          "type": "string",
-          "const": "/api/v1/scim/tokens"
-        },
-        "method": {
-          "type": "string",
-          "enum": [
-            "GET"
-          ]
-        },
-        "query": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "format": {
-              "type": "string",
-              "enum": [
-                "html",
-                "json"
-              ]
-            }
-          }
-        },
-        "body": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {}
-        }
-      },
-      "required": [
-        "path",
-        "method"
-      ],
-      "additionalProperties": false
-    }
-  },
-  {
-    "name": "api_v1_scim_tokens_revoke",
+    "name": "identity_revoke_scim_tokens",
     "description": "Revoke SCIM bearer token",
     "inputSchema": {
       "type": "object",
@@ -3105,94 +2957,19 @@
     }
   },
   {
-    "name": "api_v1_users_audience",
-    "description": "Evaluate user audience filters",
+    "name": "identity_rotate_rule_secret",
+    "description": "Rotate a webhook signing secret. The new secret is shown once in admin, not to the agent.",
     "inputSchema": {
       "type": "object",
       "properties": {
         "path": {
           "type": "string",
-          "const": "/api/v1/users/audience"
+          "const": "/api/v1/actions/rules/{id}/rotate-secret"
         },
         "method": {
           "type": "string",
           "enum": [
-            "GET"
-          ]
-        },
-        "query": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "access": {
-              "type": "string"
-            },
-            "count_only": {
-              "type": "boolean"
-            },
-            "format": {
-              "type": "string",
-              "enum": [
-                "html",
-                "json"
-              ]
-            },
-            "group_ids": {
-              "type": "string"
-            },
-            "joined_after": {
-              "type": "string"
-            },
-            "joined_before": {
-              "type": "string"
-            },
-            "page": {
-              "type": "integer"
-            },
-            "page_size": {
-              "type": "integer"
-            },
-            "roles": {
-              "type": "string"
-            },
-            "seen_after": {
-              "type": "string"
-            },
-            "seen_before": {
-              "type": "string"
-            },
-            "user_ids": {
-              "type": "string"
-            }
-          }
-        },
-        "body": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {}
-        }
-      },
-      "required": [
-        "path",
-        "method"
-      ],
-      "additionalProperties": false
-    }
-  },
-  {
-    "name": "api_v1_users_destroy",
-    "description": "Remove user from company",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "path": {
-          "type": "string",
-          "const": "/api/v1/users/{id}"
-        },
-        "method": {
-          "type": "string",
-          "enum": [
-            "DELETE"
+            "POST"
           ]
         },
         "query": {
@@ -3235,70 +3012,19 @@
     }
   },
   {
-    "name": "api_v1_users_list",
-    "description": "List company users",
+    "name": "identity_send_test_rule",
+    "description": "Send test webhook delivery",
     "inputSchema": {
       "type": "object",
       "properties": {
         "path": {
           "type": "string",
-          "const": "/api/v1/users"
+          "const": "/api/v1/actions/rules/{id}/send-test"
         },
         "method": {
           "type": "string",
           "enum": [
-            "GET"
-          ]
-        },
-        "query": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "format": {
-              "type": "string",
-              "enum": [
-                "html",
-                "json"
-              ]
-            },
-            "page": {
-              "type": "integer"
-            },
-            "page_size": {
-              "type": "integer"
-            },
-            "q": {
-              "type": "string"
-            }
-          }
-        },
-        "body": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {}
-        }
-      },
-      "required": [
-        "path",
-        "method"
-      ],
-      "additionalProperties": false
-    }
-  },
-  {
-    "name": "api_v1_users_retrieve",
-    "description": "Read one company user",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "path": {
-          "type": "string",
-          "const": "/api/v1/users/{id}"
-        },
-        "method": {
-          "type": "string",
-          "enum": [
-            "GET"
+            "POST"
           ]
         },
         "query": {
@@ -3341,19 +3067,19 @@
     }
   },
   {
-    "name": "api_v1_users_update",
-    "description": "Update a company user",
+    "name": "identity_update_action_rules",
+    "description": "Update Actions webhook rule",
     "inputSchema": {
       "type": "object",
       "properties": {
         "path": {
           "type": "string",
-          "const": "/api/v1/users/{id}"
+          "const": "/api/v1/actions/rules/{id}"
         },
         "method": {
           "type": "string",
           "enum": [
-            "PUT"
+            "PATCH"
           ]
         },
         "query": {
@@ -3373,25 +3099,299 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "first_name": {
+            "name": {
               "type": "string"
             },
-            "last_name": {
+            "description": {
               "type": "string"
             },
-            "is_active": {
+            "event_type": {
+              "type": "string"
+            },
+            "enabled": {
               "type": "boolean"
             },
-            "data": {
-              "type": "object",
-              "additionalProperties": true,
-              "description": "JSON value"
+            "url": {
+              "type": "string",
+              "format": "uri"
             },
-            "group_ids": {
+            "secret": {
+              "type": "string"
+            },
+            "authorization_header": {
+              "type": "string"
+            },
+            "allow_private_urls": {
+              "type": "boolean"
+            }
+          }
+        },
+        "path_params": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id"
+          ]
+        }
+      },
+      "required": [
+        "path",
+        "method",
+        "path_params"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "identity_update_auth_methods",
+    "description": "Patch auth methods",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "const": "/api/v1/auth-methods"
+        },
+        "method": {
+          "type": "string",
+          "enum": [
+            "PATCH"
+          ]
+        },
+        "query": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "format": {
+              "type": "string",
+              "enum": [
+                "html",
+                "json"
+              ]
+            }
+          }
+        },
+        "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enable_magic_link": {
+              "description": "Whether email magic-link sign-in is enabled for this company.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "enable_magic_link"
+          ]
+        }
+      },
+      "required": [
+        "path",
+        "method"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "identity_update_companies",
+    "description": "Patch company settings",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "const": "/api/v1/companies/{id}/"
+        },
+        "method": {
+          "type": "string",
+          "enum": [
+            "PATCH"
+          ]
+        },
+        "query": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "format": {
+              "type": "string",
+              "enum": [
+                "html",
+                "json"
+              ]
+            }
+          }
+        },
+        "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "owner_ids": {
               "type": "array",
               "items": {
                 "type": "integer"
               }
+            },
+            "access_mode": {
+              "description": "* `public` - public\n* `domain` - domain\n* `invite` - invite",
+              "type": "string",
+              "enum": [
+                "public",
+                "domain",
+                "invite"
+              ]
+            },
+            "allowed_email_domains": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "desktop_redirect_schemes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "allow_desktop_dev_scheme": {
+              "type": "boolean"
+            }
+          }
+        },
+        "path_params": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id"
+          ]
+        }
+      },
+      "required": [
+        "path",
+        "method",
+        "path_params"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "identity_update_groups",
+    "description": "Patch a manual group",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "const": "/api/v1/groups/{id}"
+        },
+        "method": {
+          "type": "string",
+          "enum": [
+            "PATCH"
+          ]
+        },
+        "query": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "format": {
+              "type": "string",
+              "enum": [
+                "html",
+                "json"
+              ]
+            }
+          }
+        },
+        "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "display_name": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "display_name"
+          ]
+        },
+        "path_params": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id"
+          ]
+        }
+      },
+      "required": [
+        "path",
+        "method",
+        "path_params"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "identity_update_oauth_redirects",
+    "description": "Update OAuth redirect URI",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "const": "/api/v1/oauth-redirects/{id}"
+        },
+        "method": {
+          "type": "string",
+          "enum": [
+            "PATCH"
+          ]
+        },
+        "query": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "format": {
+              "type": "string",
+              "enum": [
+                "html",
+                "json"
+              ]
+            }
+          }
+        },
+        "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "base_url": {
+              "description": "Required when label and is_active are omitted.",
+              "type": "string"
+            },
+            "label": {
+              "description": "Required when base_url and is_active are omitted.",
+              "type": "string"
+            },
+            "is_active": {
+              "description": "Required when base_url and label are omitted.",
+              "type": "boolean"
             }
           }
         },

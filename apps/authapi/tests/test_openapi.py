@@ -54,7 +54,7 @@ class OpenApiSchemaTests(SimpleTestCase):
             if isinstance(operation, dict) and 'operationId' in operation
         ]
         self.assertEqual(len(operation_ids), len(set(operation_ids)), operation_ids)
-        self.assertIn('api_v1_mcp_services_list', operation_ids)
+        self.assertIn('identity_list_services', operation_ids)
         validate_mcp_schema(schema)
         validate_mcp_secret_fields(schema)
 
