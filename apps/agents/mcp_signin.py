@@ -300,6 +300,11 @@ def finish_mcp_signin(request: HttpRequest, *, user, company: Company, method: s
     """Called by the magic link and OAuth/SSO flows when ``redirect_to`` is the MCP landing."""
     path, parsed = _saved_authorize(request)
     if not path or parsed is None:
+        from apps.agents.approval_fallback_views import finish_approval_signin, saved_approval_return
+
+        approval_path, approval_row = saved_approval_return(request)
+        if approval_path and approval_row is not None:
+            return finish_approval_signin(request, user=user, company=company, method=method)
         from apps.agents.oauth_device import finish_device_signin
 
         return finish_device_signin(request, user=user, company=company, method=method)
@@ -366,6 +371,33 @@ def _send_magic_link(
     return None
 
 
+def company_provider_links(request: HttpRequest, company: Company) -> list[dict[str, str]]:
+    """OAuth and SSO buttons for the company's configured providers."""
+    import secrets
+
+    from apps.authapi.client_pkce import s256_challenge
+    from apps.authapi.views import _build_shellui_authorize_url, _enabled_oauth_providers, _provider_display_label
+
+    copy = copy_for(page_language(request))
+    challenge = s256_challenge(secrets.token_urlsafe(48))
+    redirect_to = signin_complete_url(request)
+    links: list[dict[str, str]] = []
+    for provider in _enabled_oauth_providers(company):
+        links.append(
+            {
+                'label': copy['provider_button'].format(provider=_provider_display_label(provider)),
+                'url': _build_shellui_authorize_url(
+                    request,
+                    company=company,
+                    redirect_to=redirect_to,
+                    provider=provider,
+                    code_challenge=challenge,
+                ),
+            }
+        )
+    return links
+
+
 @xframe_options_deny
 @csrf_protect
 @require_http_methods(['GET', 'POST'])
@@ -378,19 +410,31 @@ def mcp_signin(request: HttpRequest) -> HttpResponse:
     if limited:
         return limited
     path, parsed = _saved_authorize(request)
+    from apps.agents.approval_fallback_views import saved_approval_return
     from apps.agents.oauth_device import device_grant_for_signin
 
     device_grant, device_error = device_grant_for_signin(request)
-    if parsed is None and device_grant is None:
+    approval_path, approval_row = saved_approval_return(request)
+    if parsed is None and device_grant is None and approval_row is None:
         if device_error and not path:
             return render_error(request, device_error, 400)
         return render_error(request, 'invalid_request', 400)
-    # Nothing on this page depends on the company name. Device grants already bound a company
-    # from the user code, and the email step uses that company's sign-in methods only.
-    company = parsed.company if parsed is not None else device_grant.company
+    # Nothing on the authorize page depends on the company name. Device grants and
+    # approval links already bound a company, and the email step uses that company's
+    # sign-in methods only.
+    if parsed is not None:
+        company = parsed.company
+    elif device_grant is not None:
+        company = device_grant.company
+    else:
+        company = approval_row.company
+    approval_only = parsed is None and device_grant is None and approval_row is not None
+    if approval_only and (company is None or approval_row.agent is None):
+        return render_error(request, 'invalid_request', 400)
     lang = page_language(request)
     copy = copy_for(lang)
     from apps.authapi.identity_session import (
+        MCP_APPROVAL_CONTINUE_KEY,
         MCP_AUTHORIZE_CONTINUE_KEY,
         MCP_DEVICE_CONTINUE_KEY,
         account_email,
@@ -421,8 +465,21 @@ def mcp_signin(request: HttpRequest) -> HttpResponse:
         if device_grant is not None:
             request.session[MCP_DEVICE_CONTINUE_KEY] = str(device_grant.id)
             return HttpResponseRedirect(reverse('mcp-oauth-device'))
+        if approval_only and approval_path:
+            request.session[MCP_APPROVAL_CONTINUE_KEY] = str(approval_row.id)
+            return HttpResponseRedirect(approval_path)
         return render_error(request, 'invalid_request', 400)
     elif request.method == 'GET' and eligible:
+        if approval_only:
+            return render_continue_as(
+                request,
+                email=account_email(request.user),
+                lead=copy['approval_signin_lead'].format(
+                    agent_name=approval_row.agent.name,
+                    tool_name=approval_row.action,
+                    company_name=company.name,
+                ),
+            )
         if parsed is not None:
             client_name = parsed.client.client_name or parsed.client.client_id
         else:
@@ -447,16 +504,54 @@ def mcp_signin(request: HttpRequest) -> HttpResponse:
                 return limited
             from apps.agents.mcp_home_realm import home_realm_signin_redirect
 
-            realm_redirect = home_realm_signin_redirect(request, company=company, email=email)
+            realm_kwargs: dict[str, str] = {}
+            if approval_only:
+                import secrets
+
+                from apps.authapi.client_pkce import s256_challenge
+
+                realm_kwargs['code_challenge'] = s256_challenge(secrets.token_urlsafe(48))
+            realm_redirect = home_realm_signin_redirect(
+                request, company=company, email=email, **realm_kwargs
+            )
             if realm_redirect is not None:
                 return realm_redirect
-        if company is not None and magic_link_enabled_for_company(company):
+        magic_on = company is not None and magic_link_enabled_for_company(company)
+        if magic_on:
             limited = plain_response(
                 _send_magic_link(request, company=company, email=email, lang=lang, rate_limit=False)
             )
             if limited is not None:
                 return limited
-        sent = True
+        if magic_on or not approval_only:
+            sent = True
+    if approval_only:
+        if approval_row is None or company is None or approval_row.agent is None:
+            return render_error(request, 'invalid_request', 400)
+        providers = company_provider_links(request, company)
+        magic_on = magic_link_enabled_for_company(company)
+        no_methods = ''
+        if not magic_on and not providers:
+            no_methods = copy['no_methods'].format(company=company.name)
+        response = render(
+            request,
+            'agents/mcp_approval_signin.html',
+            {
+                'page_language': lang,
+                'copy': copy,
+                'lead': copy['approval_signin_lead'].format(
+                    agent_name=approval_row.agent.name,
+                    tool_name=approval_row.action,
+                    company_name=company.name,
+                ),
+                'sent': sent,
+                'email_sent': copy['email_sent'].format(company=company.name),
+                'magic_link_enabled': magic_on,
+                'providers': providers,
+                'no_methods': no_methods,
+            },
+        )
+        return protect_page(response)
     if parsed is not None:
         client_name = parsed.client.client_name or parsed.client.client_id
         cancel_url = mcp_cancel_return_url(parsed)
@@ -490,6 +585,11 @@ def mcp_signin_complete(request: HttpRequest) -> HttpResponse:
     path, parsed = _saved_authorize(request)
     if path and parsed is not None and request.user.is_authenticated:
         return HttpResponseRedirect(path)
+    from apps.agents.approval_fallback_views import saved_approval_return
+
+    approval_path, approval_row = saved_approval_return(request)
+    if approval_path and approval_row is not None and request.user.is_authenticated:
+        return HttpResponseRedirect(approval_path)
     from apps.agents.oauth_device import device_grant_for_signin
 
     grant, _error = device_grant_for_signin(request)

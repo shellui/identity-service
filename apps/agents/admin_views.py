@@ -14,14 +14,15 @@ from apps.authapi.openapi_admin import ADMIN_API_ERRORS, admin_openapi_fields, m
 from apps.authapi.serializers import ShellUIOpenAPISerializer
 from apps.agents.display import agent_created_by
 from apps.agents.approval_access import pending_approvals_for_user, user_may_manage_approval
+from apps.agents.approval_links import approval_link
 from apps.agents.approval_decisions import ApprovalDecisionError, settings_approve, settings_deny
 from apps.agents.call_log_outcome import display_outcome_for_read
 from apps.agents.models import Agent, McpApprovalRequest, McpCallLog
 from apps.agents.permissions import require_approval_actor, require_company_admin
 
 
-def _approval_row(row: McpApprovalRequest) -> dict:
-    return {
+def _approval_row(row: McpApprovalRequest, *, request=None) -> dict:
+    payload = {
         'id': str(row.id),
         'agent_id': str(row.agent_id),
         'agent_name': row.agent.name,
@@ -36,6 +37,9 @@ def _approval_row(row: McpApprovalRequest) -> dict:
         'short_action_summary': row.short_action_summary,
         'expires_at': row.expires_at.isoformat(),
     }
+    if row.status == McpApprovalRequest.STATUS_PENDING and row.expires_at > timezone.now():
+        payload['approval_url'] = approval_link(str(row.id), request=request)['approval_url']
+    return payload
 
 
 def _get_manageable_approval(request, approval_id):
@@ -182,7 +186,7 @@ class McpApprovalListView(APIView):
         if err:
             return err
         qs = pending_approvals_for_user(company, actor).select_related('agent')[:100]
-        approvals = [_approval_row(row) for row in qs]
+        approvals = [_approval_row(row, request=request) for row in qs]
         return Response({'approvals': approvals, 'pending_count': len(approvals)})
 
 
@@ -206,7 +210,7 @@ class McpApprovalDetailView(APIView):
         _actor, row, _company, err = _get_manageable_approval(request, approval_id)
         if err:
             return err
-        return Response({'approval': _approval_row(row)})
+        return Response({'approval': _approval_row(row, request=request)})
 
 
 @extend_schema_view(
@@ -232,7 +236,7 @@ class McpApprovalApproveView(APIView):
             result = settings_approve(row, user=actor)
         except ApprovalDecisionError as exc:
             return Response({'error': exc.message}, status=exc.status)
-        return Response({'approval': _approval_row(result.row)})
+        return Response({'approval': _approval_row(result.row, request=request)})
 
 
 @extend_schema_view(
@@ -258,7 +262,7 @@ class McpApprovalRejectView(APIView):
             result = settings_deny(row, user=actor)
         except ApprovalDecisionError as exc:
             return Response({'error': exc.message}, status=exc.status)
-        return Response({'approval': _approval_row(result.row)})
+        return Response({'approval': _approval_row(result.row, request=request)})
 
 
 @extend_schema_view(
@@ -292,7 +296,7 @@ class McpApprovalDecideView(APIView):
             result = handler(row, user=actor)
         except ApprovalDecisionError as exc:
             return Response({'error': exc.message}, status=exc.status)
-        return Response({'approval': _approval_row(result.row)})
+        return Response({'approval': _approval_row(result.row, request=request)})
 
 
 @extend_schema_view(
