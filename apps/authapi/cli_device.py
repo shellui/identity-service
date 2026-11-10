@@ -13,7 +13,7 @@ from datetime import timedelta, timezone as dt_timezone
 from urllib.parse import urlencode
 
 from django.conf import settings
-from django.contrib.auth import authenticate, login
+from django.contrib.auth import authenticate
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.http import HttpRequest, HttpResponse, HttpResponseRedirect, JsonResponse
@@ -29,7 +29,6 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.views import APIView
 
 from apps.agents.mcp_signin import (
-    SESSION_BACKEND,
     is_company_member,
     page_language,
     plain_response,
@@ -474,8 +473,14 @@ def finish_cli_signin(request: HttpRequest, *, user, company: Company, auth_meth
     blocked = _member_block(request, grant, user)
     if blocked is not None:
         return blocked
-    login(request, user, backend=SESSION_BACKEND)
+    from apps.authapi.identity_session import CLI_CONTINUE_KEY, establish_identity_session
+
+    if not establish_identity_session(request, user, company=company, method=auth_method):
+        return _member_block(request, grant, user) or _render_message(
+            request, copy['not_member'].format(company=company.name), 403, user=user
+        )
     remember_cli_grant(request, str(grant.id), user_code, auth_method)
+    request.session[CLI_CONTINUE_KEY] = str(grant.id)
     return HttpResponseRedirect(reverse('cli-oauth-device'))
 
 
@@ -537,8 +542,11 @@ def _render_signin(
     sent: bool = False,
     email_unavailable: bool = False,
     password_error: str = '',
+    step_up: bool = False,
 ) -> HttpResponse:
     from apps.authapi.magic_link import magic_link_enabled_for_company
+
+    from apps.authapi.identity_session import continue_copy
 
     lang = page_language(request, request.user if request.user.is_authenticated else None)
     copy = copy_for(lang)
@@ -556,6 +564,8 @@ def _render_signin(
             'password_error': password_error,
             'magic_link_enabled': magic_on,
             'providers': _provider_links(request, grant.company),
+            'step_up': step_up,
+            'step_up_message': continue_copy(lang)['step_up'] if step_up else '',
         },
     )
     return protect_page(response)
@@ -644,14 +654,16 @@ def _post_password(request: HttpRequest, grant: CliDeviceAuthorization) -> HttpR
             failure_reason='invalid_credentials',
         )
         return _render_signin(request, grant, password_error=copy['password_failed'])
-    record_login_event(
-        request=request,
-        outcome=LoginOutcome.SUCCESS,
-        provider=AUTH_METHOD_PASSWORD,
-        user=authed,
-        company=grant.company,
-    )
-    return finish_cli_signin(request, user=authed, company=grant.company, auth_method=AUTH_METHOD_PASSWORD)
+    response = finish_cli_signin(request, user=authed, company=grant.company, auth_method=AUTH_METHOD_PASSWORD)
+    if response.status_code in (301, 302):
+        record_login_event(
+            request=request,
+            outcome=LoginOutcome.SUCCESS,
+            provider=AUTH_METHOD_PASSWORD,
+            user=authed,
+            company=grant.company,
+        )
+    return response
 
 
 def _post_email(request: HttpRequest, grant: CliDeviceAuthorization) -> HttpResponse:
@@ -690,26 +702,71 @@ def _post_email(request: HttpRequest, grant: CliDeviceAuthorization) -> HttpResp
     return _render_signin(request, grant, sent=True)
 
 
+def _cli_session_block(request: HttpRequest, grant: CliDeviceAuthorization) -> str:
+    """``step_up``, ``signed_out``, or ``''`` when Continue as is allowed."""
+    from apps.authapi.identity_session import staff_cli_needs_step_up, user_can_use_company_session
+
+    user = request.user
+    if not getattr(user, 'is_authenticated', False):
+        return 'signed_out'
+    if staff_cli_needs_step_up(request, user):
+        return 'step_up'
+    if not user_can_use_company_session(user, grant.company):
+        return 'signed_out'
+    return ''
+
+
+def _render_cli_continue(request: HttpRequest, grant: CliDeviceAuthorization) -> HttpResponse:
+    from apps.authapi.identity_session import account_email, render_continue_as
+
+    copy = copy_for(page_language(request, request.user))
+    return render_continue_as(
+        request,
+        email=account_email(request.user),
+        lead=copy['signin_lead'].format(company=grant.company.name),
+    )
+
+
+def _handle_cli_account_choice(request: HttpRequest, grant: CliDeviceAuthorization) -> HttpResponse | None:
+    from apps.authapi.identity_session import CLI_CONTINUE_KEY, end_identity_session, posted_account_choice
+
+    choice = posted_account_choice(request)
+    if choice == 'switch':
+        end_identity_session(request, preserve_flow=True)
+        return HttpResponseRedirect(reverse('cli-oauth-signin'))
+    if choice != 'continue':
+        return None
+    block = _cli_session_block(request, grant)
+    if block:
+        return _render_signin(request, grant, step_up=block == 'step_up')
+    request.session[CLI_CONTINUE_KEY] = str(grant.id)
+    return _redirect_device()
+
+
 @xframe_options_deny
 @csrf_protect
 @require_http_methods(['GET', 'POST'])
 def cli_device_signin(request: HttpRequest) -> HttpResponse:
+    from apps.authapi.identity_session import CLI_CONTINUE_KEY, confirmed
+
     grant = _grant_from_session(request)
     if grant is None or grant.status != CliDeviceAuthorization.STATUS_PENDING or grant.expires_at <= timezone.now():
         if grant is not None and grant.expires_at <= timezone.now():
             return _render_error(request, 'device_code_expired', 400)
         return _render_error(request, 'invalid_request', 400)
-    if request.user.is_authenticated:
-        blocked = _member_block(request, grant, request.user)
-        if blocked is not None:
-            return blocked
-        if not (is_staff_account(request.user) and request.session.get(CLI_DEVICE_AUTH_METHOD_SESSION_KEY) == AUTH_METHOD_MAGIC_LINK):
-            return HttpResponseRedirect(reverse('cli-oauth-device'))
+    chosen = _handle_cli_account_choice(request, grant)
+    if chosen is not None:
+        return chosen
+    block = _cli_session_block(request, grant)
+    if block == '' and confirmed(request, CLI_CONTINUE_KEY, str(grant.id)):
+        return _redirect_device()
+    if request.method == 'GET' and block == '':
+        return _render_cli_continue(request, grant)
     if request.method == 'POST':
         if 'password' in request.POST:
             return _post_password(request, grant)
         return _post_email(request, grant)
-    return _render_signin(request, grant)
+    return _render_signin(request, grant, step_up=block == 'step_up')
 
 
 @xframe_options_deny
@@ -753,13 +810,8 @@ def _post_user_code(request: HttpRequest) -> HttpResponse:
         return _redirect_device()
     if grant.status != CliDeviceAuthorization.STATUS_PENDING:
         return _render_error(request, 'device_code_invalid', 400)
-    user = request.user
-    if user.is_authenticated:
-        blocked = _member_block(request, grant, user)
-        if blocked is not None:
-            return blocked
     remember_cli_grant(request, str(grant.id), display)
-    if not user.is_authenticated:
+    if _cli_session_block(request, grant):
         return HttpResponseRedirect(reverse('cli-oauth-signin'))
     return _redirect_device()
 
@@ -842,6 +894,8 @@ def _post_decision(request: HttpRequest) -> HttpResponse:
     grant = _grant_from_session(request)
     if grant is None:
         return _render_error(request, 'invalid_request', 400, user=user)
+    if _cli_session_block(request, grant) == 'step_up':
+        return HttpResponseRedirect(reverse('cli-oauth-signin'))
     decision = str(request.POST.get('decision') or '').strip()
     if decision == 'deny':
         error = _deny_grant(request, grant, user)
@@ -875,11 +929,13 @@ def _render_grant_state(request: HttpRequest, grant: CliDeviceAuthorization) -> 
     if grant.status != CliDeviceAuthorization.STATUS_PENDING:
         clear_cli_grant(request)
         return _render_error(request, 'device_code_invalid', 400, user=user)
-    if not request.user.is_authenticated:
+    block = _cli_session_block(request, grant)
+    if block:
         return HttpResponseRedirect(reverse('cli-oauth-signin'))
-    blocked = _member_block(request, grant, request.user)
-    if blocked is not None:
-        return blocked
+    from apps.authapi.identity_session import CLI_CONTINUE_KEY, confirmed
+
+    if not confirmed(request, CLI_CONTINUE_KEY, str(grant.id)):
+        return _render_cli_continue(request, grant)
     method = str(request.session.get(CLI_DEVICE_AUTH_METHOD_SESSION_KEY) or '')
     if is_staff_account(request.user) and method == AUTH_METHOD_MAGIC_LINK:
         return _render_message(request, copy['staff_magic_refused'], 403, user=request.user)
@@ -891,6 +947,14 @@ def _render_grant_state(request: HttpRequest, grant: CliDeviceAuthorization) -> 
 @require_http_methods(['GET', 'POST'])
 def cli_device_verification(request: HttpRequest) -> HttpResponse:
     """Browser page at ``verification_uri``. Enter the user code, sign in, then approve or deny."""
+    if request.method == 'POST' and str(request.POST.get('account_choice') or '').strip():
+        grant = _grant_from_session(request)
+        if grant is None:
+            return _render_error(request, 'invalid_request', 400)
+        chosen = _handle_cli_account_choice(request, grant)
+        if chosen is not None:
+            return chosen
+        return _render_error(request, 'invalid_request', 400)
     if request.method == 'POST' and str(request.POST.get('decision') or '').strip():
         return _post_decision(request)
     if request.method == 'POST':

@@ -19,12 +19,13 @@ from apps.companies.models import Company
 from apps.federation.relying import _exchange, link_verified_user
 from apps.federation.signing import TokenError, verify_pinned
 from django.conf import settings
-from django.contrib.auth import login
+from apps.authapi.identity_session import establish_identity_session
+from apps.authapi.login_audit import LoginOutcome, record_login_event
 from django.core.cache import cache
 from django.http import HttpRequest, HttpResponse, HttpResponseRedirect
 from django.views.decorators.clickjacking import xframe_options_deny
 
-from apps.agents.mcp_signin import SESSION_BACKEND, is_company_member
+from apps.agents.mcp_signin import is_company_member
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +77,16 @@ def mcp_saas_return(request: HttpRequest) -> HttpResponse:
     if is_mcp_oauth_refused_user(user) or not is_company_member(company, user):
         copy = copy_for(page_language(request, user))
         return render_message(request, copy['not_member'].format(company=company.name), 403, user=user)
-    login(request, user, backend=SESSION_BACKEND)
+    if not establish_identity_session(request, user, company=company, method='upstream'):
+        copy = copy_for(page_language(request, user))
+        return render_message(request, copy['not_member'].format(company=company.name), 403, user=user)
+    record_login_event(
+        request=request,
+        outcome=LoginOutcome.SUCCESS,
+        provider='upstream',
+        user=user,
+        company=company,
+    )
     request.session[MCP_SAAS_GLOBAL_VERIFIED_KEY] = True
     if pending.get('device_grant_id'):
         from apps.agents.oauth_device import complete_pending_device_consent

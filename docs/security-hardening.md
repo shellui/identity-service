@@ -33,7 +33,7 @@ With `DEBUG=false`, these settings default to on. Each can be overridden with an
 | --- | --- |
 | `SECURE_SSL_REDIRECT` | `true`: redirects HTTP to HTTPS. Turn it off only behind a TLS proxy that already redirects |
 | `SECURE_HSTS_SECONDS` | `31536000` (one year), with `SECURE_HSTS_INCLUDE_SUBDOMAINS=true` |
-| `SESSION_COOKIE_SECURE`, `CSRF_COOKIE_SECURE` | `true`. Cookie names are then `__Host-sessionid` and `__Host-csrftoken`. `CSRF_COOKIE_HTTPONLY` is `true`. Neither cookie sets `Domain`. On local HTTP (`DEBUG=true`) the names stay `sessionid` and `csrftoken`, because browsers reject the `__Host-` prefix without `Secure` |
+| `SESSION_COOKIE_SECURE`, `CSRF_COOKIE_SECURE` | `true`. Cookie names are then `__Host-sessionid` and `__Host-csrftoken`. `CSRF_COOKIE_HTTPONLY` is `true`. Neither cookie sets `Domain`. On local HTTP the names follow `SHELLUI_INSTANCE_ROLE`: `shellui_region_sessionid` and `shellui_region_csrftoken`, or `shellui_global_sessionid` and `shellui_global_csrftoken`. Standalone HTTP keeps `sessionid` and `csrftoken`. Browsers reject the `__Host-` prefix without `Secure` |
 | `POSTGRES_SSL_REQUIRE` | `true` when `POSTGRES_DATABASE_URL` is set. Turn it off only for a local PostgreSQL without TLS |
 
 ## Trusted proxies and client IP

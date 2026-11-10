@@ -14,7 +14,6 @@ from dataclasses import dataclass
 from urllib.parse import parse_qs, urlencode, urlsplit
 
 from django.conf import settings
-from django.contrib.auth import login
 from django.db import transaction
 from django.http import HttpRequest, HttpResponse, HttpResponseRedirect
 from django.shortcuts import render
@@ -297,13 +296,13 @@ def _saved_authorize(request: HttpRequest) -> tuple[str | None, AuthorizeRequest
     return path, parsed
 
 
-def finish_mcp_signin(request: HttpRequest, *, user, company: Company) -> HttpResponse:
+def finish_mcp_signin(request: HttpRequest, *, user, company: Company, method: str = '') -> HttpResponse:
     """Called by the magic link and OAuth/SSO flows when ``redirect_to`` is the MCP landing."""
     path, parsed = _saved_authorize(request)
     if not path or parsed is None:
         from apps.agents.oauth_device import finish_device_signin
 
-        return finish_device_signin(request, user=user, company=company)
+        return finish_device_signin(request, user=user, company=company, method=method)
     copy = copy_for(page_language(request, user))
     if parsed.company is None or parsed.company.id != company.id:
         return render_message(request, copy['session_lost'], 400, user=user)
@@ -311,9 +310,13 @@ def finish_mcp_signin(request: HttpRequest, *, user, company: Company) -> HttpRe
         return render_message(request, copy['staff_refused'], 403, user=user)
     if not is_company_member(company, user):
         return render_message(request, copy['not_member'].format(company=company.name), 403, user=user)
-    login(request, user, backend=SESSION_BACKEND)
+    from apps.authapi.identity_session import MCP_AUTHORIZE_CONTINUE_KEY, establish_identity_session
+
+    if not establish_identity_session(request, user, company=company, method=method or 'sso'):
+        return render_message(request, copy['not_member'].format(company=company.name), 403, user=user)
     # login() rotates the session; store the path again on the new session.
     remember_authorize(request, path, company.id)
+    request.session[MCP_AUTHORIZE_CONTINUE_KEY] = f'{parsed.client.client_id}:{parsed.company_id}'
     return HttpResponseRedirect(path)
 
 
@@ -382,18 +385,55 @@ def mcp_signin(request: HttpRequest) -> HttpResponse:
         if device_error and not path:
             return render_error(request, device_error, 400)
         return render_error(request, 'invalid_request', 400)
-    if request.user.is_authenticated and not is_mcp_oauth_refused_user(request.user):
-        if path and parsed is not None:
-            return HttpResponseRedirect(path)
-        if device_grant is not None:
-            return HttpResponseRedirect(reverse('mcp-oauth-device'))
     # Nothing on this page depends on the company name. Device grants already bound a company
     # from the user code, and the email step uses that company's sign-in methods only.
     company = parsed.company if parsed is not None else device_grant.company
     lang = page_language(request)
     copy = copy_for(lang)
+    from apps.authapi.identity_session import (
+        MCP_AUTHORIZE_CONTINUE_KEY,
+        MCP_DEVICE_CONTINUE_KEY,
+        account_email,
+        end_identity_session,
+        posted_account_choice,
+        render_continue_as,
+        user_can_use_company_session,
+    )
+
+    if request.user.is_authenticated and is_mcp_oauth_refused_user(request.user):
+        if posted_account_choice(request) == 'switch':
+            end_identity_session(request, preserve_flow=True)
+        else:
+            return render_message(request, copy['staff_refused'], 403, user=request.user)
+    eligible = (
+        request.user.is_authenticated
+        and company is not None
+        and user_can_use_company_session(request.user, company)
+    )
+    choice = posted_account_choice(request)
+    if choice == 'switch':
+        end_identity_session(request, preserve_flow=True)
+        eligible = False
+    elif choice == 'continue' and eligible:
+        if parsed is not None and path:
+            request.session[MCP_AUTHORIZE_CONTINUE_KEY] = f'{parsed.client.client_id}:{parsed.company_id}'
+            return HttpResponseRedirect(path)
+        if device_grant is not None:
+            request.session[MCP_DEVICE_CONTINUE_KEY] = str(device_grant.id)
+            return HttpResponseRedirect(reverse('mcp-oauth-device'))
+        return render_error(request, 'invalid_request', 400)
+    elif request.method == 'GET' and eligible:
+        if parsed is not None:
+            client_name = parsed.client.client_name or parsed.client.client_id
+        else:
+            client_name = device_grant.client.client_name or device_grant.client.client_id
+        return render_continue_as(
+            request,
+            email=account_email(request.user),
+            lead=copy['why_signin'].format(client_name=client_name, company_name=copy['signin_company_name']),
+        )
     sent = False
-    if request.method == 'POST':
+    if request.method == 'POST' and choice != 'switch':
         email = str(request.POST.get('email') or '').strip().lower()
         if not email or '@' not in email or len(email) > 254:
             return render_error(request, 'invalid_request', 400)

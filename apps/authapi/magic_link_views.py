@@ -724,7 +724,7 @@ class ShellUIMagicLinkVerifyView(APIView):
 
             if is_mcp_signin_redirect(redirect_to):
                 # MCP connector sign-in: start the identity session, issue no app tokens.
-                response = finish_mcp_signin(request, user=user, company=company)
+                response = finish_mcp_signin(request, user=user, company=company, method=MAGIC_LINK_PROVIDER)
                 if response.status_code in (301, 302):
                     auth_metrics.record_successful_login(MAGIC_LINK_PROVIDER, company_id=company.id)
                     record_login_event(
@@ -737,7 +737,12 @@ class ShellUIMagicLinkVerifyView(APIView):
                         client_device_id=client_dev,
                     )
                 return response
-        _notify_user_logged_in_for_oauth(request, user)
+        from apps.authapi.identity_session import establish_identity_session
+
+        if not (browser_redirect and establish_identity_session(
+            request, user, company=company, method=MAGIC_LINK_PROVIDER
+        )):
+            _notify_user_logged_in_for_oauth(request, user)
         payload = _issue_shellui_tokens(user, company=company, oauth_provider=MAGIC_LINK_PROVIDER)
         auth_metrics.record_successful_login(MAGIC_LINK_PROVIDER, company_id=company.id)
         record_login_event(

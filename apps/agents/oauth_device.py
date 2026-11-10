@@ -12,7 +12,6 @@ from datetime import timedelta
 from urllib.parse import urlencode
 
 from django.conf import settings
-from django.contrib.auth import login
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.http import HttpRequest, HttpResponse, HttpResponseRedirect, JsonResponse
@@ -30,7 +29,6 @@ from apps.agents.mcp_copy import copy_for
 from apps.agents.mcp_resources import GATEWAY_SERVICE_ID, resolve_mcp_resource, resource_company_id
 from apps.agents.mcp_signin import (
     DEVICE_GRANT_SESSION_KEY,
-    SESSION_BACKEND,
     clear_device_grant,
     is_company_member,
     page_language,
@@ -403,7 +401,7 @@ def device_grant_for_signin(request: HttpRequest) -> tuple[McpDeviceAuthorizatio
     return None, _PENDING_ERRORS.get(grant.status, 'invalid_request')
 
 
-def finish_device_signin(request: HttpRequest, *, user, company: Company) -> HttpResponse:
+def finish_device_signin(request: HttpRequest, *, user, company: Company, method: str = '') -> HttpResponse:
     """Finish magic-link or SSO sign-in that started from the device verification page."""
     grant, error = device_grant_for_signin(request)
     copy = copy_for(page_language(request, user))
@@ -417,8 +415,12 @@ def finish_device_signin(request: HttpRequest, *, user, company: Company) -> Htt
         return render_message(request, copy['staff_refused'], 403, user=user)
     if not is_company_member(company, user):
         return render_message(request, copy['not_member'].format(company=company.name), 403, user=user)
-    login(request, user, backend=SESSION_BACKEND)
+    from apps.authapi.identity_session import MCP_DEVICE_CONTINUE_KEY, establish_identity_session
+
+    if not establish_identity_session(request, user, company=company, method=method or 'sso'):
+        return render_message(request, copy['not_member'].format(company=company.name), 403, user=user)
     remember_device_grant(request, str(grant.id))
+    request.session[MCP_DEVICE_CONTINUE_KEY] = str(grant.id)
     return HttpResponseRedirect(reverse('mcp-oauth-device'))
 
 
@@ -644,6 +646,50 @@ def _redirect_device() -> HttpResponseRedirect:
     return HttpResponseRedirect(reverse('mcp-oauth-device'))
 
 
+def _device_session_block(request: HttpRequest, grant: McpDeviceAuthorization) -> str:
+    """``staff``, ``signed_out``, or ``''`` when Continue as is allowed."""
+    from apps.authapi.identity_session import user_can_use_company_session
+
+    user = request.user
+    if not getattr(user, 'is_authenticated', False):
+        return 'signed_out'
+    if is_mcp_oauth_refused_user(user):
+        return 'staff'
+    if not user_can_use_company_session(user, grant.company):
+        return 'signed_out'
+    return ''
+
+
+def _render_device_continue(request: HttpRequest, grant: McpDeviceAuthorization) -> HttpResponse:
+    from apps.authapi.identity_session import account_email, render_continue_as
+
+    copy = copy_for(page_language(request, request.user))
+    client_name = grant.client.client_name or grant.client.client_id
+    return render_continue_as(
+        request,
+        email=account_email(request.user),
+        lead=copy['why_signin'].format(client_name=client_name, company_name=copy['signin_company_name']),
+    )
+
+
+def _handle_device_account_choice(request: HttpRequest, grant: McpDeviceAuthorization) -> HttpResponse | None:
+    from apps.authapi.identity_session import MCP_DEVICE_CONTINUE_KEY, end_identity_session, posted_account_choice
+
+    choice = posted_account_choice(request)
+    if not choice:
+        return None
+    if choice == 'switch' or _device_session_block(request, grant):
+        if choice == 'switch':
+            end_identity_session(request, preserve_flow=True)
+        if _device_session_block(request, grant) == 'staff':
+            refused = _member_block(request, grant, request.user)
+            if refused is not None:
+                return refused
+        return HttpResponseRedirect(reverse('mcp-oauth-signin'))
+    request.session[MCP_DEVICE_CONTINUE_KEY] = str(grant.id)
+    return _redirect_device()
+
+
 def _post_user_code(request: HttpRequest) -> HttpResponse:
     limited = plain_response(check_rate_limit(request, scope='mcp_device_verify'))
     if limited is not None:
@@ -668,13 +714,13 @@ def _post_user_code(request: HttpRequest) -> HttpResponse:
         return _redirect_device()
     if grant.status != McpDeviceAuthorization.STATUS_PENDING:
         return render_error(request, 'device_code_invalid', 400)
-    user = request.user
-    if user.is_authenticated:
-        blocked = _member_block(request, grant, user)
-        if blocked is not None:
-            return blocked
     remember_device_grant(request, str(grant.id))
-    if not user.is_authenticated:
+    block = _device_session_block(request, grant)
+    if block == 'staff':
+        refused = _member_block(request, grant, request.user)
+        if refused is not None:
+            return refused
+    if block:
         return HttpResponseRedirect(reverse('mcp-oauth-signin'))
     return _redirect_device()
 
@@ -797,11 +843,17 @@ def _render_grant_state(request: HttpRequest, grant: McpDeviceAuthorization) -> 
     if grant.status != McpDeviceAuthorization.STATUS_PENDING:
         clear_device_grant(request)
         return render_error(request, 'device_code_invalid', 400, user=user)
-    if not request.user.is_authenticated:
+    block = _device_session_block(request, grant)
+    if block == 'staff':
+        refused = _member_block(request, grant, request.user)
+        if refused is not None:
+            return refused
+    if block:
         return HttpResponseRedirect(reverse('mcp-oauth-signin'))
-    blocked = _member_block(request, grant, request.user)
-    if blocked is not None:
-        return blocked
+    from apps.authapi.identity_session import MCP_DEVICE_CONTINUE_KEY, confirmed
+
+    if not confirmed(request, MCP_DEVICE_CONTINUE_KEY, str(grant.id)):
+        return _render_device_continue(request, grant)
     return _render_consent(request, grant, request.user)
 
 
@@ -837,6 +889,14 @@ def complete_pending_device_consent(request: HttpRequest, *, user, company: Comp
 @require_http_methods(['GET', 'POST'])
 def mcp_device_verification(request: HttpRequest) -> HttpResponse:
     """Browser page at ``verification_uri``. Enter the user code, sign in, then approve or deny."""
+    if request.method == 'POST' and str(request.POST.get('account_choice') or '').strip():
+        grant = _grant_from_session(request)
+        if grant is None:
+            return render_error(request, 'invalid_request', 400)
+        chosen = _handle_device_account_choice(request, grant)
+        if chosen is not None:
+            return chosen
+        return render_error(request, 'invalid_request', 400)
     if request.method == 'POST' and str(request.POST.get('decision') or '').strip():
         return _post_decision(request)
     if request.method == 'POST':

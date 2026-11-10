@@ -35,6 +35,7 @@ SAAS_SETTINGS = {
 class McpSaasConsentUiTests(CompanySigninFlowTests):
     def test_saas_checkbox_only_when_offered(self):
         self.client.force_login(self.user)
+        self.client.post(self._query(), {'account_choice': 'continue'})
         without = self.client.get(self._query())
         self.assertNotContains(without, 'name="include_saas"')
         with_offer = self.client.get(self._query(saas_offered='1'))

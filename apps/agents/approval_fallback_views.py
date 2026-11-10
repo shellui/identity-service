@@ -119,8 +119,36 @@ def mcp_approval_fallback(request: HttpRequest, approval_id: str) -> HttpRespons
         login_url = reverse('root')
         return redirect(f'{login_url}?next={request.get_full_path()}')
 
-    if not user_may_manage_approval(request.user, row):
+    from apps.authapi.identity_session import (
+        MCP_APPROVAL_CONTINUE_KEY,
+        account_email,
+        confirmed,
+        end_identity_session,
+        posted_account_choice,
+        render_continue_as,
+        user_can_use_company_session,
+    )
+
+    if not user_can_use_company_session(request.user, row.company) or not user_may_manage_approval(request.user, row):
+        if posted_account_choice(request) == 'switch':
+            end_identity_session(request, preserve_flow=False)
+            login_url = reverse('root')
+            return redirect(f'{login_url}?next={request.get_full_path()}')
         return _render_state(request, row=row, state='wrong_account')
+
+    choice = posted_account_choice(request)
+    if choice == 'switch':
+        end_identity_session(request, preserve_flow=False)
+        login_url = reverse('root')
+        return redirect(f'{login_url}?next={request.get_full_path()}')
+    if choice == 'continue':
+        request.session[MCP_APPROVAL_CONTINUE_KEY] = str(row.id)
+    elif not confirmed(request, MCP_APPROVAL_CONTINUE_KEY, str(row.id)) and request.method == 'GET':
+        return render_continue_as(
+            request,
+            email=account_email(request.user),
+            lead=f'{row.agent.name} wants to run {row.action} on {row.company.name}.',
+        )
 
     if request.method == 'POST':
         decision = str(request.POST.get('decision') or '').strip().lower()

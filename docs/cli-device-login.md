@@ -43,6 +43,8 @@ A 200 response looks like this:
 
 Show `user_code` and open `verification_uri_complete` (or send the person to `verification_uri` and let them type the code). The page is for that company and offers only that company's sign-in methods: magic link when the company has it on, and the company's SSO home realm, plus a password form. Staff accounts (`is_staff` or `is_superuser`) can approve. They use a password or SSO. An email link is not sent to a staff account. MCP device login still refuses staff.
 
+If this browser already has an identity session for someone who can access that company, the page shows **Continue as** that email and **Use another account**. Continue as does not approve the CLI. The person still chooses Allow or Deny. Use another account clears the identity session and shows the sign-in form. A session that cannot access the company is treated as signed out for this flow. A staff session established with a magic link, or older than `CLI_STAFF_SESSION_MAX_AGE` (default 12 hours), must sign in again with a password or SSO before approval. The browser session stores the sign-in time and method. Non-staff browser sessions last `IDENTITY_SESSION_MAX_AGE` (the refresh-token lifetime unless set, default 7 days). Staff browser sessions are capped at 12 hours.
+
 The approval page is titled "Sign in the Shellui CLI on another device". It shows the company name, the request time, the IP and user agent captured when the CLI asked for the code, and the code to check. The person chooses Allow or Deny. Code entry and password attempts are limited to `AUTH_RATE_LIMIT_CLI_DEVICE_VERIFY` per 5 minutes per IP (default 8). Device code requests are limited to `AUTH_RATE_LIMIT_CLI_DEVICE_CODE` per 5 minutes per IP (default 30).
 
 Poll `POST /oauth/token` every `interval` seconds. Do not send an MCP `resource`.
@@ -104,7 +106,7 @@ The issued refresh token is an ordinary app session. `GET /api/v1/sessions` list
 }
 ```
 
-`kind` is `cli` for this grant and empty for other app sessions. `POST /api/v1/sessions/{id}/revoke` revokes that refresh session. A later refresh then fails. Personal access tokens and MCP agents are not in this list. MCP agents stay on `GET /api/v1/mcp/personal/agents`.
+`kind` is `cli` for this grant and empty for other app sessions. `POST /api/v1/sessions/{id}/revoke` revokes that refresh session. A later refresh then fails. Personal access tokens and MCP agents are not in this list. MCP agents stay on `GET /api/v1/mcp/personal/agents`. The identity browser session is a Django cookie, not a row in this list. Clear it with `GET` or `POST /oauth/logout`. See [OAuth login](oauth-login.md).
 
 ## OpenAPI
 

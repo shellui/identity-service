@@ -15,7 +15,9 @@ The shell (or `shellui login` in the CLI) only talks to identity-service. The sh
 3. identity-service redirects to the provider with `redirect_uri` set to its own `/api/v1/oauth/callback` and a signed `state`.
 4. The provider returns to `/api/v1/oauth/callback`. identity-service exchanges the code server-side.
 5. identity-service shows an account confirmation page. The user can continue, switch provider, or switch account. Some providers skip this step, see [Skip the confirmation page](#skip-the-confirmation-page).
-6. identity-service redirects to `redirect_to?shellui_auth_code=…`. The shell `/login/callback` route posts the code to `POST /api/v1/oauth/session` with the same `redirect_to` and the S256 `code_verifier`. An http(s) callback must send an `Origin` header that matches that redirect.
+6. identity-service redirects to `redirect_to?shellui_auth_code=…`. The shell `/login/callback` route posts the code to `POST /api/v1/oauth/session` with the same `redirect_to` and the S256 `code_verifier`. An http(s) callback must send an `Origin` header that matches that redirect. That redirect response also sets the identity browser session cookie when the user is active and has access to the company. The shell still exchanges the code with a Bearer call. CORS stays without credentials. The SPA does not read the cookie.
+
+`GET /api/v1/settings` includes `logout_url`, the identity origin plus `/oauth/logout`. To sign the browser out of identity, send it to `logout_url?company_id=<id>&return_to=<url>` with GET or POST. `return_to` uses the same allowlist as `redirect_to` on `/api/v1/authorize`. A missing or rejected `return_to` shows "You are signed out" and does not redirect. This route calls Django logout only. It does not revoke access or refresh tokens. That stays on `POST /api/v1/logout` with the Bearer token. `GET /api/v1/sessions` lists those refresh sessions, not the browser cookie.
 
 Company join rules (`public`, `domain`, `invite`) apply after the provider sign-in succeeds. See [Company access](company-access.md).
 

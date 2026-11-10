@@ -711,9 +711,27 @@ def secure_cookie_name(base_name: str, *, secure: bool) -> str:
     return base_name
 
 
+def browser_cookie_name(kind: str, *, secure: bool, role: str | None = None) -> str:
+    """Session and CSRF cookie names.
+
+    Secure cookies stay ``__Host-sessionid`` and ``__Host-csrftoken`` on every role,
+    because those hosts are different sites. On HTTP (local dev) a region and a
+    global instance can both be ``localhost``, so the names include the role:
+    ``shellui_region_sessionid`` and ``shellui_global_sessionid``.
+    """
+    if secure:
+        return f'__Host-{kind}'
+    selected = SHELLUI_INSTANCE_ROLE if role is None else role
+    if selected == 'region':
+        return f'shellui_region_{kind}'
+    if selected == 'global':
+        return f'shellui_global_{kind}'
+    return kind
+
+
 # Host-only cookies. Do not set SESSION_COOKIE_DOMAIN or CSRF_COOKIE_DOMAIN.
-SESSION_COOKIE_NAME = secure_cookie_name('sessionid', secure=SESSION_COOKIE_SECURE)
-CSRF_COOKIE_NAME = secure_cookie_name('csrftoken', secure=CSRF_COOKIE_SECURE)
+SESSION_COOKIE_NAME = browser_cookie_name('sessionid', secure=SESSION_COOKIE_SECURE)
+CSRF_COOKIE_NAME = browser_cookie_name('csrftoken', secure=CSRF_COOKIE_SECURE)
 SESSION_COOKIE_PATH = '/'
 CSRF_COOKIE_PATH = '/'
 SESSION_COOKIE_DOMAIN = None
@@ -747,8 +765,13 @@ AUTH_RATE_LIMITS = {
     'invitation': {'limit': _env_int('AUTH_RATE_LIMIT_INVITATION', 30), 'window': 300},
 }
 
-# Staff Shellui CLI sessions use this as the refresh-token cap. Non-staff CLI sessions
-# use JWT_REFRESH_TOKEN_LIFETIME. Access tokens stay on JWT_ACCESS_TOKEN_LIFETIME.
+# Identity browser session (the Django session cookie). Unset matches the refresh token.
+IDENTITY_SESSION_MAX_AGE = _env_duration('IDENTITY_SESSION_MAX_AGE', JWT_REFRESH_TOKEN_LIFETIME)
+SESSION_COOKIE_AGE = max(1, int(IDENTITY_SESSION_MAX_AGE.total_seconds()))
+
+# Staff Shellui CLI refresh tokens, and staff identity browser sessions, use this cap.
+# Non-staff CLI refresh tokens use JWT_REFRESH_TOKEN_LIFETIME.
+# Access tokens stay on JWT_ACCESS_TOKEN_LIFETIME.
 CLI_STAFF_SESSION_MAX_AGE = _env_duration('CLI_STAFF_SESSION_MAX_AGE', timedelta(hours=12))
 
 # Scheduled jobs (Celery worker + beat, started by the Docker entrypoint).

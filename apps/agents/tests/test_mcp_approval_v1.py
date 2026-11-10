@@ -427,7 +427,10 @@ class McpApprovalV1Tests(TestCase):
         client = Client()
         client.force_login(self.member)
         url = f'/oauth/mcp/approval/{row.id}?token={token}'
-        page = client.get(url)
+        continue_page = client.get(url)
+        self.assertContains(continue_page, 'Continue as member@acme.com')
+        self.assertContains(continue_page, 'Use another account')
+        page = client.post(url, {'account_choice': 'continue', 'token': token})
         self.assertContains(page, 'Approve this action?')
         self.assertContains(page, 'Writer wants to run write_file on Acme')
         approved = client.post(url, {'decision': 'approve', 'token': token})

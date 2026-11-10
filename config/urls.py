@@ -49,6 +49,7 @@ from . import views
 from apps.agents.approval_fallback_views import mcp_approval_fallback  # noqa: E402
 from apps.agents.mcp_saas_return import mcp_saas_return  # noqa: E402
 from apps.agents.mcp_signin import mcp_signin, mcp_signin_complete  # noqa: E402
+from apps.authapi.identity_session import identity_browser_logout  # noqa: E402
 
 urlpatterns = [
     path('health/live', views.health_live, name='health-live'),
@@ -72,6 +73,7 @@ urlpatterns = [
         name='federation-openid-configuration',
     ),
     path('oauth/token', oauth_token_dispatch, name='oauth-token-dispatch'),
+    path('oauth/logout', identity_browser_logout, name='identity-browser-logout'),
     path('oauth/', include(oauth_urlpatterns)),
     path('oauth/mcp/register', mcp_register, name='mcp-oauth-register'),
     path('oauth/mcp/device/code', DeviceAuthorizationView.as_view(), name='mcp-oauth-device-code'),

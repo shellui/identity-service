@@ -235,6 +235,11 @@ _LOGIN = (
     EventFieldDoc('client_country', 'GeoIP country when configured', 'FR'),
     EventFieldDoc('client_city', 'GeoIP city when configured', 'Paris'),
     EventFieldDoc('device_kind', 'Client kind when the sign-in is a device approval (cli)', 'cli'),
+    EventFieldDoc(
+        'identity_session',
+        'started when this sign-in also opened the identity browser session; ended when that session was cleared',
+        'started',
+    ),
 )
 
 register_event(
