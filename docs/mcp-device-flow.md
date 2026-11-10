@@ -68,7 +68,7 @@ A 200 response looks like this:
 
 Show `user_code` to the person and open `verification_uri_complete` (or send them to `verification_uri` and let them type the code). `user_code` is eight characters, `XXXX-XXXX`, from an alphabet without `0`, `O`, `1`, or `I`.
 
-They sign in with that company's methods, see the client name, the company, and the access being requested, then choose **Allow** or **Deny**. Staff accounts are refused.
+They sign in with that company's methods, see the client name, the company, and the access being requested, then choose **Allow** or **Deny**. If the browser already has an identity session for a member of that company, the page shows **Continue as** that email first. Continue as does not approve the agent. **Use another account** clears the identity session and shows the sign-in form. A session for someone who cannot access the company is treated as signed out. Staff accounts are refused, including when the staff user already has a session.
 
 Poll the token endpoint every `interval` seconds. Send the same `resource`.
 

@@ -27,6 +27,7 @@ Behind TLS, also set `CSRF_TRUSTED_ORIGINS` to the full HTTPS URL (for example `
 | --- | --- | --- |
 | `JWT_ACCESS_TOKEN_LIFETIME` | `5m` | Access token lifetime |
 | `JWT_REFRESH_TOKEN_LIFETIME` | `7d` | Refresh token lifetime |
+| `IDENTITY_SESSION_MAX_AGE` | `7d` | Identity browser session max-age. Unset uses `JWT_REFRESH_TOKEN_LIFETIME`. Staff sessions are capped by `CLI_STAFF_SESSION_MAX_AGE` |
 | `PERSONAL_ACCESS_TOKEN_LIFETIME` | `30d` | Lifetime of new personal access tokens |
 | `JWT_PUBLIC_KEY`, `JWT_KEY_ID` | derived | Derived from the private key when unset |
 | `JWT_PREVIOUS_PUBLIC_KEY`, `JWT_PREVIOUS_KEY_ID` | empty | Previous key during a rotation, still published in JWKS |
@@ -177,7 +178,7 @@ The entrypoint sets `--worker-tmp-dir /dev/shm` (the heartbeat file lives in mem
 | `AUTH_RATE_LIMIT_MCP_DEVICE_VERIFY` | `8` | Device user-code attempts per 5 minutes, per client IP |
 | `AUTH_RATE_LIMIT_CLI_DEVICE_CODE` | `30` | CLI device authorization requests per 5 minutes, per client IP |
 | `AUTH_RATE_LIMIT_CLI_DEVICE_VERIFY` | `8` | CLI device user-code and password attempts per 5 minutes, per client IP |
-| `CLI_STAFF_SESSION_MAX_AGE` | `12h` | Refresh lifetime cap for a staff Shellui CLI session. Non-staff CLI sessions use `JWT_REFRESH_TOKEN_LIFETIME` |
+| `CLI_STAFF_SESSION_MAX_AGE` | `12h` | Cap for a staff Shellui CLI refresh token and for a staff identity browser session. Non-staff CLI refresh tokens use `JWT_REFRESH_TOKEN_LIFETIME` |
 | `MCP_DYNAMIC_CLIENT_REGISTRATION` | `true` | MCP OAuth dynamic client registration |
 | `MCP_ACCESS_TOKEN_LIFETIME` | `15m` | MCP agent access JWT lifetime |
 | `MCP_REFRESH_TOKEN_LIFETIME` | `30d` | MCP agent refresh token lifetime |
@@ -190,7 +191,7 @@ The entrypoint sets `--worker-tmp-dir /dev/shm` (the heartbeat file lives in mem
 | `MCP_APPROVAL_SETUP_SESSION_TTL_MIN_SECONDS` | `600` | Lower bound for `mcp_session_ttl_seconds` on ai-service assertions with `setup_flow` when extending session Allow |
 | `MCP_APPROVAL_SETUP_SESSION_TTL_MAX_SECONDS` | `900` | Upper bound for the same |
 | `MCP_RATE_LIMIT_AGENT` | `120` | MCP tool calls per minute per agent |
-| `SECURE_SSL_REDIRECT`, `SESSION_COOKIE_SECURE`, `CSRF_COOKIE_SECURE` | `true` with `DEBUG=false`, `false` with `DEBUG=true` | HTTPS defaults. Secure cookies are named `__Host-sessionid` and `__Host-csrftoken`, with no `Domain`. `CSRF_COOKIE_HTTPONLY` is always on |
+| `SECURE_SSL_REDIRECT`, `SESSION_COOKIE_SECURE`, `CSRF_COOKIE_SECURE` | `true` with `DEBUG=false`, `false` with `DEBUG=true` | HTTPS defaults. Secure cookies are named `__Host-sessionid` and `__Host-csrftoken`, with no `Domain`. On HTTP, a region uses `shellui_region_sessionid` / `shellui_region_csrftoken` and a global instance uses `shellui_global_sessionid` / `shellui_global_csrftoken`. Standalone HTTP keeps `sessionid` and `csrftoken`. `CSRF_COOKIE_HTTPONLY` is always on |
 | `SECURE_HSTS_SECONDS` | `31536000` with `DEBUG=false`, `0` with `DEBUG=true` | HSTS max-age |
 | `SECURE_HSTS_INCLUDE_SUBDOMAINS` | `true` with `DEBUG=false` | Add `includeSubDomains` to HSTS |
 | `SECURE_HSTS_PRELOAD` | `false` | Add `preload` to HSTS |

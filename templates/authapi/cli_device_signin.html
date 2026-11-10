@@ -3,6 +3,7 @@
 {% block content %}
     <h1>{{ copy.title }}</h1>
     <p class="why">{{ lead }}</p>
+    {% if step_up_message %}<p class="note">{{ step_up_message }}</p>{% endif %}
     <p class="note">{{ copy.staff_note }}</p>
     {% if sent %}<p class="subtitle" role="status">{{ email_sent }}</p>{% endif %}
     {% if email_unavailable %}<p class="note">{{ copy.email_unavailable }}</p>{% endif %}

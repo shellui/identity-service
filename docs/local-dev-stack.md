@@ -67,6 +67,8 @@ Optional service URLs for MCP and company deletion follow the public/internal sp
 
 With `DEBUG=true`, `REDIS_URL` is recommended (rate limits and OAuth state) but not required; the dev entrypoint does not start Gunicorn or the Celery scheduler. For scheduled jobs locally, set `REDIS_URL` and run the production image in `web` mode, or use the repo's `docker-compose.yml`.
 
+Regional identity (`localhost:8001`) and identity-global (`localhost:8007`) share the host `localhost` when TLS is off, so a shared cookie name would collide. HTTP dev names the cookies from `SHELLUI_INSTANCE_ROLE`: `shellui_region_sessionid` on the region and `shellui_global_sessionid` on the global instance (and the same prefix on the CSRF cookie). Production keeps `__Host-sessionid` because those hosts are different sites. The dev compose file does not set the cookie name itself. Set `SHELLUI_INSTANCE_ROLE` on each process and the app picks the name.
+
 ## Standalone compose in this repo
 
 `docker-compose.yml` at the repo root builds the **production** image and is aimed at a single-service try-out. Prefer the shellui dev stack when working across services. See [Configuration](configuration.md) for every variable.

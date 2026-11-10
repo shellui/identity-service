@@ -13,7 +13,7 @@ identity-service records every catalog event and every sign-in in one table, `Ev
 
 | Event type | When |
 | ---------- | ---- |
-| `identity.auth.login.succeeded` | A user signed in with OAuth, SAML, magic link, the Django admin login form, or a Shellui CLI device approval |
+| `identity.auth.login.succeeded` | A user signed in with OAuth, SAML, magic link, the Django admin login form, or a Shellui CLI device approval. `identity_session` is `started` when that sign-in also opened the identity browser session, and `ended` when `/oauth/logout` or "Use another account" cleared it. `provider` is the method |
 | `identity.auth.login.failed` | A sign-in was refused. The user is linked when it could be resolved |
 
 Sign-in events cannot trigger webhook rules: anonymous traffic can produce failed sign-ins, and forwarding them would let anyone flood your endpoints.

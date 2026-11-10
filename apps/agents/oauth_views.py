@@ -8,7 +8,6 @@ from datetime import timedelta
 from urllib.parse import urlencode
 
 from django.conf import settings
-from django.contrib.auth import login
 from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
 from django.shortcuts import render
 from django.urls import reverse
@@ -32,7 +31,6 @@ from apps.agents.mcp_copy import copy_for
 from apps.agents.mcp_signin import (
     AuthorizeError,
     approval_redirect,
-    is_company_member,
     page_language,
     parse_authorize_request,
     plain_response,
@@ -160,7 +158,12 @@ def mcp_authorize(request):
     limited = plain_response(check_rate_limit(request, scope='oauth'))
     if limited:
         return limited
-    params = request.GET if request.method == 'GET' else request.POST
+    # Continue as posts back to this URL. The authorize query stays on the URL.
+    # The consent form sends those fields in the body.
+    if request.method == 'GET' or request.POST.get('account_choice'):
+        params = request.GET
+    else:
+        params = request.POST
     try:
         parsed = parse_authorize_request(params)
     except AuthorizeError as exc:
@@ -184,10 +187,40 @@ def mcp_authorize(request):
         return render_error(request, 'unknown_company', 404, user=user)
     if not _mcp_company_registration_allowed(parsed.company):
         return render_error(request, 'registration_disabled', 403, user=user)
-    if not is_company_member(parsed.company, user):
-        return render_message(request, copy['not_member'].format(company=parsed.company.name), 403, user=user)
+    from apps.authapi.identity_session import (
+        MCP_AUTHORIZE_CONTINUE_KEY,
+        account_email,
+        confirmed,
+        end_identity_session,
+        posted_account_choice,
+        render_continue_as,
+        user_can_use_company_session,
+    )
+
+    path = safe_authorize_path(request.get_full_path())
+    if not user_can_use_company_session(user, parsed.company):
+        if request.method != 'GET' or not path:
+            return render_error(request, 'invalid_request', 400, user=user)
+        return signin_redirect(request, path, parsed.company_id)
+    marker = f'{parsed.client.client_id}:{parsed.company_id}'
+    choice = posted_account_choice(request)
+    if choice == 'switch':
+        end_identity_session(request, preserve_flow=True)
+        if not path:
+            return render_error(request, 'invalid_request', 400)
+        return signin_redirect(request, path, parsed.company_id)
+    if choice == 'continue':
+        request.session[MCP_AUTHORIZE_CONTINUE_KEY] = marker
+        return HttpResponseRedirect(path or request.get_full_path())
     if request.method == 'POST':
         return _complete_authorize(request, user=user, parsed=parsed)
+    if not confirmed(request, MCP_AUTHORIZE_CONTINUE_KEY, marker):
+        client_name = parsed.client.client_name or parsed.client.client_id
+        return render_continue_as(
+            request,
+            email=account_email(user),
+            lead=copy['why_signin'].format(client_name=client_name, company_name=copy['signin_company_name']),
+        )
     client_name = parsed.client.client_name or parsed.client.client_id
     services = [
         (sid, label)

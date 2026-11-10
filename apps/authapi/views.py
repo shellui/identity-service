@@ -1151,7 +1151,7 @@ def _finalize_shellui_oauth_login(
 
     if is_mcp_signin_redirect(redirect_to):
         # MCP connector sign-in: start the identity session, issue no app tokens.
-        response = finish_mcp_signin(request, user=user, company=company)
+        response = finish_mcp_signin(request, user=user, company=company, method=provider)
         if response.status_code in (301, 302):
             auth_metrics.record_successful_login(provider, company_id=company.id)
             record_login_event(
@@ -1164,7 +1164,10 @@ def _finalize_shellui_oauth_login(
                 client_device_id=client_dev,
             )
         return response
-    _notify_user_logged_in_for_oauth(request, user)
+    from apps.authapi.identity_session import establish_identity_session
+
+    if not establish_identity_session(request, user, company=company, method=provider):
+        _notify_user_logged_in_for_oauth(request, user)
     payload = _issue_shellui_tokens(user, company=company, avatar_url=avatar_url, oauth_provider=provider)
     auth_metrics.record_successful_login(provider, company_id=company.id)
     record_login_event(
@@ -1931,7 +1934,7 @@ class SocialLoginView(APIView):
         summary='Get Shellui auth capabilities',
         description=(
             'Return authentication capabilities for the Shellui client, including enabled OAuth '
-            'providers and feature flags used by the login UI.'
+            'providers, feature flags used by the login UI, and logout_url for the identity browser session.'
         ),
         auth=[],
         parameters=[
@@ -1958,6 +1961,7 @@ class ShellUIAuthSettingsView(APIView):
         company, company_err = _required_company_from_request(request)
         if company_err:
             return company_err
+        from apps.authapi.identity_session import identity_logout_url
         from apps.authapi.magic_link import magic_link_enabled_for_company
 
         clients = _company_oauth_clients(company)
@@ -1973,6 +1977,7 @@ class ShellUIAuthSettingsView(APIView):
             'oauthProviders': providers,
             'enable_oauth': bool(providers),
             'enable_magic_link': magic_on,
+            'logout_url': identity_logout_url(request),
         }
         actor = _authenticate_bearer_user(request)
         if actor is not None and company.members.filter(pk=actor.pk).exists():

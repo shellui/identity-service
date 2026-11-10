@@ -420,7 +420,12 @@ class CompanySigninFlowTests(TestCase):
     def test_non_member_and_staff_refused(self):
         outsider = User.objects.create_user(username='out', email='out@x.com', password='unused')
         self.client.force_login(outsider)
-        self.assertEqual(self.client.get(self._query()).status_code, 403)
+        outsider_page = self.client.get(self._query())
+        self.assertEqual(outsider_page.status_code, 302)
+        self.assertEqual(outsider_page['Location'], '/oauth/mcp/signin')
+        form = self.client.get('/oauth/mcp/signin')
+        self.assertContains(form, 'name="email"')
+        self.assertNotContains(form, 'Continue as')
         staff = User.objects.create_user(username='st', email='st@acme.com', password='unused', is_staff=True)
         set_company_access(self.company, staff, enabled=True)
         self.client.force_login(staff)

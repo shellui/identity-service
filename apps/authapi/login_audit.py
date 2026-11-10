@@ -266,8 +266,14 @@ def record_login_event(
     device_kind: str = '',
     audit_ip: str | None = None,
     audit_user_agent: str | None = None,
+    identity_session: str | None = None,
 ) -> EventLog:
-    """Record a sign-in attempt (``outcome`` is ``LoginOutcome.SUCCESS`` or ``FAILURE``) in the event log."""
+    """Record a sign-in attempt (``outcome`` is ``LoginOutcome.SUCCESS`` or ``FAILURE``) in the event log.
+
+    ``identity_session`` is ``started`` when this request also opened the identity
+    browser session, or ``ended`` when that cookie was cleared. The provider is the
+    sign-in method.
+    """
     ip = audit_ip if audit_ip is not None else get_client_ip(request)
     if audit_user_agent is not None:
         ua = truncate_user_agent(audit_user_agent)
@@ -300,6 +306,15 @@ def record_login_event(
     kind = str(device_kind or '').strip().lower()[:32]
     if kind:
         payload['device_kind'] = kind
+    session_mark = str(identity_session or '').strip().lower()[:16]
+    if not session_mark:
+        django_request = getattr(request, '_request', request)
+        if getattr(request, '_identity_session_started', False) or getattr(
+            django_request, '_identity_session_started', False
+        ):
+            session_mark = 'started'
+    if session_mark in {'started', 'ended'}:
+        payload['identity_session'] = session_mark
     return record_event(
         get_event_type(LOGIN_EVENT_TYPES[outcome]),
         company,
