@@ -204,8 +204,8 @@ MCP_SPECS: dict[str, _McpSpec] = {
         sensitive=True,
     ),
     'api_v1_scim_tokens_create': _McpSpec(
-        'Create SCIM bearer token',
-        'Mints a new SCIM token and returns the secret once.',
+        'Create a SCIM bearer token. The secret is shown once in admin, not to the agent.',
+        'Mints a SCIM token. The plaintext is shown once on the admin HTTP response and is masked in the MCP result.',
         'Inserts SCIM token row.',
         sensitive=True, read_only=False,
     ),
@@ -222,8 +222,8 @@ MCP_SPECS: dict[str, _McpSpec] = {
         sensitive=True,
     ),
     'api_v1_personal_access_tokens_create': _McpSpec(
-        'Create personal access token',
-        'Mints a PAT and returns the JWT once in the response.',
+        'Create a personal access token. The JWT is shown once in admin, not to the agent.',
+        'Mints a PAT. The JWT is shown once on the admin HTTP response and is masked in the MCP result.',
         'Inserts PAT row.',
         sensitive=True, read_only=False,
     ),
@@ -312,8 +312,8 @@ MCP_SPECS: dict[str, _McpSpec] = {
         'Read-only.',
     ),
     'api_v1_actions_rules_create': _McpSpec(
-        'Create Actions webhook rule',
-        'Creates a webhook rule and returns signing secret once.',
+        'Create an Actions webhook rule. The signing secret is shown once in admin, not to the agent.',
+        'Creates a webhook rule. The signing secret is shown once on the admin HTTP response and is masked in the MCP result.',
         'Inserts rule with encrypted secret.',
         sensitive=True, read_only=False,
     ),
@@ -335,8 +335,8 @@ MCP_SPECS: dict[str, _McpSpec] = {
         destructive=True, read_only=False,
     ),
     'api_v1_actions_rules_rotate_secret': _McpSpec(
-        'Rotate webhook signing secret',
-        'Issues a new HMAC secret returned once.',
+        'Rotate a webhook signing secret. The new secret is shown once in admin, not to the agent.',
+        'Issues a new HMAC secret. It is shown once on the admin HTTP response and is masked in the MCP result.',
         'Updates encrypted secret.',
         sensitive=True, read_only=False,
     ),

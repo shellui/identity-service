@@ -3795,6 +3795,7 @@ class ShellUIAdminGroupListView(APIView):
 class ShellUIAdminGroupDetailView(APIView):
     permission_classes = [ShellUIPermission]
     serializer_class = ShellUIOpenAPISerializer
+    schema_patch_keeps_required = True
 
     def get(self, request, pk):
         _actor, company, err = _require_staff_or_company_owner(request)
@@ -4769,6 +4770,7 @@ class ShellUIAdminScimTokenRevokeView(APIView):
 class ShellUIAdminAuthMethodsView(APIView):
     permission_classes = [ShellUIPermission]
     serializer_class = ShellUIOpenAPISerializer
+    schema_patch_keeps_required = True
 
     def get(self, request):
         _actor, company, err = _require_staff_or_company_owner(request)
