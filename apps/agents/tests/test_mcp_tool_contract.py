@@ -143,8 +143,8 @@ class McpToolContractTests(TestCase):
             self.assertGreaterEqual(description.count('.'), 1, name)
             self.assertNotIn('—', description, name)
             self.assertNotIn('–', description, name)
-            self.assertNotIn('ShellUI', description, name)
-            self.assertNotIn('ShellUi', description, name)
+            for bad_name in ('Shell' + 'UI', 'Shell' + 'Ui', 'shell' + 'UI'):
+                self.assertNotIn(bad_name, description, name)
             self.assertIsNone(_BANNED_DESCRIPTION.search(description), name)
             annotations = tool['annotations']
             self.assertEqual(annotations['readOnlyHint'], spec.read_only, name)
