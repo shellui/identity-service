@@ -40,13 +40,12 @@ _mcp_result_redaction: contextvars.ContextVar[bool] = contextvars.ContextVar(
     default=False,
 )
 
-# One-time disclosures and non-secret metadata the name heuristic would hide.
-# Schema ``x-mcp-secret`` markers still win. User-supplied blobs are not restored.
+# Non-secret fields the name heuristic would hide. One-time secrets (``secret``,
+# ``access_token``, ``token``) stay masked in MCP results; plaintext is only on the
+# admin HTTP response. Schema ``x-mcp-secret`` markers still win. User-supplied
+# blobs are not restored.
 _DISCLOSED_RESULT_KEYS = frozenset(
     {
-        'secret',
-        'access_token',
-        'token',
         'token_prefix',
         'has_secret',
         'authorization_header_set',

@@ -440,8 +440,9 @@ def _scim_tokens_list(self):
 
 def _scim_tokens_create(self):
     body = self.call('api_v1_scim_tokens_create', body={'name': 'minted'})
-    self.assertTrue(body.get('token'))
-    self.assertNotEqual(body['token'], '[redacted]')
+    self.assertEqual(body.get('token'), '[redacted]')
+    self.assertEqual(body.get('name'), 'minted')
+    self.assertTrue(CompanyScimToken.objects.filter(company=self.company, name='minted', revoked_at__isnull=True).exists())
 
 
 def _scim_tokens_revoke(self):
@@ -457,9 +458,12 @@ def _pat_list(self):
 
 def _pat_create(self):
     body = self.call('api_v1_personal_access_tokens_create', body={'name': 'minted', 'read_only': True})
-    self.assertTrue(body.get('access_token'))
-    self.assertNotEqual(body['access_token'], '[redacted]')
+    self.assertEqual(body.get('access_token'), '[redacted]')
     self.assertTrue(body['read_only'])
+    self.assertEqual(body['name'], 'minted')
+    self.assertTrue(
+        PersonalAccessToken.objects.filter(company=self.company, user=self.owner, name='minted').exists()
+    )
 
 
 def _pat_revoke(self):
@@ -560,9 +564,11 @@ def _actions_rules_create(self):
             'url': 'https://hooks.example.com/created',
         },
     )
-    self.assertTrue(body.get('secret'))
-    self.assertNotEqual(body['secret'], '[redacted]')
+    self.assertEqual(body.get('secret'), '[redacted]')
     self.assertIs(body['config']['has_secret'], True)
+    stored = ActionRule.objects.get(company=self.company, name='Created').config['secret']
+    self.assertTrue(stored)
+    self.assertNotIn(stored, json.dumps(body))
 
 
 def _actions_rules_retrieve(self):
@@ -588,9 +594,11 @@ def _actions_rules_destroy(self):
 
 def _actions_rules_rotate_secret(self):
     body = self.call('api_v1_actions_rules_rotate_secret', path_params={'id': self.rule.pk})
-    self.assertTrue(body.get('secret'))
-    self.assertNotEqual(body['secret'], '[redacted]')
-    self.assertNotEqual(body['secret'], self.rule_secret)
+    self.assertEqual(body.get('secret'), '[redacted]')
+    self.rule.refresh_from_db()
+    stored = self.rule.config['secret']
+    self.assertNotEqual(stored, self.rule_secret)
+    self.assertNotIn(stored, json.dumps(body))
 
 
 def _actions_rules_send_test(self):

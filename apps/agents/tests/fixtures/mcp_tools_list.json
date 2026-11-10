@@ -219,7 +219,7 @@
   },
   {
     "name": "api_v1_actions_rules_create",
-    "description": "Create Actions webhook rule",
+    "description": "Create an Actions webhook rule. The signing secret is shown once in admin, not to the agent.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -526,7 +526,7 @@
   },
   {
     "name": "api_v1_actions_rules_rotate_secret",
-    "description": "Rotate webhook signing secret",
+    "description": "Rotate a webhook signing secret. The new secret is shown once in admin, not to the agent.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -2772,7 +2772,7 @@
   },
   {
     "name": "api_v1_personal_access_tokens_create",
-    "description": "Create personal access token",
+    "description": "Create a personal access token. The JWT is shown once in admin, not to the agent.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -2963,7 +2963,7 @@
   },
   {
     "name": "api_v1_scim_tokens_create",
-    "description": "Create SCIM bearer token",
+    "description": "Create a SCIM bearer token. The secret is shown once in admin, not to the agent.",
     "inputSchema": {
       "type": "object",
       "properties": {
