@@ -1,31 +1,59 @@
 {% extends "agents/_mcp_base.html" %}
 
-{% block title %}{{ title|default:copy.title_pending }}{% endblock %}
+{% block title %}{{ title }}{% endblock %}
 
 {% block content %}
-  <h1>{{ title|default:copy.title_pending }}</h1>
+  <h1>{{ title }}</h1>
 
   {% if state == "pending" %}
     <p class="why">{{ lead }}</p>
-    {% if detail %}
-      <p class="subtitle">{{ detail }}</p>
-    {% endif %}
-    {% if is_destructive %}
-      <p class="warning">{{ destructive_banner }}</p>
-    {% endif %}
-    <p class="note">{{ safety_line }}</p>
-    <p class="note">This link expires in {{ expires_in_minutes }} minutes.</p>
-    <form method="post" class="actions stack">
-      {% csrf_token %}
-      <input type="hidden" name="token" value="{{ page_token }}">
-      <button type="submit" name="decision" value="approve" class="button">{{ copy.primary_approve }}</button>
-      <button type="submit" name="decision" value="deny" class="button button-secondary">{{ copy.secondary_deny }}</button>
-    </form>
-  {% elif state == "wrong_account" %}
-    <p class="subtitle">{{ body }}</p>
-  {% else %}
+  {% elif body %}
     <p class="subtitle">{{ body }}</p>
   {% endif %}
 
-  <p class="note" style="margin-top: 1.25rem;">{{ copy.footer }}</p>
+  {% if show_recap %}
+    <dl class="meta">
+      <dt>{{ copy.approval_company }}</dt>
+      <dd>{{ company_name }}</dd>
+      <dt>{{ copy.approval_agent }}</dt>
+      <dd>{{ agent_name }}</dd>
+      {% if client_name %}
+        <dt>{{ copy.approval_client }}</dt>
+        <dd>{{ client_name }}</dd>
+      {% endif %}
+      <dt>{{ copy.approval_service }}</dt>
+      <dd>{{ service_name }}</dd>
+      <dt>{{ copy.approval_tool }}</dt>
+      <dd>{{ tool_name }}</dd>
+      <dt>{{ copy.approval_arguments }}</dt>
+      <dd>{{ arguments_summary }}</dd>
+      <dt>{{ copy.approval_expires }}</dt>
+      <dd>{{ expires_at_display }}</dd>
+    </dl>
+    {% if is_destructive %}
+      <p class="warning">{{ destructive_banner }}</p>
+    {% else %}
+      <p class="note">{{ not_destructive }}</p>
+    {% endif %}
+    {% if state == "pending" %}
+      <p class="note">{{ safety_line }}</p>
+    {% endif %}
+  {% endif %}
+
+  {% if show_actions %}
+    <form method="post" class="actions stack">
+      {% csrf_token %}
+      <input type="hidden" name="token" value="{{ page_token }}">
+      <button type="submit" name="decision" value="approve" class="button">{{ copy.approval_approve }}</button>
+      <button type="submit" name="decision" value="deny" class="button button-secondary">{{ copy.approval_deny }}</button>
+    </form>
+  {% elif show_switch %}
+    <form method="post" class="actions">
+      {% csrf_token %}
+      <input type="hidden" name="token" value="{{ page_token }}">
+      <button type="submit" name="account_choice" value="switch" class="button button-secondary">{{ switch_label }}</button>
+    </form>
+  {% endif %}
+
+  <p class="note" style="margin-top: 1.25rem;">{{ copy.approval_footer }}</p>
 {% endblock %}

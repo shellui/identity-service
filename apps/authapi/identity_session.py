@@ -42,6 +42,7 @@ _PRESERVE_SESSION_KEYS = (
     'mcp_oauth_authorize_path',
     'mcp_oauth_company_id',
     'mcp_device_grant_id',
+    'mcp_approval_return_path',
 )
 
 CONTINUE_COPY = {
@@ -204,7 +205,13 @@ def end_identity_session(request, *, preserve_flow: bool = False) -> None:
             django_request.session[key] = value
 
 
-def render_continue_as(request, *, email: str, lead: str = '') -> HttpResponse:
+def render_continue_as(
+    request,
+    *,
+    email: str,
+    lead: str = '',
+    hidden_fields: dict[str, str] | None = None,
+) -> HttpResponse:
     from apps.agents.mcp_signin import page_language, protect_page
 
     lang = page_language(request, getattr(request, 'user', None))
@@ -217,6 +224,7 @@ def render_continue_as(request, *, email: str, lead: str = '') -> HttpResponse:
             'lead': lead,
             'continue_label': copy['continue_as'].format(email=email),
             'switch_label': copy['use_another'],
+            'hidden_fields': hidden_fields or {},
         },
     )
     return protect_page(response)

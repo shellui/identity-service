@@ -188,11 +188,11 @@ Optional: `agent_name` for the regional agent display name.
 
 When a write needs human confirmation, the service creates an approval through Identity:
 
-- `POST /api/v1/mcp/internal/mcp-approval-requests` with a short-lived assertion (audience `shellui-mcp-approval`, scope `mcp.approval.create`), same pattern as [company deletion](company-deletion.md). The JSON body is optional for `is_destructive` only. Identity rejects **any** `arguments` key (including `{}`) and rejects `arguments_redacted`, `target`, and `short_action_summary`: `target` is set to `{service}:{action}` and `arguments_redacted` stays `{}`.
+- `POST /api/v1/mcp/internal/mcp-approval-requests` with a short-lived assertion (audience `shellui-mcp-approval`, scope `mcp.approval.create`), same pattern as [company deletion](company-deletion.md). The JSON body may include `is_destructive` (JSON boolean; omitted means false) and `arguments_summary` (optional string, at most 500 characters). `arguments_summary` is a redacted plain-text summary of the arguments. Identity stores it on `short_action_summary` and shows it on the approval page. Send it only when the text is safe to show to the person who decides. Identity rejects **any** `arguments` key (including `{}`) and rejects `arguments_redacted`, `target`, and `short_action_summary`: `target` is set to `{service}:{action}` and `arguments_redacted` stays `{}`. A still-pending row keeps the first summary. A summary sent later fills an empty one. Renewing an expired pending row replaces the summary.
   - **Regional row** (normal MCP agent): `company_id` is a JSON **positive** integer (regional tenant). `agent_id` is the regional `Agent` uuid string. Live authority: `grant_version` (JSON integer). If that agent is company-bound (`global_company_id` on the row), the assertion must also carry `global_company_id` (uuid string) and `company_binding_version` (JSON integer, `0` valid) and they must match the live `Agent`. If the agent is not company-bound, omit both binding claims.
   - **Global account row** (SaaS dashboard before a regional `Agent` exists): only **dashboard** (`PROVISIONING_ISSUER` / `PROVISIONING_PUBLIC_KEY`) may create. Use `company_id` **`0`** (JSON integer) and `agent_id` set to the **same** uuid string as `global_agent_id` (the assertion `sub` may be `agent:<global_agent_id>`). Required claims: `global_agent_id` (uuid string), `global_company_id` (uuid string), `global_user_sub` (non-empty string, global IdP `sub` for the acting user), `company_binding_version` (JSON integer), `grant_version` (JSON integer). Identity does **not** trust a forwarded owner flag; it checks ownership by resolving `UpstreamAccount` for `(issuer=GLOBAL_ISSUER_URL, sub=global_user_sub)` and requiring that user in `Company.owners` for the region `ProvisionedCompany` with that `global_company_id`. **Grant authority:** `grant_version` and `company_binding_version` must both equal the region **`ProvisionedCompany.limits_version`** for that `global_company_id`. `GlobalAgentRevocation` for `global_agent_id` blocks create. Optional `setup_expires_at` (JSON non-negative unix seconds, strictly in the future) must match the global subject token when that token carries setup expiry; if present and invalid, create fails. Global rows store `agent_id` and `company_id` as null on the approval row; lookups use the global ids and `global_user_sub`, not a regional agent id. **`allow_session` / session check / session revoke** internal routes return **400** for global bindings (session grants require a regional `Agent`).
   Only **ai-service** may use a longer assertion JWT lifetime (see `MCP_APPROVAL_ASSERTION_MAX_LIFETIME_SECONDS`); storage, hosting, and email stay near 60 seconds. ai-service may add `setup_flow` and `mcp_session_ttl_seconds` (600 to 900) on signed assertions during new-company **regional** setup. Identity extends session Allow **only** when the regional `Agent` still has server-stored setup context from global token exchange (`setup_company_id`, `setup_context_expires_at`) and the gateway assertion passes the usual checks (`mcp_session_ttl_seconds` in band, `<= exp - iat`, and grant ends by `setup_context_expires_at`). Other callers and HTTP bodies cannot rely on those claims for a longer grant.
-- `POST /api/v1/mcp/internal/mcp-approval-state` with the same approval assertion (no GET). Identity looks up the latest row matching all assertion fields and returns `pending`, `approved`, `denied`, or `expired`. `404` when no row exists. Approved responses include `id` (approval uuid) for consume.
+- `POST /api/v1/mcp/internal/mcp-approval-state` with the same approval assertion (no GET). This is the read ai-service uses to poll one pending approval. Identity looks up the latest row matching all assertion fields. `404` when no row exists. **200** always returns the same keys: `id` (approval uuid), `status` (`pending`, `approved`, `denied`, or `expired`), `expires_at` (ISO-8601), `is_destructive` (JSON boolean), and `approval_url` (absolute). Use `status` to decide. `id` is present for every status, including `pending`. Consume still requires `status` `approved`.
 - `POST /api/v1/mcp/internal/mcp-approval-consume` with the same approval assertion. JSON body: `{ "approval_id": "<uuid>" }`. Identity loads the row using the same binding as state (regional: `approval_id` plus `agent_id`, `company_id`, `service`, `arguments_hash`; global: `approval_id` plus global binding fields). Any mismatch returns `404`. Consumption is atomic (`select_for_update`) and single use; `{ "consumed": true }` only while the row is approved and younger than 10 minutes.
 - One pending row per binding and arguments hash, **expires after 10 minutes**, runs once, never standing. Regional binding is `(agent_id, company_id, service, action, arguments_hash)`. Global binding is `(global_agent_id, global_company_id, company_binding_version, global_user_sub, service, action, arguments_hash)`.
 
@@ -260,14 +260,43 @@ This route is **not** cached on Identity.
 
 Company owners and the member who created the agent approve or deny in Settings or via human user tokens:
 
-- `GET /api/v1/mcp/approvals` (returns `approvals` and `pending_count`, the number of rows in `approvals`; pending rows include `service`, `action`, `tool_name`, `target` (`service:action`), `is_destructive`, `short_action_summary` (same as `action`), and `arguments_redacted` (always `{}` for internal creates))
+- `GET /api/v1/mcp/approvals` (returns `approvals` and `pending_count`, the number of rows in `approvals`; pending rows include `service`, `action`, `tool_name`, `target` (`service:action`), `is_destructive`, `short_action_summary` (the optional `arguments_summary`, or empty), `arguments_redacted` (always `{}` for internal creates), and `approval_url` (absolute link to the same browser page))
 - `GET /api/v1/mcp/approvals/{id}`
 - `POST /api/v1/mcp/approvals/{id}/decide` with `{ "decision": "approve" | "deny" }`
 - `POST /api/v1/mcp/approvals/{id}/approve` and `POST /api/v1/mcp/approvals/{id}/reject` (same behavior as decide)
 
 The MCP client card (ai-service) calls `POST /api/v1/mcp/internal/mcp-approval-decide` with `allow`, `deny`, or `allow_session` (non-destructive only). Session allow lasts **60 seconds** per MCP connection by default (`MCP_APPROVAL_SESSION_TTL_SECONDS`, clamped 30 to 60). During new-company setup only, when the decision assertion is signed by **ai-service** and carries `setup_flow` with `mcp_session_ttl_seconds` between **600** and **900** (and not longer than the assertion JWT lifetime), and the regional agent still has setup context from exchange (above), Identity stores that TTL for this connection. The effective grant is capped by the **minimum** of remaining time to `setup_context_expires_at`, remaining time to the assertion JWT `exp`, and the configured max (`MCP_APPROVAL_SETUP_SESSION_TTL_MAX_SECONDS`, default 900). If the minimum ceiling is below `MCP_APPROVAL_SETUP_SESSION_TTL_MIN_SECONDS` (default 600), Identity uses the default session TTL instead (typically **60** seconds). Destructive actions never use session allow. `POST /api/v1/mcp/internal/mcp-approval-session-check` requires the same live authority claims as other internal approval routes (`grant_version` as JSON integer; when the agent is company-bound, `global_company_id` as uuid string and `company_binding_version` as JSON integer). The active session grant must still match the current agent: same `grant_version`, same SaaS binding pair when bound, and the grant's service set must stay within the agent's `services_allowed`. Setup echo fields come from the grant row snapshot at Allow time. Revoke on disconnect with `POST /api/v1/mcp/internal/mcp-approval-session-revoke`. Request bodies cannot set the TTL; only signed gateway claims count.
 
-Fallback browser page: `GET /oauth/mcp/approval/{id}?token=…` (signed token from `fallback_path` on create). Approve and Deny only.
+**Create response (200).** Identity keeps the previous fields and adds `approval_url`:
+
+```json
+{
+  "id": "<uuid>",
+  "status": "pending",
+  "expires_at": "<iso-8601>",
+  "is_destructive": false,
+  "fallback_path": "/oauth/mcp/approval/<uuid>?token=<signed>",
+  "approval_url": "https://<identity-host>/oauth/mcp/approval/<uuid>?token=<signed>"
+}
+```
+
+`status` is the row status (`pending` on create). `expires_at` is when the request stops being decidable (10 minutes from create, or from the last renewal of an expired pending row). `approval_url` is absolute on this region's public identity origin (`JWT_ISSUER`). `fallback_path` is the same path and token, relative. The signed token lets the browser open that one request. It does not replace the identity session, and it is not a bearer token for the API.
+
+**State response (200).** `POST /api/v1/mcp/internal/mcp-approval-state`:
+
+```json
+{
+  "id": "<uuid>",
+  "status": "pending",
+  "expires_at": "<iso-8601>",
+  "is_destructive": false,
+  "approval_url": "https://<identity-host>/oauth/mcp/approval/<uuid>?token=<signed>"
+}
+```
+
+`status` is `pending`, `approved`, `denied`, or `expired`. Each call mints a new signed token on `approval_url`. Older tokens for that row stay valid until the signature max age (the approval window plus two minutes).
+
+Browser page: `GET /oauth/mcp/approval/{id}?token=…` (the path inside `approval_url`). It shows the company, the agent name, the OAuth client name when the agent has one, the service, the tool, the argument summary, whether the tool is destructive, and the expiry time in UTC. Approve and Deny are CSRF-protected POSTs. One decision only: a later POST does not change an approved or denied row, and repeating the same decision shows that result again. A signed-out visitor signs in with that company's magic link and OAuth methods on `/oauth/mcp/signin`, then returns to this page. The identity session offers **Continue as** and **Use another account**. Only a company owner, or the member who created the agent, can decide. Staff accounts are refused, the same rule as other MCP pages. An expired, already decided, or unknown link shows that state and no buttons. A global approval row (no regional company or agent) explains that it cannot be decided on this page. The page is English or French from `Accept-Language`.
 
 Audit event `identity.mcp.approval_decision` uses status `approved`, `denied`, `expired`, `client_allowed`, `client_denied`, or `client_session_allowed` with `{actor_email} {status} {tool_name} for {agent_name}`.
 

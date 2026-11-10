@@ -1,0 +1,25 @@
+{% extends "agents/_mcp_base.html" %}
+{% block title %}{{ copy.approval_signin_title }}{% endblock %}
+{% block content %}
+  <h1>{{ copy.approval_signin_title }}</h1>
+  <p class="why">{{ lead }}</p>
+  {% if sent %}<p class="subtitle" role="status">{{ email_sent }}</p>{% endif %}
+  {% if no_methods %}<p class="note">{{ no_methods }}</p>{% endif %}
+  {% if magic_link_enabled %}
+  <form method="post" action="">
+    {% csrf_token %}
+    <label for="email">{{ copy.email_label }}</label>
+    <input type="email" id="email" name="email" autocomplete="email" required maxlength="254">
+    <div class="actions">
+      <button type="submit" class="button">{{ copy.email_button }}</button>
+    </div>
+  </form>
+  {% endif %}
+  {% if providers %}
+  <div class="actions stack">
+    {% for provider in providers %}
+    <a class="button" href="{{ provider.url }}">{{ provider.label }}</a>
+    {% endfor %}
+  </div>
+  {% endif %}
+{% endblock %}

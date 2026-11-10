@@ -36,7 +36,7 @@ from apps.agents.approval_internal import (
     lookup_approval_row,
     public_approval_status,
 )
-from apps.agents.approval_links import sign_approval_fallback_token
+from apps.agents.approval_links import approval_link
 from apps.agents.approval_session import (
     active_session_grant,
     revoke_session_grant,
@@ -404,6 +404,29 @@ class McpInternalDelegatedAgentAuthorityView(APIView):
         return Response(_delegated_authority_live_payload(agent))
 
 
+_ARGUMENTS_SUMMARY_MAX = 500
+
+
+def _arguments_summary_from_body(body: dict) -> tuple[str, Response | None]:
+    """Optional plain-text summary. Raw argument objects stay rejected."""
+    if 'arguments_summary' not in body:
+        return '', None
+    raw = body.get('arguments_summary')
+    if not isinstance(raw, str):
+        return '', Response(
+            {'error': 'arguments_summary must be a string.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    text = ''.join(ch for ch in raw if ch in '\n\t' or ord(ch) >= 32)
+    text = ' '.join(text.split())
+    if len(text) > _ARGUMENTS_SUMMARY_MAX:
+        return '', Response(
+            {'error': 'arguments_summary must be at most 500 characters.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    return text, None
+
+
 class McpInternalApprovalCreateView(APIView):
     authentication_classes = []
     permission_classes = []
@@ -452,10 +475,13 @@ class McpInternalApprovalCreateView(APIView):
                 {'error': 'target and short_action_summary are server-derived.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        arguments_summary, summary_err = _arguments_summary_from_body(body)
+        if summary_err is not None:
+            return summary_err
         service_id = (binding['service'] or '')[:32]
         action_slug = (binding['action'] or '')[:255]
         target = f'{service_id}:{action_slug}'[:500] if service_id or action_slug else ''
-        short_action_summary = ''
+        short_action_summary = arguments_summary
         if 'is_destructive' in body:
             raw_des = body.get('is_destructive')
             if raw_des is not True and raw_des is not False:
@@ -537,15 +563,18 @@ class McpInternalApprovalCreateView(APIView):
                         'short_action_summary',
                     ]
                 )
-        token = sign_approval_fallback_token(str(row.id))
-        fallback_path = f'/oauth/mcp/approval/{row.id}?token={token}'
+            elif short_action_summary and not (row.short_action_summary or '').strip():
+                row.short_action_summary = short_action_summary
+                row.save(update_fields=['short_action_summary'])
+        link = approval_link(str(row.id), request=request)
         return Response(
             {
                 'id': str(row.id),
                 'status': row.status,
                 'expires_at': row.expires_at.isoformat(),
                 'is_destructive': row.is_destructive,
-                'fallback_path': fallback_path,
+                'fallback_path': link['fallback_path'],
+                'approval_url': link['approval_url'],
             }
         )
 
@@ -582,10 +611,16 @@ class McpInternalApprovalStateView(APIView):
         public_status = public_approval_status(row, now=now)
         if public_status == 'expired':
             record_approval_expired_once(row)
-        payload = {'status': public_status}
-        if public_status == 'approved':
-            payload['id'] = str(row.id)
-        return Response(payload)
+        link = approval_link(str(row.id), request=request)
+        return Response(
+            {
+                'id': str(row.id),
+                'status': public_status,
+                'expires_at': row.expires_at.isoformat(),
+                'is_destructive': bool(row.is_destructive),
+                'approval_url': link['approval_url'],
+            }
+        )
 
 
 class McpInternalApprovalDecideView(APIView):

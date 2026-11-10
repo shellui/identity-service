@@ -65,6 +65,42 @@ COPY = {
         'device_lifetime_note': (
             'This connection expires after {days} days. You can revoke it sooner in Settings → MCP / AI agents.'
         ),
+        'approval_signin_title': 'Sign in to decide this request',
+        'approval_signin_lead': '{agent_name} wants to run {tool_name} for {company_name}. Sign in to decide.',
+        'approval_title_pending': 'Approve this action?',
+        'approval_title_approved': 'Approved',
+        'approval_title_denied': 'Denied',
+        'approval_title_expired': 'This approval is no longer valid',
+        'approval_title_unknown': 'This approval was not found',
+        'approval_title_unavailable': 'This request cannot be decided here',
+        'approval_title_wrong': 'This account cannot decide this request',
+        'approval_lead': '{agent_name} wants to run {tool_name} on {company_name}.',
+        'approval_company': 'Company',
+        'approval_agent': 'Agent',
+        'approval_client': 'Client',
+        'approval_service': 'Service',
+        'approval_tool': 'Tool',
+        'approval_arguments': 'Arguments',
+        'approval_arguments_empty': 'No argument summary was included.',
+        'approval_expires': 'Expires',
+        'approval_destructive': 'This can change or delete data in {company_name}.',
+        'approval_not_destructive': 'This tool is not marked as destructive.',
+        'approval_safety': 'Only continue if you started this from {agent_name}.',
+        'approval_approve': 'Approve',
+        'approval_deny': 'Deny',
+        'approval_approved_body': (
+            'You approved this action. You can return to {agent_name}. This page can be closed.'
+        ),
+        'approval_denied_body': (
+            'You denied this action. Nothing was changed. You can return to {agent_name}.'
+        ),
+        'approval_expired_body': 'This request expired before a decision. Ask the agent to send a new one.',
+        'approval_already_approved': 'This request was already approved. You can return to {agent_name}.',
+        'approval_already_denied': 'This request was already denied. Nothing was changed.',
+        'approval_unknown_body': 'This link does not match an approval request.',
+        'approval_unavailable_body': 'This request has no company page. Decide it in Shellui if you still can.',
+        'approval_wrong_body': 'Sign in with an account that can decide this request for {company_name}.',
+        'approval_footer': 'You can also review pending approvals in Settings, under MCP / AI agents.',
     },
     'fr': {
         'signin_title': 'Connectez-vous pour relier un agent',
@@ -131,6 +167,50 @@ COPY = {
         'device_lifetime_note': (
             'Cette connexion expire au bout de {days} jours. '
             'Vous pouvez la révoquer plus tôt dans Réglages → MCP / agents IA.'
+        ),
+        'approval_signin_title': 'Connectez-vous pour décider de cette demande',
+        'approval_signin_lead': (
+            '{agent_name} veut exécuter {tool_name} pour {company_name}. Connectez-vous pour décider.'
+        ),
+        'approval_title_pending': 'Approuver cette action ?',
+        'approval_title_approved': 'Approuvée',
+        'approval_title_denied': 'Refusée',
+        'approval_title_expired': "Cette approbation n'est plus valable",
+        'approval_title_unknown': 'Cette approbation est introuvable',
+        'approval_title_unavailable': 'Cette demande ne peut pas être décidée ici',
+        'approval_title_wrong': 'Ce compte ne peut pas décider de cette demande',
+        'approval_lead': '{agent_name} veut exécuter {tool_name} pour {company_name}.',
+        'approval_company': 'Entreprise',
+        'approval_agent': 'Agent',
+        'approval_client': 'Client',
+        'approval_service': 'Service',
+        'approval_tool': 'Outil',
+        'approval_arguments': 'Arguments',
+        'approval_arguments_empty': "Aucun résumé des arguments n'a été inclus.",
+        'approval_expires': 'Expiration',
+        'approval_destructive': 'Cela peut modifier ou supprimer des données dans {company_name}.',
+        'approval_not_destructive': "Cet outil n'est pas marqué comme destructif.",
+        'approval_safety': "Continuez seulement si vous avez lancé cette demande depuis {agent_name}.",
+        'approval_approve': 'Approuver',
+        'approval_deny': 'Refuser',
+        'approval_approved_body': (
+            'Vous avez approuvé cette action. Vous pouvez revenir à {agent_name}. Cette page peut être fermée.'
+        ),
+        'approval_denied_body': (
+            "Vous avez refusé cette action. Rien n'a été modifié. Vous pouvez revenir à {agent_name}."
+        ),
+        'approval_expired_body': (
+            "Cette demande a expiré avant une décision. Demandez à l'agent d'en envoyer une nouvelle."
+        ),
+        'approval_already_approved': 'Cette demande a déjà été approuvée. Vous pouvez revenir à {agent_name}.',
+        'approval_already_denied': "Cette demande a déjà été refusée. Rien n'a été modifié.",
+        'approval_unknown_body': "Ce lien ne correspond à aucune demande d'approbation.",
+        'approval_unavailable_body': (
+            "Cette demande n'a pas de page d'entreprise. Décidez-la dans Shellui si vous le pouvez encore."
+        ),
+        'approval_wrong_body': 'Connectez-vous avec un compte qui peut décider de cette demande pour {company_name}.',
+        'approval_footer': (
+            'Vous pouvez aussi revoir les approbations en attente dans Réglages, sous MCP / agents IA.'
         ),
     },
 }

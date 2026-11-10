@@ -4,12 +4,18 @@
     {% if lead %}<p class="why">{{ lead }}</p>{% endif %}
     <form method="post" action="">
       {% csrf_token %}
+      {% for name, value in hidden_fields.items %}
+      <input type="hidden" name="{{ name }}" value="{{ value }}">
+      {% endfor %}
       <div class="actions">
         <button type="submit" name="account_choice" value="continue" class="button">{{ continue_label }}</button>
       </div>
     </form>
     <form method="post" action="">
       {% csrf_token %}
+      {% for name, value in hidden_fields.items %}
+      <input type="hidden" name="{{ name }}" value="{{ value }}">
+      {% endfor %}
       <button type="submit" name="account_choice" value="switch" class="button button-secondary">{{ switch_label }}</button>
     </form>
 {% endblock %}
