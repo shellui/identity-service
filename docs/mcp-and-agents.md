@@ -4,6 +4,8 @@ description: Connect MCP clients to Shellui with OAuth, agent access levels, app
 
 # MCP and agents
 
+MCP is in Beta. Tool names and behavior may still change.
+
 Shellui Identity is the OAuth authorization server for MCP clients. Each connected client receives a company-scoped **agent** with explicit access rules. Storage, hosting, email, SaaS, AI, and other services reuse the same MCP layer from the [shellui-django](https://github.com/shellui/django-commons) package (`shellui_django.mcp`) for their `/mcp` endpoint.
 
 Identity exposes its **own** MCP tools at `POST /mcp` on the identity origin (for example `identity_list_services`). Multi-service MCP clients connect through **ai-service**, which holds one OAuth session per agent and requests short-lived downstream access tokens from Identity when calling another service's `/mcp`. Identity never holds an ai-service secret; ai-service never holds Identity's signing key.
@@ -11,6 +13,8 @@ Identity exposes its **own** MCP tools at `POST /mcp` on the identity origin (fo
 ## Connect a client (one URL per company)
 
 Each company has its own MCP URL on ai-service: `{AI_SERVICE_URL}/c/your_company_id_here/mcp` (for example `https://ai.example.com/c/42/mcp`). The company comes from the URL, so the user never picks one and there is no default company. Plain `{AI_SERVICE_URL}/mcp` answers with an error that points to the per-company URL.
+
+Company AI clients connect through the ai-service gateway `/c/<company_id>/mcp`. By default, `tools/list` on that URL returns a discovery list: `ai_list_services`, `ai_search_tools`, `ai_describe_tool`, `ai_call_tool`, and common reads such as `identity_list_users`. `?tools=all` returns every tool. Direct calls to every tool still work, with the same approvals.
 
 `GET /api/v1/mcp/personal/status` (company member Bearer token) returns `mcp_enabled` and optional regional `mcp_url` as today, plus optional `global_mcp_url`. When `DASHBOARD_PUBLIC_URL` is set to the trusted Shellui dashboard origin (https, no path), `global_mcp_url` is `{DASHBOARD_PUBLIC_URL}/mcp`. It does not depend on whether the regional gateway URL is configured.
 
@@ -89,9 +93,9 @@ WWW-Authenticate: Bearer realm="mcp", resource_metadata="https://ai.example.com/
 
 Do not put `device_authorization_endpoint` on the protected-resource document. That field is on the authorization server metadata identity already serves. If `authorization_servers` already points at identity, ai-service does not need a new metadata field for device login. It does need the `resource_metadata` challenge so the client can find that document.
 
-### What Settings needs next
+### Settings and Admin prompts
 
-The Settings > MCP / AI agents screen can keep listing and revoking these connections with the existing personal-agent APIs. Replace a prompt that contains a raw token with an instructions prompt that has only the company MCP URL and tells the agent to use device login. The prompt must not include an access token, a refresh token, a device code, or a user code. The agent registers if it needs a `client_id`, calls the device authorization endpoint, shows the user code, and polls until the token response arrives.
+Shellui Settings and Admin list and revoke these connections with the personal-agent APIs. Each prompt includes only the company MCP URL and tells the agent to use [OAuth device authorization (RFC 8628)](https://www.rfc-editor.org/rfc/rfc8628). It has no access token, refresh token, device code, or user code. The agent registers if it needs a `client_id`, calls the device authorization endpoint, shows the user code, and polls until the token response arrives.
 
 ## Global agent token exchange (region role)
 

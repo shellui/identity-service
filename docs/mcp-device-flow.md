@@ -4,6 +4,8 @@ description: Connect a headless MCP agent with the OAuth 2.0 device authorizatio
 
 # MCP device login
 
+MCP is in Beta. Tool names and behavior may still change.
+
 Use this when the agent has no browser of its own (a CLI, or an assistant running in a terminal). The person approves in their own browser. The agent polls until Identity returns tokens. Nothing here pushes a notification, and no token is pasted into the chat.
 
 The grant is [RFC 8628](https://www.rfc-editor.org/rfc/rfc8628). Company rules, consent, claims, and revocation are the same as the browser flow in [MCP and agents](mcp-and-agents.md).
