@@ -348,8 +348,21 @@ class ShellUIAdminActionRuleRotateSecretView(APIView):
         **mcp_extend_schema_kwargs('identity_list_action_deliveries'),
         tags=['actions-admin'],
         parameters=[
-            OpenApiParameter(name='status', type=str, location=OpenApiParameter.QUERY, required=False),
-            OpenApiParameter(name='event_type', type=str, location=OpenApiParameter.QUERY, required=False),
+            OpenApiParameter(
+                name='status',
+                type=str,
+                location=OpenApiParameter.QUERY,
+                required=False,
+                enum=['pending', 'delivered', 'failed', 'dead'],
+                description='Delivery status.',
+            ),
+            OpenApiParameter(
+                name='event_type',
+                type=str,
+                location=OpenApiParameter.QUERY,
+                required=False,
+                description='Webhook event type id to filter on.',
+            ),
             OpenApiParameter(name='action_rule_id', type=int, location=OpenApiParameter.QUERY, required=False),
             OpenApiParameter(
                 name='scheduled_job_run_id',

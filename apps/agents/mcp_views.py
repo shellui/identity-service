@@ -26,6 +26,7 @@ from apps.agents.approval_internal import (
 from apps.agents.models import Agent, McpApprovalRequest
 from apps.agents.revocation import blocked_agent_ids
 from apps.authapi.authentication import ShellUIJWTAuthentication
+from apps.authapi.mcp_tool_schema import append_query, publish_tools, rewrite_tool_call_arguments
 from shellui_django.mcp.masking import redact_mapping
 
 _server: McpServer | None = None
@@ -66,8 +67,10 @@ class _McpRequestFactory(APIRequestFactory):
     """
 
     def generic(self, method, path, data='', content_type='application/octet-stream', secure=False, **extra):
+        query_params = extra.pop('query_params', None)
         if isinstance(data, (dict, list)):
             data, content_type = self._encode_data(data, format='json')
+        path = append_query(path, query_params)
         return super().generic(method, path, data, content_type, secure, **extra)
 
 
@@ -143,6 +146,12 @@ def _install_result_redaction() -> None:
         return _restore_disclosed_fields(data, redacted, markers or {})
 
     server_mod.redact_mapping = redact_mapping
+    original_tools = server_mod.tools_from_schema
+
+    def tools_from_schema(schema):
+        return publish_tools(original_tools(schema), schema)
+
+    server_mod.tools_from_schema = tools_from_schema
     server_mod._identity_result_redaction_installed = True
 
 
@@ -324,6 +333,10 @@ def mcp_endpoint(request: HttpRequest):
         except (json.JSONDecodeError, UnicodeDecodeError):
             pass
     try:
+        if request.method == 'POST':
+            import shellui_django.mcp.server as server_mod
+
+            rewrite_tool_call_arguments(request, server_mod.tools_from_schema(_schema()))
         return _get_server().handle(request, agent_claims=claims)
     finally:
         if redact_token is not None:

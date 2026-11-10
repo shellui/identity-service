@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from rest_framework.fields import empty
 from drf_spectacular.openapi import AutoSchema
 
 from apps.authapi.mcp_openapi import MCP_EXCLUDED_PATH_PREFIXES
@@ -19,6 +20,30 @@ class McpAutoSchema(AutoSchema):
             finally:
                 self.method = saved
         return super()._get_request_for_media_type(serializer, direction)
+
+    def _get_request_body(self, direction='request'):
+        # drf-spectacular drops DELETE bodies. Hosting redirect removal takes
+        # ``base_url`` in the body, and that field has to be in the published schema.
+        if self.method == 'DELETE' and self._delete_declares_request_body():
+            self.method = 'POST'
+            try:
+                return super()._get_request_body(direction)
+            finally:
+                self.method = 'DELETE'
+        return super()._get_request_body(direction)
+
+    def _delete_declares_request_body(self) -> bool:
+        # ``extend_schema(request=...)`` closes over ``request``. Calling
+        # ``get_request_serializer`` on a DELETE that did not declare one falls
+        # through to serializer guessing and warns.
+        method = getattr(type(self), 'get_request_serializer', None)
+        func = getattr(method, '__func__', method)
+        code = getattr(func, '__code__', None)
+        closure = getattr(func, '__closure__', None)
+        if code is None or closure is None or 'request' not in code.co_freevars:
+            return False
+        request = closure[code.co_freevars.index('request')].cell_contents
+        return request is not empty and request is not None
 
     def get_operation(self, path, path_regex, path_prefix, method, registry):
         operation = super().get_operation(path, path_regex, path_prefix, method, registry)

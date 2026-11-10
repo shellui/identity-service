@@ -171,7 +171,7 @@ _USER_ID_PARAM = OpenApiParameter(
                 type=str,
                 location=OpenApiParameter.QUERY,
                 required=False,
-                description='Catalog event type; comma-separate several types.',
+                description='Event type ids to include. One or more.',
             ),
             *_DATE_PARAMS,
             *_PAGE_PARAMS,
@@ -201,7 +201,10 @@ class ShellUIAdminEventListView(APIView):
         if email:
             qs = qs.filter(Q(user__email__icontains=email) | Q(data__email__icontains=email))
 
-        types = [t.strip() for t in (request.GET.get('event_type') or '').split(',') if t.strip()]
+        types = []
+        raw_types = request.GET.getlist('event_type')
+        for raw in raw_types:
+            types.extend(part.strip() for part in str(raw).split(',') if part.strip())
         if types:
             if not all(is_registered_event(t) for t in types):
                 return _bad_request('Invalid event_type.')
