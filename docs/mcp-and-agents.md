@@ -6,7 +6,7 @@ description: Connect MCP clients to Shellui with OAuth, agent access levels, app
 
 Shellui Identity is the OAuth authorization server for MCP clients. Each connected client receives a company-scoped **agent** with explicit access rules. Storage, hosting, email, SaaS, AI, and other services reuse the same MCP layer from the [shellui-django](https://github.com/shellui/django-commons) package (`shellui_django.mcp`) for their `/mcp` endpoint.
 
-Identity exposes its **own** MCP tools at `POST /mcp` on the identity origin (for example `list_services`). Multi-service MCP clients connect through **ai-service**, which holds one OAuth session per agent and requests short-lived downstream access tokens from Identity when calling another service's `/mcp`. Identity never holds an ai-service secret; ai-service never holds Identity's signing key.
+Identity exposes its **own** MCP tools at `POST /mcp` on the identity origin (for example `api_v1_mcp_services_list`). Multi-service MCP clients connect through **ai-service**, which holds one OAuth session per agent and requests short-lived downstream access tokens from Identity when calling another service's `/mcp`. Identity never holds an ai-service secret; ai-service never holds Identity's signing key.
 
 ## Connect a client (one URL per company)
 
@@ -332,9 +332,9 @@ When ai-service forwards `tools/call` to storage, hosting, email, SaaS, or Ident
 - **Response:** `{ "access_token": "<Identity RS256 agent JWT>" }` with the same agent claims as OAuth, `aud` narrowed to `resource`.
 - **Checks:** agent exists, active, not revoked, belongs to `company_id`; `resource` is exactly one configured service `/mcp` URL and allowed in the agent's `services_allowed`. Per-agent and global rate limits apply. Identity never logs minted tokens.
 
-## list_services
+## api_v1_mcp_services_list
 
-On Identity `/mcp`, the `list_services` tool returns MCP URLs discovered from existing settings:
+On Identity `/mcp`, the `api_v1_mcp_services_list` tool returns MCP URLs discovered from existing settings:
 
 - Identity: `JWT_ISSUER` + `/mcp`
 - Storage: `STORAGE_SERVICE_URL` + `/mcp`
@@ -368,7 +368,7 @@ Refresh tokens use `grant_type=refresh_token` at `POST /oauth/token` (or `POST /
 
 Regional Identity deployments scope agents to the company only (no `project_scope` in consent or JWT). Project binding for SaaS is enforced in saas-service.
 
-Agent bearer tokens cannot pause, revoke, approve, list call logs, or change agent settings. Those admin routes require a human company owner token (`allow_agent_token=false`) and are not exported as MCP tools. Identity `/mcp` exposes only non-admin tools such as `list_services`.
+Agent bearer tokens cannot pause, revoke, approve, list call logs, or change agent settings. Those admin routes require a human company owner token (`allow_agent_token=false`) and are not exported as MCP tools. Identity `/mcp` exposes the company admin operations on the MCP allowlist. Service discovery is `api_v1_mcp_services_list`.
 
 Staff accounts cannot call `/api/v1/mcp/*` company admin APIs (same refusal as MCP OAuth).
 

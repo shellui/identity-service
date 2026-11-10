@@ -362,11 +362,14 @@ class McpCallLogListView(APIView):
 class McpListServicesView(APIView):
     serializer_class = ShellUIOpenAPISerializer
 
-    @mcp_expose_tool(name='list_services', description='Return MCP URLs for connected Shellui services.')
+    @mcp_expose_tool(
+        name='api_v1_mcp_services_list',
+        description='Return MCP URLs for connected Shellui services.',
+    )
     def get(self, request):
         actor, company, err = require_company_admin(request)
         if err:
             return err
         from apps.agents.services import list_mcp_services
 
-        return Response({'services': list_mcp_services()})
+        return Response({'services': list_mcp_services(company_id=company.id)})

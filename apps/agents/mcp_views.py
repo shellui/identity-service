@@ -14,6 +14,7 @@ from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from drf_spectacular.generators import SchemaGenerator
 from rest_framework.request import Request
+from rest_framework.test import APIRequestFactory
 from shellui_django.mcp.resources import access_token_audience_matches, mcp_resource_from_origin
 from shellui_django.mcp.server import McpServer
 
@@ -33,6 +34,120 @@ _mcp_tool_call_started_at: contextvars.ContextVar[float | None] = contextvars.Co
     'identity_mcp_tool_call_started_at',
     default=None,
 )
+# First ``redact_mapping`` call inside a tools/call is the tool result. Later calls redact logs.
+_mcp_result_redaction: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    'identity_mcp_result_redaction',
+    default=False,
+)
+
+# One-time disclosures and non-secret metadata the name heuristic would hide.
+# Schema ``x-mcp-secret`` markers still win. User-supplied blobs are not restored.
+_DISCLOSED_RESULT_KEYS = frozenset(
+    {
+        'secret',
+        'access_token',
+        'token',
+        'token_prefix',
+        'has_secret',
+        'authorization_header_set',
+        'enable_magic_link',
+        'magic_link_effective',
+        'magic_link_globally_enabled',
+    }
+)
+_NO_RESTORE_UNDER = frozenset({'user_metadata', 'data', 'envelope', 'arguments'})
+
+
+class _McpRequestFactory(APIRequestFactory):
+    """JSON-encode tool bodies.
+
+    shellui-django 0.5.1 passes the tool body as ``data=<dict>`` with the default
+    ``application/octet-stream`` content type. Django then stringifies the dict, and
+    DRF rejects the media type before the view runs.
+    """
+
+    def generic(self, method, path, data='', content_type='application/octet-stream', secure=False, **extra):
+        if isinstance(data, (dict, list)):
+            data, content_type = self._encode_data(data, format='json')
+        return super().generic(method, path, data, content_type, secure, **extra)
+
+
+def _restore_disclosed_fields(original, redacted, markers, *, parent_key: str = ''):
+    if parent_key in _NO_RESTORE_UNDER:
+        return redacted
+    if isinstance(original, list) and isinstance(redacted, list):
+        restored = [
+            _restore_disclosed_fields(item, red_item, markers, parent_key=parent_key)
+            for item, red_item in zip(original, redacted, strict=False)
+        ]
+        if len(redacted) > len(original):
+            restored.extend(redacted[len(original) :])
+        return restored
+    if not isinstance(original, dict) or not isinstance(redacted, dict):
+        return redacted
+    out = dict(redacted)
+    for key, value in original.items():
+        node = markers.get(str(key)) if isinstance(markers, dict) else None
+        if isinstance(node, dict) and node.get('secret'):
+            continue
+        if key in _DISCLOSED_RESULT_KEYS and out.get(key) == '[redacted]':
+            out[key] = value
+            continue
+        children = node.get('children') if isinstance(node, dict) else {}
+        if key in out:
+            out[key] = _restore_disclosed_fields(value, out[key], children or {}, parent_key=str(key))
+    return out
+
+
+def _install_result_redaction() -> None:
+    import shellui_django.mcp.server as server_mod
+    from django.core.serializers.json import DjangoJSONEncoder
+
+    if getattr(server_mod, '_identity_result_redaction_installed', False):
+        return
+    # Replace only this module's json binding. Tool results are response.data
+    # (datetimes included) and the library dumps them with no encoder.
+    # Argument hashes already pass default= and stay on the stdlib encoder.
+    real_json = server_mod.json
+
+    class _ResultJson:
+        def dumps(self, obj, *args, **kwargs):
+            if 'cls' not in kwargs and 'default' not in kwargs:
+                kwargs['cls'] = DjangoJSONEncoder
+            return real_json.dumps(obj, *args, **kwargs)
+
+        def __getattr__(self, name):
+            return getattr(real_json, name)
+
+    server_mod.json = _ResultJson()
+    # shellui-django 0.5.1 keeps decision.allowed false after a granted approval, so the
+    # call returns the gate reason and never runs the view (and consume already burned
+    # the single-use approval). The approval block still returns when the grant is missing.
+    original_decide = server_mod.decide_write
+
+    def decide_write(**kwargs):
+        decision = original_decide(**kwargs)
+        if decision.needs_approval:
+            decision.allowed = True
+        return decision
+
+    server_mod.decide_write = decide_write
+    original = server_mod.redact_mapping
+
+    def redact_mapping(data, *, read_sensitive, markers=None):
+        if not _mcp_result_redaction.get():
+            return original(data, read_sensitive=read_sensitive, markers=markers)
+        _mcp_result_redaction.set(False)
+        redacted = original(data, read_sensitive=read_sensitive, markers=markers)
+        if not isinstance(data, dict):
+            return redacted
+        return _restore_disclosed_fields(data, redacted, markers or {})
+
+    server_mod.redact_mapping = redact_mapping
+    server_mod._identity_result_redaction_installed = True
+
+
+_install_result_redaction()
 
 
 def _schema() -> dict:
@@ -54,6 +169,7 @@ def _get_server() -> McpServer:
             approval_state=_approval_state,
             approval_consume=_consume_approval,
         )
+    _server._factory = _McpRequestFactory()
     return _server
 
 
@@ -199,15 +315,19 @@ def _agent_claims(request: HttpRequest) -> dict | None:
 def mcp_endpoint(request: HttpRequest):
     claims = _agent_claims(request)
     timer: contextvars.Token | None = None
+    redact_token: contextvars.Token | None = None
     if request.method == 'POST':
         try:
             payload = json.loads(request.body.decode('utf-8') or '{}')
             if isinstance(payload, dict) and payload.get('method') == 'tools/call':
                 timer = _mcp_tool_call_started_at.set(time.monotonic())
+                redact_token = _mcp_result_redaction.set(True)
         except (json.JSONDecodeError, UnicodeDecodeError):
             pass
     try:
         return _get_server().handle(request, agent_claims=claims)
     finally:
+        if redact_token is not None:
+            _mcp_result_redaction.reset(redact_token)
         if timer is not None:
             _mcp_tool_call_started_at.reset(timer)

@@ -9,8 +9,12 @@ def _origin(url: str) -> str:
     return str(url or '').strip().rstrip('/')
 
 
-def list_mcp_services() -> list[dict[str, str]]:
-    """Return MCP base URLs for connected Shellui services."""
+def list_mcp_services(*, company_id: int | None = None) -> list[dict[str, str]]:
+    """Return MCP base URLs for connected Shellui services.
+
+    ``company_id`` selects the per-company AI gateway URL (``{AI_SERVICE_URL}/c/<id>/mcp``).
+    Callers that resolve plain ``{origin}/mcp`` resources omit it.
+    """
     identity = _origin(getattr(settings, 'JWT_ISSUER', '') or '')
     items: list[dict[str, str]] = []
     if identity:
@@ -29,7 +33,11 @@ def list_mcp_services() -> list[dict[str, str]]:
         items.append({'id': 'saas', 'name': 'SaaS', 'mcp_url': f'{saas}/mcp'})
     ai = _origin(getattr(settings, 'AI_SERVICE_URL', ''))
     if ai:
-        items.append({'id': 'ai', 'name': 'AI', 'mcp_url': f'{ai}/mcp'})
+        if company_id is not None:
+            mcp_url = f'{ai}/c/{int(company_id)}/mcp'
+        else:
+            mcp_url = f'{ai}/mcp'
+        items.append({'id': 'ai', 'name': 'AI', 'mcp_url': mcp_url})
     return items
 
 
