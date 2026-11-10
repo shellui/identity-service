@@ -17,6 +17,7 @@ from apps.agents.exchange import GRANT_TYPE as AGENT_EXCHANGE_GRANT, agent_excha
 from apps.agents.models import Agent, McpAuthorizationCode, McpOAuthClient
 from apps.agents.oauth_codes import hash_authorization_code, issue_mcp_authorization_code
 from apps.agents.oauth_device import DEVICE_CODE_GRANT, handle_device_code_grant
+from apps.authapi.cli_device import CLI_CLIENT_ID, handle_cli_device_code_grant
 from apps.agents.oauth_redirect import validate_mcp_redirect_uri
 from apps.agents.oauth_request_body import oauth_error, parse_oauth_post_body
 from apps.agents.mcp_resources import resolve_mcp_resource
@@ -39,6 +40,8 @@ def handle_mcp_token_request(request) -> JsonResponse:
             return JsonResponse({}, status=404)
         return handle_agent_token_exchange(request, data=body)
     if grant == DEVICE_CODE_GRANT:
+        if str(body.get('client_id') or '').strip() == CLI_CLIENT_ID:
+            return handle_cli_device_code_grant(body)
         return handle_device_code_grant(body)
     if grant == 'refresh_token':
         refresh = str(body.get('refresh_token') or '')

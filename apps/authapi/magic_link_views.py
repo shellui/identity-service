@@ -700,6 +700,27 @@ class ShellUIMagicLinkVerifyView(APIView):
         remember_verified_email(user, row.email)
         if browser_redirect:
             from apps.agents.mcp_signin import finish_mcp_signin, is_mcp_signin_redirect
+            from apps.authapi.cli_device import AUTH_METHOD_MAGIC_LINK, finish_cli_signin, is_cli_signin_redirect
+
+            if is_cli_signin_redirect(redirect_to):
+                response = finish_cli_signin(
+                    request,
+                    user=user,
+                    company=company,
+                    auth_method=AUTH_METHOD_MAGIC_LINK,
+                )
+                if response.status_code in (301, 302):
+                    auth_metrics.record_successful_login(MAGIC_LINK_PROVIDER, company_id=company.id)
+                    record_login_event(
+                        request=request,
+                        outcome=LoginOutcome.SUCCESS,
+                        provider=MAGIC_LINK_PROVIDER,
+                        user=user,
+                        company=company,
+                        client_timezone=client_tz,
+                        client_device_id=client_dev,
+                    )
+                return response
 
             if is_mcp_signin_redirect(redirect_to):
                 # MCP connector sign-in: start the identity session, issue no app tokens.

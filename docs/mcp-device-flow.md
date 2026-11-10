@@ -115,3 +115,5 @@ The agent row uses the same list and revoke APIs as other OAuth connections: `GE
 ## OpenAPI
 
 `POST /oauth/mcp/device/code` is operation `oauth_mcp_device_authorization` on `/api/schema/` and `/api/docs/`. The verification page is HTML, not a JSON operation. The token poll is the existing `POST /oauth/token` handler. Its device grant is described on the device operation and in the authorization server metadata.
+
+The Shellui CLI uses a separate device grant and receives an app session instead of an agent token. See [CLI device login](cli-device-login.md). Authorization server metadata on this page stays the MCP endpoint.

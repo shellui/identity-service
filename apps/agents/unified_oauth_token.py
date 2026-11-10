@@ -69,6 +69,20 @@ def unified_regional_oauth_token(request) -> JsonResponse | HttpResponse:
 @require_POST
 def oauth_token_dispatch(request) -> JsonResponse | HttpResponse:
     """``POST /oauth/token``: discovery `token_endpoint`; behavior depends on instance role."""
+    # Shellui CLI device grants are app sessions, on every instance role. Other grants keep
+    # the role-specific handler below (OpenID on global, MCP and user exchange on a region).
+    body, parse_err = parse_oauth_post_body(request)
+    if parse_err is None and body is not None:
+        from apps.agents.oauth_device import DEVICE_CODE_GRANT
+        from apps.authapi.cli_device import CLI_CLIENT_ID, handle_cli_device_code_grant
+
+        grant = str(body.get('grant_type') or '').strip()
+        client_id = str(body.get('client_id') or '').strip()
+        if grant == DEVICE_CODE_GRANT and client_id == CLI_CLIENT_ID:
+            limited = plain_response(check_rate_limit(request, scope='token_exchange'))
+            if limited:
+                return limited
+            return handle_cli_device_code_grant(body)
     if is_global():
         from apps.federation.provider import TokenView
 

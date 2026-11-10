@@ -27,6 +27,8 @@ def register_refresh_session(
     company,
     refresh: ShellUIRefreshToken,
     family_id: uuid.UUID | None = None,
+    kind: str = '',
+    user_agent: str = '',
 ) -> RefreshTokenSession:
     """Persist a refresh JWT and bind ``sid`` on the in-memory token object."""
     session_id = uuid.uuid4()
@@ -38,6 +40,8 @@ def register_refresh_session(
         jti=jti,
         family_id=family_id or uuid.uuid4(),
         expires_at=_expires_at_from_refresh(refresh),
+        kind=(kind or '')[:16],
+        user_agent=(user_agent or '')[:512],
     )
     refresh['sid'] = str(session_id)
     return session

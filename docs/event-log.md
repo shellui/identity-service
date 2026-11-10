@@ -13,7 +13,7 @@ identity-service records every catalog event and every sign-in in one table, `Ev
 
 | Event type | When |
 | ---------- | ---- |
-| `identity.auth.login.succeeded` | A user signed in with OAuth, SAML, magic link, or the Django admin login form |
+| `identity.auth.login.succeeded` | A user signed in with OAuth, SAML, magic link, the Django admin login form, or a Shellui CLI device approval |
 | `identity.auth.login.failed` | A sign-in was refused. The user is linked when it could be resolved |
 
 Sign-in events cannot trigger webhook rules: anonymous traffic can produce failed sign-ins, and forwarding them would let anyone flood your endpoints.
@@ -39,7 +39,7 @@ To keep rows small, `data` is the webhook payload with:
 - `user_id` removed, since it is the `user` column
 - secret fields removed: an event type can list fields that are never logged, sent to webhooks or stored. No webhook payload contains a sign-in link or token
 
-Sign-in events store `provider`, `failure_reason`, `is_staff_at_event`, `ip_hash` (salted hash, never the raw IP), `user_agent` (truncated), `client_timezone`, `client_device_id_hash`, `client_country` and `client_city` (GeoIP, when configured).
+Sign-in events store `provider`, `failure_reason`, `is_staff_at_event`, `ip_hash` (salted hash, never the raw IP), `user_agent` (truncated), `client_timezone`, `client_device_id_hash`, `client_country` and `client_city` (GeoIP, when configured). A Shellui CLI device approval adds `device_kind` `cli`. Its `ip_hash` and `user_agent` are the CLI request captured when the device code was issued, not the browser that approved it.
 
 The table has two indexes, `(company, created_at)` and `(user, created_at)`. They serve every listing, the user timeline, the retention check, and the purge.
 

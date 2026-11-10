@@ -234,13 +234,14 @@ _LOGIN = (
     EventFieldDoc('client_device_id_hash', 'Salted SHA-256 of the optional client device id', '7d865e95…'),
     EventFieldDoc('client_country', 'GeoIP country when configured', 'FR'),
     EventFieldDoc('client_city', 'GeoIP city when configured', 'Paris'),
+    EventFieldDoc('device_kind', 'Client kind when the sign-in is a device approval (cli)', 'cli'),
 )
 
 register_event(
     DomainEventType(
         id='identity.auth.login.succeeded',
         label='Sign-in succeeded',
-        description='A user signed in (OAuth, SAML, magic link, or Django admin). Event log only.',
+        description='A user signed in (OAuth, SAML, magic link, Django admin, or the Shellui CLI). Event log only.',
         payload_fields=_LOGIN,
         webhook=False,
     )

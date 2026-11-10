@@ -89,6 +89,7 @@ Pick the row that matches what you are doing today:
 | Add Google, GitHub, Microsoft, or another provider | [OAuth providers](oauth-providers.md) |
 | Let people sign in without a provider | [Magic link](magic-link.md) |
 | Sign in from a desktop app | [Desktop apps](desktop-apps.md) |
+| Sign in the Shellui CLI on another device | [CLI device login](cli-device-login.md) |
 | Connect a company's Okta or Entra ID | [SAML single sign-on](saml.md) and [SCIM provisioning](scim.md) |
 | Trust one upstream identity provider, or be that provider | [Instance roles](instance-roles.md) |
 | Restrict who can join a company | [Company access](company-access.md) |
