@@ -45,6 +45,19 @@ def company_name_for_agent(agent: Agent) -> str:
     return name or ''
 
 
+def apply_owner_user_id_claim(claims: dict, agent: Agent) -> None:
+    """Add ``owner_user_id`` when the agent has a created-by user.
+
+    The value is the regional user id (``Agent.created_by_id``), as a JSON integer.
+    Agents with no owner user, such as a global agent or a company service agent
+    that was never linked to a user, omit the claim. The key is not set to null.
+    """
+    raw = getattr(agent, 'created_by_id', None)
+    if raw is None:
+        return
+    claims['owner_user_id'] = int(raw)
+
+
 def build_agent_access_token(agent: Agent, *, resource: str, gateway_delegated: bool = False) -> dict:
     audience = normalize_resource_indicator(resource)
     if not audience:
@@ -115,6 +128,7 @@ def build_agent_access_token(agent: Agent, *, resource: str, gateway_delegated: 
     cb = getattr(agent, 'company_binding_version', None)
     if cb is not None:
         claims['company_binding_version'] = int(cb)
+    apply_owner_user_id_claim(claims, agent)
     return claims
 
 

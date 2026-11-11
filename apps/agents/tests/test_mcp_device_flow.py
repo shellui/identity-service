@@ -198,6 +198,9 @@ class McpDeviceFlowTests(TestCase):
         self.assertEqual(claims['scope'], 'identity ai')
         self.assertEqual(claims['grant_version'], 0)
         self.assertEqual(claims['sub'], f'agent:{agent.id}')
+        self.assertEqual(claims['owner_user_id'], self.user.pk)
+        self.assertIsInstance(claims['owner_user_id'], int)
+        self.assertNotIsInstance(claims['owner_user_id'], bool)
         self.assertLessEqual(claims['exp'] - claims['iat'], 900)
         self.assertGreater(agent.expires_at, timezone.now() + timedelta(days=89))
         self.assertLessEqual(agent.expires_at, timezone.now() + personal_agent_max_lifetime() + timedelta(minutes=1))
@@ -243,6 +246,10 @@ class McpDeviceFlowTests(TestCase):
         )
         self.assertEqual(refreshed.status_code, 200, refreshed.content)
         self.assertIn('access_token', refreshed.json())
+        refreshed_claims = jwt.decode(refreshed.json()['access_token'], options={'verify_signature': False})
+        self.assertEqual(refreshed_claims['owner_user_id'], self.user.pk)
+        self.assertEqual(refreshed_claims['aud'], claims['aud'])
+        self.assertEqual(refreshed_claims['scope'], claims['scope'])
         rotated = refreshed.json()['refresh_token']
 
         revoked = self.client.post(

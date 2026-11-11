@@ -171,6 +171,29 @@ class McpDownstreamAccessTokenTests(TestCase):
         self.assertEqual(payload['company_id'], self.company.id)
         self.assertEqual(payload['company_name'], self.company.name)
         self.assertTrue(payload.get('mcp_gateway_delegated'))
+        self.assertEqual(payload['owner_user_id'], self.owner.pk)
+        self.assertIsInstance(payload['owner_user_id'], int)
+        self.assertNotIsInstance(payload['owner_user_id'], bool)
+
+    def test_omits_owner_user_id_when_agent_has_no_owner(self):
+        agent = Agent.objects.create(
+            company=self.company,
+            name='Service',
+            services_allowed=['identity', 'storage'],
+        )
+        token = self._sign(agent_id=str(agent.id))
+        response = _post_mint(
+            self.client,
+            token=token,
+            agent_id=str(agent.id),
+            company_id=self.company.id,
+            resource=STORAGE_MCP,
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        payload = jwt.decode(response.json()['access_token'], options={'verify_signature': False})
+        self.assertNotIn('owner_user_id', payload)
+        self.assertEqual(payload['aud'], STORAGE_MCP)
+        self.assertEqual(payload['scope'], 'identity storage')
 
     def test_disabled_when_ai_service_not_configured(self):
         with override_settings(AI_SERVICE_URL='', AI_SERVICE_ISSUER='', AI_SERVICE_JWKS={}):
