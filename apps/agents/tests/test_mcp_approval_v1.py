@@ -431,6 +431,7 @@ class McpApprovalV1Tests(TestCase):
         self.assertContains(page, 'Approve this action?')
         self.assertContains(page, 'Signed in as member@acme.com')
         self.assertContains(page, 'Use another account')
+        self.assertNotContains(page, 'Continue as member@acme.com')
         self.assertContains(page, 'Writer wants to run write_file on Acme')
         approved = client.post(url, {'decision': 'approve', 'token': token})
         self.assertContains(approved, 'Approved')
