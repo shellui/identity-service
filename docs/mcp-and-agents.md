@@ -343,36 +343,25 @@ Identity tests use `apps.agents.trusted_revocation.parse_trusted_revocation_poll
 
 ## Call logs
 
-Services forward MCP call audit rows to `POST /api/v1/mcp/internal/mcp-call-logs` (assertion audience `shellui-mcp-call-log`). Identity stores them and emits `identity.mcp.call` security events. The body must include `outcome` as one of `allowed`, `failed`, `denied`, `waiting_approval`, or `session_used` (legacy `success`, `error`, `rate_limited`, `timeout`, and **`pending_approval`** are accepted on ingest and normalized to the five canonical values). Omitting `outcome` or sending an unknown string returns `400`. Identity does not infer an outcome from HTTP status alone. `company_id` must be a JSON integer in the body (same rule as the assertion). **Authority (required):** `grant_version` as a JSON integer must match the regional `Agent.grant_version`. For **delegated** agents (`global_agent_id` on the row), also send `global_company_id` (uuid string) and `company_binding_version` (JSON integer); they must match the agent row exactly. A mismatch returns **409** so a gateway cannot attach global ids from one SaaS binding to another regional agent. Personal agents must not send `global_company_id` / `company_binding_version`. **Destructive audit:** `access_kind` **`destructive`** stays `destructive` (it is not stored as `write`). The agent row must allow destructive tools (`global_max_destructive`). `session_used` is rejected. `allowed` and `failed` require `approval_id` for a destructive row whose status is `approved` or `executed` (consume leaves the row `executed`; Identity does not move it back to `approved`). `denied` and `waiting_approval` are not execution: `approval_id` is optional, and when present it must be a destructive row in `pending` or `rejected` with the same agent, company, service, tool, and authority snapshot. A fingerprint that does not match that call returns **400**. **Approval link:** when `approval_id` is present it must match the row (same agent, company, service, tool, and authority snapshot); wrong tool or row returns **400**. `arguments`, `arguments_redacted`, and client-supplied `operation_title` / `resource_label` are rejected; Identity derives labels from `tool`, `method`, `path`, and `service`. Query strings are stripped from `path` before validation. New rows store `arguments_redacted` as `{}`.
+MCP tool-call logs are stored in ai-service. The gateway records each `tools/call`, including identity tools it forwards. Read new rows with `GET /ai/v1/mcp/call-logs` on ai-service.
 
-Activity and admin list APIs map legacy stored values to the five labels. Use `error_code` (allowlisted) for timeout or rate limit detail; outcome stays `failed` for those cases.
+Identity does not write those rows. `POST /mcp` does not insert `McpCallLog` rows, and `POST /api/v1/mcp/internal/mcp-call-logs` is removed. New calls do not emit `identity.mcp.call`. Older events of that type remain in the company event log.
 
-Owners read logs with `GET /api/v1/mcp/call-logs`.
+`GET /api/v1/mcp/call-logs` is deprecated. It returns at most 200 existing rows for the company, newest first, and it does not record new tool calls.
 
-### Global dashboard activity
+Rows stored for a global company still include `agent_audit_scope`, `global_agent_id`, and `global_company_id`. Other rows keep the previous keys. The `McpCallLog` table stays, and there is no data migration.
 
-`shellui-django` 0.4.0 `build_mcp_call_log_assertion` signs the normal call-log JWT (`aud` `shellui-mcp-call-log`, `scope` `mcp.call_log.create`, `sub` `service`) and does not add company claims. The SaaS dashboard, and only that caller (`PROVISIONING_ISSUER` / `PROVISIONING_PUBLIC_KEY`), adds these claims on that same JWT when the activity is for a provisioned global company:
+List and personal activity still map a stored legacy outcome to one of `allowed`, `failed`, `denied`, `waiting_approval`, or `session_used`.
 
-| Claim | JSON type |
-| --- | --- |
-| `agent_audit_scope` | string `global_company` |
-| `global_agent_id` | uuid string |
-| `global_company_id` | uuid string |
-| `global_user_sub` | non-empty string, global IdP `sub` of the company owner |
-| `grant_version` | non-negative integer |
-| `company_binding_version` | non-negative integer |
+OAuth consent still writes `oauth.authorize.approved` and `oauth.device.approved` on this table. Those rows record OAuth consent. `GET /api/v1/mcp/personal/agents/{id}/activity` still reads the table.
 
-`grant_version` and `company_binding_version` must both equal `ProvisionedCompany.limits_version` for that `global_company_id`. Identity checks the owner with `UpstreamAccount` (`issuer` `GLOBAL_ISSUER_URL`, `sub` `global_user_sub`) and `Company.owners` on the provisioned regional company. It does not trust an owner flag. A revoked global agent is rejected. Any other caller that sends `agent_audit_scope` receives **403**. A partial claim set receives **400**. No `ProvisionedCompany` receives **404**.
-
-The log is stored on that regional company. Identity does not create a company with id `0` and does not copy `global_agent_id` into `Agent.id`. One active regional `Agent` with that `global_agent_id`, regional company, `global_company_id`, and both versions is linked. No such row leaves `agent` null. More than one active match returns **409**.
-
-The JSON body must not include `arguments`, `arguments_redacted`, `query`, `body`, `email`, `client_ip`, or `result`, and the URL must not include a query string. Optional `company_id` must be the provisioned company's numeric id. Optional `agent_id` must equal the signed `global_agent_id` and is not used as a regional primary key. `GET /api/v1/mcp/call-logs` adds `agent_audit_scope`, `global_agent_id`, and `global_company_id` only on these rows. Regional rows keep the previous keys. Personal activity is unchanged. The delegated-authority **200** body stays 15 keys.
-
-`approval_id` is accepted only when that one regional agent matches the approval fingerprint (`agent`, company, service, tool, grant, SaaS binding). Identity does not invent an approval. Destructive outcomes follow the regional rules above, including `executed` after consume.
+Identity `POST /mcp` accepts an agent token whose `aud` is `{JWT_ISSUER}/mcp`. User OAuth, device login, and personal agent tokens use the per-company gateway URL, so those tokens are refused. ai-service mints a downstream token and calls this endpoint. A holder of that token can call identity `POST /mcp` without the gateway. ai-service does not log that call.
 
 ### Unbound first company
 
-Identity does not accept a `create_first_company` approval or activity row before a `ProvisionedCompany` exists. Settings approvals (`GET /api/v1/mcp/approvals`) and the approval fallback page load a regional `Company` and `Agent`. A null company row is not listed there, and `user_may_manage_approval` reads `row.agent`. Writing that row would not be owner-visible, so Identity does not write it and does not invent a regional company or agent to force it onto the list. After SaaS creates the company and the provisioned row exists, use the global dashboard activity assertion above. Existing global approval create (claim `company_id` `0` as a placeholder, real `ProvisionedCompany` required) is unchanged and is not a first-company bootstrap.
+Identity does not store a `create_first_company` approval before a `ProvisionedCompany` exists. Settings approvals (`GET /api/v1/mcp/approvals`) and the approval fallback page load a regional `Company` and `Agent`. A null company row is not listed there, and `user_may_manage_approval` reads `row.agent`. Writing that row would not be owner-visible, so Identity does not write it and does not invent a regional company or agent to force it onto the list.
+
+Existing global approval create (claim `company_id` `0` as a placeholder, real `ProvisionedCompany` required) is unchanged and is not a first-company bootstrap.
 
 ## Downstream access tokens (ai-service)
 
@@ -433,6 +422,8 @@ Add the PyPI package `shellui-django[mcp]` (source: [django-commons](https://git
 - OpenAPI tools from operations tagged `mcp-tools` only (`@mcp_expose_tool`)
 - Protected resource metadata pointing at Identity
 - Revocation checks against Identity
-- Per-agent rate limits and call log forwarding
+- Per-agent rate limits
+
+Tool-call logs are stored in ai-service. Read them with `GET /ai/v1/mcp/call-logs`.
 
 See module docstrings in `shellui_django.mcp.internal` for assertion audiences and scopes.

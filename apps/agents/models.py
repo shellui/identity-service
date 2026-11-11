@@ -429,6 +429,13 @@ class PersonalAgentCredential(models.Model):
 
 
 class McpCallLog(models.Model):
+    """Stored history. New MCP tool-call logs live in ai-service.
+
+    The table stays for existing rows and for OAuth consent records
+    (``oauth.authorize.approved``, ``oauth.device.approved``).
+    ``GET /api/v1/mcp/call-logs`` reads it and is deprecated.
+    """
+
     OUTCOME_CHOICES = (
         ('allowed', 'Allowed'),
         ('failed', 'Failed'),

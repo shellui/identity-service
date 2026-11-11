@@ -346,7 +346,10 @@ register_event(
     DomainEventType(
         id='identity.mcp.call',
         label='MCP tool call',
-        description='An MCP agent invoked a tool (arguments are redacted in the event log).',
+        description=(
+            'Historical. Identity no longer records MCP tool calls. '
+            'New tool-call logs are stored in ai-service.'
+        ),
         payload_fields=(
             EventFieldDoc('agent_id', 'Agent uuid', '00000000-0000-0000-0000-000000000001'),
             EventFieldDoc('service', 'Service id', 'identity'),

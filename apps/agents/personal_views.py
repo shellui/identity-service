@@ -301,8 +301,12 @@ def _activity_row(row: McpCallLog) -> dict:
         tags=['mcp-personal'],
         operation_id='api_v1_mcp_personal_agent_activity',
         **admin_openapi_fields(
-            summary='Activity log for your MCP agent',
-            lead='Recent tool calls for an agent you created. Never includes arguments or secrets.',
+            summary='Stored activity for your MCP agent',
+            lead=(
+                'Rows stored for an agent you created, including older tool calls and OAuth consent. '
+                'New MCP tool-call logs are in ai-service (GET /ai/v1/mcp/call-logs). '
+                'Arguments and secrets are omitted.'
+            ),
             side_effects='Read-only.',
         ),
         responses={200: OpenApiResponse(description='Activity rows'), **ADMIN_API_ERRORS},

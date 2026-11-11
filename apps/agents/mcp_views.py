@@ -5,7 +5,6 @@ from __future__ import annotations
 import contextvars
 import json
 import threading
-import time
 from datetime import timedelta
 
 from django.conf import settings
@@ -34,10 +33,6 @@ _server: McpServer | None = None
 _schema_cache: dict | None = None
 _schema_lock = threading.Lock()
 
-_mcp_tool_call_started_at: contextvars.ContextVar[float | None] = contextvars.ContextVar(
-    'identity_mcp_tool_call_started_at',
-    default=None,
-)
 # First ``redact_mapping`` call inside a tools/call is the tool result. Later calls redact logs.
 _mcp_result_redaction: contextvars.ContextVar[bool] = contextvars.ContextVar(
     'identity_mcp_result_redaction',
@@ -183,43 +178,12 @@ def _get_server() -> McpServer:
             service_name='identity',
             identity_revocation_check=lambda agent_id, company_id: agent_id
             in set(blocked_agent_ids(company_id=company_id)),
-            on_call=_record_local_call,
             approval_handler=_maybe_create_approval,
             approval_state=_approval_state,
             approval_consume=_consume_approval,
         )
     _server._factory = _McpRequestFactory()
     return _server
-
-
-def _record_local_call(entry: dict) -> None:
-    from apps.agents.models import McpCallLog
-
-    agent_id = entry.get('agent_id')
-    company_id = entry.get('company_id')
-    if not agent_id or company_id is None:
-        return
-    try:
-        agent = Agent.objects.get(pk=agent_id, company_id=company_id)
-    except Agent.DoesNotExist:
-        return
-    duration_ms = entry.get('duration_ms')
-    if not isinstance(duration_ms, (int, float)):
-        started = _mcp_tool_call_started_at.get()
-        duration_ms = max(0, int((time.monotonic() - started) * 1000)) if started is not None else 0
-    else:
-        duration_ms = max(0, int(duration_ms))
-    McpCallLog.objects.create(
-        agent=agent,
-        company_id=company_id,
-        service=entry.get('service') or 'identity',
-        tool=entry.get('tool') or '',
-        http_method=entry.get('method') or '',
-        path=entry.get('path') or '',
-        status_code=int(entry.get('status') or 0),
-        duration_ms=duration_ms,
-        arguments_redacted=entry.get('arguments') or {},
-    )
 
 
 def _approval_binding_from_payload(payload: dict) -> dict | None:
@@ -333,13 +297,11 @@ def _agent_claims(request: HttpRequest) -> dict | None:
 @csrf_exempt
 def mcp_endpoint(request: HttpRequest):
     claims = _agent_claims(request)
-    timer: contextvars.Token | None = None
     redact_token: contextvars.Token | None = None
     if request.method == 'POST':
         try:
             payload = json.loads(request.body.decode('utf-8') or '{}')
             if isinstance(payload, dict) and payload.get('method') == 'tools/call':
-                timer = _mcp_tool_call_started_at.set(time.monotonic())
                 redact_token = _mcp_result_redaction.set(True)
         except (json.JSONDecodeError, UnicodeDecodeError):
             pass
@@ -352,5 +314,3 @@ def mcp_endpoint(request: HttpRequest):
     finally:
         if redact_token is not None:
             _mcp_result_redaction.reset(redact_token)
-        if timer is not None:
-            _mcp_tool_call_started_at.reset(timer)

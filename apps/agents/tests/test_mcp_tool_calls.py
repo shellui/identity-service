@@ -388,9 +388,7 @@ def _oauth_social_apps_create(self):
         body={'docs_slug': 'gitlab', 'client_id': 'cid-new', 'client_secret': 'super-secret'},
     )
     self.assertEqual(body['social_app']['provider'], 'gitlab')
-    logged = McpCallLog.objects.filter(tool='identity_create_oauth_social_apps').get()
-    self.assertEqual(logged.arguments_redacted['body']['client_secret'], '[redacted]')
-    self.assertNotIn('super-secret', json.dumps(logged.arguments_redacted))
+    self.assertFalse(McpCallLog.objects.filter(tool='identity_create_oauth_social_apps').exists())
 
 
 def _oauth_social_apps_update(self):

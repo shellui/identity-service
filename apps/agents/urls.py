@@ -56,7 +56,6 @@ urlpatterns = [
         internal_views.McpInternalApprovalSessionRevokeView.as_view(),
         name='mcp-internal-approval-session-revoke',
     ),
-    path('internal/mcp-call-logs', internal_views.McpInternalCallLogView.as_view(), name='mcp-internal-call-log'),
     path(
         'internal/mcp-downstream-access-token',
         downstream_internal.McpDownstreamAccessTokenView.as_view(),

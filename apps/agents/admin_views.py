@@ -307,13 +307,18 @@ class McpApprovalDecideView(APIView):
     get=extend_schema(
         tags=['mcp-admin'],
         operation_id='api_v1_mcp_call_logs_list',
+        deprecated=True,
         **admin_openapi_fields(
-            summary='List MCP call log entries',
-            lead='Returns recent MCP HTTP tool invocations with redacted arguments.',
-            side_effects='Read-only.',
+            summary='List stored MCP call log history (deprecated)',
+            lead=(
+                'Deprecated. New MCP tool-call logs are stored in ai-service. '
+                'Read them with GET /ai/v1/mcp/call-logs. '
+                'This route returns existing identity-service rows only.'
+            ),
+            side_effects='Read-only. Does not record new tool calls.',
             sensitive=True,
         ),
-        responses={200: OpenApiResponse(description='Call log rows'), **ADMIN_API_ERRORS},
+        responses={200: OpenApiResponse(description='Stored call log rows'), **ADMIN_API_ERRORS},
     ),
 )
 class McpCallLogListView(APIView):

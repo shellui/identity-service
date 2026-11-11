@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 - MCP device authorization ([RFC 8628](https://www.rfc-editor.org/rfc/rfc8628)) for headless agents. `POST /oauth/mcp/device/code` returns `device_code`, `user_code`, `verification_uri`, `verification_uri_complete`, `expires_in`, and `interval`. The person signs in and approves at `/oauth/mcp/device`. `POST /oauth/token` accepts `grant_type=urn:ietf:params:oauth:grant-type:device_code` and returns the same short-lived access token and refresh token as the authorization-code grant. Authorization server metadata advertises `device_authorization_endpoint` and the grant type. Codes are stored as hashes and are not logged. The agent appears in the member agent list and can be revoked there. Lifetime is capped by `MCP_PERSONAL_AGENT_MAX_LIFETIME_DAYS`.
 
-- Dashboard-only global company activity on `POST /api/v1/mcp/internal/mcp-call-logs`. The normal call-log JWT gains `agent_audit_scope: global_company` plus signed `global_agent_id`, `global_company_id`, `global_user_sub`, `grant_version`, and `company_binding_version`. Identity checks the provisioned company and owner. It does not create company id `0` or copy the global agent id into `Agent.id`. Unbound first-company approvals are not stored. Regional call logs and the 15-key delegated-authority response are unchanged.
+- Unbound first-company approvals are not stored. Identity does not create company id `0` or copy a global agent id into `Agent.id`.
 
 - `/.well-known/oauth-authorization-server` lists `token_endpoint` as `POST /oauth/token`. **Region** instances dispatch that path to MCP token grants and to RFC 8693 user session token exchange (agent exchange is routed by unverified `token_type=agent_access` or `mcp_authority=global_delegated` on the subject JWT). **Global** instances keep OpenID code exchange on `POST /oauth/token`. **Standalone** instances answer MCP grants on `POST /oauth/token` (empty body returns **400**, not 404).
 
@@ -27,9 +27,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 - Global subject tokens must include ``mcp_authority: global_delegated``. Regional tokens from exchange include ``mcp_authority: delegated``. ``mcp-approval-session-check`` returns live ``global_company_id``, ``company_binding_version``, and ``grant_version`` on success when the agent is delegated; internal approval create rejects ``arguments_redacted`` in the JSON body and refuses non-JSON ``is_destructive``.
 
-- Live delegated agent authority: ``POST /api/v1/mcp/internal/mcp-agent-delegated-authority`` plus aliases ``.../mcp-delegated-authority`` and ``.../mcp-delegated-agent-authority`` (assertion audience ``shellui-mcp-agent-delegated-authority``, scope ``mcp.agent.delegated.authority.read``). **200** responses use a **fixed** set of keys including regional ``agent_id``, ``global_agent_id``, SaaS ``global_company_id``, ``grant_version``, ``company_binding_version``, ``access_mode``, ``read_level``, ``allow_destructive`` (always ``false`` for delegated rows), sorted ``services_allowed``, and ``revoked_at`` (``null`` when not revoked); assertion JWTs must not carry extra claims; missing bearer assertion returns **404**. MCP call log ingest uses ``waiting_approval`` (alias ``pending_approval`` on ingest); migration ``0022`` renames stored rows.
-
-- MCP internal call log ingest requires ``grant_version`` in the JSON body to match the ``Agent``; delegated agents must also send ``global_company_id`` and ``company_binding_version`` matching the row (otherwise **409**). ``access_kind`` ``destructive`` requires an approved destructive ``approval_id``; wrong tool or row match returns **400** instead of accepting the log with a dropped approval link.
+- Live delegated agent authority: ``POST /api/v1/mcp/internal/mcp-agent-delegated-authority`` plus aliases ``.../mcp-delegated-authority`` and ``.../mcp-delegated-agent-authority`` (assertion audience ``shellui-mcp-agent-delegated-authority``, scope ``mcp.agent.delegated.authority.read``). **200** responses use a **fixed** set of keys including regional ``agent_id``, ``global_agent_id``, SaaS ``global_company_id``, ``grant_version``, ``company_binding_version``, ``access_mode``, ``read_level``, ``allow_destructive`` (always ``false`` for delegated rows), sorted ``services_allowed``, and ``revoked_at`` (``null`` when not revoked); assertion JWTs must not carry extra claims; missing bearer assertion returns **404**. Migration ``0022`` renames stored call log outcomes from ``pending_approval`` to ``waiting_approval``.
 
 - Migration ``0021`` clears legacy ``arguments_redacted`` on MCP approval and call log rows.
 
@@ -39,9 +37,9 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 - `GET /api/v1/mcp/internal/mcp-revocations` puts `max_active_grant_version` on the JSON body as well as in the signed assertion. `agents` lists every regional agent for the company filter, not only blocked rows. `revoked_agent_ids` stays the blocked set. Cache remains 30 seconds.
 
-- Destructive MCP call logs accept `allowed` and `failed` against an `approved` or `executed` approval (including after consume). `denied` and `waiting_approval` stay `access_kind` `destructive`. `session_used` is rejected for destructive calls. Identity does not move `executed` back to `approved`.
+### 🗑 Removed
 
-- Identity ``/mcp`` local ``tools/call`` rows store elapsed ``duration_ms`` in the admin call log.
+- Identity no longer stores MCP tool-call logs. `POST /mcp` does not insert `McpCallLog` rows, and `POST /api/v1/mcp/internal/mcp-call-logs` is removed. New tool-call logs are stored in ai-service (`GET /ai/v1/mcp/call-logs`). `GET /api/v1/mcp/call-logs` stays read-only for existing rows and is deprecated. The `McpCallLog` table is unchanged. OAuth consent rows (`oauth.authorize.approved`, `oauth.device.approved`) still write to that table.
 
 ## [0.11.0] - 2026-11-01
 
