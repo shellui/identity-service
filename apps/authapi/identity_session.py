@@ -31,7 +31,6 @@ AUTH_COMPANY_KEY = 'identity_auth_company_id'
 CLI_CONTINUE_KEY = 'identity_cli_continue_grant'
 MCP_AUTHORIZE_CONTINUE_KEY = 'identity_mcp_authorize_client'
 MCP_DEVICE_CONTINUE_KEY = 'identity_mcp_device_grant'
-MCP_APPROVAL_CONTINUE_KEY = 'identity_mcp_approval_id'
 MAGIC_LINK_METHOD = 'magic_link'
 _CLI_METHOD_KEY = 'cli_device_auth_method'
 

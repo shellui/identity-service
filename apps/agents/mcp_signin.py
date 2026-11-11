@@ -434,7 +434,6 @@ def mcp_signin(request: HttpRequest) -> HttpResponse:
     lang = page_language(request)
     copy = copy_for(lang)
     from apps.authapi.identity_session import (
-        MCP_APPROVAL_CONTINUE_KEY,
         MCP_AUTHORIZE_CONTINUE_KEY,
         MCP_DEVICE_CONTINUE_KEY,
         account_email,
@@ -466,7 +465,6 @@ def mcp_signin(request: HttpRequest) -> HttpResponse:
             request.session[MCP_DEVICE_CONTINUE_KEY] = str(device_grant.id)
             return HttpResponseRedirect(reverse('mcp-oauth-device'))
         if approval_only and approval_path:
-            request.session[MCP_APPROVAL_CONTINUE_KEY] = str(approval_row.id)
             return HttpResponseRedirect(approval_path)
         return render_error(request, 'invalid_request', 400)
     elif request.method == 'GET' and eligible:

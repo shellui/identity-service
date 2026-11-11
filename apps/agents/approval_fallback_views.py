@@ -241,7 +241,7 @@ def _start_signin(request: HttpRequest, *, path: str) -> HttpResponse:
 def finish_approval_signin(request: HttpRequest, *, user, company, method: str = '') -> HttpResponse:
     """Finish magic-link or SSO sign-in that started from the approval page."""
     from apps.agents.mcp_signin import is_company_member, render_message
-    from apps.authapi.identity_session import MCP_APPROVAL_CONTINUE_KEY, establish_identity_session
+    from apps.authapi.identity_session import establish_identity_session
 
     path, row = saved_approval_return(request)
     copy = copy_for(page_language(request, user))
@@ -254,7 +254,6 @@ def finish_approval_signin(request: HttpRequest, *, user, company, method: str =
     if not establish_identity_session(request, user, company=company, method=method or 'sso'):
         return render_message(request, copy['not_member'].format(company=company.name), 403, user=user)
     remember_approval_return(request, path)
-    request.session[MCP_APPROVAL_CONTINUE_KEY] = str(row.id)
     return HttpResponseRedirect(path)
 
 
