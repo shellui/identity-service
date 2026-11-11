@@ -129,7 +129,9 @@ class McpDownstreamAccessTokenView(APIView):
             return Response({'error': 'Delegation request already used.'}, status=status.HTTP_401_UNAUTHORIZED)
 
         try:
-            access_token = encode_access_token(agent, resource=resource)
+            # Mark tokens minted for the AI company gateway so downstream /mcp servers
+            # do not open a second human approval after the gateway already consumed one.
+            access_token = encode_access_token(agent, resource=resource, gateway_delegated=True)
         except ValueError:
             return Response({'error': 'Agent cannot issue tokens.'}, status=status.HTTP_403_FORBIDDEN)
         return Response({'access_token': access_token})

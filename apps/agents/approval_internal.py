@@ -63,7 +63,18 @@ def public_approval_status(row: McpApprovalRequest, *, now) -> str:
 
 def lookup_approval_row(binding: dict[str, Any]) -> McpApprovalRequest | None:
     q = approval_lookup_filter(binding)
-    return McpApprovalRequest.objects.filter(**q).order_by('-created_at').first()
+    qs = McpApprovalRequest.objects.filter(**q)
+    # Prefer a still-decidable / consumable row over an older executed or expired one
+    # so the same tool arguments can be approved again after a prior grant was used.
+    active = qs.filter(
+        status__in=(
+            McpApprovalRequest.STATUS_PENDING,
+            McpApprovalRequest.STATUS_APPROVED,
+        )
+    ).order_by('-created_at').first()
+    if active is not None:
+        return active
+    return qs.order_by('-created_at').first()
 
 
 def approval_lookup_filter(binding: dict[str, Any]) -> dict:

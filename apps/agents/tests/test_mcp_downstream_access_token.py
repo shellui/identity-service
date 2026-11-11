@@ -170,6 +170,7 @@ class McpDownstreamAccessTokenTests(TestCase):
         self.assertEqual(payload['agent_id'], str(self.agent.id))
         self.assertEqual(payload['company_id'], self.company.id)
         self.assertEqual(payload['company_name'], self.company.name)
+        self.assertTrue(payload.get('mcp_gateway_delegated'))
 
     def test_disabled_when_ai_service_not_configured(self):
         with override_settings(AI_SERVICE_URL='', AI_SERVICE_ISSUER='', AI_SERVICE_JWKS={}):

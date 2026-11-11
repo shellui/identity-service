@@ -45,7 +45,7 @@ def company_name_for_agent(agent: Agent) -> str:
     return name or ''
 
 
-def build_agent_access_token(agent: Agent, *, resource: str) -> dict:
+def build_agent_access_token(agent: Agent, *, resource: str, gateway_delegated: bool = False) -> dict:
     audience = normalize_resource_indicator(resource)
     if not audience:
         raise ValueError('Invalid MCP resource for access token audience.')
@@ -73,6 +73,9 @@ def build_agent_access_token(agent: Agent, *, resource: str) -> dict:
         'exp': int(exp.timestamp()),
         'aud': audience,
     }
+    if gateway_delegated:
+        # AI company gateway already enforced human approval for this tools/call.
+        claims['mcp_gateway_delegated'] = True
     if ga is not None:
         claims['mcp_authority'] = 'delegated'
     # Tests often override ``JWT_ISSUER`` without refreshing ``SIMPLE_JWT['ISSUER']``;
@@ -115,13 +118,13 @@ def build_agent_access_token(agent: Agent, *, resource: str) -> dict:
     return claims
 
 
-def encode_access_token(agent: Agent, *, resource: str) -> str:
+def encode_access_token(agent: Agent, *, resource: str, gateway_delegated: bool = False) -> str:
     import jwt
 
     ga = getattr(agent, 'global_agent_id', None)
     if ga is not None and global_agent_exchange_blocked(ga):
         raise ValueError('Global agent is revoked.')
-    claims = build_agent_access_token(agent, resource=resource)
+    claims = build_agent_access_token(agent, resource=resource, gateway_delegated=gateway_delegated)
     headers = {}
     kid = getattr(settings, 'JWT_ACTIVE_KEY_ID', '')
     if kid:
