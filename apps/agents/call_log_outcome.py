@@ -1,4 +1,4 @@
-"""Validated audit outcomes for MCP call logs (internal ingest and human-readable APIs)."""
+"""Outcome labels for stored MCP call log rows on read APIs."""
 
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ LEGACY_OUTCOME_ALIASES: dict[str, str] = {
 
 
 def canonical_outcome_ingest(raw: str | None) -> str | None:
-    """Normalize an explicit outcome string for internal ingest. No HTTP status fallback."""
+    """Map a stored or legacy outcome string to a canonical label. No HTTP status fallback."""
     s = (raw or '').strip().lower()
     if not s:
         return None

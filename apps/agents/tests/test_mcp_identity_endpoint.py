@@ -8,7 +8,7 @@ from unittest.mock import patch
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 
-from apps.agents.models import Agent
+from apps.agents.models import Agent, McpCallLog
 from apps.agents.tokens import encode_access_token
 from apps.companies.access import set_company_access
 from apps.companies.models import Company
@@ -91,4 +91,16 @@ class McpIdentityEndpointTests(TestCase):
                 HTTP_AUTHORIZATION=f'Bearer {other}',
             )
         self.assertNotIn('result', response.json() if response.status_code == 200 else {})
+
+    def test_tools_call_does_not_write_call_log(self):
+        response = self.client.post(
+            '/mcp',
+            data=_rpc('tools/call', name='identity_list_services', arguments={}),
+            content_type='application/json',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertIn('result', response.json())
+        self.assertFalse(response.json()['result'].get('isError'), response.json())
+        self.assertEqual(McpCallLog.objects.count(), 0)
 
