@@ -89,13 +89,15 @@ COPY = {
         'approval_approve': 'Approve',
         'approval_deny': 'Deny',
         'approval_approved_body': (
-            'You approved this action. You can return to {agent_name}. This page can be closed.'
+            'You approved this action. {agent_name} will keep working — you can close this page.'
         ),
         'approval_denied_body': (
             'You denied this action. Nothing was changed. You can return to {agent_name}.'
         ),
         'approval_expired_body': 'This request expired before a decision. Ask the agent to send a new one.',
-        'approval_already_approved': 'This request was already approved. You can return to {agent_name}.',
+        'approval_already_approved': (
+            'This request was already approved. {agent_name} will keep working — you can close this page.'
+        ),
         'approval_already_denied': 'This request was already denied. Nothing was changed.',
         'approval_unknown_body': 'This link does not match an approval request.',
         'approval_unavailable_body': 'This request has no company page. Decide it in Shellui if you still can.',
@@ -194,7 +196,7 @@ COPY = {
         'approval_approve': 'Approuver',
         'approval_deny': 'Refuser',
         'approval_approved_body': (
-            'Vous avez approuvé cette action. Vous pouvez revenir à {agent_name}. Cette page peut être fermée.'
+            'Vous avez approuvé cette action. {agent_name} continue son travail — vous pouvez fermer cette page.'
         ),
         'approval_denied_body': (
             "Vous avez refusé cette action. Rien n'a été modifié. Vous pouvez revenir à {agent_name}."
@@ -202,7 +204,9 @@ COPY = {
         'approval_expired_body': (
             "Cette demande a expiré avant une décision. Demandez à l'agent d'en envoyer une nouvelle."
         ),
-        'approval_already_approved': 'Cette demande a déjà été approuvée. Vous pouvez revenir à {agent_name}.',
+        'approval_already_approved': (
+            'Cette demande a déjà été approuvée. {agent_name} continue son travail — vous pouvez fermer cette page.'
+        ),
         'approval_already_denied': "Cette demande a déjà été refusée. Rien n'a été modifié.",
         'approval_unknown_body': "Ce lien ne correspond à aucune demande d'approbation.",
         'approval_unavailable_body': (
