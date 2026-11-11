@@ -176,6 +176,7 @@ def _render(
     show_actions: bool = False,
     show_switch: bool = False,
     show_recap: bool = False,
+    signed_in_email: str = '',
 ) -> HttpResponse:
     lang = page_language(request, request.user if getattr(request.user, 'is_authenticated', False) else None)
     ctx = {
@@ -188,6 +189,7 @@ def _render(
         'show_switch': show_switch,
         'show_recap': show_recap,
         'page_token': page_token,
+        'signed_in_as': copy['signed_in_as'].format(email=signed_in_email) if signed_in_email else '',
     }
     from apps.authapi.identity_session import continue_copy
 
@@ -313,12 +315,9 @@ def mcp_approval_fallback(request: HttpRequest, approval_id) -> HttpResponse:
         )
 
     from apps.authapi.identity_session import (
-        MCP_APPROVAL_CONTINUE_KEY,
         account_email,
-        confirmed,
         end_identity_session,
         posted_account_choice,
-        render_continue_as,
         user_can_use_company_session,
     )
 
@@ -342,6 +341,7 @@ def mcp_approval_fallback(request: HttpRequest, approval_id) -> HttpResponse:
             status=403,
             show_switch=True,
             page_token=token,
+            signed_in_email=account_email(user),
         )
 
     if not user_may_manage_approval(user, row):
@@ -354,20 +354,7 @@ def mcp_approval_fallback(request: HttpRequest, approval_id) -> HttpResponse:
             status=403,
             show_switch=True,
             page_token=token,
-        )
-
-    if choice == 'continue':
-        request.session[MCP_APPROVAL_CONTINUE_KEY] = str(row.id)
-    elif not confirmed(request, MCP_APPROVAL_CONTINUE_KEY, str(row.id)):
-        return render_continue_as(
-            request,
-            email=account_email(user),
-            lead=copy['approval_lead'].format(
-                agent_name=agent_name,
-                tool_name=row.action,
-                company_name=_company_name(row),
-            ),
-            hidden_fields={'token': token},
+            signed_in_email=account_email(user),
         )
 
     if request.method == 'POST':
@@ -413,6 +400,8 @@ def mcp_approval_fallback(request: HttpRequest, approval_id) -> HttpResponse:
         title=copy['approval_title_pending'],
         row=row,
         show_actions=True,
+        show_switch=True,
         show_recap=True,
         page_token=token,
+        signed_in_email=account_email(user),
     )
