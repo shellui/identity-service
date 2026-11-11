@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextvars
 import json
+import threading
 import time
 from datetime import timedelta
 
@@ -30,6 +31,8 @@ from apps.authapi.mcp_tool_schema import append_query, publish_tools, rewrite_to
 from shellui_django.mcp.masking import redact_mapping
 
 _server: McpServer | None = None
+_schema_cache: dict | None = None
+_schema_lock = threading.Lock()
 
 _mcp_tool_call_started_at: contextvars.ContextVar[float | None] = contextvars.ContextVar(
     'identity_mcp_tool_call_started_at',
@@ -159,8 +162,16 @@ _install_result_redaction()
 
 
 def _schema() -> dict:
-    generator = SchemaGenerator()
-    return generator.get_schema(request=None, public=True)
+    """Cached OpenAPI for MCP. Concurrent ``SchemaGenerator`` is not thread-safe."""
+    global _schema_cache
+    cached = _schema_cache
+    if cached is not None:
+        return cached
+    with _schema_lock:
+        if _schema_cache is not None:
+            return _schema_cache
+        _schema_cache = SchemaGenerator().get_schema(request=None, public=True)
+        return _schema_cache
 
 
 def _get_server() -> McpServer:
