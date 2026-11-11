@@ -3,6 +3,18 @@
 {% block title %}{{ title }}{% endblock %}
 
 {% block content %}
+  {% if signed_in_as %}
+    <div class="actions">
+      <p class="note">{{ signed_in_as }}</p>
+      {% if show_switch %}
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="token" value="{{ page_token }}">
+          <button type="submit" name="account_choice" value="switch" class="button button-secondary">{{ switch_label }}</button>
+        </form>
+      {% endif %}
+    </div>
+  {% endif %}
   <h1>{{ title }}</h1>
 
   {% if state == "pending" %}
@@ -46,12 +58,6 @@
       <input type="hidden" name="token" value="{{ page_token }}">
       <button type="submit" name="decision" value="approve" class="button">{{ copy.approval_approve }}</button>
       <button type="submit" name="decision" value="deny" class="button button-secondary">{{ copy.approval_deny }}</button>
-    </form>
-  {% elif show_switch %}
-    <form method="post" class="actions">
-      {% csrf_token %}
-      <input type="hidden" name="token" value="{{ page_token }}">
-      <button type="submit" name="account_choice" value="switch" class="button button-secondary">{{ switch_label }}</button>
     </form>
   {% endif %}
 

@@ -78,9 +78,7 @@ class McpApprovalPageTests(TestCase):
     def _open(self, client: Client, row: McpApprovalRequest, **extra):
         url = self._url(row)
         token = url.split('token=', 1)[1]
-        continue_page = client.get(url, **extra)
-        self.assertContains(continue_page, 'Continue as')
-        page = client.post(url, {'account_choice': 'continue', 'token': token}, **extra)
+        page = client.get(url, **extra)
         return url, token, page
 
     def test_signed_in_member_sees_the_request_and_can_approve(self):
@@ -89,6 +87,8 @@ class McpApprovalPageTests(TestCase):
         client.force_login(self.member)
         url, token, page = self._open(client, row)
         self.assertContains(page, 'Approve this action?')
+        self.assertContains(page, 'Signed in as member@acme.com')
+        self.assertContains(page, 'Use another account')
         self.assertContains(page, 'Writer wants to run write_file on Acme')
         self.assertContains(page, 'Acme')
         self.assertContains(page, 'Writer')
@@ -108,6 +108,22 @@ class McpApprovalPageTests(TestCase):
         row.refresh_from_db()
         self.assertEqual(row.status, McpApprovalRequest.STATUS_APPROVED)
         self.assertEqual(row.decided_by_id, self.member.pk)
+
+    def test_signed_in_member_can_switch_account_from_approval_page(self):
+        row = self._row()
+        client = Client()
+        client.force_login(self.member)
+        url = self._url(row)
+        page = client.get(url)
+        self.assertContains(page, 'Signed in as member@acme.com')
+        self.assertContains(page, 'Use another account')
+        switched = client.post(
+            url,
+            {'account_choice': 'switch', 'token': url.split('token=', 1)[1]},
+        )
+        self.assertRedirects(switched, '/oauth/mcp/signin', fetch_redirect_response=False)
+        self.assertNotIn('_auth_user_id', client.session)
+        self.assertEqual(client.session.get('mcp_approval_return_path'), url.removeprefix('http://testserver'))
 
     def test_owner_can_approve_an_agent_they_did_not_create(self):
         row = self._row()
@@ -204,6 +220,7 @@ class McpApprovalPageTests(TestCase):
         response = client.get(self._url(row))
         self.assertEqual(response.status_code, 403)
         self.assertContains(response, 'This account cannot decide this request', status_code=403)
+        self.assertContains(response, 'Signed in as other@acme.com', status_code=403)
         self.assertNotContains(response, 'Create notes.txt in Marketing', status_code=403)
         self.assertNotContains(response, 'name="decision"', status_code=403)
         self.assertContains(response, 'Use another account', status_code=403)
@@ -219,6 +236,7 @@ class McpApprovalPageTests(TestCase):
         response = client.get(self._url(row))
         self.assertEqual(response.status_code, 403)
         self.assertContains(response, 'Staff accounts cannot authorize MCP agents.', status_code=403)
+        self.assertContains(response, 'Signed in as staff@acme.com', status_code=403)
         self.assertNotContains(response, 'name="decision"', status_code=403)
         posted = client.post(self._url(row), {'decision': 'approve', 'token': self._url(row).split('token=', 1)[1]})
         self.assertEqual(posted.status_code, 403)
@@ -281,11 +299,10 @@ class McpApprovalPageTests(TestCase):
         client.force_login(self.member)
         url = self._url(row)
         token = url.split('token=', 1)[1]
-        continue_page = client.get(url, HTTP_ACCEPT_LANGUAGE='fr')
-        self.assertContains(continue_page, 'Continuer en tant que member@acme.com')
-        self.assertContains(continue_page, 'Utiliser un autre compte')
-        page = client.post(url, {'account_choice': 'continue', 'token': token}, HTTP_ACCEPT_LANGUAGE='fr')
+        page = client.get(url, HTTP_ACCEPT_LANGUAGE='fr')
         self.assertContains(page, 'Approuver cette action ?')
+        self.assertContains(page, 'Connecté en tant que member@acme.com')
+        self.assertContains(page, 'Utiliser un autre compte')
         self.assertContains(page, 'Entreprise')
         self.assertContains(page, 'Outil')
         self.assertContains(page, 'Approuver')
@@ -300,7 +317,6 @@ class McpApprovalPageTests(TestCase):
         token = url.split('token=', 1)[1]
         page = client.get(url)
         csrf = client.cookies['csrftoken'].value
-        client.post(url, {'account_choice': 'continue', 'token': token, 'csrfmiddlewaretoken': csrf})
         blocked = client.post(url, {'decision': 'approve', 'token': token})
         self.assertEqual(blocked.status_code, 403)
         row.refresh_from_db()
