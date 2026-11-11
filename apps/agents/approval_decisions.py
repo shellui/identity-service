@@ -125,6 +125,9 @@ def approve_pending(
         actor_email=actor_email or getattr(decided_by, 'email', None),
         user=decided_by,
     )
+    from apps.agents.approval_notify import schedule_approval_decided_notify
+
+    schedule_approval_decided_notify(row)
     return ApprovalDecisionResult(row=row, audit_status=audit_status)
 
 
@@ -151,6 +154,9 @@ def deny_pending(
         actor_email=actor_email or getattr(decided_by, 'email', None),
         user=decided_by,
     )
+    from apps.agents.approval_notify import schedule_approval_decided_notify
+
+    schedule_approval_decided_notify(row)
     return ApprovalDecisionResult(row=row, audit_status=audit_status)
 
 
@@ -246,4 +252,7 @@ def client_allow_session(
             arguments_hash=str(row_locked.arguments_hash or '')[:64],
         )
     row_locked.refresh_from_db()
+    from apps.agents.approval_notify import schedule_approval_decided_notify
+
+    schedule_approval_decided_notify(row_locked)
     return ApprovalDecisionResult(row=row_locked, audit_status=APPROVAL_AUDIT_CLIENT_SESSION_ALLOWED)

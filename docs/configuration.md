@@ -247,7 +247,7 @@ Leave `SHELLUI_INSTANCE_ROLE` unset for a standalone deployment. `global` turns 
 | `HOSTING_SERVICE_URL` | empty | Public hosting-service origin (MCP `list_services`) |
 | `HOSTING_SERVICE_INTERNAL_URL` | empty | hosting-service origin for company-deletion HTTP. Unset uses `HOSTING_SERVICE_URL` |
 | `SAAS_SERVICE_URL` | empty | saas-service (dashboard) origin for MCP `list_services` |
-| `AI_SERVICE_URL` | empty | ai-service origin for MCP connector and `list_services` |
+| `AI_SERVICE_URL` | empty | ai-service origin for MCP connector, `list_services`, and approval decide wake (`POST /internal/mcp-approval-decided`) |
 | `AI_SERVICE_ISSUER` | `AI_SERVICE_URL` | Expected `iss` on ai-service downstream token delegation JWTs |
 | `AI_SERVICE_JWKS` | empty | Pinned JWKS JSON for ai-service (alternative to fetching `AI_SERVICE_JWKS_URL`) |
 | `AI_SERVICE_JWKS_URL` | `{AI_SERVICE_URL}/.well-known/jwks.json` | JWKS URL when `AI_SERVICE_JWKS` is unset |
