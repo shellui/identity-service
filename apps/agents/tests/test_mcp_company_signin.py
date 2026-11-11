@@ -392,6 +392,9 @@ class CompanySigninFlowTests(TestCase):
         self.assertEqual(claims['aud'], self.resource)
         self.assertEqual(claims['company_id'], self.company.id)
         self.assertEqual(claims['company_name'], self.company.name)
+        self.assertEqual(claims['owner_user_id'], self.user.pk)
+        self.assertIsInstance(claims['owner_user_id'], int)
+        self.assertNotIsInstance(claims['owner_user_id'], bool)
         refreshed = self.client.post(
             '/oauth/mcp/token',
             data=json.dumps(
@@ -402,6 +405,9 @@ class CompanySigninFlowTests(TestCase):
         self.assertEqual(refreshed.status_code, 200)
         refreshed_claims = jwt.decode(refreshed.json()['access_token'], options={'verify_signature': False})
         self.assertEqual(refreshed_claims['company_name'], self.company.name)
+        self.assertEqual(refreshed_claims['owner_user_id'], self.user.pk)
+        self.assertEqual(refreshed_claims['aud'], claims['aud'])
+        self.assertEqual(refreshed_claims['scope'], claims['scope'])
 
     def test_deny_returns_access_denied(self):
         self.client.force_login(self.user)

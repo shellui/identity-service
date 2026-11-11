@@ -13,7 +13,7 @@ from django.utils.dateparse import parse_datetime
 
 from apps.agents.models import Agent, PersonalAgentCredential
 from apps.agents.mcp_resources import company_mcp_resource_url
-from apps.agents.tokens import agent_services_scope, company_name_for_agent
+from apps.agents.tokens import agent_services_scope, apply_owner_user_id_claim, company_name_for_agent
 
 
 def personal_agent_max_lifetime() -> timedelta:
@@ -94,6 +94,7 @@ def encode_personal_agent_access_token(
     cb = getattr(agent, 'company_binding_version', None)
     if cb is not None:
         claims['company_binding_version'] = int(cb)
+    apply_owner_user_id_claim(claims, agent)
     _issuer = api_settings.ISSUER or getattr(settings, 'JWT_ISSUER', None)
     if _issuer:
         claims['iss'] = _issuer

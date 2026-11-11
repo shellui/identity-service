@@ -78,6 +78,9 @@ class PersonalAgentTokenTests(TestCase):
         self.assertEqual(claims['company_name'], self.company.name)
         self.assertEqual(claims['aud'], self.resource)
         self.assertIn('personal_token_id', claims)
+        self.assertEqual(claims['owner_user_id'], self.user.pk)
+        self.assertIsInstance(claims['owner_user_id'], int)
+        self.assertNotIsInstance(claims['owner_user_id'], bool)
 
         listed = self.client.get(
             '/api/v1/mcp/personal/agents',

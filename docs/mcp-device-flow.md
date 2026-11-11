@@ -104,7 +104,7 @@ A successful body matches the authorization-code grant:
 }
 ```
 
-Refresh later with `grant_type=refresh_token`, the refresh token, and the same `resource`. The access token `aud` is `MCP_URL`. Claims include `agent_id`, `company_id`, `mcp_access`, `mcp_read`, `mcp_destructive`, `scope`, and `grant_version`.
+Refresh later with `grant_type=refresh_token`, the refresh token, and the same `resource`. The access token `aud` is `MCP_URL`. Claims include `agent_id`, `company_id`, `owner_user_id` (the approving member's regional user id), `mcp_access`, `mcp_read`, `mcp_destructive`, `scope`, and `grant_version`. A refresh keeps `owner_user_id`.
 
 The device code is single-use. A second poll after 200 returns `invalid_grant`.
 

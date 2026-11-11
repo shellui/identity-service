@@ -68,7 +68,7 @@ The browser page uses the same sign-in and consent screens as `/oauth/mcp/author
 
 Approval creates a normal agent row (`created_by` is the member, `oauth_client` is the registered client). It shows up in `GET /api/v1/mcp/personal/agents` as `kind: oauth` and is revoked with `POST /api/v1/mcp/personal/agents/{id}/revoke`. `expires_at` is capped by `MCP_PERSONAL_AGENT_MAX_LIFETIME_DAYS` (default 90). Access tokens stay short-lived (`MCP_ACCESS_TOKEN_LIFETIME`). Refresh uses `grant_type=refresh_token` and the same `resource`. Each approval writes `oauth.device.approved` to the agent call log, with no code or token.
 
-Token claims are the same as other OAuth agent access tokens: `agent_id`, `company_id`, `aud` (the company MCP URL), `mcp_access`, `mcp_read`, `mcp_destructive`, `scope`, `grant_version`, `sub` (`agent:{uuid}`).
+Token claims are the same as other OAuth agent access tokens: `agent_id`, `company_id`, `owner_user_id` (regional user id of the approving member, the same integer as `Agent.created_by_id`), `aud` (the company MCP URL), `mcp_access`, `mcp_read`, `mcp_destructive`, `scope`, `grant_version`, `sub` (`agent:{uuid}`).
 
 ### What ai-service must advertise
 
@@ -163,9 +163,9 @@ Optional: `agent_name` for the regional agent display name.
 
 **Delegated agents and internal approvals:** agents with `global_agent_id` (token exchange) must use approvals signed by **ai-service**. Storage, hosting, and email get **409** with `error_code` `out_of_sync` if they try to create an approval for that agent.
 
-**Regional agent access tokens (after exchange):** include **`mcp_authority: delegated`** (this is **not** `global_delegated` on the global subject token), **`global_agent_id`**, and the SaaS binding echo **`global_company_id`** / **`company_binding_version`** when the row is company-bound. OAuth-consent agents without `global_agent_id` omit `mcp_authority` (personal long-lived tokens stay unchanged). Regional access tokens minted through `POST /api/v1/mcp/internal/mcp-downstream-access-token` use the same claim builder, so delegated agents keep **`mcp_authority: delegated`** on every downstream resource token.
+**Regional agent access tokens (after exchange):** include **`mcp_authority: delegated`** (this is **not** `global_delegated` on the global subject token), **`global_agent_id`**, and the SaaS binding echo **`global_company_id`** / **`company_binding_version`** when the row is company-bound. OAuth-consent agents without `global_agent_id` omit `mcp_authority` (personal long-lived tokens stay unchanged). Regional access tokens minted through `POST /api/v1/mcp/internal/mcp-downstream-access-token` use the same claim builder, so delegated agents keep **`mcp_authority: delegated`** on every downstream resource token. That builder also adds `owner_user_id` when `Agent.created_by_id` is set, and leaves the claim out when it is not.
 
-**Personal regional tokens:** omit `mcp_authority` unless the agent row is delegated; when present, `mcp_authority` is always **`delegated`** (never `global_delegated`).
+**Personal regional tokens:** omit `mcp_authority` unless the agent row is delegated; when present, `mcp_authority` is always **`delegated`** (never `global_delegated`). They carry `owner_user_id` when the agent has `created_by`.
 
 ## Access levels
 
@@ -372,7 +372,7 @@ When ai-service forwards `tools/call` to storage, hosting, email, SaaS, or Ident
 - **Endpoint:** `POST /api/v1/mcp/internal/mcp-downstream-access-token` (answers **404** unless `AI_SERVICE_URL`, `AI_SERVICE_ISSUER`, and pinned `AI_SERVICE_JWKS` or `AI_SERVICE_JWKS_URL` are set).
 - **Authorization:** `Bearer` RS256 delegation JWT signed by ai-service (`shellui_django.mcp.delegation.sign_downstream_token_request` on the caller). Identity verifies with `verify_downstream_token_request` against ai-service JWKS and expected issuer `AI_SERVICE_ISSUER`. Audience `shellui-mcp-downstream-token`, scope `mcp.downstream_token.mint`. Claims include `agent_id`, `company_id`, `resource`, and single-use `jti` (cached on Identity).
 - **JSON body:** `{ "agent_id": "<uuid>", "company_id": <int>, "resource": "<canonical /mcp URL>" }` must match the JWT claims.
-- **Response:** `{ "access_token": "<Identity RS256 agent JWT>" }` with the same agent claims as OAuth, `aud` narrowed to `resource`.
+- **Response:** `{ "access_token": "<Identity RS256 agent JWT>" }` with the same agent claims as OAuth, `aud` narrowed to `resource`. `owner_user_id` is included when the agent has an owner user.
 - **Checks:** agent exists, active, not revoked, belongs to `company_id`; `resource` is exactly one configured service `/mcp` URL and allowed in the agent's `services_allowed`. Per-agent and global rate limits apply. Identity never logs minted tokens.
 
 ## identity_list_services
@@ -398,6 +398,7 @@ Access tokens include:
 | `sub` | `agent:{uuid}` |
 | `agent_id` | Agent uuid |
 | `company_id` | Company id |
+| `owner_user_id` | Regional user id the agent acts for. JSON integer, the same value as `Agent.created_by_id`. Omitted when the agent has no owner user. Not sent as null. |
 | `scope` | Space-separated service ids |
 | `grant_version` | Bumps when company-scoped MCP permissions invalidate session Allow grants |
 | `global_company_id` | SaaS global company uuid when the regional agent is bound |
@@ -407,7 +408,9 @@ Access tokens include:
 | `mcp_read` | `safe` or `sensitive` |
 | `mcp_destructive` | Boolean on the JWT; `true` only for non-delegated agents that still have legacy `allow_destructive_without_asking`. Always `false` when `mcp_authority` is **`delegated`**. |
 
-Refresh tokens use `grant_type=refresh_token` at `POST /oauth/token` (or `POST /oauth/mcp/token`) with the same `resource` parameter. Each refresh token is bound to one resource.
+Personal tokens, OAuth authorization-code tokens, device-login tokens, tokens from agent token exchange, access tokens rotated with `refresh_token`, and downstream tokens minted for ai-service all follow that rule. A global agent or a company service agent with no `created_by` user omits `owner_user_id`.
+
+Refresh tokens use `grant_type=refresh_token` at `POST /oauth/token` (or `POST /oauth/mcp/token`) with the same `resource` parameter. Each refresh token is bound to one resource. The new access token keeps `owner_user_id` when the agent still has an owner user.
 
 Regional Identity deployments scope agents to the company only (no `project_scope` in consent or JWT). Project binding for SaaS is enforced in saas-service.
 
