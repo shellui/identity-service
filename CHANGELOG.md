@@ -41,6 +41,10 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 - Identity no longer stores MCP tool-call logs. `POST /mcp` does not insert `McpCallLog` rows, and `POST /api/v1/mcp/internal/mcp-call-logs` is removed. New tool-call logs are stored in ai-service (`GET /ai/v1/mcp/call-logs`). `GET /api/v1/mcp/call-logs` stays read-only for existing rows and is deprecated. The `McpCallLog` table is unchanged. OAuth consent rows (`oauth.authorize.approved`, `oauth.device.approved`) still write to that table.
 
+### 📚 Documentation
+
+- Shell host session. The shell host calls `POST /api/v1/oauth/session`, token refresh, and logout, and it keeps the access token and the refresh token. Page JavaScript does not receive them. Web sign-in sends S256 PKCE. `shellui login` uses device login, not a loopback code exchange.
+
 ## [0.11.0] - 2026-11-01
 
 ### 🏗 Chore
