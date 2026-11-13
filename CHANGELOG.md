@@ -39,7 +39,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ### 🔒 Security
 
-- **OAuth providers:** A company OAuth client update accepts a SocialApp only when that company created it and no other OAuth client already maps it. Listing, updating, or deleting a provider app returns not found when another company created the app or another company already maps it.
+- **OAuth providers:** A company OAuth client update accepts a SocialApp only when that company created it and no other OAuth client already maps it. Listing, updating, or deleting a provider app returns not found when another company created the app or another company already maps it. A migration sets `created_by_company_id` on existing provider apps that are missing it and are mapped to exactly one company.
 
 ### 🗑 Removed
 
