@@ -26,11 +26,13 @@ const sidebars = {
     doc('index', 'Overview'),
     category('Get started', [
       doc('getting-started', 'Run identity-service'),
+      doc('local-dev-stack', 'Local dev stack'),
       doc('configuration', 'Configuration'),
     ]),
     category('Sign-in', [
       doc('oauth-login', 'OAuth login'),
       doc('desktop-apps', 'Desktop apps'),
+      doc('cli-device-login', 'CLI device login'),
       doc('oauth-providers', 'OAuth providers'),
       doc('magic-link', 'Magic link'),
       doc('saml', 'SAML single sign-on'),
@@ -44,6 +46,10 @@ const sidebars = {
     category('Tokens', [
       doc('jwks', 'JWT and JWKS'),
       doc('metrics', 'Metrics and access tokens'),
+    ]),
+    category('MCP', [
+      doc('mcp-and-agents', 'MCP and agents'),
+      doc('mcp-device-flow', 'MCP device login'),
     ]),
     category('Events and email', [
       doc('actions', 'Webhooks'),

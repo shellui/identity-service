@@ -5,6 +5,85 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## [Unreleased]
+
+### ✨ Feature
+
+- The identity browser session. App login on the identity origin (OAuth, SSO, and magic-link verify) calls Django `login()` for an active user who can access that company, and sets the session cookie on the redirect back to the app. Token APIs stay Bearer-only. CLI and MCP pages (`/oauth/cli/device`, `/oauth/cli/signin`, `/oauth/mcp/authorize`, `/oauth/mcp/device`, `/oauth/mcp/signin`, `/oauth/mcp/approval/<id>`) show "Continue as <email>" and "Use another account" when that session can access the company. Continue as does not approve the device or client. MCP still refuses staff. Staff CLI sessions older than `CLI_STAFF_SESSION_MAX_AGE` (12 hours) or established with a magic link must sign in again with a password or SSO. The browser session lasts `IDENTITY_SESSION_MAX_AGE` (default 7 days, the refresh-token lifetime). Staff browser sessions are capped at 12 hours. `GET` and `POST /oauth/logout?company_id=&return_to=` clear the cookie only. `return_to` uses the company redirect allowlist. `GET /api/v1/settings` includes `logout_url`. On HTTP, cookie names follow `SHELLUI_INSTANCE_ROLE` (`shellui_region_sessionid`, `shellui_global_sessionid`). Secure cookies stay `__Host-sessionid`.
+
+- Shellui CLI device authorization ([RFC 8628](https://www.rfc-editor.org/rfc/rfc8628)), separate from the MCP device grant. `POST /oauth/cli/device/code` with `client_id=shellui-cli` and `company_id` returns `device_code`, `user_code`, `verification_uri`, `verification_uri_complete`, `expires_in` (600), and `interval` (5). The person approves at `/oauth/cli/device`. `POST /oauth/token` with `grant_type=urn:ietf:params:oauth:grant-type:device_code` returns a normal app session for that company (`token_type` `bearer`). Staff can approve with a password or SSO, not a magic link, and the refresh token is capped by `CLI_STAFF_SESSION_MAX_AGE` (default 12 hours). The session is listed at `GET /api/v1/sessions` with `kind` `cli` and revoked at `POST /api/v1/sessions/{id}/revoke`. MCP device codes and CLI device codes are not interchangeable. MCP metadata is unchanged.
+
+- MCP device authorization ([RFC 8628](https://www.rfc-editor.org/rfc/rfc8628)) for headless agents. `POST /oauth/mcp/device/code` returns `device_code`, `user_code`, `verification_uri`, `verification_uri_complete`, `expires_in`, and `interval`. The person signs in and approves at `/oauth/mcp/device`. `POST /oauth/token` accepts `grant_type=urn:ietf:params:oauth:grant-type:device_code` and returns the same short-lived access token and refresh token as the authorization-code grant. Authorization server metadata advertises `device_authorization_endpoint` and the grant type. Codes are stored as hashes and are not logged. The agent appears in the member agent list and can be revoked there. Lifetime is capped by `MCP_PERSONAL_AGENT_MAX_LIFETIME_DAYS`.
+
+- Unbound first-company approvals are not stored. Identity does not create company id `0` or copy a global agent id into `Agent.id`.
+
+- `/.well-known/oauth-authorization-server` lists `token_endpoint` as `POST /oauth/token`. **Region** instances dispatch that path to MCP token grants and to RFC 8693 user session token exchange (agent exchange is routed by unverified `token_type=agent_access` or `mcp_authority=global_delegated` on the subject JWT). **Global** instances keep OpenID code exchange on `POST /oauth/token`. **Standalone** instances answer MCP grants on `POST /oauth/token` (empty body returns **400**, not 404).
+
+- Optional `global_mcp_url` on `GET /api/v1/mcp/personal/status` when `DASHBOARD_PUBLIC_URL` is set (Shellui dashboard origin); value is `{DASHBOARD_PUBLIC_URL}/mcp`, independent of regional `mcp_url`.
+
+- MCP session Allow TTL stays **60 seconds** by default. ai-service can sign longer approval assertions (other issuers stay near 60 second ``exp - iat``) and include ``setup_flow`` with ``mcp_session_ttl_seconds`` between **600** and **900** during new-company setup when the regional ``Agent`` has stored setup context from global token exchange (global subject token: ``setup_context_company_id`` and signed ``setup_expires_at``). Extended grants apply only when both remaining time to access token ``exp`` and remaining time to ``setup_context_expires_at`` are at least ``MCP_APPROVAL_SETUP_SESSION_TTL_MIN_SECONDS`` (default 600); otherwise Identity falls back to the default TTL. Regional access tokens echo ``setup_expires_at``. Revocation poll responses include ``revocation_policy_version`` (and the same claim in ``revocation_assertion``) so gateways drop positive cache when grants are revoked or company permissions change without pausing the agent. Other callers and HTTP bodies cannot extend the grant; destructive actions still need an approval each time.
+
+- Global agent token exchange: the global subject token ``scope`` must include ``ai`` for ``{AI_SERVICE_URL}/c/<company_id>/mcp``. First-company setup on the global token requires ``setup_flow`` and ``mcp_new_company_grant`` both JSON ``true`` (pairing and strict integer deadlines); absent setup claims clear any stored setup on the regional agent. Personal MCP agent access tokens set ``iss`` from ``SIMPLE_JWT['ISSUER']`` or ``JWT_ISSUER`` for the same behavior as company agents.
+
+- Global subject tokens must include ``mcp_authority: global_delegated``. Regional tokens from exchange include ``mcp_authority: delegated``. ``mcp-approval-session-check`` returns live ``global_company_id``, ``company_binding_version``, and ``grant_version`` on success when the agent is delegated; internal approval create rejects ``arguments_redacted`` in the JSON body and refuses non-JSON ``is_destructive``.
+
+- Live delegated agent authority: ``POST /api/v1/mcp/internal/mcp-agent-delegated-authority`` plus aliases ``.../mcp-delegated-authority`` and ``.../mcp-delegated-agent-authority`` (assertion audience ``shellui-mcp-agent-delegated-authority``, scope ``mcp.agent.delegated.authority.read``). **200** responses use a **fixed** set of keys including regional ``agent_id``, ``global_agent_id``, SaaS ``global_company_id``, ``grant_version``, ``company_binding_version``, ``access_mode``, ``read_level``, ``allow_destructive`` (always ``false`` for delegated rows), sorted ``services_allowed``, and ``revoked_at`` (``null`` when not revoked); assertion JWTs must not carry extra claims; missing bearer assertion returns **404**. Migration ``0022`` renames stored call log outcomes from ``pending_approval`` to ``waiting_approval``.
+
+- Migration ``0021`` clears legacy ``arguments_redacted`` on MCP approval and call log rows.
+
+### 🐛 Bug Fixes
+
+- Owner `POST /api/v1/mcp/approvals/{id}/decide` and approval consume lock only the approval row. PostgreSQL no longer returns 500 when `select_for_update` joined the nullable agent. A second decide or consume on that row stays a conflict. Staff and non-owners stay refused.
+
+- `GET /api/v1/mcp/internal/mcp-revocations` puts `max_active_grant_version` on the JSON body as well as in the signed assertion. `agents` lists every regional agent for the company filter, not only blocked rows. `revoked_agent_ids` stays the blocked set. Cache remains 30 seconds.
+
+### 🔒 Security
+
+- **OAuth providers:** A company OAuth client update accepts a SocialApp only when that company created it and no other OAuth client already maps it. Listing, updating, or deleting a provider app returns not found when another company created the app or another company already maps it. A migration sets `created_by_company_id` on existing provider apps that are missing it and are mapped to exactly one company.
+
+### 🗑 Removed
+
+- Identity no longer stores MCP tool-call logs. `POST /mcp` does not insert `McpCallLog` rows, and `POST /api/v1/mcp/internal/mcp-call-logs` is removed. New tool-call logs are stored in ai-service (`GET /ai/v1/mcp/call-logs`). `GET /api/v1/mcp/call-logs` stays read-only for existing rows and is deprecated. The `McpCallLog` table is unchanged. OAuth consent rows (`oauth.authorize.approved`, `oauth.device.approved`) still write to that table.
+
+### 📚 Documentation
+
+- Shell host session. The shell host calls `POST /api/v1/oauth/session`, token refresh, and logout, and it keeps the access token and the refresh token. Page JavaScript does not receive them. Web sign-in sends S256 PKCE. `shellui login` uses device login, not a loopback code exchange.
+
+## [0.11.0] - 2026-11-01
+
+### 🏗 Chore
+
+- Add a dev-only `seed_dev` command (company 1, `admin`/`admin`, `dev@localhost`), run by the dev entrypoint when `IDENTITY_DEV_SEED=true`.
+- Add a Dockerfile `dev` target and [local dev stack](docs/local-dev-stack.md) docs for shellui/shellui compose (env-driven settings, optional `*_INTERNAL_URL` for server-to-server calls).
+- Use the shared shellui-django package for MCP instead of a vendored copy.
+- Bump `shellui-django[mcp]` to 0.3.0 and use `shellui_django.mcp.delegation` for ai-service downstream token requests.
+- Bump `shellui-django[mcp]` to 0.4.0 and verify internal MCP assertions with RS256 against a registry of trusted callers, one key per service (`*_SERVICE_ISSUER`, `*_SERVICE_JWKS`, `*_SERVICE_JWKS_URL`).
+
+### ✨ Feature
+
+- MCP endpoint and OAuth for company agents (`/mcp`, authorization server, consent, agent JWTs).
+- Agents admin APIs for approvals, call logs, and revocation (`/api/v1/mcp/`).
+- OpenAPI descriptions for MCP registry and agent-friendly admin APIs.
+- SaaS and AI in agent service consent; `POST /api/v1/mcp/internal/mcp-downstream-access-token` mints downstream agent JWTs for ai-service (RS256 delegation, single-use `jti`, rate limits).
+- **Agent token exchange:** Regional `POST /oauth/token` (RFC 8693; `POST /oauth/mcp/token` is the same handler) exchanges a global MCP agent JWT for a company-scoped regional agent token; provisioning `POST /api/v1/provisioning/global-agents/revoke` revokes linked regional agents.
+- **Per-company MCP URL:** `/oauth/mcp/authorize` takes the company from `resource={AI_SERVICE_URL}/c/<company_id>/mcp`. Agent tokens are bound to that company, and authorize, token, refresh, and exchange refuse a resource from another company.
+- **MCP sign-in page:** identity renders its own sign-in page at `/oauth/mcp/signin` (email sign-in link), then the consent page. Before sign-in the page shows the client and return host but never the company, and looks the same for unknown company ids (rate limited per IP with `AUTH_RATE_LIMIT_MCP_SIGNIN`). Consent shows the company to signed-in members only (EN/FR).
+- MCP consent needs an explicit Approve or Deny click and logs each approval to the agent call log.
+
+### 🗑 Removed
+
+- Aggregated Identity MCP gateway at `POST /mcp` (multi-service `tools/list` / `tools/call`); use ai-service as the single MCP connector.
+
+### 🐛 Bug Fixes
+
+- MCP OAuth redirect URIs allow only https and loopback http, reject fragments and user info, and match exactly. Invalid clients, redirect URIs, and resources get an error page instead of a redirect, and `/oauth/mcp/register` has its own rate limit (`AUTH_RATE_LIMIT_MCP_REGISTER`).
+- Identity `/mcp` accepts RS256 agent tokens, whose claims arrive as a dict, instead of failing with a 500.
+- MCP sign-in and consent pages use `Referrer-Policy: same-origin` instead of `no-referrer`, so same-origin form POSTs send a valid `Origin` header and Django CSRF no longer rejects MCP Inspector sign-in with `Origin: null`.
+- `POST /oauth/mcp/token` and `POST /oauth/mcp/register` accept `application/x-www-form-urlencoded` bodies (RFC 6749) as well as JSON, so MCP Inspector, ChatGPT, and Claude can exchange authorization codes after consent.
+- **MCP email-first sign-in:** the sign-in page routes verified email domains to the company SSO/OAuth IdP (home realm). Operators set company `verified_email_domains` and optional per-IdP `sso_verified_domains` on `CompanyOAuthClient` in Django admin. Other addresses keep the same generic magic-link response (no account enumeration).
+- **MCP SaaS opt-in at consent:** when ai-service forwards SaaS tools it adds `saas_offered=1` on `/oauth/mcp/authorize`. Consent shows an optional SaaS checkbox; when checked and agent token exchange is enabled, the user completes interactive global Shellui sign-in at `/oauth/mcp/saas-return` before the regional authorization code is issued.
+- **Personal MCP agent tokens:** company members can mint long-lived agent bearer JWTs at `/api/v1/mcp/personal/agents/create` (show once, store jti hash), list and revoke their OAuth and personal agents, read per-agent activity (timestamp, tool, service, result, IP; no arguments), and read MCP gateway status for the company. Retention is controlled by `MCP_AGENT_ACTIVITY_RETENTION_DAYS`.
+
 <!---
 ## [Unreleased] - yyyy-mm-dd
 

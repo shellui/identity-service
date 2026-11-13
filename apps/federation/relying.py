@@ -186,7 +186,8 @@ def link_verified_user(claims: dict):
 
 
 def _exchange(code: str, saved: dict) -> str:
-    token_url = f'{settings.GLOBAL_ISSUER_URL.rstrip("/")}/oauth/token'
+    oauth_base = (getattr(settings, 'GLOBAL_OAUTH_BASE_URL', '') or settings.GLOBAL_ISSUER_URL).rstrip('/')
+    token_url = f'{oauth_base}/oauth/token'
     response = requests.post(
         token_url,
         data={

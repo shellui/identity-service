@@ -75,7 +75,7 @@ A Shellui shell never talks to a provider directly. identity-service runs the wh
 2. identity-service redirects to the provider named in `provider`, or shows the company's providers to pick from when it is not set.
 3. The provider returns to `/api/v1/oauth/callback`. identity-service exchanges the code server-side and applies the company access rules.
 4. identity-service redirects to `redirect_to?shellui_auth_code=…`. A web target is an origin on the company allowlist. A desktop target uses a scheme in the company list ([Desktop apps](desktop-apps.md)).
-5. The shell exchanges that one-time code at `POST /api/v1/oauth/session` with `code_verifier` (and `Origin` on the web) for an access token and a refresh token.
+5. The shell host exchanges that one-time code at `POST /api/v1/oauth/session` with `code_verifier` and the shell `Origin`. It keeps the tokens. See [Shell host session](oauth-login.md#shell-host-session).
 
 Your own APIs verify the access token with the public keys at `/.well-known/jwks.json`, without sharing any secret with identity-service. Details are in [OAuth login](oauth-login.md) and [JWT and JWKS](jwks.md).
 
@@ -89,10 +89,12 @@ Pick the row that matches what you are doing today:
 | Add Google, GitHub, Microsoft, or another provider | [OAuth providers](oauth-providers.md) |
 | Let people sign in without a provider | [Magic link](magic-link.md) |
 | Sign in from a desktop app | [Desktop apps](desktop-apps.md) |
+| Sign in the Shellui CLI on another device | [CLI device login](cli-device-login.md) |
 | Connect a company's Okta or Entra ID | [SAML single sign-on](saml.md) and [SCIM provisioning](scim.md) |
 | Trust one upstream identity provider, or be that provider | [Instance roles](instance-roles.md) |
 | Restrict who can join a company | [Company access](company-access.md) |
 | Verify Shellui tokens in another service | [JWT and JWKS](jwks.md) |
+| Connect a headless MCP agent without pasting a token | [MCP device login](mcp-device-flow.md) |
 | Run automation when users join or leave | [Webhooks](actions.md) and [n8n](n8n.md) |
 | Audit sign-ins and changes | [Event log](event-log.md) |
 | Harden a production install | [Security hardening](security-hardening.md) |

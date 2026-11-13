@@ -27,6 +27,7 @@ Behind TLS, also set `CSRF_TRUSTED_ORIGINS` to the full HTTPS URL (for example `
 | --- | --- | --- |
 | `JWT_ACCESS_TOKEN_LIFETIME` | `5m` | Access token lifetime |
 | `JWT_REFRESH_TOKEN_LIFETIME` | `7d` | Refresh token lifetime |
+| `IDENTITY_SESSION_MAX_AGE` | `7d` | Identity browser session max-age. Unset uses `JWT_REFRESH_TOKEN_LIFETIME`. Staff sessions are capped by `CLI_STAFF_SESSION_MAX_AGE` |
 | `PERSONAL_ACCESS_TOKEN_LIFETIME` | `30d` | Lifetime of new personal access tokens |
 | `JWT_PUBLIC_KEY`, `JWT_KEY_ID` | derived | Derived from the private key when unset |
 | `JWT_PREVIOUS_PUBLIC_KEY`, `JWT_PREVIOUS_KEY_ID` | empty | Previous key during a rotation, still published in JWKS |
@@ -55,7 +56,8 @@ identity-service sends magic links, invitations, and owner notifications. See [E
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `EMAIL_SERVICE_API_KEY` | empty | email-service key (`esk_`). Unset sends everything over SMTP |
-| `EMAIL_SERVICE_URL` | `https://email.shellui.com` | email-service origin. Local: `http://localhost:8003`, or `http://host.docker.internal:8003` from a container |
+| `EMAIL_SERVICE_URL` | `https://email.shellui.com` | Public email-service origin (MCP discovery). Local stack: `http://localhost:8004`, see [Local dev stack](local-dev-stack.md) |
+| `EMAIL_SERVICE_INTERNAL_URL` | empty | Server-to-server email-service origin. Unset uses `EMAIL_SERVICE_URL`. Local stack: `http://email:8000` |
 | `EMAIL_SERVICE_TIMEOUT_SECONDS` | `5` | Timeout for one HTTP attempt |
 | `EMAIL_SERVICE_SEND_ATTEMPTS` | `3` | Attempts for one direct send |
 | `EMAIL_SERVICE_RETRY_MAX_SLEEP_SECONDS` | `1` | Longest pause between direct send attempts |
@@ -162,6 +164,8 @@ The entrypoint sets `--worker-tmp-dir /dev/shm` (the heartbeat file lives in mem
 | `CORS_ALLOWED_ORIGINS`, `CORS_ALLOWED_ORIGIN_REGEXES` | empty | Allowed origins when `CORS_ALLOW_ALL_ORIGINS=false` |
 | `AUTH_RATE_LIMIT_ENABLED` | `true` | Turn rate limits off, for debugging only |
 | `AUTH_RATE_LIMIT_OAUTH` | `30` | OAuth requests per minute |
+| `AUTH_RATE_LIMIT_MCP_REGISTER` | `10` | MCP dynamic client registrations per hour, per client IP |
+| `AUTH_RATE_LIMIT_MCP_SIGNIN` | `30` | MCP sign-in page requests per 5 minutes, per client IP |
 | `AUTH_RATE_LIMIT_TOKEN_REFRESH` | `60` | Token refreshes per minute |
 | `AUTH_RATE_LIMIT_SETTINGS` | `30` | `GET /api/v1/settings` per minute |
 | `AUTH_RATE_LIMIT_MAGIC_LINK` | `10` | Magic link requests per minute |
@@ -169,7 +173,25 @@ The entrypoint sets `--worker-tmp-dir /dev/shm` (the heartbeat file lives in mem
 | `AUTH_RATE_LIMIT_PAT` | `30` | Personal access token requests per minute |
 | `AUTH_RATE_LIMIT_ADMIN_LOGIN` | `10` | Django admin sign-ins per 5 minutes |
 | `AUTH_RATE_LIMIT_INVITATION` | `30` | Invitations per 5 minutes per company |
-| `SECURE_SSL_REDIRECT`, `SESSION_COOKIE_SECURE`, `CSRF_COOKIE_SECURE` | `true` with `DEBUG=false`, `false` with `DEBUG=true` | HTTPS defaults. Secure cookies are named `__Host-sessionid` and `__Host-csrftoken`, with no `Domain`. `CSRF_COOKIE_HTTPONLY` is always on |
+| `AUTH_RATE_LIMIT_MCP_PERSONAL_AGENT` | `10` | Personal MCP agent token creations per hour, per user |
+| `AUTH_RATE_LIMIT_MCP_DEVICE_CODE` | `30` | Device authorization requests per 5 minutes, per client IP |
+| `AUTH_RATE_LIMIT_MCP_DEVICE_VERIFY` | `8` | Device user-code attempts per 5 minutes, per client IP |
+| `AUTH_RATE_LIMIT_CLI_DEVICE_CODE` | `30` | CLI device authorization requests per 5 minutes, per client IP |
+| `AUTH_RATE_LIMIT_CLI_DEVICE_VERIFY` | `8` | CLI device user-code and password attempts per 5 minutes, per client IP |
+| `CLI_STAFF_SESSION_MAX_AGE` | `12h` | Cap for a staff Shellui CLI refresh token and for a staff identity browser session. Non-staff CLI refresh tokens use `JWT_REFRESH_TOKEN_LIFETIME` |
+| `MCP_DYNAMIC_CLIENT_REGISTRATION` | `true` | MCP OAuth dynamic client registration |
+| `MCP_ACCESS_TOKEN_LIFETIME` | `15m` | MCP agent access JWT lifetime |
+| `MCP_REFRESH_TOKEN_LIFETIME` | `30d` | MCP agent refresh token lifetime |
+| `MCP_PERSONAL_AGENT_MAX_LIFETIME_DAYS` | `90` | Maximum lifetime for personal MCP bearer tokens and for device-login agents |
+| `MCP_DEVICE_CODE_LIFETIME_SECONDS` | `600` | How long a device code stays valid (clamped 60 to 1800) |
+| `MCP_DEVICE_CODE_INTERVAL_SECONDS` | `5` | Minimum seconds between device-code token polls (clamped 5 to 60) |
+| `MCP_AGENT_ACTIVITY_RETENTION_DAYS` | `90` | How long member activity logs are kept for personal MCP agents |
+| `MCP_APPROVAL_SESSION_TTL_SECONDS` | `60` | Seconds a client "Allow for this session" grant lasts (clamped 30 to 60) for non-destructive MCP writes |
+| `MCP_APPROVAL_ASSERTION_MAX_LIFETIME_SECONDS` | `900` | Maximum `exp - iat` Identity accepts on internal MCP approval assertions **from ai-service only** (600 to 900 second setup flows); other issuers stay at 60 seconds; shellui-django defaults to 60 |
+| `MCP_APPROVAL_SETUP_SESSION_TTL_MIN_SECONDS` | `600` | Lower bound for `mcp_session_ttl_seconds` on ai-service assertions with `setup_flow` when extending session Allow |
+| `MCP_APPROVAL_SETUP_SESSION_TTL_MAX_SECONDS` | `900` | Upper bound for the same |
+| `MCP_RATE_LIMIT_AGENT` | `120` | MCP tool calls per minute per agent |
+| `SECURE_SSL_REDIRECT`, `SESSION_COOKIE_SECURE`, `CSRF_COOKIE_SECURE` | `true` with `DEBUG=false`, `false` with `DEBUG=true` | HTTPS defaults. Secure cookies are named `__Host-sessionid` and `__Host-csrftoken`, with no `Domain`. On HTTP, a region uses `shellui_region_sessionid` / `shellui_region_csrftoken` and a global instance uses `shellui_global_sessionid` / `shellui_global_csrftoken`. Standalone HTTP keeps `sessionid` and `csrftoken`. `CSRF_COOKIE_HTTPONLY` is always on |
 | `SECURE_HSTS_SECONDS` | `31536000` with `DEBUG=false`, `0` with `DEBUG=true` | HSTS max-age |
 | `SECURE_HSTS_INCLUDE_SUBDOMAINS` | `true` with `DEBUG=false` | Add `includeSubDomains` to HSTS |
 | `SECURE_HSTS_PRELOAD` | `false` | Add `preload` to HSTS |
@@ -182,6 +204,8 @@ See [Security hardening](security-hardening.md) for the rate limit defaults, pro
 | --- | --- | --- |
 | `DEBUG` | `false` | Optional. Unset or empty means `false`, so production does not need to set it. Set `true` only for local development (`.env.example` and `docker-compose.yml` do). Required in `.env.example` for local runs |
 | `SETUP_TOKEN` | empty | One-time token for the web form that creates the first superuser with `DEBUG=false`. Prefer `createsuperuser` |
+| `IDENTITY_DEV_SEED` | `false` | Local dev only. With `DEBUG=true`, the dev entrypoint runs `manage.py seed_dev` (company 1, `admin` / `admin`, `dev@localhost`). Never set in production |
+| `IDENTITY_DEV_PUBLIC_HOST` | empty | Local dev only. Hostname `seed_dev` adds to the OAuth redirect origins, on the same ports as localhost, so a LAN or Tailscale browser can sign in. Never set in production |
 | `IDENTITY_SERVICE_PORT` | `8000` | Host port in `docker-compose.yml` only |
 | `LOG_LEVEL` | `INFO`, `DEBUG` with `DEBUG=true` | App log level on stdout. Django errors and warnings (500 errors, `DisallowedHost`, CSRF failures) are always printed |
 | `SLOW_REQUEST_THRESHOLD_SECONDS` | `2` | Log a warning for slower requests. `0` turns it off |
@@ -193,7 +217,7 @@ See [Security hardening](security-hardening.md) for the rate limit defaults, pro
 
 ## Instance role
 
-Leave `SHELLUI_INSTANCE_ROLE` unset for a standalone deployment. `global` turns this process into an OpenID Provider. `region` trusts one upstream identity provider configured with `GLOBAL_ISSUER_URL`, a pinned `GLOBAL_JWKS`, and `GLOBAL_CLIENT_ID` / `GLOBAL_CLIENT_SECRET`. Endpoints, assertions, and the production host check are in [Instance roles](instance-roles.md).
+Leave `SHELLUI_INSTANCE_ROLE` unset for a standalone deployment. `global` turns this process into an OpenID Provider. `region` trusts the global identity server for browser sign-in and user token exchange, using `GLOBAL_ISSUER_URL`, a pinned `GLOBAL_JWKS`, and `GLOBAL_CLIENT_ID` / `GLOBAL_CLIENT_SECRET`. Global MCP agent tokens can use a second issuer: set `GLOBAL_AGENT_ISSUER_URL` and `GLOBAL_AGENT_JWKS`, or leave both empty to verify those tokens with `GLOBAL_ISSUER_URL` and `GLOBAL_JWKS`. Endpoints, assertions, and the production host check are in [Instance roles](instance-roles.md). Agent exchange is in [MCP and agents](mcp-and-agents.md).
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
@@ -204,24 +228,50 @@ Leave `SHELLUI_INSTANCE_ROLE` unset for a standalone deployment. `global` turns 
 | `OIDC_CODE_TTL_SECONDS` | `60` | Authorization code lifetime |
 | `OIDC_ID_TOKEN_TTL_SECONDS` | `300` | `id_token` lifetime |
 | `OIDC_BACKCHANNEL_TIMEOUT_SECONDS` | `3` | Back-channel logout POST timeout |
-| `GLOBAL_ISSUER_URL` | empty | Upstream issuer, relying party role |
+| `GLOBAL_ISSUER_URL` | empty | Upstream issuer, relying party role (browser redirects and `iss` validation) |
+| `GLOBAL_ISSUER_INTERNAL_URL` | empty | Base URL for server-side calls to the upstream token endpoint. Unset uses `GLOBAL_ISSUER_URL`. Local stack: `http://identity:8000` on a regional server |
 | `GLOBAL_JWKS` | empty | Pinned upstream JWKS JSON |
 | `GLOBAL_CLIENT_ID`, `GLOBAL_CLIENT_SECRET` | empty | Upstream client credentials |
 | `GLOBAL_REDIRECT_URI` | `{JWT_ISSUER}/oauth/upstream-callback` | Upstream redirect URI when the public URL differs |
 | `GLOBAL_ACCESS_TOKEN_AUDIENCE` | empty | `aud` of global access tokens (the global server's `JWT_AUDIENCE`). Turns on token exchange at `POST /oauth/token`. Empty answers 404 |
+| `GLOBAL_AGENT_ACCESS_TOKEN_AUDIENCE` | empty | `aud` of global MCP agent access tokens. Turns on agent token exchange at `POST /oauth/token` (MCP authorization server `token_endpoint`; `POST /oauth/mcp/token` is the same handler). Empty answers 404 |
+| `GLOBAL_AGENT_ISSUER_URL` | empty | `iss` of those agent tokens: the saas-service public URL. Empty uses `GLOBAL_ISSUER_URL`. User token exchange ignores it |
+| `GLOBAL_AGENT_JWKS` | empty | Pinned JWKS JSON for `GLOBAL_AGENT_ISSUER_URL`. Empty uses `GLOBAL_JWKS`. Keys are not fetched. User token exchange ignores it |
 | `PROVISIONING_PUBLIC_KEY` | empty | Dashboard provisioning public key (PEM), region role. Empty turns the provisioning API off |
 | `PROVISIONING_KEY_ID` | empty | Expected assertion `kid` when set |
 | `PROVISIONING_ISSUER` | empty | Expected assertion `iss` (the dashboard) |
 | `PROVISIONING_AUDIENCE` | host of `JWT_ISSUER` | Expected assertion `aud` |
 | `PROVISIONING_DEFAULT_REDIRECTS` | empty | Origins added to each provisioned company's redirect allowlist |
-| `STORAGE_SERVICE_URL` | empty | storage-service origin, told to purge a deleted company. Unset: skipped with a warning. See [Company deletion](company-deletion.md) |
-| `HOSTING_SERVICE_URL` | empty | hosting-service origin, told to purge a deleted company. Unset: skipped with a warning |
+| `STORAGE_SERVICE_URL` | empty | Public storage-service origin (MCP `list_services`). Unset: skipped with a warning for deletion |
+| `STORAGE_SERVICE_INTERNAL_URL` | empty | storage-service origin for company-deletion HTTP. Unset uses `STORAGE_SERVICE_URL`. See [Company deletion](company-deletion.md) |
+| `HOSTING_SERVICE_URL` | empty | Public hosting-service origin (MCP `list_services`) |
+| `HOSTING_SERVICE_INTERNAL_URL` | empty | hosting-service origin for company-deletion HTTP. Unset uses `HOSTING_SERVICE_URL` |
+| `SAAS_SERVICE_URL` | empty | saas-service (dashboard) origin for MCP `list_services` |
+| `AI_SERVICE_URL` | empty | ai-service origin for MCP connector, `list_services`, and approval decide wake (`POST /internal/mcp-approval-decided`) |
+| `AI_SERVICE_ISSUER` | `AI_SERVICE_URL` | Expected `iss` on ai-service downstream token delegation JWTs |
+| `AI_SERVICE_JWKS` | empty | Pinned JWKS JSON for ai-service (alternative to fetching `AI_SERVICE_JWKS_URL`) |
+| `AI_SERVICE_JWKS_URL` | `{AI_SERVICE_URL}/.well-known/jwks.json` | JWKS URL when `AI_SERVICE_JWKS` is unset |
+| `AI_SERVICE_JWKS_TIMEOUT_SECONDS` | `10` | HTTP timeout when fetching ai-service JWKS |
+| `STORAGE_SERVICE_ISSUER` | empty | Expected `iss` on internal MCP assertions signed by storage-service. Unset means storage-service is not trusted |
+| `STORAGE_SERVICE_JWKS` | empty | Pinned JWKS JSON for storage-service (alternative to fetching `STORAGE_SERVICE_JWKS_URL`) |
+| `STORAGE_SERVICE_JWKS_URL` | `{STORAGE_SERVICE_INTERNAL_URL or STORAGE_SERVICE_URL}/.well-known/jwks.json` | JWKS URL when `STORAGE_SERVICE_JWKS` is unset |
+| `HOSTING_SERVICE_ISSUER` | empty | Expected `iss` on internal MCP assertions signed by hosting-service. Unset means hosting-service is not trusted |
+| `HOSTING_SERVICE_JWKS` | empty | Pinned JWKS JSON for hosting-service (alternative to fetching `HOSTING_SERVICE_JWKS_URL`) |
+| `HOSTING_SERVICE_JWKS_URL` | `{HOSTING_SERVICE_INTERNAL_URL or HOSTING_SERVICE_URL}/.well-known/jwks.json` | JWKS URL when `HOSTING_SERVICE_JWKS` is unset |
+| `EMAIL_SERVICE_ISSUER` | empty | Expected `iss` on internal MCP assertions signed by email-service. Unset means email-service is not trusted |
+| `EMAIL_SERVICE_JWKS` | empty | Pinned JWKS JSON for email-service (alternative to fetching `EMAIL_SERVICE_JWKS_URL`) |
+| `EMAIL_SERVICE_JWKS_URL` | `{EMAIL_SERVICE_INTERNAL_URL or EMAIL_SERVICE_URL}/.well-known/jwks.json` | JWKS URL when `EMAIL_SERVICE_JWKS` is unset |
+| `INTERNAL_CALLER_JWKS_TIMEOUT_SECONDS` | `10` | HTTP timeout when fetching a caller JWKS |
+| `MCP_RATE_LIMIT_DOWNSTREAM_MINT` | `300` | Global per-minute cap on downstream access token mint requests |
 | `COMPANY_DELETION_TIMEOUT_SECONDS` | `10` | Timeout of each call to those services |
 | `DASHBOARD_WEBHOOK_URL` | empty | saas-service region webhook (`https://<dashboard>/api/v1/webhooks/<region>`) that receives `identity.company.deleted` |
+| `DASHBOARD_WEBHOOK_INTERNAL_URL` | empty | Server-to-server URL for that webhook POST. Unset uses `DASHBOARD_WEBHOOK_URL` |
 | `DASHBOARD_WEBHOOK_SECRET` | empty | Signing secret for that webhook. Same value as the region's webhook secret in saas-service |
+| `DASHBOARD_PUBLIC_URL` | empty | Optional public Shellui dashboard origin (`https://…`, path-less). When set, `GET /api/v1/mcp/personal/status` includes `global_mcp_url` as `{DASHBOARD_PUBLIC_URL}/mcp` for global account MCP discovery. Independent of regional `mcp_url` |
 
 ## Related
 
+- [Local dev stack](local-dev-stack.md): sibling-repo compose, public vs internal URLs
 - [Run identity-service](getting-started.md): first start and production checklist
 - [Security hardening](security-hardening.md)
 - [Upgrade notes](upgrading.md)

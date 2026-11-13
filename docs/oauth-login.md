@@ -15,7 +15,9 @@ The shell (or `shellui login` in the CLI) only talks to identity-service. The sh
 3. identity-service redirects to the provider with `redirect_uri` set to its own `/api/v1/oauth/callback` and a signed `state`.
 4. The provider returns to `/api/v1/oauth/callback`. identity-service exchanges the code server-side.
 5. identity-service shows an account confirmation page. The user can continue, switch provider, or switch account. Some providers skip this step, see [Skip the confirmation page](#skip-the-confirmation-page).
-6. identity-service redirects to `redirect_to?shellui_auth_code=…`. The shell `/login/callback` route posts the code to `POST /api/v1/oauth/session` with the same `redirect_to` and the S256 `code_verifier`. An http(s) callback must send an `Origin` header that matches that redirect.
+6. identity-service redirects to `redirect_to?shellui_auth_code=…`. That response sets the identity browser session cookie when the account is active and can access the company. The shell page does not read that cookie. The shell host exchanges the one-time code. See [Shell host session](#shell-host-session).
+
+`GET /api/v1/settings` includes `logout_url`, the identity origin plus `/oauth/logout`. To sign the browser out of identity, send it to `logout_url?company_id=<id>&return_to=<url>` with GET or POST. `return_to` uses the same allowlist as `redirect_to` on `/api/v1/authorize`. A missing or rejected `return_to` shows "You are signed out" and does not redirect. This route calls Django logout only. It does not revoke access or refresh tokens. That stays on `POST /api/v1/logout` with the Bearer token. `GET /api/v1/sessions` lists those refresh sessions, not the browser cookie.
 
 Company join rules (`public`, `domain`, `invite`) apply after the provider sign-in succeeds. See [Company access](company-access.md).
 
@@ -79,7 +81,7 @@ Exchange:
 }
 ```
 
-`redirect_to` is the same URL sent at the start, including other query parameters, without `shellui_auth_code`. For an http(s) redirect the browser `Origin` header is required and must equal the origin of `redirect_to` (scheme, host, and port, no path). A missing `Origin` is `400` with `{"error":"Origin is required for this redirect."}`. A different origin is `400` with `{"error":"Origin does not match redirect_to."}`. Those two responses have no `error_code`. PKCE failures are `400` with `error` and `error_code` (`pkce_required`, `invalid_code_challenge`, `invalid_code_challenge_method`, `invalid_code_verifier`, `pkce_verification_failed`). A failed check does not use up the code.
+`redirect_to` is the same URL sent at the start, including other query parameters, without `shellui_auth_code`. For an http(s) redirect, `Origin` is required and must equal the origin of `redirect_to` (scheme, host, and port, no path). The shell host sets that header to the shell page origin. A missing `Origin` is `400` with `{"error":"Origin is required for this redirect."}`. A different origin is `400` with `{"error":"Origin does not match redirect_to."}`. Those two responses have no `error_code`. PKCE failures are `400` with `error` and `error_code` (`pkce_required`, `invalid_code_challenge`, `invalid_code_challenge_method`, `invalid_code_verifier`, `pkce_verification_failed`). A failed check does not use up the code.
 
 A custom-scheme redirect still skips the Origin check, and only after the verifier matches. See [Desktop apps](desktop-apps.md#origin-check).
 
@@ -87,26 +89,33 @@ A custom-scheme redirect still skips the Origin check, and only after the verifi
 
 `POST /api/v1/oauth/exchange` and `POST /api/v1/providers/<provider>/login/` are the older JSON endpoints. They require S256 PKCE only for a custom-scheme `redirect_uri`. New shells use `/api/v1/authorize` and `/api/v1/oauth/session`.
 
-### What @shellui/core sends today
+### Web sign-in and the CLI
 
-On `develop` of [shellui/shellui](https://github.com/shellui/shellui), web sign-in does not send PKCE yet. Desktop sign-in does.
+Web sign-in sends S256 PKCE. Create a verifier and its challenge before `GET /api/v1/authorize`, and send `code_verifier` with the one-time code. `shellui login` does not redeem a code on a loopback page. It uses device login. See [CLI device login](cli-device-login.md).
 
-- `startOAuth` in `packages/core/src/features/auth/backends/shellui.ts` opens `GET /api/v1/authorize` with `provider`, `redirect_to`, `company_id`, and the optional client id, timezone, and device id. It does not set `code_challenge`.
-- `redirect_to` is `window.location.origin` plus the callback path, with query `provider` and, when set, `company_oauth_client_id`.
-- `OAuthCallbackView` calls `exchangeOAuthSessionCode` with `auth_code` and `redirect_to` only. `redirect_to` comes from `buildOAuthSessionRedirectTo`, which drops `shellui_auth_code` and keeps the other query.
-- `exchangeOAuthSessionCode` posts JSON to `/api/v1/oauth/session` and adds `code_verifier` only when the caller passes one. The web callback does not.
-- `sendMagicLink` adds `code_challenge` and `code_challenge_method` only when `options.codeChallenge` is set, which is the desktop path.
-- The `fetch` is a cross-origin POST with `Accept` and `Content-Type` set to JSON. It does not set `credentials`. The browser adds `Origin` from the page. The client does not set `Origin` itself.
+Desktop and Tauri apps send the challenge and the verifier too. A custom scheme does not need a matching `Origin`.
 
-The shell and admin change that matches this service:
+### Shell host session
 
-1. Create a verifier and its S256 challenge before navigation. Keep the verifier in `sessionStorage` for the tab. Do not put it on the authorize URL, in the email, or in the callback query.
-2. `startOAuth` sets `code_challenge` and `code_challenge_method=S256`.
-3. `sendMagicLink` sends those two fields for an http(s) `redirect_to` as well as a custom scheme.
-4. The callback reads the verifier and posts `{auth_code, redirect_to, code_verifier}` from that page, so `Origin` is the page origin.
-5. `shellui login` in `packages/cli/src/auth/login-flow.js` posts `{auth_code, redirect_to}` from the loopback page and does not send a verifier. The CLI must add the challenge to the authorize URL and `code_verifier` to that fetch. The waiting page must not print the verifier. The loopback `Origin` (`http://127.0.0.1:<port>`) already matches `redirect_to`.
+The shell and identity are different sites. Keep the access token and the refresh token on the shell host.
 
-Admin uses the same contract when it starts sign-in itself. When it goes through `@shellui/core`, the core change covers it. Desktop and Tauri already send the challenge and the verifier. A custom scheme still does not need a matching `Origin`.
+Run the host with `shellui start` or `serve:dist`, or put your own proxy on the shell origin. The browser arrives with `shellui_auth_code` in the query. The host then calls identity. No identity cookie is required:
+
+1. `POST /api/v1/oauth/session` with `auth_code`, `redirect_to`, and `code_verifier`
+2. `POST /api/v1/token?grant_type=refresh_token` with `refresh_token` in the JSON body when you need a new access token
+3. `POST /api/v1/logout` with `Authorization: Bearer` and `refresh_token` in the JSON body, then clear the refresh token on the host
+
+Page JavaScript does not call these endpoints and does not see the tokens.
+
+Set `Origin` on the exchange to the shell page origin (scheme, host, and port). It must match the origin of `redirect_to`. Identity accepted that `redirect_to` only when the origin was an active `CompanyOAuthRedirect` for the company, or a loopback origin when loopback redirects are allowed.
+
+A second allowlisted origin does not match this code. These calls are server to server, so CORS does not apply.
+
+Store the refresh token in a first-party cookie on the shell host. Replace that cookie when refresh returns a new refresh token. Clear it after logout.
+
+PKCE, single use, and the 120s code lifetime are unchanged. A failed PKCE or `Origin` check does not use up the code.
+
+Identity records the refresh session while the browser is on identity, when it issues the code. It does not take a client IP from the shell host. `X-Forwarded-For` is used only when the direct peer is listed in `TRUSTED_PROXY_IPS`. That setting is for a reverse proxy in front of identity, not for the shell host.
 
 ## Redirect allowlist
 
@@ -114,7 +123,7 @@ identity-service only sends codes or tokens to origins the company approved. Thi
 
 | Target | Rule |
 | --- | --- |
-| Loopback (`127.0.0.1`, `localhost`, `::1`) | Allowed when `DEBUG=true` or `OAUTH_ALLOW_LOOPBACK_REDIRECTS=true`, for the CLI and local shells |
+| Loopback (`127.0.0.1`, `localhost`, `::1`) | Allowed when `DEBUG=true` or `OAUTH_ALLOW_LOOPBACK_REDIRECTS=true`, for local shells |
 | Other http(s) origins | Must match an active `CompanyOAuthRedirect` row for the company |
 | Desktop app URI | Scheme must be in the company `desktop_redirect_schemes` list. An empty list turns desktop sign-in off. With `DEBUG=true`, or with `allow_desktop_dev_scheme`, a listed scheme also allows its `-dev` variant. See [Desktop apps](desktop-apps.md) |
 | Hosting previews (`{slug}.{HOSTING_APP_DOMAIN}`) | Added and removed by hosting-service (`source=hosting`) when a site is created or deleted |

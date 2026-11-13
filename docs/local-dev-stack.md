@@ -1,0 +1,78 @@
+---
+description: Run identity-service in the Shellui sibling-repo dev stack (shellui/dev).
+---
+
+# Local dev stack
+
+The shared compose file lives in **shellui/shellui** at `dev/docker-compose.yml`. Clone identity-service next to that repo (see the dev stack contract). The compose file builds this service with `target: dev`, bind-mounts the repo at `/app`, and maps host port **8001** to container port **8000**.
+
+Start the full stack from shellui:
+
+```bash
+cd shellui/dev
+./start.sh
+```
+
+Clone layout, URLs, common commands and troubleshooting are in the [Shellui dev stack guide](https://github.com/shellui/shellui/blob/develop/docs/dev-stack.md). This page only covers what is specific to this service.
+
+Start only identity (Postgres and Redis must already be running on the compose network):
+
+```bash
+cd shellui/dev
+./start.sh identity
+```
+
+The **dev** image target installs Python dependencies under `/opt/venv` (outside `/app`), runs migrations, then `python manage.py runserver 0.0.0.0:8000` with autoreload. Set `DEBUG=true`. The production Dockerfile stage is unchanged and remains the default for publish and CI.
+
+## Public vs internal URLs
+
+Browser-facing URLs and JWT issuers use **localhost** and the published host ports. Outbound HTTP from this container uses compose **service names** on port **8000**.
+
+| Purpose | Example value |
+| --- | --- |
+| `JWT_ISSUER` (public `iss`, OAuth, magic links) | `http://localhost:8001` |
+| `ALLOWED_HOSTS` | `localhost,127.0.0.1,identity` |
+| `CSRF_TRUSTED_ORIGINS` | `http://localhost:8001,http://localhost:5173,http://localhost:5174,http://localhost:5175` |
+| `EMAIL_SERVICE_URL` (MCP `list_services`, docs) | `http://localhost:8004` |
+| `EMAIL_SERVICE_INTERNAL_URL` (send API, company deletion) | `http://email:8000` |
+| `STORAGE_SERVICE_URL` / `STORAGE_SERVICE_INTERNAL_URL` | `http://localhost:8002` / `http://storage:8000` |
+| `HOSTING_SERVICE_URL` / `HOSTING_SERVICE_INTERNAL_URL` | `http://localhost:8003` / `http://hosting:8000` |
+| `SAAS_SERVICE_URL` | `http://localhost:8005` |
+| `AI_SERVICE_URL` / `AI_SERVICE_JWKS_URL` | `http://localhost:8006` / `http://ai:8000/.well-known/jwks.json` |
+
+When an `*_INTERNAL_URL` variable is unset, the matching public URL is used (production behaviour).
+
+Other services fetch this server's JWKS over the internal network, for example `http://identity:8000/.well-known/jwks.json`, while `JWT_ISSUER` stays `http://localhost:8001`.
+
+## Variables in shellui `dev/.env.local`
+
+Compose prefixes clash-prone secrets in `.env.local.example` (for example `IDENTITY_SECRET_KEY`). Map them to the names this app reads (`SECRET_KEY`, and so on). Typical identity entries:
+
+| `.env.local` name | Container env | Example |
+| --- | --- | --- |
+| `IDENTITY_SECRET_KEY` | `SECRET_KEY` | generated |
+| `IDENTITY_DEBUG` | `DEBUG` | `true` |
+| `IDENTITY_JWT_ISSUER` | `JWT_ISSUER` | `http://localhost:8001` |
+| `IDENTITY_JWT_AUDIENCE` | `JWT_AUDIENCE` | `shellui` |
+| `IDENTITY_JWT_PRIVATE_KEY` | `JWT_PRIVATE_KEY` | empty with `DEBUG=true` (HS256) or RS256 PEM |
+| `IDENTITY_POSTGRES_DATABASE_URL` | `POSTGRES_DATABASE_URL` | `postgres://postgres:postgres@postgres:5432/identity` |
+| `IDENTITY_REDIS_URL` | `REDIS_URL` | `redis://redis:6379/0` |
+| `IDENTITY_EMAIL_SERVICE_URL` | `EMAIL_SERVICE_URL` | `http://localhost:8004` |
+| `IDENTITY_EMAIL_SERVICE_INTERNAL_URL` | `EMAIL_SERVICE_INTERNAL_URL` | `http://email:8000` |
+| `IDENTITY_EMAIL_SERVICE_API_KEY` | `EMAIL_SERVICE_API_KEY` | optional for Mailpit-only flows |
+| `IDENTITY_ALLOWED_HOSTS` | `ALLOWED_HOSTS` | `localhost,127.0.0.1,identity` |
+| `IDENTITY_CSRF_TRUSTED_ORIGINS` | `CSRF_TRUSTED_ORIGINS` | see table above |
+
+Optional service URLs for MCP and company deletion follow the public/internal split in the table. `SHELLUI_INSTANCE_ROLE` defaults to unset (**standalone**): browser MCP OAuth against this container works, but **global agent token exchange** (`RFC 8693` to a regional agent JWT) and **regional user token exchange** stay off until you set **`SHELLUI_INSTANCE_ROLE=region`** and the pinned `GLOBAL_*` variables from [Instance roles](instance-roles.md). When saas-service signs agent tokens, also set `GLOBAL_AGENT_ISSUER_URL` and `GLOBAL_AGENT_JWKS`. Leave both empty to verify agent tokens with `GLOBAL_ISSUER_URL` and `GLOBAL_JWKS`. Use the same role value in local compose as in production for the flows you want to exercise.
+
+With `DEBUG=true`, `REDIS_URL` is recommended (rate limits and OAuth state) but not required; the dev entrypoint does not start Gunicorn or the Celery scheduler. For scheduled jobs locally, set `REDIS_URL` and run the production image in `web` mode, or use the repo's `docker-compose.yml`.
+
+Regional identity (`localhost:8001`) and identity-global (`localhost:8007`) share the host `localhost` when TLS is off, so a shared cookie name would collide. HTTP dev names the cookies from `SHELLUI_INSTANCE_ROLE`: `shellui_region_sessionid` on the region and `shellui_global_sessionid` on the global instance (and the same prefix on the CSRF cookie). Production keeps `__Host-sessionid` because those hosts are different sites. The dev compose file does not set the cookie name itself. Set `SHELLUI_INSTANCE_ROLE` on each process and the app picks the name.
+
+## Standalone compose in this repo
+
+`docker-compose.yml` at the repo root builds the **production** image and is aimed at a single-service try-out. Prefer the shellui dev stack when working across services. See [Configuration](configuration.md) for every variable.
+
+## Dev seed
+
+With `IDENTITY_DEV_SEED=true` (set by the shellui dev compose file), the dev entrypoint runs `python manage.py seed_dev` after migrations. It creates company 1 (Shellui Dev, magic link on, local front-end origins allowed), a superuser `admin` / `admin` and a non-staff member `dev@localhost` for magic link. It refuses to run unless `DEBUG=true` too, and it never overwrites existing rows. Local only: never set `IDENTITY_DEV_SEED` in production.

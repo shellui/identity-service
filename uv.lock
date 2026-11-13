@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = ">=3.14"
 
 [[package]]
@@ -464,7 +464,7 @@ wheels = [
 
 [[package]]
 name = "identity-service"
-version = "0.10.1"
+version = "0.11.0"
 source = { virtual = "." }
 dependencies = [
     { name = "celery" },
@@ -488,6 +488,7 @@ dependencies = [
     { name = "redis" },
     { name = "requests" },
     { name = "sentry-sdk" },
+    { name = "shellui-django", extra = ["mcp"] },
     { name = "whitenoise" },
 ]
 
@@ -514,6 +515,7 @@ requires-dist = [
     { name = "redis", specifier = "==8.1.0" },
     { name = "requests", specifier = "==2.33.0" },
     { name = "sentry-sdk", specifier = "==2.63.0" },
+    { name = "shellui-django", extras = ["mcp"], specifier = "==0.5.1" },
     { name = "whitenoise", specifier = "==6.12.0" },
 ]
 
@@ -942,6 +944,27 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/ba/c8/b3c970a5b186722d276cd40a05b3254e03bccc0208560aff20f612e018e8/sentry_sdk-2.63.0.tar.gz", hash = "sha256:2a1502bf864769275dbc8c2c9fc7a0f7f5e18358180b615d262d13a31ffba216", size = 912449, upload-time = "2026-06-16T12:45:57.553Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/7b/57/cb205f7d93373120f666b9c5736dc0815524d96a9b278e7a728f018dc22a/sentry_sdk-2.63.0-py3-none-any.whl", hash = "sha256:3a9b5ddd403f79eb73bd670f75f04485819db53d28f76ced7bc09041cb0dfd6a", size = 495950, upload-time = "2026-06-16T12:45:55.819Z" },
+]
+
+[[package]]
+name = "shellui-django"
+version = "0.5.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "django" },
+    { name = "djangorestframework" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/38/a2/ee51137ae53990213cd6173c6521b90aebaaa9640071dacf5181149a9887/shellui_django-0.5.1.tar.gz", hash = "sha256:df00f68f06d59948e0d2e27a3010ec100a6ca38445deb79f798d750d9e02d4d1", size = 40411, upload-time = "2026-11-09T21:00:40.347Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5a/ac/e524e809ad250f22f0ad9e523d342dfa33588f138a5cf07680c55d2f2d13/shellui_django-0.5.1-py3-none-any.whl", hash = "sha256:ebae9f774827d02d4f9b6e2b7fc440cee586bf5d4ffa05783427f4909dd14d28", size = 31648, upload-time = "2026-11-09T21:00:39.19Z" },
+]
+
+[package.optional-dependencies]
+mcp = [
+    { name = "cryptography" },
+    { name = "djangorestframework-simplejwt" },
+    { name = "pyjwt" },
+    { name = "requests" },
 ]
 
 [[package]]

@@ -1,0 +1,6 @@
+{% extends "agents/_mcp_base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+    <h1>{{ title }}</h1>
+    {% if message %}<p class="consent-body">{{ message }}</p>{% endif %}
+{% endblock %}

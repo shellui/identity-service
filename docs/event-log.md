@@ -13,7 +13,7 @@ identity-service records every catalog event and every sign-in in one table, `Ev
 
 | Event type | When |
 | ---------- | ---- |
-| `identity.auth.login.succeeded` | A user signed in with OAuth, SAML, magic link, or the Django admin login form |
+| `identity.auth.login.succeeded` | A user signed in with OAuth, SAML, magic link, the Django admin login form, or a Shellui CLI device approval. `identity_session` is `started` when that sign-in also opened the identity browser session, and `ended` when `/oauth/logout` or "Use another account" cleared it. `provider` is the method |
 | `identity.auth.login.failed` | A sign-in was refused. The user is linked when it could be resolved |
 
 Sign-in events cannot trigger webhook rules: anonymous traffic can produce failed sign-ins, and forwarding them would let anyone flood your endpoints.
@@ -39,7 +39,7 @@ To keep rows small, `data` is the webhook payload with:
 - `user_id` removed, since it is the `user` column
 - secret fields removed: an event type can list fields that are never logged, sent to webhooks or stored. No webhook payload contains a sign-in link or token
 
-Sign-in events store `provider`, `failure_reason`, `is_staff_at_event`, `ip_hash` (salted hash, never the raw IP), `user_agent` (truncated), `client_timezone`, `client_device_id_hash`, `client_country` and `client_city` (GeoIP, when configured).
+Sign-in events store `provider`, `failure_reason`, `is_staff_at_event`, `ip_hash` (salted hash, never the raw IP), `user_agent` (truncated), `client_timezone`, `client_device_id_hash`, `client_country` and `client_city` (GeoIP, when configured). A Shellui CLI device approval adds `device_kind` `cli`. Its `ip_hash` and `user_agent` are the CLI request captured when the device code was issued, not the browser that approved it.
 
 The table has two indexes, `(company, created_at)` and `(user, created_at)`. They serve every listing, the user timeline, the retention check, and the purge.
 
@@ -47,7 +47,7 @@ The table has two indexes, `(company, created_at)` and `(user, created_at)`. The
 
 Each company has a **data retention** in days (`Company.data_retention_days`, default **7**). Only Shellui operators can change it, in Django admin under **Companies > Data retention**. Company owners see the value in the admin panel.
 
-The [`purge_expired_data`](scheduled-jobs.md#purge_expired_data) scheduled job deletes events older than the retention, together with finished webhook deliveries, email-service event posts, SCIM provisioning events, and scheduled job runs. It runs every hour inside the container when `REDIS_URL` is set.
+The [`purge_expired_data`](scheduled-jobs.md#purge_expired_data) scheduled job deletes events older than the retention, together with finished webhook deliveries, email-service event posts, SCIM provisioning events, revoked MCP agents (and their call logs), and scheduled job runs. It runs every hour inside the container when `REDIS_URL` is set.
 
 If events older than retention + 1 day are still stored, the job is not running. The admin panel dashboard, the **Log events** page, and the Django admin company page then show an error. See [Stale events warning](scheduled-jobs.md#stale-events-warning).
 

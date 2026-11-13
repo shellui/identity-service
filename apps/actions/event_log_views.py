@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from django.db.models import F, Q, QuerySet
 from django.utils.dateparse import parse_datetime
+from apps.authapi.openapi_admin import ADMIN_API_ERRORS, mcp_extend_schema_kwargs
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema, extend_schema_view
 from rest_framework import status
 from rest_framework.response import Response
@@ -153,13 +154,8 @@ _USER_ID_PARAM = OpenApiParameter(
 
 @extend_schema_view(
     get=extend_schema(
+        **mcp_extend_schema_kwargs('identity_list_events'),
         tags=['audit-events'],
-        summary='List event log (staff or company owner)',
-        description=(
-            'Every catalog event recorded for the company (webhook events and sign-ins), newest first. '
-            'Rows are kept for the company data retention (`GET /api/v1/events/retention`).'
-        ),
-        operation_id='api_v1_events_list',
         parameters=[
             _SCOPE_PARAM,
             _USER_ID_PARAM,
@@ -175,12 +171,12 @@ _USER_ID_PARAM = OpenApiParameter(
                 type=str,
                 location=OpenApiParameter.QUERY,
                 required=False,
-                description='Catalog event type; comma-separate several types.',
+                description='Event type ids to include. One or more.',
             ),
             *_DATE_PARAMS,
             *_PAGE_PARAMS,
         ],
-        responses={200: OpenApiResponse(description='Paginated event log rows')},
+        responses={**ADMIN_API_ERRORS, 200: OpenApiResponse(description='Paginated event log rows')},
     ),
 )
 class ShellUIAdminEventListView(APIView):
@@ -205,7 +201,10 @@ class ShellUIAdminEventListView(APIView):
         if email:
             qs = qs.filter(Q(user__email__icontains=email) | Q(data__email__icontains=email))
 
-        types = [t.strip() for t in (request.GET.get('event_type') or '').split(',') if t.strip()]
+        types = []
+        raw_types = request.GET.getlist('event_type')
+        for raw in raw_types:
+            types.extend(part.strip() for part in str(raw).split(',') if part.strip())
         if types:
             if not all(is_registered_event(t) for t in types):
                 return _bad_request('Invalid event_type.')
@@ -216,11 +215,10 @@ class ShellUIAdminEventListView(APIView):
 
 @extend_schema_view(
     get=extend_schema(
+        **mcp_extend_schema_kwargs('identity_get_events'),
         tags=['audit-events'],
-        summary='Retrieve event log row (staff or company owner)',
-        operation_id='api_v1_events_retrieve',
         parameters=[_SCOPE_PARAM],
-        responses={200: OpenApiResponse(description='Event log row')},
+        responses={**ADMIN_API_ERRORS, 200: OpenApiResponse(description='Event log row')},
     ),
 )
 class ShellUIAdminEventDetailView(APIView):
@@ -242,10 +240,9 @@ class ShellUIAdminEventDetailView(APIView):
 
 @extend_schema_view(
     get=extend_schema(
+        **mcp_extend_schema_kwargs('identity_list_events_types'),
+        responses={**ADMIN_API_ERRORS},
         tags=['audit-events'],
-        summary='List event types recorded in the event log (staff or company owner)',
-        description='`webhook=false` types (sign-ins) are logged but cannot trigger webhook rules.',
-        operation_id='api_v1_events_types_list',
     ),
 )
 class ShellUIAdminEventTypesView(APIView):
@@ -269,14 +266,9 @@ class ShellUIAdminEventTypesView(APIView):
 
 @extend_schema_view(
     get=extend_schema(
+        **mcp_extend_schema_kwargs('identity_get_events_retention'),
+        responses={**ADMIN_API_ERRORS},
         tags=['audit-events'],
-        summary='Event log retention status (staff or company owner)',
-        description=(
-            '`data_retention_days` is set by Shellui operators in Django admin. `stale_events` is true '
-            'when the oldest event is more than one day past retention, which means the '
-            '`purge_expired_data` scheduled job is not running.'
-        ),
-        operation_id='api_v1_events_retention_retrieve',
     ),
 )
 class ShellUIAdminEventRetentionView(APIView):

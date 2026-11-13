@@ -70,6 +70,7 @@ class CompanyDeletionTests(TestCase):
         STORAGE_SERVICE_URL=STORAGE,
         HOSTING_SERVICE_URL='',
         EMAIL_SERVICE_URL='https://email.eu.example',
+        EMAIL_SERVICE_HTTP_URL='https://email.eu.example',
         EMAIL_SERVICE_API_KEY='esk_test',  # gitleaks:allow
     )
     def test_unset_service_is_skipped_with_a_warning(self):

@@ -33,6 +33,12 @@ Besides the standard claims (`iss`, `aud`, `exp`, `iat`, `jti`, and `user_id`), 
 
 Services that authorize on groups can read this claim directly: membership is already transitive. SCIM user resources list direct memberships only.
 
+## Agent access tokens
+
+MCP agent access tokens are RS256 JWTs from the same issuer. Verifiers use this JWKS. `sub` is `agent:{uuid}` and `aud` is the MCP resource URL. When the agent has an owner user, the token includes `owner_user_id`, a JSON integer equal to that user's regional id (`Agent.created_by_id`). Personal tokens, OAuth tokens, device-login tokens, refreshed access tokens, token-exchange tokens, and downstream tokens minted for ai-service follow that rule. An agent with no owner user omits the claim. The claim is never JSON null. The rest of the agent claim set is in [MCP and agents](mcp-and-agents.md#agent-jwt-claims).
+
+The Shellui CLI device grant issues an app session, not an agent token. That session does not carry `owner_user_id`. See [CLI device login](cli-device-login.md).
+
 ## JWKS endpoint
 
 `GET /.well-known/jwks.json` is public and cached for 15 minutes (`Cache-Control: public, max-age=900`):

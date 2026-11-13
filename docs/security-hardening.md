@@ -13,6 +13,8 @@ Abuse-prone endpoints are rate limited, with counters in the shared cache (Redis
 | Scope | Default | Endpoints | Variable |
 | --- | --- | --- | --- |
 | `oauth` | 30 per minute per IP | `/api/v1/authorize`, OAuth callback, confirm, exchange, provider login | `AUTH_RATE_LIMIT_OAUTH` |
+| `mcp_register` | 10 per hour per IP | `POST /oauth/mcp/register` (dynamic client registration) | `AUTH_RATE_LIMIT_MCP_REGISTER` |
+| `mcp_signin` | 30 per 5 minutes per IP | `GET/POST /oauth/mcp/signin` | `AUTH_RATE_LIMIT_MCP_SIGNIN` |
 | `token_refresh` | 60 per minute per IP | `POST /api/v1/token?grant_type=refresh_token` | `AUTH_RATE_LIMIT_TOKEN_REFRESH` |
 | `auth_settings` | 30 per minute per IP | `GET /api/v1/settings` | `AUTH_RATE_LIMIT_SETTINGS` |
 | `magic_link` | 10 per minute | `POST /api/v1/magic-link/request`, per IP, per email, and per company | `AUTH_RATE_LIMIT_MAGIC_LINK` |
@@ -31,7 +33,7 @@ With `DEBUG=false`, these settings default to on. Each can be overridden with an
 | --- | --- |
 | `SECURE_SSL_REDIRECT` | `true`: redirects HTTP to HTTPS. Turn it off only behind a TLS proxy that already redirects |
 | `SECURE_HSTS_SECONDS` | `31536000` (one year), with `SECURE_HSTS_INCLUDE_SUBDOMAINS=true` |
-| `SESSION_COOKIE_SECURE`, `CSRF_COOKIE_SECURE` | `true`. Cookie names are then `__Host-sessionid` and `__Host-csrftoken`. `CSRF_COOKIE_HTTPONLY` is `true`. Neither cookie sets `Domain`. On local HTTP (`DEBUG=true`) the names stay `sessionid` and `csrftoken`, because browsers reject the `__Host-` prefix without `Secure` |
+| `SESSION_COOKIE_SECURE`, `CSRF_COOKIE_SECURE` | `true`. Cookie names are then `__Host-sessionid` and `__Host-csrftoken`. `CSRF_COOKIE_HTTPONLY` is `true`. Neither cookie sets `Domain`. On local HTTP the names follow `SHELLUI_INSTANCE_ROLE`: `shellui_region_sessionid` and `shellui_region_csrftoken`, or `shellui_global_sessionid` and `shellui_global_csrftoken`. Standalone HTTP keeps `sessionid` and `csrftoken`. Browsers reject the `__Host-` prefix without `Secure` |
 | `POSTGRES_SSL_REQUIRE` | `true` when `POSTGRES_DATABASE_URL` is set. Turn it off only for a local PostgreSQL without TLS |
 
 ## Trusted proxies and client IP
