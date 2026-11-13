@@ -37,6 +37,7 @@ class AuthMethodsAdminApiTests(TestCase):
             name='GitHub',
             client_id='cid',
             secret='sec',
+            settings={'catalog_slug': 'github', 'created_by_company_id': self.company.id},
         )
         self.github_app = app
         self.github_client = CompanyOAuthClient.objects.create(
