@@ -37,6 +37,10 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 - `GET /api/v1/mcp/internal/mcp-revocations` puts `max_active_grant_version` on the JSON body as well as in the signed assertion. `agents` lists every regional agent for the company filter, not only blocked rows. `revoked_agent_ids` stays the blocked set. Cache remains 30 seconds.
 
+### 🔒 Security
+
+- **OAuth providers:** A company OAuth client update accepts a SocialApp only when that company created it and no other OAuth client already maps it. Listing, updating, or deleting a provider app returns not found when another company created the app or another company already maps it. A migration sets `created_by_company_id` on existing provider apps that are missing it and are mapped to exactly one company.
+
 ### 🗑 Removed
 
 - Identity no longer stores MCP tool-call logs. `POST /mcp` does not insert `McpCallLog` rows, and `POST /api/v1/mcp/internal/mcp-call-logs` is removed. New tool-call logs are stored in ai-service (`GET /ai/v1/mcp/call-logs`). `GET /api/v1/mcp/call-logs` stays read-only for existing rows and is deprecated. The `McpCallLog` table is unchanged. OAuth consent rows (`oauth.authorize.approved`, `oauth.device.approved`) still write to that table.

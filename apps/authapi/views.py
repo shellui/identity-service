@@ -780,6 +780,81 @@ def _generated_social_app_name(provider: str, company: Company) -> str:
     return candidate
 
 
+def _oauth_social_app_owned_by_company(social_app: SocialApp, company: Company) -> bool:
+    """True when settings.created_by_company_id is this company."""
+    settings_data = social_app.settings if isinstance(social_app.settings, dict) else {}
+    owner_company_id = settings_data.get('created_by_company_id')
+    if owner_company_id is None or isinstance(owner_company_id, bool):
+        return False
+    try:
+        return int(owner_company_id) == int(company.id)
+    except (TypeError, ValueError):
+        return False
+
+
+def _oauth_social_app_link_block(
+    company: Company,
+    social_app: SocialApp,
+    *,
+    exclude_client_pk: int | None = None,
+) -> str | None:
+    """Shared attach rules for OAuth client create and update.
+
+    Returns ``mapped`` when any CompanyOAuthClient other than ``exclude_client_pk``
+    already points at ``social_app``, ``owner`` when ``created_by_company_id`` is not
+    ``company``, or None when the link is allowed. Create passes no exclusion. Update
+    passes the row being saved so that row's current mapping is not a conflict.
+    """
+    others = CompanyOAuthClient.objects.filter(social_app=social_app)
+    if exclude_client_pk is not None:
+        others = others.exclude(pk=exclude_client_pk)
+    if others.exists():
+        return 'mapped'
+    if not _oauth_social_app_owned_by_company(social_app, company):
+        return 'owner'
+    return None
+
+
+def _oauth_social_app_link_response(
+    company: Company,
+    social_app: SocialApp,
+    *,
+    exclude_client_pk: int | None = None,
+) -> Response | None:
+    block = _oauth_social_app_link_block(
+        company,
+        social_app,
+        exclude_client_pk=exclude_client_pk,
+    )
+    if block == 'mapped':
+        return Response(
+            {'error': 'This SocialApp is already mapped. Create a new OAuth key instead.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if block == 'owner':
+        return Response(
+            {'error': 'This SocialApp cannot be attached to your company.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    return None
+
+
+def _oauth_social_app_manage_response(
+    company: Company,
+    social_app: SocialApp,
+    *,
+    exclude_client_pk: int | None = None,
+) -> Response | None:
+    """404 when this company must not read or change the SocialApp.
+
+    Same ownership and cross-company mapping rules as linking a client. A foreign app
+    looks like a missing app so the response does not confirm another company's key.
+    """
+    if _oauth_social_app_link_block(company, social_app, exclude_client_pk=exclude_client_pk) is None:
+        return None
+    return Response({'error': 'SocialApp not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+
 def _shellui_access_token_setup_claims(user: User, company: Company) -> dict:
     """Optional new-company setup window for MCP personal UIs (signed on the access token)."""
     from apps.agents.models import Agent
@@ -3914,18 +3989,9 @@ class ShellUIAdminOAuthClientListView(APIView):
                 {'error': f"Provider '{social_app.provider}' is not supported."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        if CompanyOAuthClient.objects.filter(social_app=social_app).exists():
-            return Response(
-                {'error': 'This SocialApp is already mapped. Create a new OAuth key instead.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        app_settings = social_app.settings if isinstance(social_app.settings, dict) else {}
-        owner_company_id = app_settings.get('created_by_company_id')
-        if owner_company_id is None or int(owner_company_id) != int(company.id):
-            return Response(
-                {'error': 'This SocialApp cannot be attached to your company.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        link_error = _oauth_social_app_link_response(company, social_app)
+        if link_error:
+            return link_error
         if not str(social_app.client_id).strip() or not str(social_app.secret).strip():
             return Response(
                 {'error': 'Selected SocialApp is missing client_id or secret.'},
@@ -4022,12 +4088,21 @@ class ShellUIAdminOAuthSocialAppListView(APIView):
         if err:
             return err
         enabled_providers = set(_supported_oauth_providers())
-        company_app_ids = CompanyOAuthClient.objects.filter(company=company).values_list(
-            'social_app_id',
-            flat=True,
-        )
-        apps = SocialApp.objects.filter(id__in=company_app_ids).order_by('provider', 'name', 'id')
-        rows = [_oauth_social_app_payload(company, app, request=request) for app in apps]
+        mappings = CompanyOAuthClient.objects.filter(company=company)
+        mapping_pk_by_app = {row.social_app_id: row.pk for row in mappings}
+        apps = SocialApp.objects.filter(id__in=mapping_pk_by_app.keys()).order_by('provider', 'name', 'id')
+        rows = []
+        for app in apps:
+            if (
+                _oauth_social_app_link_block(
+                    company,
+                    app,
+                    exclude_client_pk=mapping_pk_by_app.get(app.id),
+                )
+                is not None
+            ):
+                continue
+            rows.append(_oauth_social_app_payload(company, app, request=request))
         return Response(
             {
                 'providers': sorted(enabled_providers),
@@ -4164,6 +4239,13 @@ class ShellUIAdminOAuthSocialAppDetailView(APIView):
         except SocialApp.DoesNotExist:
             return Response({'error': 'SocialApp not found.'}, status=status.HTTP_404_NOT_FOUND)
         mapping = CompanyOAuthClient.objects.filter(company=company, social_app=app).first()
+        foreign = _oauth_social_app_manage_response(
+            company,
+            app,
+            exclude_client_pk=mapping.pk if mapping is not None else None,
+        )
+        if foreign:
+            return foreign
         if not mapping:
             return Response(
                 {'error': 'This SocialApp is not mapped to the current company.'},
@@ -4252,15 +4334,16 @@ class ShellUIAdminOAuthSocialAppDetailView(APIView):
         except SocialApp.DoesNotExist:
             return Response({'error': 'SocialApp not found.'}, status=status.HTTP_404_NOT_FOUND)
         mapping = CompanyOAuthClient.objects.filter(company=company, social_app=app).first()
+        foreign = _oauth_social_app_manage_response(
+            company,
+            app,
+            exclude_client_pk=mapping.pk if mapping is not None else None,
+        )
+        if foreign:
+            return foreign
         if not mapping:
             return Response(
                 {'error': 'This SocialApp is not mapped to the current company.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        has_other_company_mappings = CompanyOAuthClient.objects.filter(social_app=app).exclude(company=company).exists()
-        if has_other_company_mappings:
-            return Response(
-                {'error': 'Cannot delete this key because it is mapped to another company.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         blocked = _login_lockout_response(company, removed_client_ids=(mapping.pk,))
@@ -4324,6 +4407,13 @@ class ShellUIAdminOAuthClientDetailView(APIView):
                     {'error': f"Provider '{social_app.provider}' is not supported."},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
+            link_error = _oauth_social_app_link_response(
+                company,
+                social_app,
+                exclude_client_pk=row.pk,
+            )
+            if link_error:
+                return link_error
             if not str(social_app.client_id).strip() or not str(social_app.secret).strip():
                 return Response(
                     {'error': 'Selected SocialApp is missing client_id or secret.'},
