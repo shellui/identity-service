@@ -11,7 +11,7 @@ COPY templates ./templates
 RUN npm run build:css
 
 # Local dev stack (shellui/dev): deps in /opt/venv, source bind-mounted at /app.
-FROM python:3.14-slim AS dev
+FROM python:3.15-slim AS dev
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -42,7 +42,7 @@ EXPOSE 8000
 ENTRYPOINT ["/usr/local/bin/docker-dev-entrypoint.sh"]
 
 # Production image (default build target for publish and CI smoke tests).
-FROM python:3.14-slim
+FROM python:3.15-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
