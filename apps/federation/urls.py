@@ -5,8 +5,11 @@ from apps.federation.provider import AuthorizeView, TokenView, UserInfoView
 from apps.agents.provisioning_views import ProvisioningGlobalAgentRevokeView
 from apps.federation.provisioning import (
     ProvisioningCompaniesView,
+    ProvisioningCompanyMembersView,
+    ProvisioningCompanyMemberView,
     ProvisioningCompanyView,
     ProvisioningLimitsView,
+    ProvisioningTransferOwnershipView,
 )
 from apps.federation.relying import SilentSignInView, UpstreamCallbackView
 
@@ -22,6 +25,21 @@ urlpatterns = [
 provisioning_urlpatterns = [
     path('companies', ProvisioningCompaniesView.as_view(), name='federation-provisioning-companies'),
     path('companies/<int:company_id>', ProvisioningCompanyView.as_view(), name='federation-provisioning-company'),
+    path(
+        'companies/<int:company_id>/members',
+        ProvisioningCompanyMembersView.as_view(),
+        name='federation-provisioning-members',
+    ),
+    path(
+        'companies/<int:company_id>/members/<str:global_subject>',
+        ProvisioningCompanyMemberView.as_view(),
+        name='federation-provisioning-member',
+    ),
+    path(
+        'companies/<int:company_id>/transfer-ownership',
+        ProvisioningTransferOwnershipView.as_view(),
+        name='federation-provisioning-transfer-ownership',
+    ),
     path(
         'companies/<int:company_id>/limits',
         ProvisioningLimitsView.as_view(),

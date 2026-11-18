@@ -23,6 +23,10 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 ## [Unreleased]
 
+### ✨ Feature
+
+- Provisioning create stores `allowed_email_domains` with `access_mode`. Patch accepts `access_mode` and `allowed_email_domains` with or without `name` and `status`. Domain mode needs at least one domain. New member routes add, change role, remove, and transfer ownership. The last owner cannot be removed or demoted. Removing a member revokes that company's sessions and personal access tokens.
+
 ### 📚 Documentation
 
 - Docker Hub overview in `DOCKERHUB.md` on each image release.

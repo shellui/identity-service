@@ -26,8 +26,8 @@ from rest_framework.response import Response
 
 from apps.authapi.magic_link import is_staff_account
 from apps.authapi.oauth_user import normalize_oauth_email
-from apps.companies.access import set_company_access
-from apps.companies.models import Company, CompanyOAuthRedirect
+from apps.companies.access import normalize_allowed_domains, set_company_access
+from apps.companies.models import Company, CompanyMembership, CompanyOAuthRedirect
 from apps.federation.http import FederationView
 from apps.federation.models import (
     AssertionUse,
@@ -48,6 +48,8 @@ MAX_LIFETIME = 300
 PAGE_SIZE = 200
 _KEY_RE = re.compile(r'^[A-Za-z0-9._:-]{1,200}$')
 _ACCESS_MODES = {Company.ACCESS_PUBLIC, Company.ACCESS_DOMAIN, Company.ACCESS_INVITE}
+_PATCH_KEYS = {'name', 'status', 'access_mode', 'allowed_email_domains'}
+_MEMBER_ROLES = {'owner', 'staff'}
 
 
 class ProvisioningError(Exception):
@@ -238,6 +240,40 @@ class ProvisioningCompanyView(_ProvisioningView):
         return self._run(request, lambda: _schedule_deletion(_provisioned(company_id)), write=True)
 
 
+class ProvisioningCompanyMembersView(_ProvisioningView):
+    def post(self, request, company_id: int):
+        return self._run(
+            request,
+            lambda: _add_member(_provisioned(company_id), self._body(request)),
+            write=True,
+        )
+
+
+class ProvisioningCompanyMemberView(_ProvisioningView):
+    def patch(self, request, company_id: int, global_subject: str):
+        return self._run(
+            request,
+            lambda: _set_member_role(_provisioned(company_id), global_subject, self._body(request)),
+            write=True,
+        )
+
+    def delete(self, request, company_id: int, global_subject: str):
+        return self._run(
+            request,
+            lambda: _remove_member(_provisioned(company_id), global_subject),
+            write=True,
+        )
+
+
+class ProvisioningTransferOwnershipView(_ProvisioningView):
+    def post(self, request, company_id: int):
+        return self._run(
+            request,
+            lambda: _transfer_ownership(_provisioned(company_id), self._body(request)),
+            write=True,
+        )
+
+
 class ProvisioningLimitsView(_ProvisioningView):
     def put(self, request, company_id: int):
         return self._run(request, lambda: _put_limits(_provisioned(company_id), self._body(request)), write=True)
@@ -291,7 +327,12 @@ def _detail(row: ProvisionedCompany) -> dict:
         .order_by('pk')
         .values_list('sub', flat=True)
     )
-    return {**_summary(row), 'owners': [{'subject': sub} for sub in subjects]}
+    return {
+        **_summary(row),
+        'access_mode': row.company.access_mode,
+        'allowed_email_domains': list(row.company.allowed_email_domains or []),
+        'owners': [{'subject': sub} for sub in subjects],
+    }
 
 
 def _global_issuer() -> str:
@@ -307,13 +348,51 @@ def _string(data: dict, key: str, *, max_length: int, required: bool = True) -> 
     return value.strip()
 
 
+def _require_access_mode(mode) -> None:
+    if not isinstance(mode, str) or mode not in _ACCESS_MODES:
+        raise ProvisioningError(400, 'invalid_request', 'access_mode must be public, domain, or invite.')
+
+
+def _email_domains(value) -> list[str]:
+    """Lowercase domains with no ``@``. Rejects anything that is not a domain string."""
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise ProvisioningError(400, 'invalid_request', 'allowed_email_domains must be a list of domains.')
+    raw: list[str] = []
+    for item in value:
+        if not isinstance(item, str) or not item.strip():
+            raise ProvisioningError(400, 'invalid_request', 'allowed_email_domains must be a list of domains.')
+        domain = item.strip().lower().lstrip('@').rstrip('.')
+        if (
+            not domain
+            or '@' in domain
+            or '/' in domain
+            or any(ch.isspace() for ch in domain)
+            or len(domain) > 253
+        ):
+            raise ProvisioningError(
+                400,
+                'invalid_request',
+                'allowed_email_domains must be lowercase domains without @.',
+            )
+        raw.append(domain)
+    return normalize_allowed_domains(raw)
+
+
+def _require_domains_for_mode(mode: str, domains: list[str]) -> None:
+    if mode == Company.ACCESS_DOMAIN and not domains:
+        raise ProvisioningError(400, 'invalid_request', 'Domain access mode needs at least one email domain.')
+
+
 def _create(data: dict) -> Response:
     global_id = _string(data, 'global_company_id', max_length=64)
     name = _string(data, 'name', max_length=255)
     plan = _string(data, 'plan', max_length=64, required=False)
     access_mode = data.get('access_mode') or Company.ACCESS_PUBLIC
-    if access_mode not in _ACCESS_MODES:
-        raise ProvisioningError(400, 'invalid_request', 'access_mode is not supported.')
+    _require_access_mode(access_mode)
+    domains = _email_domains(data.get('allowed_email_domains')) if 'allowed_email_domains' in data else []
+    _require_domains_for_mode(access_mode, domains)
     owner = data.get('owner')
     if not isinstance(owner, dict):
         raise ProvisioningError(400, 'invalid_request', 'owner is required.')
@@ -331,7 +410,12 @@ def _create(data: dict) -> Response:
             409, 'company_exists', 'A company with this global_company_id exists.', {'id': str(existing.company_id)}
         )
     user, created = _owner_user(subject=subject, email=email, full_name=full_name)
-    company = Company(name=name, slug=_unique_slug(name), access_mode=access_mode)
+    company = Company(
+        name=name,
+        slug=_unique_slug(name),
+        access_mode=access_mode,
+        allowed_email_domains=domains,
+    )
     company.save()
     ProvisionedCompany.objects.create(company=company, global_company_id=global_id, plan=plan)
     set_company_access(company, user, enabled=True)
@@ -380,11 +464,33 @@ def _unique_slug(name: str) -> str:
 
 
 def _update(row: ProvisionedCompany, data: dict) -> Response:
-    if not data or set(data) - {'name', 'status'}:
-        raise ProvisioningError(400, 'invalid_request', 'Only name and status can be changed.')
+    if not data or set(data) - _PATCH_KEYS:
+        raise ProvisioningError(
+            400,
+            'invalid_request',
+            'Only name, status, access_mode, and allowed_email_domains can be changed.',
+        )
+    company = row.company
+    company_fields: list[str] = []
     if 'name' in data:
-        row.company.name = _string(data, 'name', max_length=255)
-        row.company.save(update_fields=['name'])
+        company.name = _string(data, 'name', max_length=255)
+        company_fields.append('name')
+    if 'access_mode' in data or 'allowed_email_domains' in data:
+        mode = data.get('access_mode') if 'access_mode' in data else company.access_mode
+        _require_access_mode(mode)
+        if 'allowed_email_domains' in data:
+            domains = _email_domains(data.get('allowed_email_domains'))
+        else:
+            domains = list(company.allowed_email_domains or [])
+        _require_domains_for_mode(mode, domains)
+        if 'access_mode' in data:
+            company.access_mode = mode
+            company_fields.append('access_mode')
+        if 'allowed_email_domains' in data:
+            company.allowed_email_domains = domains
+            company_fields.append('allowed_email_domains')
+    if company_fields:
+        company.save(update_fields=company_fields)
     if 'status' in data:
         status = data.get('status')
         if status not in {ProvisionedCompany.STATUS_ACTIVE, ProvisionedCompany.STATUS_SUSPENDED}:
@@ -394,6 +500,139 @@ def _update(row: ProvisionedCompany, data: dict) -> Response:
         row.status = status
         row.save(update_fields=['status', 'updated_at'])
     return Response(_detail(row))
+
+
+def _member_role(company: Company, user) -> str:
+    if company.owners.filter(pk=user.pk).exists():
+        return 'owner'
+    return 'staff'
+
+
+def _member_body(user, subject: str, role: str) -> dict:
+    return {
+        'global_subject': subject,
+        'email': user.email or '',
+        'name': (user.get_full_name() or '').strip(),
+        'role': role,
+        'status': 'active',
+    }
+
+
+def _member_user(company: Company, subject: str):
+    link = (
+        UpstreamAccount.objects.select_related('user')
+        .filter(issuer=_global_issuer(), sub=subject)
+        .first()
+    )
+    if link is None or not CompanyMembership.objects.filter(company=company, user=link.user).exists():
+        raise ProvisioningError(404, 'not_found', 'Member not found.')
+    return link.user
+
+
+def _add_member(row: ProvisionedCompany, data: dict) -> Response:
+    email = normalize_oauth_email(_string(data, 'email', max_length=254))
+    if '@' not in email:
+        raise ProvisioningError(400, 'invalid_request', 'email is invalid.')
+    role = data.get('role') or 'staff'
+    if role not in _MEMBER_ROLES:
+        raise ProvisioningError(400, 'invalid_request', 'role must be owner or staff.')
+    subject = _string(data, 'global_subject', max_length=255)
+    full_name = data.get('name') if isinstance(data.get('name'), str) else ''
+    if 'name' in data and not isinstance(data.get('name'), str):
+        raise ProvisioningError(400, 'invalid_request', 'name must be a string.')
+    company = row.company
+    issuer = _global_issuer()
+    if UpstreamAccount.objects.filter(
+        issuer=issuer,
+        sub=subject,
+        user__company_memberships__company=company,
+    ).exists():
+        raise ProvisioningError(409, 'member_exists', 'That person is already a member.')
+    existing = User.objects.filter(email__iexact=email).order_by('pk').first()
+    if existing is not None and CompanyMembership.objects.filter(company=company, user=existing).exists():
+        raise ProvisioningError(409, 'member_exists', 'That person is already a member.')
+    user, _created = _owner_user(subject=subject, email=email, full_name=full_name)
+    set_company_access(company, user, enabled=True)
+    if role == 'owner':
+        company.owners.add(user)
+    return Response(_member_body(user, subject, _member_role(company, user)), status=201)
+
+
+def _set_member_role(row: ProvisionedCompany, subject: str, data: dict) -> Response:
+    if set(data) - {'role'}:
+        raise ProvisioningError(400, 'invalid_request', 'Only role can be changed.')
+    role = data.get('role')
+    if role not in _MEMBER_ROLES:
+        raise ProvisioningError(400, 'invalid_request', 'role must be owner or staff.')
+    company = row.company
+    user = _member_user(company, subject)
+    with transaction.atomic():
+        locked = Company.objects.select_for_update().get(pk=company.pk)
+        is_owner = locked.owners.filter(pk=user.pk).exists()
+        if is_owner and role != 'owner' and locked.owners.count() <= 1:
+            raise ProvisioningError(409, 'last_owner', 'A project needs at least one owner.')
+        if role == 'owner':
+            locked.owners.add(user)
+        elif is_owner:
+            locked.owners.remove(user)
+    return Response(_member_body(user, subject, _member_role(company, user)))
+
+
+def _remove_member(row: ProvisionedCompany, subject: str) -> Response:
+    company = row.company
+    user = _member_user(company, subject)
+    with transaction.atomic():
+        locked = Company.objects.select_for_update().get(pk=company.pk)
+        if locked.owners.filter(pk=user.pk).exists() and locked.owners.count() <= 1:
+            raise ProvisioningError(409, 'last_owner', 'A project needs at least one owner.')
+        locked.owners.remove(user)
+        CompanyMembership.objects.filter(company=locked, user=user).delete()
+        _revoke_member_credentials(locked, user)
+    return Response({'global_subject': subject, 'status': 'removed'})
+
+
+def _transfer_ownership(row: ProvisionedCompany, data: dict) -> Response:
+    if set(data) - {'global_subject', 'from_subject'}:
+        raise ProvisioningError(400, 'invalid_request', 'global_subject and from_subject are required.')
+    target_subject = _string(data, 'global_subject', max_length=255)
+    from_subject = _string(data, 'from_subject', max_length=255)
+    if target_subject == from_subject:
+        raise ProvisioningError(400, 'invalid_request', 'Choose another member.')
+    company = row.company
+    target = _member_user(company, target_subject)
+    source = _member_user(company, from_subject)
+    with transaction.atomic():
+        locked = Company.objects.select_for_update().get(pk=company.pk)
+        if not locked.owners.filter(pk=source.pk).exists():
+            raise ProvisioningError(400, 'invalid_request', 'from_subject is not an owner.')
+        locked.owners.add(target)
+        locked.owners.remove(source)
+        if locked.owners.count() < 1:
+            raise ProvisioningError(409, 'last_owner', 'A project needs at least one owner.')
+    return Response(
+        {
+            'global_subject': target_subject,
+            'from_subject': from_subject,
+            'owners': [
+                {'subject': sub}
+                for sub in UpstreamAccount.objects.filter(
+                    user_id__in=company.owners.values_list('pk', flat=True),
+                    issuer=_global_issuer(),
+                )
+                .order_by('pk')
+                .values_list('sub', flat=True)
+            ],
+        }
+    )
+
+
+def _revoke_member_credentials(company: Company, user) -> None:
+    """Drop this company's refresh sessions and personal access tokens for ``user``."""
+    from apps.authapi.models import PersonalAccessToken, RefreshTokenSession
+
+    now = timezone.now()
+    RefreshTokenSession.objects.filter(user=user, company=company, revoked_at__isnull=True).update(revoked_at=now)
+    PersonalAccessToken.objects.filter(user=user, company=company, revoked_at__isnull=True).update(revoked_at=now)
 
 
 def _put_limits(row: ProvisionedCompany, data: dict) -> Response:

@@ -143,8 +143,12 @@ The dashboard (shellui/saas-service) creates and manages regional companies here
 | --- | --- |
 | `POST /api/v1/provisioning/companies` | Create a company and its owner. **201** with the company, **409** with `id` when the `global_company_id` exists |
 | `GET /api/v1/provisioning/companies?linked=shellui` | `{ "results": [...], "next": url or null }`, 200 per page, ordered by id |
-| `GET /api/v1/provisioning/companies/{id}` | Company with `status`, `limits_version`, and owner subjects |
-| `PATCH /api/v1/provisioning/companies/{id}` | `name` and/or `status` (`active` or `suspended`) |
+| `GET /api/v1/provisioning/companies/{id}` | Company with `status`, `limits_version`, `access_mode`, `allowed_email_domains`, and owner subjects |
+| `PATCH /api/v1/provisioning/companies/{id}` | `name`, `status` (`active` or `suspended`), `access_mode`, and `allowed_email_domains`, any combination |
+| `POST /api/v1/provisioning/companies/{id}/members` | Add a member. Body: `email`, `name`, `role` (`owner` or `staff`), `global_subject` |
+| `PATCH /api/v1/provisioning/companies/{id}/members/{global_subject}` | Body: `role` (`owner` or `staff`) |
+| `DELETE /api/v1/provisioning/companies/{id}/members/{global_subject}` | Remove the member. Revokes that company's refresh sessions and personal access tokens |
+| `POST /api/v1/provisioning/companies/{id}/transfer-ownership` | Body: `global_subject` (new owner) and `from_subject` (current owner, who becomes `staff`) |
 | `PUT /api/v1/provisioning/companies/{id}/limits` | `{ "version", "limits" }`. An older version returns **409** `stale_version` |
 | `DELETE /api/v1/provisioning/companies/{id}` | **202**, status `deleting`. Data is kept; nothing is removed by this call |
 
@@ -158,11 +162,16 @@ Create body:
   "name": "Acme",
   "plan": "free",
   "access_mode": "public",
+  "allowed_email_domains": ["acme.com"],
   "owner": {"subject": "global sub", "email": "ada@acme.com", "email_verified": true, "name": "Ada"}
 }
 ```
 
+`access_mode` is `public`, `domain`, or `invite`. `allowed_email_domains` is a list of lowercase domains with no `@`. Domain mode needs at least one domain on create and on any later change that leaves the company in domain mode. Sign-in and join already use these fields: a domain company accepts a proved address on that list, and refuses the others.
+
 The owner is linked by the global subject (`GLOBAL_ISSUER_URL` and `owner.subject`). Without a link, an existing user with the same email is linked, and otherwise a new user is created. `owner.email_verified` must be the boolean `true` (**403** `email_not_verified` otherwise). An existing `is_staff` or `is_superuser` account is refused (**409** `user_is_staff`). This API never sets those flags.
+
+Members use the same link. `role` `owner` is a company owner. `role` `staff` is a member who is not an owner. It does not set Django `is_staff`. Removing or demoting the last owner returns **409** `last_owner`. Removing a member revokes that person's refresh sessions and personal access tokens for this company only. Transfer makes `global_subject` an owner and changes `from_subject` from owner to `staff`.
 
 `GET /api/v1/companies/{id}/plan` returns `{ "company_id", "limits", "limits_version", "status" }` to a member of that company, for regional services. Suspension keeps hosted sites online; services read `status` to lock the admin and deploys.
 
