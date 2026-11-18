@@ -193,6 +193,16 @@ OPTIONAL = (
         '',
         'Pinned JWKS JSON for GLOBAL_AGENT_ISSUER_URL. Empty uses GLOBAL_JWKS. Not fetched from the network',
     ),
+    Var(
+        'GLOBAL_AGENT_LEGACY_ISSUER_URL',
+        '',
+        'Previous agent issuer (saas-service) during migration. Empty adds no second issuer. Does not fall back to GLOBAL_ISSUER_URL',
+    ),
+    Var(
+        'GLOBAL_AGENT_LEGACY_JWKS',
+        '',
+        'Pinned JWKS JSON for GLOBAL_AGENT_LEGACY_ISSUER_URL. Empty adds no keys and does not raise',
+    ),
     Var('PROVISIONING_PUBLIC_KEY', '', 'Provisioning API (region role; empty PROVISIONING_PUBLIC_KEY turns it off)'),
     Var('PROVISIONING_KEY_ID', ''),
     Var('PROVISIONING_ISSUER', ''),
@@ -226,7 +236,12 @@ OPTIONAL = (
     Var(
         'DASHBOARD_PUBLIC_URL',
         '',
-        'Optional public Shellui dashboard origin (https) for global MCP URL hint on personal status',
+        'Optional public Shellui dashboard origin (https). Personal status uses it for global_mcp_url when GLOBAL_MCP_URL is empty',
+    ),
+    Var(
+        'GLOBAL_MCP_URL',
+        '',
+        'Full global MCP URL for personal status, for example https://ai.shellui.com/mcp. Empty keeps DASHBOARD_PUBLIC_URL/mcp',
     ),
 )
 

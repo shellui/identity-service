@@ -5,10 +5,11 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+from dataclasses import dataclass
 from urllib.parse import unquote, urlencode, urlsplit, urlunsplit
 
 from django.conf import settings
-from django.http import HttpResponseRedirect
+from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
@@ -60,7 +61,7 @@ class OpenIdConfigurationView(FederationView):
                     'email_verified',
                     'name',
                 ],
-                'prompt_values_supported': ['none'],
+                'prompt_values_supported': _prompt_values(),
                 'backchannel_logout_supported': True,
                 'backchannel_logout_session_supported': True,
                 'code_challenge_methods_supported': ['S256'],
@@ -68,54 +69,143 @@ class OpenIdConfigurationView(FederationView):
         )
 
 
+# Path ai-service global registers on identity-global (IDENTITY_GLOBAL_OIDC_CLIENTS).
+SHELLUI_ACCOUNT_REDIRECT_PATH = '/oauth/mcp/signin/complete'
+
+
+def client_requires_shellui_account(client: dict | None) -> bool:
+    """True for the ai-global sign-in client.
+
+    The dev stack registers that client with redirect URIs ending in
+    ``/oauth/mcp/signin/complete`` and no extra field. ``shellui_account_required``
+    JSON true also marks a client.
+    """
+    if not isinstance(client, dict):
+        return False
+    if client.get('shellui_account_required') is True:
+        return True
+    for uri in client.get('redirect_uris') or []:
+        path = urlsplit(str(uri)).path.rstrip('/') or '/'
+        if path == SHELLUI_ACCOUNT_REDIRECT_PATH:
+            return True
+    return False
+
+
+@dataclass(frozen=True)
+class AuthorizeSpec:
+    client: dict
+    redirect_uri: str
+    state: str
+    nonce: str
+    challenge: str
+    prompt: str
+
+    @property
+    def shellui_account_required(self) -> bool:
+        return client_requires_shellui_account(self.client)
+
+
 class AuthorizeView(FederationView):
     authentication_classes = []
     permission_classes = [AllowAny]
 
     def get(self, request):
-        if not is_global():
-            return _disabled()
-        client = _client(request.GET.get('client_id'))
-        redirect_uri = (request.GET.get('redirect_uri') or '').strip()
-        if client is None or redirect_uri not in client['redirect_uris']:
-            return Response({'error': 'invalid_client'}, status=400)
-        state = request.GET.get('state') or ''
+        loaded = load_authorize_request(request)
+        if not isinstance(loaded, AuthorizeSpec):
+            return loaded
+        return render_authorize(request, loaded)
 
-        def fail(error: str):
-            return _redirect_error(redirect_uri, error, state)
 
-        if request.GET.get('response_type') != 'code':
-            return fail('unsupported_response_type')
-        scope = (request.GET.get('scope') or '').split()
-        if 'openid' not in scope:
-            return fail('invalid_scope')
-        if (request.GET.get('prompt') or '') != 'none':
-            return fail('interaction_required')
-        nonce = (request.GET.get('nonce') or '').strip()
-        if not nonce or not state:
-            return fail('invalid_request')
-        challenge = (request.GET.get('code_challenge') or '').strip()
-        method = (request.GET.get('code_challenge_method') or '').strip()
-        if challenge and method != 'S256':
-            return fail('invalid_request')
-        session = read_session(request)
+def load_authorize_request(request) -> AuthorizeSpec | HttpResponse:
+    """Validate an authorize query. Errors are redirects, or 400 when the client is unknown."""
+    if not is_global():
+        return HttpResponse(status=404)
+    client = _client(request.GET.get('client_id'))
+    redirect_uri = (request.GET.get('redirect_uri') or '').strip()
+    if client is None or redirect_uri not in client['redirect_uris']:
+        return JsonResponse({'error': 'invalid_client'}, status=400)
+    state = request.GET.get('state') or ''
+    prompt = (request.GET.get('prompt') or '').strip()
+    if request.GET.get('response_type') != 'code':
+        return _redirect_error(redirect_uri, 'unsupported_response_type', state)
+    scope = (request.GET.get('scope') or '').split()
+    if 'openid' not in scope:
+        return _redirect_error(redirect_uri, 'invalid_scope', state)
+    nonce = (request.GET.get('nonce') or '').strip()
+    if not nonce or not state:
+        return _redirect_error(redirect_uri, 'invalid_request', state)
+    challenge = (request.GET.get('code_challenge') or '').strip()
+    method = (request.GET.get('code_challenge_method') or '').strip()
+    interactive = client_requires_shellui_account(client)
+    if challenge and method != 'S256':
+        return _redirect_error(redirect_uri, 'invalid_request', state)
+    if not interactive and prompt != 'none':
+        return _redirect_error(redirect_uri, 'interaction_required', state)
+    if interactive and prompt not in {'', 'none', 'login'}:
+        return _redirect_error(redirect_uri, 'interaction_required', state)
+    return AuthorizeSpec(
+        client=client,
+        redirect_uri=redirect_uri,
+        state=state,
+        nonce=nonce,
+        challenge=challenge,
+        prompt=prompt,
+    )
+
+
+def render_authorize(request, spec: AuthorizeSpec) -> HttpResponse:
+    """Silent clients stay on ``prompt=none``. A Shellui-account client can show a login page."""
+    from apps.agents.staff import is_mcp_oauth_refused_user
+    from apps.federation.oidc_login import render_login_page, render_staff_refused
+
+    session = read_session(request)
+    if spec.prompt == 'none':
         if session is None:
-            return fail('login_required')
+            return _redirect_error(spec.redirect_uri, 'login_required', spec.state)
         user, sid = session
-        code = codes.store_code(
-            {
-                'user_id': user.pk,
-                'client_id': client['client_id'],
-                'redirect_uri': redirect_uri,
-                'nonce': nonce,
-                'sid': sid,
-                'code_challenge': challenge,
-                'auth_time': unix_now(),
-            }
-        )
-        emit_authorize_succeeded(user=user, client_id=client['client_id'])
-        params = {'code': code, 'state': state}
-        return HttpResponseRedirect(_with_query(redirect_uri, params))
+        if spec.shellui_account_required and is_mcp_oauth_refused_user(user):
+            return _redirect_error(
+                spec.redirect_uri,
+                'access_denied',
+                spec.state,
+                description='Staff accounts cannot authorize this client.',
+            )
+        return issue_authorization_redirect(spec, user, sid)
+    if spec.prompt != 'login' and session is not None:
+        user, _sid = session
+        if is_mcp_oauth_refused_user(user):
+            return render_staff_refused(request, spec)
+        return render_login_page(request, spec, signed_in=user)
+    return render_login_page(request, spec, signed_in=None)
+
+
+def issue_authorization_redirect(spec: AuthorizeSpec, user, sid: str, response: HttpResponse | None = None):
+    code = codes.store_code(
+        {
+            'user_id': user.pk,
+            'client_id': spec.client['client_id'],
+            'redirect_uri': spec.redirect_uri,
+            'nonce': spec.nonce,
+            'sid': sid,
+            'code_challenge': spec.challenge,
+            'auth_time': unix_now(),
+        }
+    )
+    emit_authorize_succeeded(user=user, client_id=spec.client['client_id'])
+    target = _with_query(spec.redirect_uri, {'code': code, 'state': spec.state})
+    if response is None:
+        return HttpResponseRedirect(target)
+    response['Location'] = target
+    response.status_code = 302
+    return response
+
+
+def _prompt_values() -> list[str]:
+    values = ['none']
+    clients = getattr(settings, 'OIDC_CLIENTS', []) or []
+    if any(client_requires_shellui_account(client) for client in clients):
+        values.append('login')
+    return values
 
 
 class TokenView(FederationView):
@@ -277,8 +367,10 @@ def _same_secret(presented: str, expected: str) -> bool:
     return hmac.compare_digest(presented, expected)
 
 
-def _redirect_error(redirect_uri: str, error: str, state: str):
+def _redirect_error(redirect_uri: str, error: str, state: str, description: str = ''):
     params = {'error': error}
+    if description:
+        params['error_description'] = description
     if state:
         params['state'] = state
     return HttpResponseRedirect(_with_query(redirect_uri, params))

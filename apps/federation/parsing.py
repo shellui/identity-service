@@ -77,12 +77,18 @@ def parse_oidc_clients(raw: str | None, *, allow_http: bool) -> list[dict]:
         logout_uri = ''
         if logout:
             logout_uri = _https_url(logout, allow_http=allow_http, label='backchannel_logout_uri')
+        account_required = item.get('shellui_account_required', False)
+        if account_required is not True and account_required is not False:
+            raise ImproperlyConfigured(
+                f'OIDC_CLIENTS[{index}].shellui_account_required must be JSON true or false.'
+            )
         clients.append(
             {
                 'client_id': client_id,
                 'client_secret': secret,
                 'redirect_uris': clean_redirects,
                 'backchannel_logout_uri': logout_uri,
+                'shellui_account_required': account_required,
             }
         )
     return clients

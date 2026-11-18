@@ -69,15 +69,44 @@ def _trusted_https_origin(raw: str | None) -> str | None:
 
 def global_mcp_url() -> str | None:
     """
-    Optional global Shellui account MCP URL: ``DASHBOARD_PUBLIC_URL`` + ``/mcp``.
+    Optional global Shellui account MCP URL.
 
-    Independent of regional ``mcp_url`` (ai-service gateway). Unset or invalid settings
+    ``GLOBAL_MCP_URL`` wins when it is a trusted ``.../mcp`` URL (production:
+    ``https://ai.shellui.com/mcp``). Otherwise ``DASHBOARD_PUBLIC_URL`` + ``/mcp``.
+    Independent of the regional gateway ``mcp_url``. Unset or invalid settings
     return None (callers show nothing).
     """
+    explicit = _trusted_global_mcp_url(getattr(settings, 'GLOBAL_MCP_URL', '') or '')
+    if explicit:
+        return explicit
     base = _trusted_https_origin(getattr(settings, 'DASHBOARD_PUBLIC_URL', '') or '')
     if not base:
         return None
     return f'{base}/mcp'
+
+
+def _trusted_global_mcp_url(raw: str | None) -> str | None:
+    """A path-less origin plus ``/mcp``, or a URL whose path is exactly ``/mcp``."""
+    s = str(raw or '').strip()
+    if not s or '#' in s or '?' in s:
+        return None
+    s = s.rstrip('/')
+    origin = _trusted_https_origin(s)
+    if origin:
+        return f'{origin}/mcp'
+    try:
+        parsed = urlsplit(s)
+    except ValueError:
+        return None
+    if parsed.scheme not in ('http', 'https') or not parsed.netloc or parsed.username or parsed.password:
+        return None
+    if parsed.path != '/mcp':
+        return None
+    if parsed.scheme == 'http' and not _http_dev_host_allowed(parsed.hostname):
+        return None
+    if parsed.scheme == 'https' and (parsed.hostname or '').lower() in _LOOPBACK_HOSTS:
+        return None
+    return s
 
 
 def _normalize_company_resource(raw: str | None) -> str | None:

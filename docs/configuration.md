@@ -217,7 +217,7 @@ See [Security hardening](security-hardening.md) for the rate limit defaults, pro
 
 ## Instance role
 
-Leave `SHELLUI_INSTANCE_ROLE` unset for a standalone deployment. `global` turns this process into an OpenID Provider. `region` trusts the global identity server for browser sign-in and user token exchange, using `GLOBAL_ISSUER_URL`, a pinned `GLOBAL_JWKS`, and `GLOBAL_CLIENT_ID` / `GLOBAL_CLIENT_SECRET`. Global MCP agent tokens can use a second issuer: set `GLOBAL_AGENT_ISSUER_URL` and `GLOBAL_AGENT_JWKS`, or leave both empty to verify those tokens with `GLOBAL_ISSUER_URL` and `GLOBAL_JWKS`. Endpoints, assertions, and the production host check are in [Instance roles](instance-roles.md). Agent exchange is in [MCP and agents](mcp-and-agents.md).
+Leave `SHELLUI_INSTANCE_ROLE` unset for a standalone deployment. `global` turns this process into an OpenID Provider. `region` trusts the global identity server for browser sign-in and user token exchange, using `GLOBAL_ISSUER_URL`, a pinned `GLOBAL_JWKS`, and `GLOBAL_CLIENT_ID` / `GLOBAL_CLIENT_SECRET`. Global MCP agent tokens use `GLOBAL_AGENT_ISSUER_URL` and `GLOBAL_AGENT_JWKS` (ai-service global). Those fall back to `GLOBAL_ISSUER_URL` and `GLOBAL_JWKS` when empty. During migration, `GLOBAL_AGENT_LEGACY_ISSUER_URL` and `GLOBAL_AGENT_LEGACY_JWKS` keep the previous saas-service issuer. Endpoints, assertions, and the production host check are in [Instance roles](instance-roles.md). Agent exchange is in [MCP and agents](mcp-and-agents.md).
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
@@ -235,8 +235,10 @@ Leave `SHELLUI_INSTANCE_ROLE` unset for a standalone deployment. `global` turns 
 | `GLOBAL_REDIRECT_URI` | `{JWT_ISSUER}/oauth/upstream-callback` | Upstream redirect URI when the public URL differs |
 | `GLOBAL_ACCESS_TOKEN_AUDIENCE` | empty | `aud` of global access tokens (the global server's `JWT_AUDIENCE`). Turns on token exchange at `POST /oauth/token`. Empty answers 404 |
 | `GLOBAL_AGENT_ACCESS_TOKEN_AUDIENCE` | empty | `aud` of global MCP agent access tokens. Turns on agent token exchange at `POST /oauth/token` (MCP authorization server `token_endpoint`; `POST /oauth/mcp/token` is the same handler). Empty answers 404 |
-| `GLOBAL_AGENT_ISSUER_URL` | empty | `iss` of those agent tokens: the saas-service public URL. Empty uses `GLOBAL_ISSUER_URL`. User token exchange ignores it |
-| `GLOBAL_AGENT_JWKS` | empty | Pinned JWKS JSON for `GLOBAL_AGENT_ISSUER_URL`. Empty uses `GLOBAL_JWKS`. Keys are not fetched. User token exchange ignores it |
+| `GLOBAL_AGENT_ISSUER_URL` | empty | `iss` of global MCP agent tokens. Set this to the ai-service global origin (`https://ai.shellui.com`, or the dev ai-global origin). Empty uses `GLOBAL_ISSUER_URL`. User token exchange ignores it |
+| `GLOBAL_AGENT_JWKS` | empty | Pinned JWKS JSON for `GLOBAL_AGENT_ISSUER_URL`. Empty uses `GLOBAL_JWKS` and does not raise. Keys are not fetched. User token exchange ignores it |
+| `GLOBAL_AGENT_LEGACY_ISSUER_URL` | empty | Previous agent issuer, saas-service, until cutover. Empty adds no second issuer and does not fall back to `GLOBAL_ISSUER_URL` |
+| `GLOBAL_AGENT_LEGACY_JWKS` | empty | Pinned JWKS JSON for `GLOBAL_AGENT_LEGACY_ISSUER_URL`. Empty adds no keys and does not raise. It does not fall back to `GLOBAL_JWKS` |
 | `PROVISIONING_PUBLIC_KEY` | empty | Dashboard provisioning public key (PEM), region role. Empty turns the provisioning API off |
 | `PROVISIONING_KEY_ID` | empty | Expected assertion `kid` when set |
 | `PROVISIONING_ISSUER` | empty | Expected assertion `iss` (the dashboard) |
@@ -267,7 +269,8 @@ Leave `SHELLUI_INSTANCE_ROLE` unset for a standalone deployment. `global` turns 
 | `DASHBOARD_WEBHOOK_URL` | empty | saas-service region webhook (`https://<dashboard>/api/v1/webhooks/<region>`) that receives `identity.company.deleted` |
 | `DASHBOARD_WEBHOOK_INTERNAL_URL` | empty | Server-to-server URL for that webhook POST. Unset uses `DASHBOARD_WEBHOOK_URL` |
 | `DASHBOARD_WEBHOOK_SECRET` | empty | Signing secret for that webhook. Same value as the region's webhook secret in saas-service |
-| `DASHBOARD_PUBLIC_URL` | empty | Optional public Shellui dashboard origin (`https://…`, path-less). When set, `GET /api/v1/mcp/personal/status` includes `global_mcp_url` as `{DASHBOARD_PUBLIC_URL}/mcp` for global account MCP discovery. Independent of regional `mcp_url` |
+| `DASHBOARD_PUBLIC_URL` | empty | Optional public Shellui dashboard origin (`https://…`, path-less). When `GLOBAL_MCP_URL` is empty, `GET /api/v1/mcp/personal/status` includes `global_mcp_url` as `{DASHBOARD_PUBLIC_URL}/mcp`. Independent of regional `mcp_url` |
+| `GLOBAL_MCP_URL` | empty | Full global MCP URL for that hint, for example `https://ai.shellui.com/mcp`. An origin with no path is treated as that origin plus `/mcp`. Empty keeps the `DASHBOARD_PUBLIC_URL` hint |
 
 ## Related
 
