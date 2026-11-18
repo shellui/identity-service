@@ -102,8 +102,8 @@ Publishing a release adds the version and the minor line. A stable release also 
 
 | Tag | What it tracks |
 | --- | --- |
-| `X.Y.Z` | That release, for example `0.11.0` |
-| `X.Y` | Newest patch on that minor line, for example `0.11` |
+| `X.Y.Z` | That release, for example `0.12.0` |
+| `X.Y` | Newest patch on that minor line, for example `0.12` |
 | `latest` | Stable releases. A pre-release does not move it |
 
 ## Container health check

@@ -6,6 +6,17 @@ description: Steps to take when you upgrade identity-service, release by release
 
 This page lists what you must change when you move to a newer identity-service release. Releases not listed here need no action beyond deploying the new image, which runs the database migrations on start. The full list of changes is in the [changelog](../CHANGELOG.md).
 
+## Upgrade to 0.12.0
+
+0.12.0 keeps accepting saas-service agent tokens while ai-service global becomes the issuer. A standalone install that does not exchange those tokens needs no new variables.
+
+1. **Trust both agent issuers on a region.** Set `GLOBAL_AGENT_ISSUER_URL` and `GLOBAL_AGENT_JWKS` to ai-service global. Set `GLOBAL_AGENT_LEGACY_ISSUER_URL` and `GLOBAL_AGENT_LEGACY_JWKS` to the saas-service issuer until you stop accepting those tokens. An empty legacy issuer or an empty legacy JWKS adds no second issuer and does not raise. An empty primary pair still falls back to `GLOBAL_ISSUER_URL` and `GLOBAL_JWKS`.
+2. **Advertise the global MCP URL.** Set `GLOBAL_MCP_URL` to `https://ai.shellui.com/mcp` in production. An empty value keeps the dashboard hint (`{DASHBOARD_PUBLIC_URL}/mcp` when that origin is set).
+3. **Call the new provisioning routes with the same assertion.** Create and patch accept `access_mode` and `allowed_email_domains`. Domain mode needs at least one domain. `POST /api/v1/provisioning/companies/{id}/members` adds a member. `PATCH` and `DELETE` on `/api/v1/provisioning/companies/{id}/members/{global_subject}` change the role or remove the member. `POST /api/v1/provisioning/companies/{id}/transfer-ownership` transfers ownership. Writes still send the signed assertion and `Idempotency-Key`. Removing a member revokes that person's refresh sessions and personal access tokens for that company. The last owner cannot be removed or demoted.
+4. **Set the Docker Hub overview secrets if you publish the image.** Image push still uses `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN`. Set `DOCKERHUB_DESCRIPTION_USERNAME` and `DOCKERHUB_DESCRIPTION_TOKEN` to a personal access token (Read, Write, Delete, from an account with Admin on the repository) so the publish workflow can update the overview from `DOCKERHUB.md`. If those secrets are unset, the overview step is skipped and the image still publishes.
+
+On identity-global, an authorize call from the ai-service global client without `prompt=none` shows a Shellui account sign-in page. Staff accounts are refused. Region-only accounts are told to use their region's company MCP URL.
+
 ## Upgrade to 0.9.0
 
 Web and desktop session codes both require S256 PKCE. An http(s) `POST /api/v1/oauth/session` also requires `Origin` to match `redirect_to`. Shells that omitted `code_challenge` on `/api/v1/authorize` or `code_verifier` on the exchange need that change before this release (shellui 0.6.4 or later). See [OAuth login](oauth-login.md#pkce-for-every-session-code).
