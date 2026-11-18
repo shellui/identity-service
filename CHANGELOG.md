@@ -21,6 +21,12 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
 -->
 
+## [Unreleased]
+
+### 📚 Documentation
+
+- Docker Hub overview in `DOCKERHUB.md` on each image release.
+
 ## [0.11.0] - 2026-11-18
 
 ### ✨ Feature
