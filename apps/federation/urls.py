@@ -1,7 +1,8 @@
 from django.urls import path
 
 from apps.federation.backchannel import BackchannelLogoutView
-from apps.federation.provider import AuthorizeView, TokenView, UserInfoView
+from apps.federation.oidc_login import oauth_authorize
+from apps.federation.provider import TokenView, UserInfoView
 from apps.agents.provisioning_views import ProvisioningGlobalAgentRevokeView
 from apps.federation.provisioning import (
     ProvisioningCompaniesView,
@@ -14,7 +15,7 @@ from apps.federation.provisioning import (
 from apps.federation.relying import SilentSignInView, UpstreamCallbackView
 
 urlpatterns = [
-    path('authorize', AuthorizeView.as_view(), name='federation-authorize'),
+    path('authorize', oauth_authorize, name='federation-authorize'),
     path('token', TokenView.as_view(), name='federation-token'),
     path('userinfo', UserInfoView.as_view(), name='federation-userinfo'),
     path('backchannel-logout', BackchannelLogoutView.as_view(), name='federation-backchannel-logout'),

@@ -24,6 +24,7 @@ from apps.agents.exchange import (
     GLOBAL_AGENT_TOKEN_TYPE,
     agent_exchange_enabled,
     global_agent_trust,
+    global_agent_trusted_pairs,
 )
 from apps.agents.global_revocation import revoke_regional_agents_for_global
 from apps.agents.models import Agent
@@ -334,6 +335,7 @@ class TwoIssuerTrustTests(_CryptoMixin, TestCase):
             self._agent_token(is_staff=True),
             self._agent_token(is_superuser=True),
             self._agent_token(user_metadata={'is_staff': 'false'}),
+            self._agent_token(user_metadata={'is_staff': False, 'is_global_staff': True}),
         )
         for token in agent_tokens:
             response = self._post_agent(token)
@@ -359,6 +361,85 @@ class TwoIssuerTrustTests(_CryptoMixin, TestCase):
         blocked = self._post_agent(self._agent_token(company_binding_version=2))
         self.assertEqual(blocked.status_code, 400, blocked.content)
         self.assertEqual(blocked.json()['error'], 'invalid_grant')
+
+    def test_empty_agent_jwks_falls_back_and_does_not_raise(self):
+        for empty in ('', None, {'keys': []}, {'keys': None}, 'null'):
+            with self.settings(
+                GLOBAL_AGENT_ISSUER_URL='',
+                GLOBAL_AGENT_JWKS=empty,
+                GLOBAL_AGENT_LEGACY_ISSUER_URL='https://saas.example',
+                GLOBAL_AGENT_LEGACY_JWKS=empty,
+            ):
+                issuer, document = global_agent_trust()
+                self.assertEqual(issuer, ISSUER)
+                self.assertEqual(document, self.jwks)
+                self.assertEqual(global_agent_trusted_pairs(), [(ISSUER, self.jwks)])
+                self.assertTrue(agent_exchange_enabled())
+
+    def test_second_issuer_accepted_and_keys_stay_with_their_iss(self):
+        self._member()
+        second_signing, second_jwks = _rsa()
+        second_iss = 'https://ai.shellui.com'
+        with self.settings(
+            GLOBAL_AGENT_LEGACY_ISSUER_URL=second_iss,
+            GLOBAL_AGENT_LEGACY_JWKS=second_jwks,
+        ):
+            primary = self._post_agent(self._agent_token(grant_version=1))
+            self.assertEqual(primary.status_code, 200, primary.content)
+            agent = Agent.objects.get(global_agent_id=self.global_agent_id)
+            self.assertEqual(agent.company_binding_version, 1)
+            self.assertEqual(agent.grant_version, 0)
+            other_id = uuid.uuid4()
+            second = self._post_agent(
+                self._agent_token(
+                    signing=second_signing,
+                    iss=second_iss,
+                    agent_id=str(other_id),
+                    company_binding_version=2,
+                    grant_version=2,
+                ),
+            )
+            self.assertEqual(second.status_code, 200, second.content)
+            other = Agent.objects.get(global_agent_id=other_id)
+            self.assertEqual(other.company_binding_version, 2)
+            self.assertEqual(other.grant_version, 0)
+            reused = self._post_agent(
+                self._agent_token(
+                    signing=second_signing,
+                    iss=second_iss,
+                    agent_id=str(other_id),
+                    company_binding_version=3,
+                    grant_version=3,
+                ),
+            )
+            self.assertEqual(reused.status_code, 200, reused.content)
+            other.refresh_from_db()
+            self.assertEqual(other.company_binding_version, 3)
+            self.assertEqual(other.grant_version, 0)
+            wrong_key = self._post_agent(self._agent_token(iss=second_iss))
+            self.assertEqual(wrong_key.status_code, 400, wrong_key.content)
+            mismatch = self._post_agent(
+                self._agent_token(company_binding_version=4, grant_version=3),
+            )
+            self.assertEqual(mismatch.status_code, 400, mismatch.content)
+            self.assertIn('grant_version', mismatch.json()['error_description'])
+
+    def test_subject_jti_is_single_use_across_issuers(self):
+        self._member()
+        second_signing, second_jwks = _rsa()
+        second_iss = 'https://ai.shellui.com'
+        jti = uuid.uuid4().hex
+        with self.settings(
+            GLOBAL_AGENT_LEGACY_ISSUER_URL=second_iss,
+            GLOBAL_AGENT_LEGACY_JWKS=second_jwks,
+        ):
+            first = self._post_agent(self._agent_token(jti=jti))
+            self.assertEqual(first.status_code, 200, first.content)
+            replay = self._post_agent(
+                self._agent_token(signing=second_signing, iss=second_iss, jti=jti),
+            )
+            self.assertEqual(replay.status_code, 400, replay.content)
+            self.assertIn('already used', replay.json()['error_description'])
 
     def test_narrowing_still_bumps_grant_version(self):
         self._member()
