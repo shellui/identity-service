@@ -542,8 +542,11 @@ DASHBOARD_WEBHOOK_URL = os.getenv('DASHBOARD_WEBHOOK_URL', '').strip()
 DASHBOARD_WEBHOOK_INTERNAL_URL = os.getenv('DASHBOARD_WEBHOOK_INTERNAL_URL', '').strip()
 DASHBOARD_WEBHOOK_HTTP_URL = internal_origin(DASHBOARD_WEBHOOK_URL, DASHBOARD_WEBHOOK_INTERNAL_URL)
 DASHBOARD_WEBHOOK_SECRET = os.getenv('DASHBOARD_WEBHOOK_SECRET', '').strip()
-# Public Shellui dashboard origin (saas). Used for optional ``global_mcp_url`` on MCP personal status only.
+# Public Shellui dashboard origin (saas). Used for optional ``global_mcp_url`` on MCP personal status
+# when GLOBAL_MCP_URL is empty.
 DASHBOARD_PUBLIC_URL = (os.getenv('DASHBOARD_PUBLIC_URL', '') or '').strip().rstrip('/')
+# Full global MCP URL for personal status (https://ai.shellui.com/mcp). Empty keeps the dashboard hint.
+GLOBAL_MCP_URL = (os.getenv('GLOBAL_MCP_URL', '') or '').strip()
 
 JWT_ACCESS_TOKEN_LIFETIME = _env_duration('JWT_ACCESS_TOKEN_LIFETIME', timedelta(minutes=5))
 JWT_REFRESH_TOKEN_LIFETIME = _env_duration('JWT_REFRESH_TOKEN_LIFETIME', timedelta(days=7))
@@ -573,10 +576,15 @@ GLOBAL_REDIRECT_URI = (os.getenv('GLOBAL_REDIRECT_URI', '') or '').strip()
 GLOBAL_ACCESS_TOKEN_AUDIENCE = (os.getenv('GLOBAL_ACCESS_TOKEN_AUDIENCE', '') or '').strip()
 # Agent token exchange (RFC 8693, role region): `aud` of global MCP agent access tokens.
 GLOBAL_AGENT_ACCESS_TOKEN_AUDIENCE = (os.getenv('GLOBAL_AGENT_ACCESS_TOKEN_AUDIENCE', '') or '').strip()
-# saas-service signs those agent tokens (its public URL is `iss`). Empty values fall
-# back to GLOBAL_ISSUER_URL / GLOBAL_JWKS. User token exchange does not read these.
+# Primary agent issuer. Empty values fall back to GLOBAL_ISSUER_URL / GLOBAL_JWKS.
+# User token exchange does not read these. An empty GLOBAL_AGENT_JWKS is {"keys": []}
+# and must not raise. Dev and production point this pair at ai-service global.
 GLOBAL_AGENT_ISSUER_URL = (os.getenv('GLOBAL_AGENT_ISSUER_URL', '') or '').strip().rstrip('/')
 GLOBAL_AGENT_JWKS = parse_jwks(os.getenv('GLOBAL_AGENT_JWKS', ''), label='GLOBAL_AGENT_JWKS')
+# Previous agent issuer (saas-service) during migration. Empty issuer or empty JWKS
+# adds nobody and does not raise. This pair does not fall back to GLOBAL_ISSUER_URL.
+GLOBAL_AGENT_LEGACY_ISSUER_URL = (os.getenv('GLOBAL_AGENT_LEGACY_ISSUER_URL', '') or '').strip().rstrip('/')
+GLOBAL_AGENT_LEGACY_JWKS = parse_jwks(os.getenv('GLOBAL_AGENT_LEGACY_JWKS', ''), label='GLOBAL_AGENT_LEGACY_JWKS')
 
 # Regional provisioning API (role region). The dashboard (saas-service) signs each call with its
 # provisioning key; pin the public key here. Unset key or issuer leaves the API answering 404.
