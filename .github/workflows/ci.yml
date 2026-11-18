@@ -233,13 +233,15 @@ jobs:
         working-directory: shellui
         run: pnpm install --frozen-lockfile
 
-      # Builds docs.shellui.com with only the identity docs, read from this checkout.
+      # This checkout supplies the identity docs. Storage, hosting, and email
+      # are fetched from GitHub so links on the main docs still resolve.
       # onBrokenLinks is 'throw', so a broken link or an invalid page fails the job.
-      - name: Build docs (identity only)
+      - name: Build docs
         working-directory: shellui
         env:
-          DOCS_SOURCE: local
-          DOCS_SERVICES: identity
+          DOCS_SOURCE: auto
+          IDENTITY_DOCS_SOURCE: local
+          DOCS_SERVICES: identity,storage,hosting,email
           DOCS_SERVICES_DIR: ${{ github.workspace }}
         run: pnpm docs:build
 
