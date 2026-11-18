@@ -4,8 +4,6 @@ description: Connect MCP clients to Shellui with OAuth, agent access levels, app
 
 # MCP and agents
 
-MCP is in Beta. Tool names and behavior may still change.
-
 Shellui Identity is the OAuth authorization server for MCP clients. Each connected client receives a company-scoped **agent** with explicit access rules. Storage, hosting, email, SaaS, AI, and other services reuse the same MCP layer from the [shellui-django](https://github.com/shellui/django-commons) package (`shellui_django.mcp`) for their `/mcp` endpoint.
 
 Identity exposes its **own** MCP tools at `POST /mcp` on the identity origin (for example `identity_list_services`). Multi-service MCP clients connect through **ai-service**, which holds one OAuth session per agent and requests short-lived downstream access tokens from Identity when calling another service's `/mcp`. Identity never holds an ai-service secret; ai-service never holds Identity's signing key.
