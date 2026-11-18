@@ -25,6 +25,7 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 ### ✨ Feature
 
+- Provisioning create stores `allowed_email_domains` with `access_mode`. Patch accepts `access_mode` and `allowed_email_domains` with or without `name` and `status`. Domain mode needs at least one domain. New member routes add, change role, remove, and transfer ownership. The last owner cannot be removed or demoted. Removing a member revokes that company's sessions and personal access tokens.
 - Region identity trusts ai-service global as `GLOBAL_AGENT_ISSUER_URL` and `GLOBAL_AGENT_JWKS`, with the same empty fallback as before. `GLOBAL_AGENT_LEGACY_ISSUER_URL` and `GLOBAL_AGENT_LEGACY_JWKS` keep the saas-service issuer until cutover. An empty legacy JWKS does not raise. Subject tokens stay single use. `grant_version` on the subject token must match `company_binding_version` when it is present. A provisioned company only accepts a token for its own global company id.
 - Personal MCP status can advertise `https://ai.shellui.com/mcp` through `GLOBAL_MCP_URL`. An empty value keeps the dashboard hint.
 - identity-global renders a sign-in page for the ai-service global OpenID client (redirect path `/oauth/mcp/signin/complete`, the client listed in `OIDC_CLIENTS`). Staff accounts are refused. The page tells region-only accounts to use their region's company MCP URL.

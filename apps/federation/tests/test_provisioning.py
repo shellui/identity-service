@@ -6,12 +6,17 @@ import json
 import uuid
 
 import jwt
+from datetime import timedelta
+
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from apps.authapi.jwks import generate_rsa_key_pair
-from apps.companies.models import Company, CompanyOAuthRedirect
+from apps.authapi.models import PersonalAccessToken, RefreshTokenSession
+from apps.companies.access import apply_company_join
+from apps.companies.models import Company, CompanyMembership, CompanyOAuthRedirect
 from apps.federation.models import CompanyPlan, ProvisionedCompany, UpstreamAccount
 from apps.federation.provisioning import b64_sha256
 from apps.federation.signing import unix_now
@@ -205,10 +210,139 @@ class ProvisioningApiTests(TestCase):
         self.assertEqual(self._call('PATCH', url, {'status': 'active'}, key='a2').status_code, 409)
         self.assertEqual(self._call('GET', f'{BASE}/companies/999', key=None).status_code, 404)
 
+    def test_create_stores_domains_and_domain_mode_gates_join(self):
+        response = self._create(access_mode='domain', allowed_email_domains=['@Acme.TEST'])
+        self.assertEqual(response.status_code, 201, response.content)
+        company = Company.objects.get(pk=int(response.json()['id']))
+        self.assertEqual(company.access_mode, 'domain')
+        self.assertEqual(company.allowed_email_domains, ['acme.test'])
+        self.assertEqual(response.json()['allowed_email_domains'], ['acme.test'])
+        outsider = User.objects.create_user('out', 'ada@other.test')
+        refused = apply_company_join(company, outsider, email='ada@other.test')
+        self.assertFalse(refused.allowed)
+        insider = User.objects.create_user('in', 'bea@acme.test')
+        allowed = apply_company_join(company, insider, email='bea@acme.test')
+        self.assertTrue(allowed.allowed)
+        self.assertTrue(CompanyMembership.objects.filter(company=company, user=insider, is_enabled=True).exists())
+
+    def test_domain_mode_without_a_domain_is_rejected(self):
+        created = self._call(
+            'POST',
+            f'{BASE}/companies',
+            self._create_body(access_mode='domain', allowed_email_domains=[]),
+            key='domain-empty-create',
+        )
+        self.assertEqual(created.status_code, 400)
+        self.assertEqual(Company.objects.count(), 0)
+        company_id = self._create().json()['id']
+        url = f'{BASE}/companies/{company_id}'
+        missing = self._call('PATCH', url, {'access_mode': 'domain'}, key='domain-empty')
+        self.assertEqual(missing.status_code, 400)
+        self.assertEqual(Company.objects.get(pk=company_id).access_mode, 'public')
+
+    def test_patch_access_mode_alone_or_with_name(self):
+        company_id = self._create().json()['id']
+        url = f'{BASE}/companies/{company_id}'
+        only_access = self._call(
+            'PATCH',
+            url,
+            {'access_mode': 'invite', 'allowed_email_domains': ['Acme.TEST']},
+            key='access',
+        )
+        self.assertEqual(only_access.status_code, 200, only_access.content)
+        self.assertEqual(only_access.json()['access_mode'], 'invite')
+        self.assertEqual(only_access.json()['allowed_email_domains'], ['acme.test'])
+        both = self._call(
+            'PATCH',
+            url,
+            {'name': 'Acme EU', 'status': 'suspended', 'access_mode': 'domain'},
+            key='both',
+        )
+        self.assertEqual(both.status_code, 200, both.content)
+        self.assertEqual(both.json()['name'], 'Acme EU')
+        self.assertEqual(both.json()['status'], 'suspended')
+        self.assertEqual(both.json()['access_mode'], 'domain')
+        bad = self._call('PATCH', url, {'access_mode': 'open'}, key='bad-mode')
+        self.assertEqual(bad.status_code, 400)
+
+    def test_members_roles_removal_and_transfer(self):
+        company_id = int(self._create().json()['id'])
+        url = f'{BASE}/companies/{company_id}'
+        invite = {'email': 'Bea@Acme.test', 'name': 'Bea L', 'role': 'staff', 'global_subject': 'sub-2'}
+        added = self._call('POST', f'{url}/members', invite, key='invite:bea')
+        self.assertEqual(added.status_code, 201, added.content)
+        self.assertEqual(added.json()['role'], 'staff')
+        self.assertEqual(added.json()['status'], 'active')
+        self.assertEqual(added.json()['global_subject'], 'sub-2')
+        company = Company.objects.get(pk=company_id)
+        bea = User.objects.get(email='bea@acme.test')
+        self.assertFalse(bea.is_staff or bea.is_superuser)
+        self.assertFalse(company.owners.filter(pk=bea.pk).exists())
+        self.assertTrue(CompanyMembership.objects.filter(company=company, user=bea, is_enabled=True).exists())
+        again = self._call('POST', f'{url}/members', invite, key='invite:bea')
+        self.assertEqual(again.status_code, 201)
+        self.assertEqual(again.json(), added.json())
+
+        demote_owner = self._call('PATCH', f'{url}/members/sub-1', {'role': 'staff'}, key='demote-only')
+        self.assertEqual(demote_owner.status_code, 409)
+        self.assertEqual(demote_owner.json()['error_code'], 'last_owner')
+        remove_owner = self._call('DELETE', f'{url}/members/sub-1', key='remove-only')
+        self.assertEqual(remove_owner.status_code, 409)
+        self.assertEqual(remove_owner.json()['error_code'], 'last_owner')
+
+        promoted = self._call('PATCH', f'{url}/members/sub-2', {'role': 'owner'}, key='promote')
+        self.assertEqual(promoted.status_code, 200, promoted.content)
+        self.assertEqual(promoted.json()['role'], 'owner')
+        self.assertTrue(company.owners.filter(pk=bea.pk).exists())
+
+        ada = User.objects.get(email='ada@acme.test')
+        session = RefreshTokenSession.objects.create(
+            user=ada,
+            company=company,
+            jti='ada-jti',
+            family_id=uuid.uuid4(),
+            expires_at=timezone.now() + timedelta(days=1),
+        )
+        pat = PersonalAccessToken.objects.create(user=ada, company=company, jti='ada-pat')
+        other = User.objects.create_user('other', 'cy@acme.test')
+        other_pat = PersonalAccessToken.objects.create(user=other, company=company, jti='other-pat')
+
+        transferred = self._call(
+            'POST',
+            f'{url}/transfer-ownership',
+            {'global_subject': 'sub-2', 'from_subject': 'sub-1'},
+            key='transfer',
+        )
+        self.assertEqual(transferred.status_code, 200, transferred.content)
+        self.assertTrue(company.owners.filter(pk=bea.pk).exists())
+        self.assertFalse(company.owners.filter(pk=ada.pk).exists())
+        self.assertTrue(CompanyMembership.objects.filter(company=company, user=ada).exists())
+        session.refresh_from_db()
+        self.assertIsNone(session.revoked_at)
+
+        removed = self._call('DELETE', f'{url}/members/sub-1', key='remove-ada')
+        self.assertEqual(removed.status_code, 200, removed.content)
+        self.assertEqual(removed.json()['status'], 'removed')
+        self.assertFalse(CompanyMembership.objects.filter(company=company, user=ada).exists())
+        session.refresh_from_db()
+        pat.refresh_from_db()
+        other_pat.refresh_from_db()
+        self.assertIsNotNone(session.revoked_at)
+        self.assertIsNotNone(pat.revoked_at)
+        self.assertIsNone(other_pat.revoked_at)
+
     def test_disabled_without_role_or_key(self):
         for settings in ({'SHELLUI_INSTANCE_ROLE': ''}, {'SHELLUI_INSTANCE_ROLE': 'global'}, {'PROVISIONING_PUBLIC_KEY': ''}):
             with override_settings(**settings):
-                for method, path in (('POST', f'{BASE}/companies'), ('GET', f'{BASE}/companies?linked=shellui'),
-                                     ('PATCH', f'{BASE}/companies/1'), ('PUT', f'{BASE}/companies/1/limits'),
-                                     ('DELETE', f'{BASE}/companies/1')):
+                for method, path in (
+                    ('POST', f'{BASE}/companies'),
+                    ('GET', f'{BASE}/companies?linked=shellui'),
+                    ('PATCH', f'{BASE}/companies/1'),
+                    ('PUT', f'{BASE}/companies/1/limits'),
+                    ('DELETE', f'{BASE}/companies/1'),
+                    ('POST', f'{BASE}/companies/1/members'),
+                    ('PATCH', f'{BASE}/companies/1/members/sub-2'),
+                    ('DELETE', f'{BASE}/companies/1/members/sub-2'),
+                    ('POST', f'{BASE}/companies/1/transfer-ownership'),
+                ):
                     self.assertEqual(self._call(method, path, {} if method != 'GET' else None).status_code, 404)
