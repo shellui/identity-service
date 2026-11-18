@@ -35,3 +35,19 @@ class GlobalMcpUrlTests(SimpleTestCase):
     @override_settings(DASHBOARD_PUBLIC_URL='https://app.shellui.com/nested')
     def test_path_with_segments_rejected(self):
         self.assertIsNone(global_mcp_url())
+
+    @override_settings(GLOBAL_MCP_URL='https://ai.shellui.com/mcp', DASHBOARD_PUBLIC_URL='https://app.shellui.com')
+    def test_explicit_global_mcp_url_wins(self):
+        self.assertEqual(global_mcp_url(), 'https://ai.shellui.com/mcp')
+
+    @override_settings(GLOBAL_MCP_URL='https://ai.shellui.com')
+    def test_origin_gains_mcp_path(self):
+        self.assertEqual(global_mcp_url(), 'https://ai.shellui.com/mcp')
+
+    @override_settings(GLOBAL_MCP_URL='', DASHBOARD_PUBLIC_URL='https://app.shellui.com')
+    def test_empty_global_mcp_url_keeps_dashboard_hint(self):
+        self.assertEqual(global_mcp_url(), 'https://app.shellui.com/mcp')
+
+    @override_settings(GLOBAL_MCP_URL='http://evil.example/mcp')
+    def test_public_http_global_mcp_url_rejected(self):
+        self.assertIsNone(global_mcp_url())

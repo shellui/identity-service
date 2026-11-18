@@ -1,9 +1,16 @@
 """OAuth 2.0 Token Exchange (RFC 8693) for global MCP agent tokens on a regional server.
 
-Verification uses ``GLOBAL_AGENT_ISSUER_URL`` and ``GLOBAL_AGENT_JWKS`` when those
-are set, and otherwise ``GLOBAL_ISSUER_URL`` and ``GLOBAL_JWKS``. User token
-exchange does not use the agent issuer. ``kid`` is resolved only in the JWKS
-selected here.
+The primary issuer is ``GLOBAL_AGENT_ISSUER_URL`` and ``GLOBAL_AGENT_JWKS``
+(ai-service global). An empty value falls back to ``GLOBAL_ISSUER_URL`` or
+``GLOBAL_JWKS`` on its own. An empty JWKS is no keys and never raises.
+``GLOBAL_AGENT_LEGACY_ISSUER_URL`` and ``GLOBAL_AGENT_LEGACY_JWKS`` keep the
+previous saas issuer until cutover. An empty legacy value adds nobody and
+does not raise. ``kid`` is resolved only in the JWKS of the token's ``iss``.
+User token exchange does not use these issuers.
+
+A subject token is single use (``jti``) and names one company. ``grant_version``
+and ``company_binding_version``, when both are present, are the same binding
+version from that company's grant.
 """
 
 from __future__ import annotations
@@ -21,7 +28,11 @@ from django.http import JsonResponse
 from django.utils import timezone
 
 from apps.agents.global_revocation import global_agent_exchange_blocked
-from apps.agents.json_strict import strict_non_negative_int, strict_positive_company_id_for_oauth_form
+from apps.agents.json_strict import (
+    decode_jwt_payload_unverified,
+    strict_non_negative_int,
+    strict_positive_company_id_for_oauth_form,
+)
 from apps.agents.mcp_resources import (
     GATEWAY_SERVICE_ID,
     is_regional_gateway_resource_for_company,
@@ -45,6 +56,7 @@ from apps.agents.tokens import encode_access_token, issue_agent_refresh, revoke_
 from apps.authapi.throttling import check_rate_limit
 from apps.companies.models import Company
 from apps.federation.exchange import ACCESS_TOKEN_TYPE, GRANT_TYPE
+from apps.federation.models import ProvisionedCompany
 from apps.federation.role import is_region
 from apps.federation.signing import TokenError, verify_pinned
 
@@ -62,28 +74,73 @@ def _jwks_with_keys(document: Any) -> dict | None:
 
 
 def global_agent_trust() -> tuple[str, dict]:
-    """Issuer and pinned JWKS for global MCP agent tokens.
+    """Primary issuer and pinned JWKS for global MCP agent tokens.
 
     An empty ``GLOBAL_AGENT_ISSUER_URL`` uses ``GLOBAL_ISSUER_URL``.
-    An empty ``GLOBAL_AGENT_JWKS`` uses ``GLOBAL_JWKS``. Each value falls back
-    on its own. User token exchange does not call this.
+    An empty ``GLOBAL_AGENT_JWKS`` (missing, blank, or no keys) uses ``GLOBAL_JWKS``.
+    Each value falls back on its own. Empty input never raises. User token
+    exchange does not call this.
     """
-    issuer = (getattr(settings, 'GLOBAL_AGENT_ISSUER_URL', '') or '').strip().rstrip('/')
+    raw_issuer = getattr(settings, 'GLOBAL_AGENT_ISSUER_URL', '') or ''
+    issuer = raw_issuer.strip().rstrip('/') if isinstance(raw_issuer, str) else ''
     if not issuer:
-        issuer = (getattr(settings, 'GLOBAL_ISSUER_URL', '') or '').strip().rstrip('/')
+        raw_fallback = getattr(settings, 'GLOBAL_ISSUER_URL', '') or ''
+        issuer = raw_fallback.strip().rstrip('/') if isinstance(raw_fallback, str) else ''
     document = _jwks_with_keys(getattr(settings, 'GLOBAL_AGENT_JWKS', None))
     if document is None:
         document = _jwks_with_keys(getattr(settings, 'GLOBAL_JWKS', None)) or {'keys': []}
     return issuer, document
 
 
+def global_agent_trusted_pairs() -> list[tuple[str, dict]]:
+    """Issuer and JWKS pairs that may sign a global agent subject token.
+
+    The primary pair from :func:`global_agent_trust` is first when it has keys.
+    ``GLOBAL_AGENT_LEGACY_ISSUER_URL`` plus ``GLOBAL_AGENT_LEGACY_JWKS`` is second
+    when both are set and the issuer differs. An empty legacy JWKS is skipped
+    and does not raise. It does not fall back to ``GLOBAL_JWKS``.
+    """
+    pairs: list[tuple[str, dict]] = []
+    seen: set[str] = set()
+    issuer, document = global_agent_trust()
+    if issuer and isinstance(document, dict) and document.get('keys'):
+        pairs.append((issuer, document))
+        seen.add(issuer)
+    raw_legacy = getattr(settings, 'GLOBAL_AGENT_LEGACY_ISSUER_URL', '') or ''
+    legacy_issuer = raw_legacy.strip().rstrip('/') if isinstance(raw_legacy, str) else ''
+    legacy_document = _jwks_with_keys(getattr(settings, 'GLOBAL_AGENT_LEGACY_JWKS', None))
+    if legacy_issuer and legacy_document is not None and legacy_issuer not in seen:
+        pairs.append((legacy_issuer, legacy_document))
+    return pairs
+
+
 def agent_exchange_enabled() -> bool:
-    issuer_url, document = global_agent_trust()
-    return bool(
-        is_region()
-        and issuer_url
-        and (getattr(settings, 'GLOBAL_AGENT_ACCESS_TOKEN_AUDIENCE', '') or '').strip()
-        and document.get('keys')
+    if not is_region():
+        return False
+    if not (getattr(settings, 'GLOBAL_AGENT_ACCESS_TOKEN_AUDIENCE', '') or '').strip():
+        return False
+    return any(document.get('keys') for _issuer, document in global_agent_trusted_pairs())
+
+
+def verify_global_agent_subject(token: str) -> dict[str, Any]:
+    """Verify one subject token against the JWKS of its own ``iss`` only."""
+    audience = (getattr(settings, 'GLOBAL_AGENT_ACCESS_TOKEN_AUDIENCE', '') or '').strip()
+    unverified = decode_jwt_payload_unverified(token) or {}
+    raw_iss = unverified.get('iss') or ''
+    iss = raw_iss.strip().rstrip('/') if isinstance(raw_iss, str) else ''
+    document = None
+    for issuer, pinned in global_agent_trusted_pairs():
+        if issuer == iss:
+            document = pinned
+            break
+    if not iss or document is None:
+        raise TokenError('invalid_token')
+    return verify_pinned(
+        token,
+        audience=audience,
+        issuer_url=iss,
+        jwks=document,
+        require=['exp', 'iat', 'iss', 'aud', 'sub', 'email', 'jti', 'agent_id'],
     )
 
 
@@ -92,10 +149,10 @@ def _error(code: str, description: str, status: int = 400) -> JsonResponse:
 
 
 def _staff_refused(claims: dict[str, Any]) -> bool:
-    """Reject only explicit ``True`` staff; any other type than JSON false is invalid."""
+    """Reject staff flags. Only JSON ``false`` is allowed when a flag is present."""
     metadata = claims.get('user_metadata') if isinstance(claims.get('user_metadata'), dict) else {}
     for source in (metadata, claims):
-        for flag in ('is_staff', 'is_superuser'):
+        for flag in ('is_staff', 'is_superuser', 'is_global_staff'):
             if flag not in source:
                 continue
             val = source.get(flag)
@@ -256,6 +313,34 @@ def _parse_delegated_global_binding(claims: dict[str, Any]) -> tuple[uuid.UUID, 
     return gid, ver
 
 
+def _grant_version_matches_binding(claims: dict[str, Any], company_binding_version: int) -> str | None:
+    """``grant_version`` is the same binding version as ``company_binding_version``.
+
+    A missing ``grant_version`` stays valid so tokens that only send the binding
+    version keep working. A present value must be that same non-negative integer.
+    """
+    if 'grant_version' not in claims:
+        return None
+    raw = claims.get('grant_version')
+    if isinstance(raw, bool) or type(raw) is not int or raw < 0:
+        return 'grant_version must be a non-negative JSON integer matching company_binding_version.'
+    if raw != company_binding_version:
+        return 'grant_version must match company_binding_version on the global subject token.'
+    return None
+
+
+def _regional_company_matches_global(company: Company, global_company_id: uuid.UUID) -> bool:
+    """A provisioned company only accepts a subject token for its own global id.
+
+    A regional company with no provisioned row is unchanged.
+    """
+    row = ProvisionedCompany.objects.filter(company_id=company.pk).only('global_company_id').first()
+    if row is None:
+        return True
+    stored = str(row.global_company_id or '').strip()
+    return stored.lower() == str(global_company_id).lower()
+
+
 def _merge_regional_exchange_agent(
     *,
     agent: Agent,
@@ -397,15 +482,8 @@ def handle_agent_token_exchange(request, *, data: dict[str, Any] | None = None) 
     if resource_company is not None and resource_company != company.id:
         return _error('invalid_target', 'The MCP resource belongs to another company.')
 
-    issuer_url, agent_jwks = global_agent_trust()
     try:
-        claims = verify_pinned(
-            subject_token,
-            audience=settings.GLOBAL_AGENT_ACCESS_TOKEN_AUDIENCE,
-            issuer_url=issuer_url,
-            jwks=agent_jwks,
-            require=['exp', 'iat', 'iss', 'aud', 'sub', 'email', 'jti', 'agent_id'],
-        )
+        claims = verify_global_agent_subject(subject_token)
     except TokenError:
         logger.info('agent token exchange: subject rejected company_id=%s', company.pk)
         return _error('invalid_grant', 'The global agent token is not valid.')
@@ -447,6 +525,11 @@ def handle_agent_token_exchange(request, *, data: dict[str, Any] | None = None) 
             'Delegated global agent token must include valid global_company_id and company_binding_version.',
         )
     global_company_id, company_binding_version = binding
+    grant_version_err = _grant_version_matches_binding(claims, company_binding_version)
+    if grant_version_err:
+        return _error('invalid_grant', grant_version_err)
+    if not _regional_company_matches_global(company, global_company_id):
+        return _error('invalid_grant', 'The global company does not match this regional company.')
     subject_has_global_binding = True
 
     raw_scope = claims.get('scope')

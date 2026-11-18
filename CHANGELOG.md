@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
 <!---
-## [Unreleased] - yyyy-mm-dd
+## [x.y.z] - yyyy-mm-dd
 
 ### ✨ Feature - for new features
 ### 🛠 Improvements - for general improvements
@@ -20,6 +20,37 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
 -->
+
+## [0.12.0] - 2026-11-18
+
+### Upgrade notes
+
+A region that accepts global agent tokens during the move to ai-service sets both issuers. A standalone install that does not exchange those tokens needs no new variables.
+
+- Set `GLOBAL_AGENT_ISSUER_URL` and `GLOBAL_AGENT_JWKS` to ai-service global. An empty pair still falls back to `GLOBAL_ISSUER_URL` and `GLOBAL_JWKS`.
+- Set `GLOBAL_AGENT_LEGACY_ISSUER_URL` and `GLOBAL_AGENT_LEGACY_JWKS` to the saas-service issuer until cutover. An empty legacy issuer or an empty legacy JWKS adds no second issuer and does not raise.
+- Set `GLOBAL_MCP_URL` to `https://ai.shellui.com/mcp` in production. Personal MCP status advertises that URL. An empty value keeps the dashboard hint.
+- Provisioning create stores `access_mode` and `allowed_email_domains`. Patch accepts those fields with or without `name` and `status`. Domain mode needs at least one domain. Member add, role change, removal, and ownership transfer use the same assertion and `Idempotency-Key` as the other writes. The routes are `POST /api/v1/provisioning/companies/{id}/members`, `PATCH` and `DELETE` on `/api/v1/provisioning/companies/{id}/members/{global_subject}`, and `POST /api/v1/provisioning/companies/{id}/transfer-ownership`.
+- Image push still uses `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN`. Set the repository secrets `DOCKERHUB_DESCRIPTION_USERNAME` and `DOCKERHUB_DESCRIPTION_TOKEN` to a personal Docker Hub access token (Read, Write, Delete, from an account with Admin on the repository) so the publish workflow can update the overview from `DOCKERHUB.md`. If those secrets are unset, the overview step is skipped and the image still publishes.
+
+### ✨ Feature
+
+- Provisioning create stores `allowed_email_domains` with `access_mode`. Patch accepts `access_mode` and `allowed_email_domains` with or without `name` and `status`. Domain mode needs at least one domain.
+- Provisioning can add a member, change a role, remove a member, and transfer ownership. The last owner cannot be removed or demoted. Removing a member revokes that person's refresh sessions and personal access tokens for that company.
+- Region identity trusts ai-service global as `GLOBAL_AGENT_ISSUER_URL` and `GLOBAL_AGENT_JWKS`, with the same empty fallback as before. `GLOBAL_AGENT_LEGACY_ISSUER_URL` and `GLOBAL_AGENT_LEGACY_JWKS` keep the saas-service issuer until cutover. An empty legacy JWKS does not raise.
+- Personal MCP status can advertise `https://ai.shellui.com/mcp` through `GLOBAL_MCP_URL`. An empty value keeps the dashboard hint.
+- identity-global shows a Shellui account sign-in page when the ai-service global OpenID client calls authorize without `prompt=none` (redirect path `/oauth/mcp/signin/complete`, the client listed in `OIDC_CLIENTS`). Staff accounts are refused. Region-only accounts are told to use their region's company MCP URL.
+
+### 🚨 Changed
+
+- Subject tokens stay single use. When `grant_version` is present it must match `company_binding_version`. A provisioned company accepts a token only for its own global company id.
+- `DOCKERHUB.md` is published as the Docker Hub overview on each image release.
+- The docs build fetches storage, hosting, and email docs so links on the Shellui docs pages still resolve.
+- Dependabot version updates for npm, uv, Docker, and GitHub Actions open against `develop`.
+
+### 🐛 Bug Fixes
+
+- Docker Hub overview updates use a personal access token (`DOCKERHUB_DESCRIPTION_USERNAME` and `DOCKERHUB_DESCRIPTION_TOKEN`). Organization access tokens were rejected with 401. If those secrets are unset, the image still publishes and the overview step is skipped.
 
 ## [0.11.0] - 2026-11-18
 

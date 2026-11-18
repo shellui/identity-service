@@ -16,12 +16,14 @@ Use a distinct `JWT_AUDIENCE` on each deployment, and do not copy `JWT_PRIVATE_K
 
 ## Provider (`global`)
 
-The provider publishes an OpenID Connect discovery document and accepts silent sign-in only. `prompt` must be `none`. There is no login page on the authorize endpoint: a missing browser session redirects back with `error=login_required`.
+The provider publishes an OpenID Connect discovery document. Most clients are silent: `prompt` must be `none`, and a missing browser session redirects back with `error=login_required`. There is no login page for those clients.
+
+A confidential client whose `redirect_uris` include a path `/oauth/mcp/signin/complete` is the sign-in for ai-service global. The dev stack registers that client in `OIDC_CLIENTS` (from `IDENTITY_GLOBAL_OIDC_CLIENTS` in the stack env). JSON `shellui_account_required: true` marks the same kind of client when the redirect path is different. ai-service global calls this endpoint with `scope=openid email profile`, S256 PKCE, `state`, `nonce`, and no `prompt` (not `prompt=none`). Identity renders a sign-in page on this host. A browser that already has a provider session sees Continue as that account and Use another account. Otherwise the page asks for the Shellui account email and password. `prompt=login` always asks for the password. Staff accounts (`is_staff`, `is_superuser`, or `is_global_staff`) are refused and no code is issued. The person can choose Use another account. ai-service global redeems the code at `POST /oauth/token` with `client_secret_post` and the PKCE verifier. The page says ai.shellui.com/mcp is for Shellui accounts and points a region-only account at `https://<regional ai>/c/<company_id>/mcp`. `prompt=none` on that client stays silent: no page, and a staff session is `access_denied`. S256 PKCE is accepted when the client sends it. A successful password sign-in records the address as verified for the `id_token`.
 
 | Endpoint | Purpose |
 | --- | --- |
 | `GET /.well-known/openid-configuration` | Discovery |
-| `GET /oauth/authorize` | Authorization code request. `prompt=none`, `response_type=code`, scope includes `openid` |
+| `GET /oauth/authorize` | Authorization code request. Silent clients send `prompt=none`. The ai-global client omits `prompt`. `response_type=code`, scope includes `openid` |
 | `POST /oauth/token` | Code exchange. `client_secret_basic` or `client_secret_post` |
 | `GET` or `POST /oauth/userinfo` | Profile for the opaque access token |
 | `GET /.well-known/jwks.json` | Signing keys, the same document API tokens use |
@@ -32,7 +34,7 @@ A successful sign-in on the provider sets a host-only cookie, `shellui_op_sessio
 
 ### Clients
 
-`OIDC_CLIENTS` is a JSON list. Each object has `client_id`, `client_secret`, `redirect_uris`, and an optional `backchannel_logout_uri`. Redirect and logout URLs must be `https` (`http` is accepted when `DEBUG=true`). An empty list means authorize rejects every client.
+`OIDC_CLIENTS` is a JSON list. Each object has `client_id`, `client_secret`, `redirect_uris`, and an optional `backchannel_logout_uri`. Optional `shellui_account_required` (JSON true or false) forces the sign-in page. A redirect path of `/oauth/mcp/signin/complete` does the same, which is how the dev stack registers ai-service global. Redirect and logout URLs must be `https` (`http` is accepted when `DEBUG=true`). An empty list means authorize rejects every client.
 
 ```json
 [
@@ -41,6 +43,11 @@ A successful sign-in on the provider sets a host-only cookie, `shellui_op_sessio
     "client_secret": "replace-me",
     "redirect_uris": ["https://auth.example.net/oauth/upstream-callback"],
     "backchannel_logout_uri": "https://auth.example.net/oauth/backchannel-logout"
+  },
+  {
+    "client_id": "ai-global",
+    "client_secret": "replace-me",
+    "redirect_uris": ["https://ai.shellui.com/oauth/mcp/signin/complete"]
   }
 ]
 ```
@@ -120,7 +127,7 @@ Checks on the subject token, all offline:
 
 The account is then linked exactly like the upstream silent sign-in (`iss` and `sub`, local staff accounts refused, new accounts never staff) and the company join rules apply as on any sign-in: an invite-only company refuses an account that has no membership.
 
-Global MCP agent tokens are a separate issuer. Agent exchange checks `iss`, `aud` (`GLOBAL_AGENT_ACCESS_TOKEN_AUDIENCE`), and `kid` against `GLOBAL_AGENT_ISSUER_URL` and `GLOBAL_AGENT_JWKS`. Whichever of those is empty falls back to `GLOBAL_ISSUER_URL` or `GLOBAL_JWKS`. User token exchange still requires `GLOBAL_ISSUER_URL`, `GLOBAL_JWKS`, and `GLOBAL_ACCESS_TOKEN_AUDIENCE`, and it rejects the agent issuer. Agent exchange rejects the user issuer. The regional account link stays `GLOBAL_ISSUER_URL` plus `sub`. Claim rules are in [MCP and agents](mcp-and-agents.md).
+Global MCP agent tokens use their own issuers. Agent exchange checks `iss`, `aud` (`GLOBAL_AGENT_ACCESS_TOKEN_AUDIENCE`), and `kid` against `GLOBAL_AGENT_ISSUER_URL` and `GLOBAL_AGENT_JWKS` (ai-service global). Whichever of those is empty falls back to `GLOBAL_ISSUER_URL` or `GLOBAL_JWKS`. An empty `GLOBAL_AGENT_JWKS` does not raise. `GLOBAL_AGENT_LEGACY_ISSUER_URL` and `GLOBAL_AGENT_LEGACY_JWKS` keep saas-service until cutover. An empty legacy issuer or an empty legacy JWKS adds nobody and does not raise. A token is checked only against the JWKS of its own `iss`. User token exchange still requires `GLOBAL_ISSUER_URL`, `GLOBAL_JWKS`, and `GLOBAL_ACCESS_TOKEN_AUDIENCE`, and it rejects every agent issuer. Agent exchange rejects the user issuer unless that issuer is the empty primary-pair fallback. The regional account link stays `GLOBAL_ISSUER_URL` plus `sub`. Revocation of a global agent stays on `POST /api/v1/provisioning/global-agents/revoke` (saas-service fan-out). Claim rules are in [MCP and agents](mcp-and-agents.md).
 
 Errors follow RFC 6749: `invalid_request`, `invalid_target` (unknown `company_id`), `invalid_grant` (token or user refused, with `error_description`). An `Origin` that is not in `OIDC_CORS_ALLOWED_ORIGINS` gets **403**, and only those origins get CORS headers, so list every shell origin there (for example `https://dashboard.shellui.com`, and `http://localhost:4000` for local testing). Tokens are never logged.
 
@@ -143,8 +150,12 @@ The dashboard (shellui/saas-service) creates and manages regional companies here
 | --- | --- |
 | `POST /api/v1/provisioning/companies` | Create a company and its owner. **201** with the company, **409** with `id` when the `global_company_id` exists |
 | `GET /api/v1/provisioning/companies?linked=shellui` | `{ "results": [...], "next": url or null }`, 200 per page, ordered by id |
-| `GET /api/v1/provisioning/companies/{id}` | Company with `status`, `limits_version`, and owner subjects |
-| `PATCH /api/v1/provisioning/companies/{id}` | `name` and/or `status` (`active` or `suspended`) |
+| `GET /api/v1/provisioning/companies/{id}` | Company with `status`, `limits_version`, `access_mode`, `allowed_email_domains`, and owner subjects |
+| `PATCH /api/v1/provisioning/companies/{id}` | `name`, `status` (`active` or `suspended`), `access_mode`, and `allowed_email_domains`, any combination |
+| `POST /api/v1/provisioning/companies/{id}/members` | Add a member. Body: `email`, `name`, `role` (`owner` or `staff`), `global_subject` |
+| `PATCH /api/v1/provisioning/companies/{id}/members/{global_subject}` | Body: `role` (`owner` or `staff`) |
+| `DELETE /api/v1/provisioning/companies/{id}/members/{global_subject}` | Remove the member. Revokes that company's refresh sessions and personal access tokens |
+| `POST /api/v1/provisioning/companies/{id}/transfer-ownership` | Body: `global_subject` (new owner) and `from_subject` (current owner, who becomes `staff`) |
 | `PUT /api/v1/provisioning/companies/{id}/limits` | `{ "version", "limits" }`. An older version returns **409** `stale_version` |
 | `DELETE /api/v1/provisioning/companies/{id}` | **202**, status `deleting`. Data is kept; nothing is removed by this call |
 
@@ -158,11 +169,16 @@ Create body:
   "name": "Acme",
   "plan": "free",
   "access_mode": "public",
+  "allowed_email_domains": ["acme.com"],
   "owner": {"subject": "global sub", "email": "ada@acme.com", "email_verified": true, "name": "Ada"}
 }
 ```
 
+`access_mode` is `public`, `domain`, or `invite`. `allowed_email_domains` is a list of lowercase domains with no `@`. Domain mode needs at least one domain on create and on any later change that leaves the company in domain mode. Sign-in and join already use these fields: a domain company accepts a proved address on that list, and refuses the others.
+
 The owner is linked by the global subject (`GLOBAL_ISSUER_URL` and `owner.subject`). Without a link, an existing user with the same email is linked, and otherwise a new user is created. `owner.email_verified` must be the boolean `true` (**403** `email_not_verified` otherwise). An existing `is_staff` or `is_superuser` account is refused (**409** `user_is_staff`). This API never sets those flags.
+
+Members use the same link. `role` `owner` is a company owner. `role` `staff` is a member who is not an owner. It does not set Django `is_staff`. Removing or demoting the last owner returns **409** `last_owner`. Removing a member revokes that person's refresh sessions and personal access tokens for this company only. Transfer makes `global_subject` an owner and changes `from_subject` from owner to `staff`.
 
 `GET /api/v1/companies/{id}/plan` returns `{ "company_id", "limits", "limits_version", "status" }` to a member of that company, for regional services. Suspension keeps hosted sites online; services read `status` to lock the admin and deploys.
 

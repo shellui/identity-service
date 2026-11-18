@@ -1,0 +1,47 @@
+{% extends "agents/_mcp_base.html" %}
+{% block title %}{{ copy.title }}{% endblock %}
+{% block content %}
+    <h1>{{ copy.title }}</h1>
+    <p class="why">{{ lead }}</p>
+    <p class="warning" role="note">{{ hint }} <a href="{{ docs_url }}">{{ copy.docs }}</a></p>
+    {% if error %}<p class="subtitle" role="alert">{{ error }}</p>{% endif %}
+    {% if staff_refused %}
+      <form method="post" action="">
+        {% csrf_token %}
+        <input type="hidden" name="account_choice" value="switch">
+        <div class="actions">
+          <button type="submit" class="button">{{ copy.use_another }}</button>
+        </div>
+      </form>
+      <p class="actions"><a class="button button-secondary" href="{{ cancel_url }}">{{ copy.cancel }}</a></p>
+    {% elif signed_in_email %}
+      <form method="post" action="">
+        {% csrf_token %}
+        <input type="hidden" name="account_choice" value="continue">
+        <div class="actions stack">
+          <button type="submit" class="button">{{ continue_label }}</button>
+        </div>
+      </form>
+      <form method="post" action="">
+        {% csrf_token %}
+        <input type="hidden" name="account_choice" value="switch">
+        <div class="actions">
+          <button type="submit" class="button button-secondary">{{ copy.use_another }}</button>
+        </div>
+      </form>
+      <p class="actions"><a href="{{ cancel_url }}">{{ copy.cancel }}</a></p>
+    {% else %}
+      <form method="post" action="">
+        {% csrf_token %}
+        <input type="hidden" name="account_choice" value="password">
+        <label for="email">{{ copy.email }}</label>
+        <input type="email" id="email" name="email" autocomplete="username" required maxlength="254">
+        <label for="password">{{ copy.password }}</label>
+        <input type="password" id="password" name="password" autocomplete="current-password" required maxlength="256">
+        <div class="actions stack">
+          <button type="submit" class="button">{{ copy.submit }}</button>
+          <a class="button button-secondary" href="{{ cancel_url }}">{{ copy.cancel }}</a>
+        </div>
+      </form>
+    {% endif %}
+{% endblock %}

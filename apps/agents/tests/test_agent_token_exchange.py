@@ -353,6 +353,36 @@ class AgentTokenExchangeTests(_CryptoMixin, TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json()['error'], 'invalid_grant')
 
+    def test_provisioned_company_rejects_a_different_global_id(self):
+        self._member()
+        response = self._post(self._global_agent_token(global_company_id=str(uuid.uuid4())))
+        self.assertEqual(response.status_code, 400, response.content)
+        self.assertEqual(response.json()['error'], 'invalid_grant')
+        self.assertIn('does not match', response.json()['error_description'])
+        self.assertFalse(Agent.objects.exists())
+
+    def test_grant_version_must_match_binding_when_present(self):
+        self._member()
+        refused = self._post(self._global_agent_token(company_binding_version=2, grant_version=1))
+        self.assertEqual(refused.status_code, 400, refused.content)
+        self.assertIn('grant_version', refused.json()['error_description'])
+        accepted = self._post(
+            self._global_agent_token(
+                company_binding_version=2,
+                grant_version=2,
+                user_metadata={
+                    'full_name': 'Ada Lovelace',
+                    'is_staff': False,
+                    'is_superuser': False,
+                    'is_global_staff': False,
+                },
+            ),
+        )
+        self.assertEqual(accepted.status_code, 200, accepted.content)
+        agent = Agent.objects.get(global_agent_id=self.global_agent_id)
+        self.assertEqual(agent.company_binding_version, 2)
+        self.assertEqual(agent.grant_version, 0)
+
     def test_global_company_binding_stored_at_exchange(self):
         self._member()
         gc = self.saas_global_company_id
