@@ -23,6 +23,22 @@ class ApiDocsPagesTests(TestCase):
     def test_redoc_page_is_self_hosted(self):
         self.assert_self_hosted('redoc', 'redoc/bundles/redoc.standalone.js')
 
+    def test_redoc_renders_before_shellui_init_completes(self):
+        response = self.client.get(reverse('redoc'))
+        self.assertEqual(response.status_code, 200)
+        body = response.content.decode()
+        render_idx = body.index('renderRedoc(null)')
+        init_idx = body.index('void init()')
+        self.assertLess(render_idx, init_idx)
+        self.assertNotIn('await init()', body)
+
+    def test_swagger_ui_does_not_block_on_shellui_init(self):
+        response = self.client.get(reverse('swagger-ui'))
+        self.assertEqual(response.status_code, 200)
+        body = response.content.decode()
+        self.assertIn('applyDocsColorMode(null)', body)
+        self.assertNotIn('await init()', body)
+
     def test_swagger_page_is_self_hosted(self):
         self.assert_self_hosted(
             'swagger-ui',

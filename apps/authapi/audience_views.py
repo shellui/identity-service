@@ -9,6 +9,7 @@ from django.db.models import Q
 from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_datetime
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema, extend_schema_view
+from apps.authapi.openapi_admin import ADMIN_API_ERRORS, admin_openapi_fields, mcp_extend_schema_kwargs
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -58,10 +59,28 @@ def _moment(raw: str, field: str, *, end_of_day: bool = False) -> datetime | Non
     return moment
 
 
+def _query_tokens(params, field: str) -> set[str]:
+    if hasattr(params, 'getlist'):
+        raw_items = params.getlist(field)
+    else:
+        raw = params.get(field, '')
+        raw_items = raw if isinstance(raw, (list, tuple)) else [raw]
+    tokens: set[str] = set()
+    for item in raw_items:
+        if item is None:
+            continue
+        pieces = item if isinstance(item, (list, tuple)) else str(item).split(',')
+        for piece in pieces:
+            text = str(piece).strip()
+            if text:
+                tokens.add(text)
+    return tokens
+
+
 def audience_queryset(company, params):
     """Members of ``company`` matching every given filter, plus any ``user_ids``."""
     group_ids = _ids(params.get('group_ids', ''), 'group_ids')
-    roles = {item.strip() for item in (params.get('roles') or '').split(',') if item.strip()}
+    roles = _query_tokens(params, 'roles')
     if roles - ROLES:
         raise AudienceError('roles')
     access = (params.get('access') or 'enabled').strip()
@@ -123,19 +142,21 @@ def _row(user) -> dict:
 
 @extend_schema_view(
     get=extend_schema(
+        **mcp_extend_schema_kwargs('identity_get_users_audience'),
         tags=['directory-users'],
-        summary='Broadcast audience (staff or company owner)',
-        description=(
-            'Members of the token company matching every filter, for email broadcasts. '
-            '`user_ids` adds hand-picked members; alone, it is the whole audience. '
-            'Users without an email or with a deactivated account are left out. '
-            'Each row carries the language from the user preferences (`en` by default).'
-        ),
-        operation_id='api_v1_users_audience',
         parameters=[
             OpenApiParameter(name='group_ids', type=str, description='Comma-separated group ids. Nested groups count.'),
-            OpenApiParameter(name='roles', type=str, description='Comma-separated: owner, staff, member.'),
-            OpenApiParameter(name='access', type=str, description='enabled (default), disabled, or any.'),
+            OpenApiParameter(
+                name='roles',
+                type=str,
+                description='Roles to match. One or more of owner, staff, or member.',
+            ),
+            OpenApiParameter(
+                name='access',
+                type=str,
+                enum=['enabled', 'disabled', 'any'],
+                description='Membership filter. enabled is the default.',
+            ),
             OpenApiParameter(name='joined_after', type=str, description='ISO date or datetime.'),
             OpenApiParameter(name='joined_before', type=str, description='ISO date or datetime, inclusive.'),
             OpenApiParameter(name='seen_after', type=str, description='ISO date or datetime.'),
@@ -148,6 +169,7 @@ def _row(user) -> dict:
             OpenApiParameter(name='page_size', type=int, description=f'Up to {MAX_PAGE_SIZE}. Default 100.'),
         ],
         responses={
+            **ADMIN_API_ERRORS,
             200: OpenApiResponse(description='`{count, page, page_size, results}`'),
             400: OpenApiResponse(description='`{error: "invalid_filter", field}`'),
         },

@@ -8,18 +8,89 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 <!---
 ## [Unreleased] - yyyy-mm-dd
 
-### ✨ Feature – for new features
-### 🛠 Improvements – for general improvements
-### 🚨 Changed – for changes in existing functionality
-### ⚠️ Deprecated – for soon-to-be removed features
-### 📚 Documentation – for documentation update
-### 🗑 Removed – for removed features
-### 🐛 Bug Fixes – for any bug fixes
-### 🔒 Security – in case of vulnerabilities
-### 🏗 Chore – for tidying code
+### ✨ Feature - for new features
+### 🛠 Improvements - for general improvements
+### 🚨 Changed - for changes in existing functionality
+### ⚠️ Deprecated - for soon-to-be removed features
+### 📚 Documentation - for documentation update
+### 🗑 Removed - for removed features
+### 🐛 Bug Fixes - for any bug fixes
+### 🔒 Security - in case of vulnerabilities
+### 🏗 Chore - for tidying code
 
 See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
 -->
+
+## [0.11.0] - 2026-11-18
+
+### ✨ Feature
+
+- MCP OAuth for company agents, with sign-in, consent, and agent tokens bound to the company MCP URL.
+- Company members can mint, list, and revoke personal MCP agent tokens, and review per-agent activity.
+- Headless MCP clients can sign in with OAuth device authorization.
+- The Shellui CLI can sign in with a separate OAuth device authorization grant.
+- Regional identity can exchange a global MCP agent token for a company-scoped regional token.
+- Identity can mint downstream agent tokens for ai-service.
+- Consent can offer optional SaaS access, then complete a global Shellui sign-in before the regional code is issued.
+- Email-first MCP sign-in routes verified domains to the company identity provider.
+- A signed-in browser session on the identity origin can continue into MCP and CLI device pages.
+- Company owners can allow or deny a pending agent action.
+- MCP approval links open a browser page, and signed-in members can approve without signing in again.
+- You can approve a non-destructive agent action in chat, and a destructive action still needs the approval page.
+- A downstream ai-service token does not ask for a second approval of the same action.
+- Company owners can read a redacted summary of a pending approval.
+- Internal APIs let services check live delegated authority, approval state, and revocation lists.
+- `GET /api/v1/settings` includes a logout URL, and logout clears only the identity session cookie.
+
+### 🛠 Improvements
+
+- MCP tools use pinned gateway names, flat argument schemas, enums, and risk hints.
+- Authorization server metadata advertises the token endpoint and the device grant.
+- Agent tokens can carry the company display name and the creating user's id.
+- The admin agent list shows who created each agent, and revoked agents are deleted after the company's data retention period.
+- Revocation polls include a policy version so gateways drop stale cache when grants change.
+- Setup-flow approval sessions can last 10 to 15 minutes when the global token allows it. Destructive actions still need a fresh approval.
+- Company MCP URLs can use HTTP on a loopback, private, or CGNAT address.
+- A region can verify global MCP agent tokens with a separate issuer.
+
+### 🐛 Bug Fixes
+
+- Approval decide and consume lock only the approval row, so PostgreSQL no longer returns 500 on a joined nullable agent.
+- Revocation list responses include the highest active grant version, and they list every regional agent for the company filter.
+- `/mcp` accepts RS256 agent tokens without returning 500.
+- Token and register endpoints accept form-urlencoded bodies as well as JSON.
+- Sign-in and consent pages send a same-origin referrer so CSRF checks succeed in MCP Inspector.
+- Invalid MCP clients, redirect URIs, and resources show an error page instead of a redirect.
+- After approval, the agent continues, and identity notifies ai-service of the decision.
+- `POST /mcp` no longer returns 500 when several clients call it at the same time.
+- API docs render in the admin iframe without waiting for shell settings.
+- When agent token exchange is off, the token endpoint returns a JSON 404.
+
+### 🔒 Security
+
+- A company OAuth client update is allowed only for an app that company created and that no other client already maps. Listing, updating, or deleting a provider app returns not found when another company owns or maps it.
+- MCP redirect URIs allow only https and loopback http, reject fragments and user info, and match exactly.
+- Staff cannot use MCP. Staff CLI sessions older than 12 hours, or started with a magic link, must sign in again with a password or SSO.
+- Device codes are stored as hashes and are not logged.
+- MCP tool results hide one-time secrets.
+- Company metrics are not offered as MCP tools.
+- The web session exchange endpoint is rate limited.
+
+### 🗑 Removed
+
+- The aggregated Identity MCP gateway at `POST /mcp` is gone. Use ai-service as the single MCP connector.
+- Identity no longer stores new MCP tool-call logs. Those now live in ai-service. Existing rows stay readable and the call-log API is deprecated.
+
+### 📚 Documentation
+
+- Local dev stack docs, including a Docker dev target and a dev seed command.
+- Docs for personal agent settings, the shell host session exchange, and the live MCP device-login prompts.
+- OpenAPI describes the identity admin routes an agent can call.
+
+### 🏗 Chore
+
+- Use `shellui-django[mcp]==0.5.1` instead of a vendored MCP package.
+- Internal MCP assertions are verified with RS256 against a registry of trusted callers.
 
 ## [0.10.1] - 2026-11-01
 

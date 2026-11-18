@@ -132,13 +132,18 @@ class Company(models.Model):
             'For example, shellui-playground also allows shellui-playground-dev. Off by default.'
         ),
     )
+    mcp_allow_dynamic_registration = models.BooleanField(
+        default=True,
+        help_text='When false, MCP OAuth dynamic client registration is refused for this company.',
+    )
     DEFAULT_DATA_RETENTION_DAYS = 7
     data_retention_days = models.PositiveSmallIntegerField(
         default=DEFAULT_DATA_RETENTION_DAYS,
         validators=[MinValueValidator(1), MaxValueValidator(3650)],
         help_text=(
-            'Days to keep the event log and finished webhook deliveries before '
-            '"manage.py purge_expired_data" deletes them. Django admin only.'
+            'Days to keep the event log, finished webhook deliveries, and revoked MCP agents '
+            '(with their call logs) before "manage.py purge_expired_data" deletes them. '
+            'Django admin only.'
         ),
     )
 
@@ -286,6 +291,15 @@ class CompanyOAuthClient(models.Model):
         related_name='company_oauth_clients',
     )
     dedupe_key = models.CharField(max_length=512, null=True, blank=True)
+    sso_verified_domains = models.JSONField(
+        default=list,
+        blank=True,
+        help_text=(
+            'Lowercase domains this IdP serves for MCP home-realm sign-in (Django admin only). '
+            'Must be listed on the company verified email domains. Empty means any verified domain '
+            'when this is the only SSO/OAuth client for the company.'
+        ),
+    )
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

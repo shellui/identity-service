@@ -31,6 +31,7 @@ from apps.federation.parsing import (
     region_startup_errors,
 )
 from config.allauth_provider_apps import ALLAUTH_SOCIALACCOUNT_PROVIDER_APPS
+from config.service_urls import internal_origin
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -238,10 +239,16 @@ ALLOWED_HOSTS = _env_csv('ALLOWED_HOSTS', ('localhost', '127.0.0.1'))
 _csrf_defaults = [
     'http://localhost:8000',
     'http://127.0.0.1:8000',
+    'http://localhost:8001',
+    'http://127.0.0.1:8001',
     'http://localhost:4000',
     'http://127.0.0.1:4000',
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
     'http://localhost:5174',
     'http://127.0.0.1:5174',
+    'http://localhost:5175',
+    'http://127.0.0.1:5175',
 ]
 if SHELLUI_INSTANCE_ROLE != 'region':
     _csrf_defaults.append('https://admin.shellui.com')
@@ -309,12 +316,13 @@ INSTALLED_APPS = [
     'apps.scim',
     'apps.actions',
     'apps.federation',
+    'apps.agents',
     'django_scim',
     'config.apps.ConfigConfig',
 ]
 
 REST_FRAMEWORK = {
-    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+    'DEFAULT_SCHEMA_CLASS': 'apps.authapi.mcp_schema.McpAutoSchema',
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'apps.authapi.authentication.ShellUIJWTAuthentication',
     ],
@@ -357,7 +365,54 @@ SPECTACULAR_SETTINGS = {
         {'name': 'platform-metrics', 'description': 'Prometheus metrics endpoints.'},
         {'name': 'personal-access-tokens', 'description': 'User-personal JWT access tokens (read-only or read/write).'},
         {'name': 'companies', 'description': 'Company membership and company settings endpoints.'},
+        {'name': 'mcp-tools', 'description': 'Operations exposed to MCP agents (Shellui admin and list_services).'},
+        {'name': 'mcp-admin', 'description': 'Human-only MCP agent administration (approvals, pause, revoke).'},
+        {
+            'name': 'mcp-oauth',
+            'description': 'MCP OAuth authorization server, including the device authorization grant.',
+        },
+        {'name': 'scim', 'description': 'SCIM provisioning configuration and bearer tokens.'},
+        {'name': 'auth-admin', 'description': 'Company auth method toggles and sign-in configuration.'},
+        {'name': 'oauth-redirects', 'description': 'OAuth redirect URI allowlist.'},
+        {'name': 'actions-admin', 'description': 'Shellui Actions webhook rules and deliveries.'},
+        {'name': 'scheduled-jobs', 'description': 'Internal scheduled job introspection (staff).'},
     ],
+    # Choice fields keep their own help text. The generated "* `value` - label"
+    # list is not a description an agent can use.
+    'ENUM_GENERATE_CHOICE_DESCRIPTION': False,
+    'POSTPROCESSING_HOOKS': [
+        'apps.authapi.spectacular_hooks.postprocess_mcp_tool_tags',
+    ],
+    'PREPROCESSING_HOOKS': [
+        'apps.authapi.spectacular_hooks.preprocessing_exclude_internal_endpoints',
+    ],
+}
+
+MCP_DYNAMIC_CLIENT_REGISTRATION = _env_bool('MCP_DYNAMIC_CLIENT_REGISTRATION', True)
+MCP_ACCESS_TOKEN_LIFETIME = _env_duration('MCP_ACCESS_TOKEN_LIFETIME', timedelta(minutes=15))
+MCP_REFRESH_TOKEN_LIFETIME = _env_duration('MCP_REFRESH_TOKEN_LIFETIME', timedelta(days=30))
+MCP_PERSONAL_AGENT_MAX_LIFETIME_DAYS = _env_int('MCP_PERSONAL_AGENT_MAX_LIFETIME_DAYS', 90)
+# RFC 8628 device codes. Short access tokens still use MCP_ACCESS_TOKEN_LIFETIME.
+MCP_DEVICE_CODE_LIFETIME_SECONDS = max(60, min(_env_int('MCP_DEVICE_CODE_LIFETIME_SECONDS', 600), 1800))
+MCP_DEVICE_CODE_INTERVAL_SECONDS = max(5, min(_env_int('MCP_DEVICE_CODE_INTERVAL_SECONDS', 5), 60))
+MCP_AGENT_ACTIVITY_RETENTION_DAYS = _env_int('MCP_AGENT_ACTIVITY_RETENTION_DAYS', 90)
+MCP_APPROVAL_SESSION_TTL_SECONDS = max(30, min(_env_int('MCP_APPROVAL_SESSION_TTL_SECONDS', 60), 60))
+# shellui-django caps internal assertion JWT ``exp - iat`` at 60 seconds by default. Only ai-service
+# approval assertions may use a higher bound (``MCP_APPROVAL_ASSERTION_MAX_LIFETIME_SECONDS``) so the
+# gateway can sign ~10 to 15 minute setup flows; other service issuers stay at 60 seconds.
+MCP_APPROVAL_ASSERTION_MAX_LIFETIME_SECONDS = max(60, _env_int('MCP_APPROVAL_ASSERTION_MAX_LIFETIME_SECONDS', 900))
+MCP_APPROVAL_SETUP_SESSION_TTL_MIN_SECONDS = max(1, _env_int('MCP_APPROVAL_SETUP_SESSION_TTL_MIN_SECONDS', 600))
+MCP_APPROVAL_SETUP_SESSION_TTL_MAX_SECONDS = max(
+    MCP_APPROVAL_SETUP_SESSION_TTL_MIN_SECONDS,
+    _env_int('MCP_APPROVAL_SETUP_SESSION_TTL_MAX_SECONDS', 900),
+)
+MCP_RATE_LIMITS = {
+    'default': {'limit': 120, 'window': 60},
+    'mcp_agent': {'limit': _env_int('MCP_RATE_LIMIT_AGENT', 120), 'window': 60},
+    'mcp_downstream_mint': {
+        'limit': _env_int('MCP_RATE_LIMIT_DOWNSTREAM_MINT', 300),
+        'window': 60,
+    },
 }
 
 MIDDLEWARE = [
@@ -437,6 +492,8 @@ EMAIL_TIMEOUT = _env_positive_float('EMAIL_TIMEOUT', 10.0)
 EMAIL_SERVICE_URL = (
     os.getenv('EMAIL_SERVICE_URL', 'https://email.shellui.com').strip() or 'https://email.shellui.com'
 ).rstrip('/')
+EMAIL_SERVICE_INTERNAL_URL = os.getenv('EMAIL_SERVICE_INTERNAL_URL', '').strip()
+EMAIL_SERVICE_HTTP_URL = internal_origin(EMAIL_SERVICE_URL, EMAIL_SERVICE_INTERNAL_URL)
 EMAIL_SERVICE_API_KEY = os.getenv('EMAIL_SERVICE_API_KEY', '').strip()
 EMAIL_SERVICE_TIMEOUT_SECONDS = _env_float('EMAIL_SERVICE_TIMEOUT_SECONDS', 5.0)
 EMAIL_SERVICE_SEND_ATTEMPTS = _env_int('EMAIL_SERVICE_SEND_ATTEMPTS', 3)
@@ -456,11 +513,37 @@ MAGIC_LINK_EMAIL_DEFAULT_LANGUAGE = (
 # purge a deleted company at DELETION_PATH. Unset: that service is skipped with a warning.
 # Email uses EMAIL_SERVICE_URL above when EMAIL_SERVICE_API_KEY is set.
 STORAGE_SERVICE_URL = os.getenv('STORAGE_SERVICE_URL', '').strip()
+STORAGE_SERVICE_INTERNAL_URL = os.getenv('STORAGE_SERVICE_INTERNAL_URL', '').strip()
+STORAGE_SERVICE_HTTP_URL = internal_origin(STORAGE_SERVICE_URL, STORAGE_SERVICE_INTERNAL_URL)
 HOSTING_SERVICE_URL = os.getenv('HOSTING_SERVICE_URL', '').strip()
+HOSTING_SERVICE_INTERNAL_URL = os.getenv('HOSTING_SERVICE_INTERNAL_URL', '').strip()
+HOSTING_SERVICE_HTTP_URL = internal_origin(HOSTING_SERVICE_URL, HOSTING_SERVICE_INTERNAL_URL)
+SAAS_SERVICE_URL = os.getenv('SAAS_SERVICE_URL', '').strip()
+AI_SERVICE_URL = os.getenv('AI_SERVICE_URL', '').strip().rstrip('/')
+AI_SERVICE_ISSUER = (os.getenv('AI_SERVICE_ISSUER', '') or AI_SERVICE_URL).strip().rstrip('/')
+AI_SERVICE_JWKS = parse_jwks(os.getenv('AI_SERVICE_JWKS', ''))
+AI_SERVICE_JWKS_URL = os.getenv('AI_SERVICE_JWKS_URL', '').strip()
+AI_SERVICE_JWKS_TIMEOUT_SECONDS = _env_float('AI_SERVICE_JWKS_TIMEOUT_SECONDS', 10.0)
+# Internal MCP assertion callers (apps/agents/internal_callers.py). Each service signs RS256 with its
+# own key. A caller is trusted only when its issuer is set; its key comes from inline JWKS or JWKS URL.
+STORAGE_SERVICE_ISSUER = os.getenv('STORAGE_SERVICE_ISSUER', '').strip().rstrip('/')
+STORAGE_SERVICE_JWKS = parse_jwks(os.getenv('STORAGE_SERVICE_JWKS', ''))
+STORAGE_SERVICE_JWKS_URL = os.getenv('STORAGE_SERVICE_JWKS_URL', '').strip()
+HOSTING_SERVICE_ISSUER = os.getenv('HOSTING_SERVICE_ISSUER', '').strip().rstrip('/')
+HOSTING_SERVICE_JWKS = parse_jwks(os.getenv('HOSTING_SERVICE_JWKS', ''))
+HOSTING_SERVICE_JWKS_URL = os.getenv('HOSTING_SERVICE_JWKS_URL', '').strip()
+EMAIL_SERVICE_ISSUER = os.getenv('EMAIL_SERVICE_ISSUER', '').strip().rstrip('/')
+EMAIL_SERVICE_JWKS = parse_jwks(os.getenv('EMAIL_SERVICE_JWKS', ''))
+EMAIL_SERVICE_JWKS_URL = os.getenv('EMAIL_SERVICE_JWKS_URL', '').strip()
+INTERNAL_CALLER_JWKS_TIMEOUT_SECONDS = _env_float('INTERNAL_CALLER_JWKS_TIMEOUT_SECONDS', 10.0)
 COMPANY_DELETION_TIMEOUT_SECONDS = float(os.getenv('COMPANY_DELETION_TIMEOUT_SECONDS', '10') or '10')
 # saas-service region webhook (``/api/v1/webhooks/<region>``) and its secret, for identity.company.deleted.
 DASHBOARD_WEBHOOK_URL = os.getenv('DASHBOARD_WEBHOOK_URL', '').strip()
+DASHBOARD_WEBHOOK_INTERNAL_URL = os.getenv('DASHBOARD_WEBHOOK_INTERNAL_URL', '').strip()
+DASHBOARD_WEBHOOK_HTTP_URL = internal_origin(DASHBOARD_WEBHOOK_URL, DASHBOARD_WEBHOOK_INTERNAL_URL)
 DASHBOARD_WEBHOOK_SECRET = os.getenv('DASHBOARD_WEBHOOK_SECRET', '').strip()
+# Public Shellui dashboard origin (saas). Used for optional ``global_mcp_url`` on MCP personal status only.
+DASHBOARD_PUBLIC_URL = (os.getenv('DASHBOARD_PUBLIC_URL', '') or '').strip().rstrip('/')
 
 JWT_ACCESS_TOKEN_LIFETIME = _env_duration('JWT_ACCESS_TOKEN_LIFETIME', timedelta(minutes=5))
 JWT_REFRESH_TOKEN_LIFETIME = _env_duration('JWT_REFRESH_TOKEN_LIFETIME', timedelta(days=7))
@@ -479,6 +562,8 @@ OIDC_BACKCHANNEL_TIMEOUT_SECONDS = _env_float('OIDC_BACKCHANNEL_TIMEOUT_SECONDS'
 
 # Relying party (role region): one upstream provider, pinned keys, not a per-company OAuth app.
 GLOBAL_ISSUER_URL = (os.getenv('GLOBAL_ISSUER_URL', '') or '').strip().rstrip('/')
+GLOBAL_ISSUER_INTERNAL_URL = (os.getenv('GLOBAL_ISSUER_INTERNAL_URL', '') or '').strip().rstrip('/')
+GLOBAL_OAUTH_BASE_URL = GLOBAL_ISSUER_INTERNAL_URL or GLOBAL_ISSUER_URL
 GLOBAL_JWKS = parse_jwks(os.getenv('GLOBAL_JWKS', ''))
 GLOBAL_CLIENT_ID = (os.getenv('GLOBAL_CLIENT_ID', '') or '').strip()
 GLOBAL_CLIENT_SECRET = os.getenv('GLOBAL_CLIENT_SECRET', '') or ''
@@ -486,6 +571,12 @@ GLOBAL_REDIRECT_URI = (os.getenv('GLOBAL_REDIRECT_URI', '') or '').strip()
 # Token exchange (RFC 8693, role region): `aud` of global access tokens (the global JWT_AUDIENCE).
 # Unset leaves the exchange answering 404. Browser shells must be in OIDC_CORS_ALLOWED_ORIGINS.
 GLOBAL_ACCESS_TOKEN_AUDIENCE = (os.getenv('GLOBAL_ACCESS_TOKEN_AUDIENCE', '') or '').strip()
+# Agent token exchange (RFC 8693, role region): `aud` of global MCP agent access tokens.
+GLOBAL_AGENT_ACCESS_TOKEN_AUDIENCE = (os.getenv('GLOBAL_AGENT_ACCESS_TOKEN_AUDIENCE', '') or '').strip()
+# saas-service signs those agent tokens (its public URL is `iss`). Empty values fall
+# back to GLOBAL_ISSUER_URL / GLOBAL_JWKS. User token exchange does not read these.
+GLOBAL_AGENT_ISSUER_URL = (os.getenv('GLOBAL_AGENT_ISSUER_URL', '') or '').strip().rstrip('/')
+GLOBAL_AGENT_JWKS = parse_jwks(os.getenv('GLOBAL_AGENT_JWKS', ''), label='GLOBAL_AGENT_JWKS')
 
 # Regional provisioning API (role region). The dashboard (saas-service) signs each call with its
 # provisioning key; pin the public key here. Unset key or issuer leaves the API answering 404.
@@ -575,8 +666,12 @@ CORS_ALLOW_ALL_ORIGINS = _env_bool('CORS_ALLOW_ALL_ORIGINS', True)
 CORS_ALLOWED_ORIGINS = [
     'http://localhost:4000',
     'http://127.0.0.1:4000',
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
     'http://localhost:5174',
     'http://127.0.0.1:5174',
+    'http://localhost:5175',
+    'http://127.0.0.1:5175',
 ]
 if SHELLUI_INSTANCE_ROLE != 'region':
     CORS_ALLOWED_ORIGINS.append('https://admin.shellui.com')
@@ -619,9 +714,27 @@ def secure_cookie_name(base_name: str, *, secure: bool) -> str:
     return base_name
 
 
+def browser_cookie_name(kind: str, *, secure: bool, role: str | None = None) -> str:
+    """Session and CSRF cookie names.
+
+    Secure cookies stay ``__Host-sessionid`` and ``__Host-csrftoken`` on every role,
+    because those hosts are different sites. On HTTP (local dev) a region and a
+    global instance can both be ``localhost``, so the names include the role:
+    ``shellui_region_sessionid`` and ``shellui_global_sessionid``.
+    """
+    if secure:
+        return f'__Host-{kind}'
+    selected = SHELLUI_INSTANCE_ROLE if role is None else role
+    if selected == 'region':
+        return f'shellui_region_{kind}'
+    if selected == 'global':
+        return f'shellui_global_{kind}'
+    return kind
+
+
 # Host-only cookies. Do not set SESSION_COOKIE_DOMAIN or CSRF_COOKIE_DOMAIN.
-SESSION_COOKIE_NAME = secure_cookie_name('sessionid', secure=SESSION_COOKIE_SECURE)
-CSRF_COOKIE_NAME = secure_cookie_name('csrftoken', secure=CSRF_COOKIE_SECURE)
+SESSION_COOKIE_NAME = browser_cookie_name('sessionid', secure=SESSION_COOKIE_SECURE)
+CSRF_COOKIE_NAME = browser_cookie_name('csrftoken', secure=CSRF_COOKIE_SECURE)
 SESSION_COOKIE_PATH = '/'
 CSRF_COOKIE_PATH = '/'
 SESSION_COOKIE_DOMAIN = None
@@ -639,14 +752,30 @@ AUTH_RATE_LIMIT_ENABLED = _env_bool('AUTH_RATE_LIMIT_ENABLED', True)
 AUTH_RATE_LIMITS = {
     'default': {'limit': 60, 'window': 60},
     'oauth': {'limit': _env_int('AUTH_RATE_LIMIT_OAUTH', 30), 'window': 60},
+    'mcp_register': {'limit': _env_int('AUTH_RATE_LIMIT_MCP_REGISTER', 10), 'window': 3600},
+    'mcp_signin': {'limit': _env_int('AUTH_RATE_LIMIT_MCP_SIGNIN', 30), 'window': 300},
     'token_refresh': {'limit': _env_int('AUTH_RATE_LIMIT_TOKEN_REFRESH', 60), 'window': 60},
     'auth_settings': {'limit': _env_int('AUTH_RATE_LIMIT_SETTINGS', 30), 'window': 60},
     'admin_login': {'limit': _env_int('AUTH_RATE_LIMIT_ADMIN_LOGIN', 10), 'window': 300},
     'pat': {'limit': _env_int('AUTH_RATE_LIMIT_PAT', 30), 'window': 60},
     'magic_link': {'limit': _env_int('AUTH_RATE_LIMIT_MAGIC_LINK', 10), 'window': 60},
     'token_exchange': {'limit': _env_int('AUTH_RATE_LIMIT_TOKEN_EXCHANGE', 30), 'window': 60},
+    'mcp_personal_agent': {'limit': _env_int('AUTH_RATE_LIMIT_MCP_PERSONAL_AGENT', 10), 'window': 3600},
+    'mcp_device_code': {'limit': _env_int('AUTH_RATE_LIMIT_MCP_DEVICE_CODE', 30), 'window': 300},
+    'mcp_device_verify': {'limit': _env_int('AUTH_RATE_LIMIT_MCP_DEVICE_VERIFY', 8), 'window': 300},
+    'cli_device_code': {'limit': _env_int('AUTH_RATE_LIMIT_CLI_DEVICE_CODE', 30), 'window': 300},
+    'cli_device_verify': {'limit': _env_int('AUTH_RATE_LIMIT_CLI_DEVICE_VERIFY', 8), 'window': 300},
     'invitation': {'limit': _env_int('AUTH_RATE_LIMIT_INVITATION', 30), 'window': 300},
 }
+
+# Identity browser session (the Django session cookie). Unset matches the refresh token.
+IDENTITY_SESSION_MAX_AGE = _env_duration('IDENTITY_SESSION_MAX_AGE', JWT_REFRESH_TOKEN_LIFETIME)
+SESSION_COOKIE_AGE = max(1, int(IDENTITY_SESSION_MAX_AGE.total_seconds()))
+
+# Staff Shellui CLI refresh tokens, and staff identity browser sessions, use this cap.
+# Non-staff CLI refresh tokens use JWT_REFRESH_TOKEN_LIFETIME.
+# Access tokens stay on JWT_ACCESS_TOKEN_LIFETIME.
+CLI_STAFF_SESSION_MAX_AGE = _env_duration('CLI_STAFF_SESSION_MAX_AGE', timedelta(hours=12))
 
 # Scheduled jobs (Celery worker + beat, started by the Docker entrypoint).
 # See docs/scheduled-jobs.md. The broker is REDIS_URL unless CELERY_BROKER_URL is set.

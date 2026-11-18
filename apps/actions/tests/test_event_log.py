@@ -257,6 +257,11 @@ class AdminApiEventLoggingTests(TestCase):
         self.assertEqual(row.data['email'], 'ada@acme.test')
 
 
+# Still registered so existing rows keep a label and stay in the event-type list.
+# New MCP tool calls are stored in ai-service and do not emit this event.
+_HISTORICAL_EVENT_IDS = frozenset({'identity.mcp.call'})
+
+
 class EventEmitterCoverageTests(TestCase):
     def test_every_logged_event_type_has_an_emitter(self):
         """A registered type nothing emits never shows up in the log; catch it here."""
@@ -267,7 +272,9 @@ class EventEmitterCoverageTests(TestCase):
             if 'tests' not in p.parts and 'migrations' not in p.parts and p.name != 'identity_events.py'
         )
         missing = [
-            e.id for e in all_event_types() if e.emit_by_default and f"'{e.id}'" not in source
+            e.id
+            for e in all_event_types()
+            if e.emit_by_default and e.id not in _HISTORICAL_EVENT_IDS and f"'{e.id}'" not in source
         ]
         self.assertEqual(missing, [])
 

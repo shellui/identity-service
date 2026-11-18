@@ -6,7 +6,7 @@
     {% load static %}
     {% include "includes/shellui_favicons.html" %}
     <link rel="stylesheet" href="{% static 'css/site.css' %}" />
-    {% with page_title="Shellui Identity" page_description="OAuth login, JWT tokens, company groups, and SCIM for Shellui apps." %}
+    {% with page_title="Shellui Identity" page_description="OAuth login, JWT tokens, MCP agents, company groups, and SCIM for Shellui apps." %}
     <title>{% if show_setup_form %}Setup · {% endif %}{{ page_title }}</title>
     <meta name="description" content="{{ page_description }}" />
     <meta property="og:type" content="website" />
@@ -207,7 +207,7 @@
             Shellui Identity
           </h1>
           <p class="mt-6 max-w-xl text-lg/7 text-muted-foreground">
-            Shellui Identity runs OAuth login and JWT issuance for apps in the Shellui shell. You get company groups and optional SCIM provisioning for your organization.
+            Shellui Identity runs OAuth login and JWT issuance for apps in the Shellui shell. MCP clients connect with one URL and sign-in, with company-scoped agents, access levels, and approvals. You get company groups and optional SCIM provisioning for your organization.
           </p>
 
           <div class="mt-8 flex flex-wrap items-center gap-4">
@@ -239,6 +239,15 @@
                 <a href="{{ jwks_url }}" class="font-medium text-primary-ink hover:underline dark:text-primary">JWKS</a>
               </li>
               <li>
+                <a href="{{ mcp_url }}" class="font-medium text-primary-ink hover:underline dark:text-primary">MCP</a>
+                <span class="text-muted-foreground">(<code class="font-mono text-xs">POST /mcp</code>)</span>
+                ·
+                <a href="{{ mcp_oauth_metadata_url }}" class="font-medium text-primary-ink hover:underline dark:text-primary">OAuth metadata</a>
+              </li>
+              <li>
+                <a href="{{ identity_docs_url }}/{{ mcp_docs_path }}" class="font-medium text-primary-ink hover:underline dark:text-primary">MCP and agents</a>
+              </li>
+              <li>
                 <a href="{{ health_live_url }}" class="font-medium text-primary-ink hover:underline dark:text-primary">Liveness</a>
                 <span class="text-muted-foreground">(<code class="font-mono text-xs">GET /health/live</code>)</span>
               </li>
@@ -264,7 +273,7 @@
             </svg>
           </a>
           <p class="mt-2 max-w-xs text-sm text-muted-foreground">
-            OAuth, JWT, and SCIM for Shellui apps.
+            OAuth, JWT, MCP agents, and SCIM for Shellui apps.
           </p>
           <p class="mt-4 text-xs text-muted-foreground">© 2026 Shellui</p>
         </div>

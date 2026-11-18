@@ -165,7 +165,11 @@ class OAuthSocialAppExtraSettingsTests(APITestCase):
             name='apple-co',
             client_id='aid',
             secret='secret',
-            settings={'catalog_slug': 'apple', 'certificate_key': 'PRIVATE'},
+            settings={
+                'catalog_slug': 'apple',
+                'certificate_key': 'PRIVATE',
+                'created_by_company_id': self.company.id,
+            },
         )
         CompanyOAuthClient.objects.create(company=self.company, social_app=app, is_active=True)
         other = Company.objects.create(name='Other', slug='other-co')

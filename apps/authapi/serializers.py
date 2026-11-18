@@ -58,7 +58,7 @@ class ShellUIInvitationCreateSerializer(serializers.Serializer):
         required=False,
         allow_blank=True,
         max_length=35,
-        help_text='Invitation email language (en or fr; tags like "fr-FR" accepted). Defaults to en.',
+        help_text='Email language: en or fr.',
     )
     app_url = serializers.CharField(
         required=False,
@@ -89,7 +89,9 @@ class ShellUIMagicLinkConsumeSerializer(serializers.Serializer):
 
 
 class ShellUIAdminAuthMethodsUpdateSerializer(serializers.Serializer):
-    enable_magic_link = serializers.BooleanField(required=False)
+    enable_magic_link = serializers.BooleanField(
+        help_text='Whether email magic-link sign-in is enabled for this company.',
+    )
 
 
 class ShellUILogoutSerializer(serializers.Serializer):
@@ -167,8 +169,12 @@ class ShellUIAdminOAuthClientCreateSerializer(serializers.Serializer):
 
 
 class ShellUIAdminOAuthClientUpdateSerializer(serializers.Serializer):
-    social_app_id = serializers.IntegerField(required=False, min_value=1)
-    is_active = serializers.BooleanField(required=False)
+    social_app_id = serializers.IntegerField(
+        required=False,
+        min_value=1,
+        help_text='Required when is_active is omitted.',
+    )
+    is_active = serializers.BooleanField(required=False, help_text='Required when social_app_id is omitted.')
 
     def validate(self, attrs: dict) -> dict:
         if not attrs:
@@ -177,8 +183,18 @@ class ShellUIAdminOAuthClientUpdateSerializer(serializers.Serializer):
 
 
 class ShellUIAdminOAuthSocialAppCreateSerializer(serializers.Serializer):
-    docs_slug = serializers.CharField(required=False, allow_blank=True, max_length=128)
-    provider = serializers.CharField(required=False, allow_blank=True, max_length=64)
+    docs_slug = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=128,
+        help_text='Catalog provider slug, for example github. Required when provider is omitted.',
+    )
+    provider = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=64,
+        help_text='Same catalog slugs as docs_slug. Required when docs_slug is omitted.',
+    )
     client_id = serializers.CharField(max_length=191)
     client_secret = serializers.CharField(max_length=191)
     tenant = serializers.CharField(required=False, allow_blank=True, max_length=255)
@@ -214,13 +230,27 @@ class ShellUIAdminOAuthRedirectCreateSerializer(serializers.Serializer):
         choices=['manual', 'hosting'],
         required=False,
         default='manual',
+        help_text='Who created the redirect: manual or hosting.',
     )
 
 
 class ShellUIAdminOAuthRedirectUpdateSerializer(serializers.Serializer):
-    base_url = serializers.CharField(required=False, allow_blank=False, max_length=500)
-    label = serializers.CharField(required=False, allow_blank=True, max_length=150)
-    is_active = serializers.BooleanField(required=False)
+    base_url = serializers.CharField(
+        required=False,
+        allow_blank=False,
+        max_length=500,
+        help_text='Required when label and is_active are omitted.',
+    )
+    label = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=150,
+        help_text='Required when base_url and is_active are omitted.',
+    )
+    is_active = serializers.BooleanField(
+        required=False,
+        help_text='Required when base_url and label are omitted.',
+    )
 
     def validate(self, attrs: dict) -> dict:
         if not attrs:
@@ -229,9 +259,15 @@ class ShellUIAdminOAuthRedirectUpdateSerializer(serializers.Serializer):
 
 
 class ShellUIHostingOAuthRedirectSyncSerializer(serializers.Serializer):
-    base_url = serializers.CharField(max_length=500)
-    label = serializers.CharField(required=False, allow_blank=True, max_length=150)
+    base_url = serializers.CharField(
+        max_length=500,
+        help_text='Redirect origin to sync, including scheme and host.',
+    )
+    label = serializers.CharField(required=False, allow_blank=True, max_length=150, help_text='Label stored on the redirect.')
 
 
 class ShellUIHostingOAuthRedirectDeleteSerializer(serializers.Serializer):
-    base_url = serializers.CharField(max_length=500)
+    base_url = serializers.CharField(
+        max_length=500,
+        help_text='Redirect origin to remove, including scheme and host.',
+    )

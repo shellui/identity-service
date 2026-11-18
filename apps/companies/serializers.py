@@ -39,6 +39,7 @@ class CompanyUpdateSerializer(serializers.Serializer):
     access_mode = serializers.ChoiceField(
         choices=[c[0] for c in Company.ACCESS_MODE_CHOICES],
         required=False,
+        help_text='How people join the company: public, domain, or invite.',
     )
     allowed_email_domains = serializers.ListField(
         child=serializers.CharField(allow_blank=False, max_length=253),

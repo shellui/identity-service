@@ -33,12 +33,19 @@
         window.__applyShelluiAccessToken?.(token);
       };
 
-      await init();
-      applyDocsColorMode(shellui.initialSettings?.appearance ?? null);
-      window.__shelluiAccessToken = shellui.initialSettings?.accessToken ?? null;
-      window.__applyShelluiAccessToken?.(window.__shelluiAccessToken);
-      shellui.addMessageListener("SHELLUI_SETTINGS", handleSettingsMessage);
-      shellui.addMessageListener("SHELLUI_SETTINGS_UPDATED", handleSettingsMessage);
+      const registerShelluiListeners = () => {
+        shellui.addMessageListener("SHELLUI_SETTINGS", handleSettingsMessage);
+        shellui.addMessageListener("SHELLUI_SETTINGS_UPDATED", handleSettingsMessage);
+      };
+
+      applyDocsColorMode(null);
+
+      void init().then(() => {
+        applyDocsColorMode(shellui.initialSettings?.appearance ?? null);
+        window.__shelluiAccessToken = shellui.initialSettings?.accessToken ?? null;
+        window.__applyShelluiAccessToken?.(window.__shelluiAccessToken);
+      });
+      registerShelluiListeners();
     </script>
     <script src="{{ swagger_ui_bundle }}"></script>
     <script src="{{ swagger_ui_standalone }}"></script>

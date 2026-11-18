@@ -137,6 +137,9 @@ class RefreshTokenSession(models.Model):
     expires_at = models.DateTimeField(db_index=True)
     revoked_at = models.DateTimeField(null=True, blank=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    # Empty for a browser session. ``cli`` is a Shellui CLI device login.
+    kind = models.CharField(max_length=16, blank=True, default='')
+    user_agent = models.CharField(max_length=512, blank=True, default='')
 
     class Meta:
         ordering = ['-created_at']
@@ -147,6 +150,69 @@ class RefreshTokenSession(models.Model):
 
     def __str__(self) -> str:
         return f'RefreshTokenSession(id={self.pk}, user_id={self.user_id})'
+
+
+class CliDeviceAuthorization(models.Model):
+    """RFC 8628 device grant for the Shellui CLI (``client_id=shellui-cli``).
+
+    Separate from MCP device grants. ``device_code`` and ``user_code`` are stored as
+    SHA-256 digests only. Approval issues a normal app session, not an agent token.
+    """
+
+    KIND_CLI = 'cli'
+    CLIENT_ID = 'shellui-cli'
+
+    STATUS_PENDING = 'pending'
+    STATUS_APPROVED = 'approved'
+    STATUS_DENIED = 'denied'
+    STATUS_EXPIRED = 'expired'
+    STATUS_CONSUMED = 'consumed'
+    STATUS_CHOICES = [
+        (STATUS_PENDING, 'Pending'),
+        (STATUS_APPROVED, 'Approved'),
+        (STATUS_DENIED, 'Denied'),
+        (STATUS_EXPIRED, 'Expired'),
+        (STATUS_CONSUMED, 'Consumed'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    kind = models.CharField(max_length=16, default=KIND_CLI)
+    client_id = models.CharField(max_length=64, default=CLIENT_ID)
+    device_code_digest = models.CharField(max_length=64, unique=True)
+    user_code_digest = models.CharField(max_length=64, unique=True)
+    company = models.ForeignKey(
+        'companies.Company',
+        on_delete=models.CASCADE,
+        related_name='cli_device_authorizations',
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='cli_device_authorizations',
+    )
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    poll_interval = models.PositiveSmallIntegerField(default=5)
+    last_poll_at = models.DateTimeField(null=True, blank=True)
+    expires_at = models.DateTimeField()
+    approved_at = models.DateTimeField(null=True, blank=True)
+    denied_at = models.DateTimeField(null=True, blank=True)
+    consumed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    # Shown on the approval page. Captured when the CLI asked for a code. Not the browser.
+    request_ip = models.CharField(max_length=64, blank=True, default='')
+    request_user_agent = models.CharField(max_length=512, blank=True, default='')
+    auth_provider = models.CharField(max_length=32, blank=True, default='')
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['status', 'expires_at']),
+        ]
+
+    def __str__(self) -> str:
+        return f'cli:{self.company_id}:{self.status}'
 
 
 class OAuthSessionDeliveryCode(models.Model):

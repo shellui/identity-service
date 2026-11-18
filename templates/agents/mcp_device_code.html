@@ -1,0 +1,15 @@
+{% extends "agents/_mcp_base.html" %}
+{% block title %}{{ copy.device_title }}{% endblock %}
+{% block content %}
+    <h1>{{ copy.device_title }}</h1>
+    <p class="why">{{ lead }}</p>
+    <form method="post" action="">
+      {% csrf_token %}
+      <label for="user_code">{{ copy.device_code_label }}</label>
+      <input type="text" id="user_code" name="user_code" value="{{ prefill }}" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="32" inputmode="text" required>
+      <p class="note">{{ copy.device_code_hint }}</p>
+      <div class="actions">
+        <button type="submit" class="button">{{ copy.device_continue }}</button>
+      </div>
+    </form>
+{% endblock %}

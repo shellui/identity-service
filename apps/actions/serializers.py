@@ -24,6 +24,7 @@ class ActionRuleWriteSerializer(serializers.Serializer):
 class ActionRuleCreateSerializer(ActionRuleWriteSerializer):
     name = serializers.CharField(max_length=200)
     event_type = serializers.CharField(max_length=128)
+    url = serializers.URLField(help_text='HTTPS webhook URL. Required when creating a rule.')
 
     def validate_event_type(self, value):
         if not is_webhook_event(value):

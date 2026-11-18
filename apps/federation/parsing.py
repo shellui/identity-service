@@ -88,16 +88,16 @@ def parse_oidc_clients(raw: str | None, *, allow_http: bool) -> list[dict]:
     return clients
 
 
-def parse_jwks(raw: str | None) -> dict:
+def parse_jwks(raw: str | None, *, label: str = 'GLOBAL_JWKS') -> dict:
     text = (raw or '').strip()
     if not text:
         return {'keys': []}
     try:
         data = json.loads(text)
     except json.JSONDecodeError as exc:
-        raise ImproperlyConfigured('GLOBAL_JWKS must be a JSON JWKS document.') from exc
+        raise ImproperlyConfigured(f'{label} must be a JSON JWKS document.') from exc
     if not isinstance(data, dict) or not isinstance(data.get('keys'), list):
-        raise ImproperlyConfigured('GLOBAL_JWKS must be a JSON object with a keys array.')
+        raise ImproperlyConfigured(f'{label} must be a JSON object with a keys array.')
     return data
 
 

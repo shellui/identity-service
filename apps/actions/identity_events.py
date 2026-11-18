@@ -234,13 +234,19 @@ _LOGIN = (
     EventFieldDoc('client_device_id_hash', 'Salted SHA-256 of the optional client device id', '7d865e95…'),
     EventFieldDoc('client_country', 'GeoIP country when configured', 'FR'),
     EventFieldDoc('client_city', 'GeoIP city when configured', 'Paris'),
+    EventFieldDoc('device_kind', 'Client kind when the sign-in is a device approval (cli)', 'cli'),
+    EventFieldDoc(
+        'identity_session',
+        'started when this sign-in also opened the identity browser session; ended when that session was cleared',
+        'started',
+    ),
 )
 
 register_event(
     DomainEventType(
         id='identity.auth.login.succeeded',
         label='Sign-in succeeded',
-        description='A user signed in (OAuth, SAML, magic link, or Django admin). Event log only.',
+        description='A user signed in (OAuth, SAML, magic link, Django admin, or the Shellui CLI). Event log only.',
         payload_fields=_LOGIN,
         webhook=False,
     )
@@ -333,6 +339,51 @@ register_event(
             EventFieldDoc('client_id', 'Relying party client id', 'region-app'),
             EventFieldDoc('source', 'Always federation', 'federation'),
         ),
+    )
+)
+
+register_event(
+    DomainEventType(
+        id='identity.mcp.call',
+        label='MCP tool call',
+        description=(
+            'Historical. Identity no longer records MCP tool calls. '
+            'New tool-call logs are stored in ai-service.'
+        ),
+        payload_fields=(
+            EventFieldDoc('agent_id', 'Agent uuid', '00000000-0000-0000-0000-000000000001'),
+            EventFieldDoc('service', 'Service id', 'identity'),
+            EventFieldDoc('tool', 'Tool name', 'list_services'),
+            EventFieldDoc('status_code', 'HTTP status from the underlying API call', 200),
+        ),
+        webhook=False,
+    )
+)
+
+register_event(
+    DomainEventType(
+        id='identity.mcp.approval_decision',
+        label='MCP approval decision',
+        description=(
+            'A human or client decided an MCP tool approval. '
+            'Summary form: {actor_email} {status} {tool_name} for {agent_name}. '
+            'When the caller sent them, data also includes consent (in_chat or link) and client_name.'
+        ),
+        payload_fields=(
+            EventFieldDoc('approval_id', 'Approval uuid', '00000000-0000-0000-0000-000000000001'),
+            EventFieldDoc('actor_email', 'Decider email when known', 'ada@acme.com'),
+            EventFieldDoc(
+                'status',
+                'approved, denied, expired, client_allowed, client_denied, or client_session_allowed',
+                'approved',
+            ),
+            EventFieldDoc('tool_name', 'Tool or action name', 'delete_object'),
+            EventFieldDoc('agent_name', 'Agent display name', 'ChatGPT connector'),
+            EventFieldDoc('service', 'Service id', 'storage'),
+            EventFieldDoc('consent', 'Decision channel when known: in_chat or link', 'in_chat'),
+            EventFieldDoc('client_name', 'MCP client name when known', 'Claude'),
+        ),
+        webhook=False,
     )
 )
 

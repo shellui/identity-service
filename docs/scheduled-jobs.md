@@ -85,6 +85,7 @@ Deletes rows older than each company's **data retention** (`Company.data_retenti
 - finished webhook deliveries (`delivered` or `dead`) with their delivery attempts. `pending` and `failed` rows are kept so retries continue
 - SCIM provisioning events
 - [scheduled job runs](#monitoring) older than 7 days
+- revoked MCP agents and their call logs (only after revoke; active agents and their logs are never age-purged)
 
 Events without a company (a sign-in that failed before the company was known, or a staff-only scheduled job event) use the default of 7 days.
 
@@ -103,7 +104,7 @@ python manage.py purge_expired_data --max-seconds 300   # stop after 5 minutes, 
 Output example:
 
 ```text
-purge_expired_data: deleted events=1840 webhook_deliveries=12 email_events=0 scim_provisioning_events=0 scheduled_job_runs=168 complete=true run_id=1235
+purge_expired_data: deleted events=1840 webhook_deliveries=12 email_events=0 scim_provisioning_events=0 revoked_mcp_agents=3 mcp_call_logs=41 scheduled_job_runs=168 complete=true run_id=1235
 ```
 
 ### Why every hour
@@ -213,7 +214,7 @@ The management command records its own run, so the Celery path and the cron path
 
 `counts` for `retry_webhooks`: `webhook_deliveries_attempted`, `webhook_deliveries_succeeded`, `webhook_deliveries_failed` (will be retried), `webhook_deliveries_given_up` (now `dead`), and the same four for `email_events_*` (email-service event posts).
 
-`counts` for `purge_expired_data`: rows deleted per type (`events`, `webhook_deliveries`, `email_events`, `scim_provisioning_events`, `scheduled_job_runs`) and `complete` (false when `--max-seconds` ran out).
+`counts` for `purge_expired_data`: rows deleted per type (`events`, `webhook_deliveries`, `email_events`, `scim_provisioning_events`, `revoked_mcp_agents`, `mcp_call_logs`, `scheduled_job_runs`) and `complete` (false when `--max-seconds` ran out).
 
 Some runs are not stored:
 

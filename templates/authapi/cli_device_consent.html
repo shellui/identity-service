@@ -1,0 +1,26 @@
+{% extends "agents/_mcp_base.html" %}
+{% block title %}{{ copy.title }}{% endblock %}
+{% block content %}
+    <h1>{{ copy.title }}</h1>
+    <p class="note">{{ signed_in_as }}</p>
+    <p class="why">{{ lead }}</p>
+    <dl class="meta">
+      <dt>{{ copy.company_label }}</dt>
+      <dd>{{ company_name }}</dd>
+      <dt>{{ copy.requested_at_label }}</dt>
+      <dd>{{ requested_at }}</dd>
+      <dt>{{ copy.ip_label }}</dt>
+      <dd>{{ request_ip }}</dd>
+      <dt>{{ copy.ua_label }}</dt>
+      <dd>{{ request_user_agent }}</dd>
+      <dt>{{ copy.code_check_label }}</dt>
+      <dd class="host">{{ user_code }}</dd>
+    </dl>
+    <form method="post" action="">
+      {% csrf_token %}
+      <div class="actions stack">
+        <button type="submit" name="decision" value="approve" class="button">{{ copy.allow }}</button>
+        <button type="submit" name="decision" value="deny" class="button button-secondary">{{ copy.deny }}</button>
+      </div>
+    </form>
+{% endblock %}

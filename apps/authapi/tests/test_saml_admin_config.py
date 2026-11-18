@@ -77,6 +77,7 @@ class SAMLAdminConfigTests(TestCase):
             settings={
                 'catalog_slug': 'saml',
                 'shellui_company_id': self.company.id,
+                'created_by_company_id': self.company.id,
                 'idp': {
                     'entity_id': 'https://idp.admin.test/one',
                     'sso_url': 'https://idp.admin.test/sso',

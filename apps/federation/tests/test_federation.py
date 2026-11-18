@@ -57,7 +57,8 @@ class StandalonePathTests(TestCase):
     def test_federation_endpoints_are_absent(self):
         self.assertEqual(self.client.get('/.well-known/openid-configuration').status_code, 404)
         self.assertEqual(self.client.get('/oauth/authorize').status_code, 404)
-        self.assertEqual(self.client.post('/oauth/token', {}, format='json').status_code, 404)
+        # Regional OpenID code exchange is absent, but MCP shares ``POST /oauth/token`` (see MCP AS metadata).
+        self.assertEqual(self.client.post('/oauth/token', {}, format='json').status_code, 400)
         self.assertEqual(self.client.get('/oauth/silent-signin').status_code, 404)
         self.assertEqual(self.client.post('/api/v1/provisioning/companies', {}, format='json').status_code, 404)
         self.assertEqual(self.client.post('/api/v1/federation/provision', {}, format='json').status_code, 404)

@@ -73,11 +73,24 @@ def deletion_services() -> list[tuple[str, str]]:
     Email takes part only when identity actually uses email-service (``EMAIL_SERVICE_API_KEY`` set),
     since ``EMAIL_SERVICE_URL`` always has a default.
     """
-    email = getattr(settings, 'EMAIL_SERVICE_URL', '') if getattr(settings, 'EMAIL_SERVICE_API_KEY', '') else ''
+    email = (
+        getattr(settings, 'EMAIL_SERVICE_HTTP_URL', '') or getattr(settings, 'EMAIL_SERVICE_URL', '')
+        if getattr(settings, 'EMAIL_SERVICE_API_KEY', '')
+        else ''
+    )
     services = [
-        ('STORAGE_SERVICE_URL', getattr(settings, 'STORAGE_SERVICE_URL', '')),
-        ('HOSTING_SERVICE_URL', getattr(settings, 'HOSTING_SERVICE_URL', '')),
-        ('EMAIL_SERVICE_URL' if getattr(settings, 'EMAIL_SERVICE_API_KEY', '') else 'EMAIL_SERVICE_API_KEY', email),
+        (
+            'STORAGE_SERVICE_URL',
+            getattr(settings, 'STORAGE_SERVICE_HTTP_URL', '') or getattr(settings, 'STORAGE_SERVICE_URL', ''),
+        ),
+        (
+            'HOSTING_SERVICE_URL',
+            getattr(settings, 'HOSTING_SERVICE_HTTP_URL', '') or getattr(settings, 'HOSTING_SERVICE_URL', ''),
+        ),
+        (
+            'EMAIL_SERVICE_URL' if getattr(settings, 'EMAIL_SERVICE_API_KEY', '') else 'EMAIL_SERVICE_API_KEY',
+            email,
+        ),
     ]
     return [(name, str(url or '').strip().rstrip('/')) for name, url in services]
 
@@ -172,7 +185,11 @@ def _purge_company(company: Company) -> bool:
 def _send_notice(notice: CompanyDeletionNotice) -> bool:
     from apps.actions.webhook_signing import encode_webhook_envelope, sign_webhook_body
 
-    url = (getattr(settings, 'DASHBOARD_WEBHOOK_URL', '') or '').strip()
+    url = (
+        getattr(settings, 'DASHBOARD_WEBHOOK_HTTP_URL', '')
+        or getattr(settings, 'DASHBOARD_WEBHOOK_URL', '')
+        or ''
+    ).strip()
     secret = (getattr(settings, 'DASHBOARD_WEBHOOK_SECRET', '') or '').strip()
     if not url or not secret:
         return False

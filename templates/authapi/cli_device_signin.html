@@ -1,0 +1,40 @@
+{% extends "agents/_mcp_base.html" %}
+{% block title %}{{ copy.title }}{% endblock %}
+{% block content %}
+    <h1>{{ copy.title }}</h1>
+    <p class="why">{{ lead }}</p>
+    {% if step_up_message %}<p class="note">{{ step_up_message }}</p>{% endif %}
+    <p class="note">{{ copy.staff_note }}</p>
+    {% if sent %}<p class="subtitle" role="status">{{ email_sent }}</p>{% endif %}
+    {% if email_unavailable %}<p class="note">{{ copy.email_unavailable }}</p>{% endif %}
+    {% if password_error %}<p class="warning" role="alert">{{ password_error }}</p>{% endif %}
+    {% if magic_link_enabled %}
+    <form method="post" action="">
+      {% csrf_token %}
+      <label for="email">{{ copy.email_label }}</label>
+      <input type="email" id="email" name="email" autocomplete="username" required maxlength="254">
+      <div class="actions">
+        <button type="submit" class="button">{{ copy.email_button }}</button>
+      </div>
+    </form>
+    {% endif %}
+    {% if providers %}
+    <h2>{{ copy.provider_heading }}</h2>
+    <div class="actions stack">
+      {% for provider in providers %}
+      <a class="button" href="{{ provider.url }}">{{ provider.label }}</a>
+      {% endfor %}
+    </div>
+    {% endif %}
+    <h2>{{ copy.password_heading }}</h2>
+    <form method="post" action="">
+      {% csrf_token %}
+      <label for="password_email">{{ copy.email_label }}</label>
+      <input type="email" id="password_email" name="email" autocomplete="username" required maxlength="254">
+      <label for="password">{{ copy.password_label }}</label>
+      <input type="password" id="password" name="password" autocomplete="current-password" required maxlength="256">
+      <div class="actions">
+        <button type="submit" class="button">{{ copy.password_button }}</button>
+      </div>
+    </form>
+{% endblock %}

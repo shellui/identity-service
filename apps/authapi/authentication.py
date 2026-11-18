@@ -15,6 +15,13 @@ from .models import PersonalAccessToken
 from .refresh_sessions import is_access_jti_denied
 
 
+def _verifying_key():
+    """HS* verifies with the shared secret; RS*/ES* must verify with the public key."""
+    if api_settings.ALGORITHM.startswith('HS'):
+        return api_settings.SIGNING_KEY
+    return api_settings.VERIFYING_KEY
+
+
 class ShellUIJWTAuthentication(JWTAuthentication):
     """Same as SimpleJWT, but rejects revoked PATs and mismatched ``jti`` / user."""
 
@@ -22,6 +29,9 @@ class ShellUIJWTAuthentication(JWTAuthentication):
         validated = self._decode_with_configured_keys(raw_token)
         if is_access_jti_denied(validated.get('jti')):
             raise InvalidToken({'detail': 'Access token revoked.'})
+        agent_id = validated.get('agent_id')
+        if agent_id is not None:
+            return self._validate_agent_access_token(validated)
         pat_id = validated.get('pat_id')
         if pat_id is None:
             return validated
@@ -58,7 +68,57 @@ class ShellUIJWTAuthentication(JWTAuthentication):
         PersonalAccessToken.objects.filter(pk=pat.pk).update(last_used_at=timezone.now())
         return validated
 
+    def _validate_agent_access_token(self, validated):
+        from apps.agents.models import Agent
+
+        try:
+            agent_uuid = uuid.UUID(str(validated.get('agent_id')))
+        except (TypeError, ValueError) as exc:
+            raise InvalidToken({'detail': 'Invalid agent id.'}) from exc
+        try:
+            agent = Agent.objects.select_related('created_by').get(pk=agent_uuid)
+        except Agent.DoesNotExist as exc:
+            raise InvalidToken({'detail': 'Agent not found.'}) from exc
+        if not agent.is_active:
+            raise InvalidToken({'detail': 'Agent is paused, revoked, or expired.'})
+        token_company = validated.get('company_id')
+        if token_company is None or int(agent.company_id) != int(token_company):
+            raise InvalidToken({'detail': 'Agent company mismatch.'})
+        return validated
+
+    def get_user(self, validated_token):
+        if validated_token.get('agent_id'):
+            from apps.agents.models import Agent
+
+            agent = Agent.objects.select_related('created_by').get(pk=validated_token['agent_id'])
+            user = agent.created_by
+            if user is None or not user.is_active:
+                raise InvalidToken({'detail': 'Agent owner unavailable.'})
+            return user
+        return super().get_user(validated_token)
+
+    def _decode_agent_jwt(self, raw_token: str) -> dict | None:
+        import jwt
+
+        issuer = api_settings.ISSUER or getattr(settings, 'JWT_ISSUER', None)
+        try:
+            payload = jwt.decode(
+                raw_token,
+                _verifying_key(),
+                algorithms=[api_settings.ALGORITHM],
+                issuer=issuer or None,
+                options={'require': ['exp', 'sub', 'agent_id', 'aud'], 'verify_aud': False},
+            )
+        except jwt.PyJWTError:
+            return None
+        if not str(payload.get('sub', '')).startswith('agent:'):
+            return None
+        return payload
+
     def _decode_with_configured_keys(self, raw_token):
+        agent_payload = self._decode_agent_jwt(raw_token)
+        if agent_payload is not None:
+            return agent_payload
         decode_errors: list[Exception] = []
         try:
             return super().get_validated_token(raw_token)

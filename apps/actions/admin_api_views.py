@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils.dateparse import parse_datetime
+from apps.authapi.openapi_admin import ADMIN_API_ERRORS, mcp_extend_schema_kwargs
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema, extend_schema_view
 from rest_framework import status
 from rest_framework.response import Response
@@ -132,9 +133,9 @@ def _sample_payload(event_type: str, company) -> dict:
 
 @extend_schema_view(
     get=extend_schema(
+        **mcp_extend_schema_kwargs('identity_list_action_events'),
+        responses={**ADMIN_API_ERRORS},
         tags=['actions-admin'],
-        summary='List registered action event types (staff or company owner)',
-        operation_id='api_v1_actions_events_list',
     ),
 )
 class ShellUIAdminActionEventsView(APIView):
@@ -163,16 +164,15 @@ class ShellUIAdminActionEventsView(APIView):
 
 @extend_schema_view(
     get=extend_schema(
+        **mcp_extend_schema_kwargs('identity_list_action_rules'),
+        responses={**ADMIN_API_ERRORS},
         tags=['actions-admin'],
-        summary='List company action rules (staff or company owner)',
-        operation_id='api_v1_actions_rules_list',
     ),
     post=extend_schema(
+        **mcp_extend_schema_kwargs('identity_create_action_rules'),
         tags=['actions-admin'],
-        summary='Create company action rule (staff or company owner)',
         request=ActionRuleCreateSerializer,
-        operation_id='api_v1_actions_rules_create',
-        responses={
+        responses={**ADMIN_API_ERRORS, 
             201: OpenApiResponse(
                 description=(
                     'Created webhook rule (same fields as GET ``/rules/<id>``) plus top-level '
@@ -219,20 +219,20 @@ class ShellUIAdminActionRuleListCreateView(APIView):
 
 @extend_schema_view(
     get=extend_schema(
+        **mcp_extend_schema_kwargs('identity_get_action_rules'),
+        responses={**ADMIN_API_ERRORS},
         tags=['actions-admin'],
-        summary='Retrieve company action rule (staff or company owner)',
-        operation_id='api_v1_actions_rules_retrieve',
     ),
     patch=extend_schema(
+        **mcp_extend_schema_kwargs('identity_update_action_rules'),
+        responses={**ADMIN_API_ERRORS},
         tags=['actions-admin'],
-        summary='Update company action rule (staff or company owner)',
         request=ActionRuleUpdateSerializer,
-        operation_id='api_v1_actions_rules_partial_update',
     ),
     delete=extend_schema(
+        **mcp_extend_schema_kwargs('identity_delete_action_rules'),
+        responses={**ADMIN_API_ERRORS},
         tags=['actions-admin'],
-        summary='Delete company action rule (staff or company owner)',
-        operation_id='api_v1_actions_rules_destroy',
     ),
 )
 class ShellUIAdminActionRuleDetailView(APIView):
@@ -282,10 +282,9 @@ class ShellUIAdminActionRuleDetailView(APIView):
 
 @extend_schema_view(
     post=extend_schema(
+        **mcp_extend_schema_kwargs('identity_send_test_rule'),
         tags=['actions-admin'],
-        summary='Send a sample webhook for an action rule (staff or company owner)',
-        operation_id='api_v1_actions_rules_send_test',
-        responses={
+        responses={**ADMIN_API_ERRORS, 
             200: OpenApiResponse(description='Sample webhook accepted by the endpoint'),
             400: OpenApiResponse(description='Delivery failed'),
         },
@@ -314,15 +313,9 @@ class ShellUIAdminActionRuleSendTestView(APIView):
 
 @extend_schema_view(
     post=extend_schema(
+        **mcp_extend_schema_kwargs('identity_rotate_rule_secret'),
         tags=['actions-admin'],
-        summary='Rotate webhook signing secret (staff or company owner)',
-        description=(
-            'Generates a new ``whsec_`` signing secret. Response matches GET '
-            '``/rules/<id>`` with top-level ``secret`` set to the new plaintext value. '
-            'Update your n8n credential before the next delivery attempt.'
-        ),
-        operation_id='api_v1_actions_rules_rotate_secret',
-        responses={
+        responses={**ADMIN_API_ERRORS, 
             200: OpenApiResponse(
                 description='Rule payload (same as GET) plus top-level ``secret`` (shown once)',
             ),
@@ -352,11 +345,24 @@ class ShellUIAdminActionRuleRotateSecretView(APIView):
 
 @extend_schema_view(
     get=extend_schema(
+        **mcp_extend_schema_kwargs('identity_list_action_deliveries'),
         tags=['actions-admin'],
-        summary='List action delivery log (staff or company owner)',
         parameters=[
-            OpenApiParameter(name='status', type=str, location=OpenApiParameter.QUERY, required=False),
-            OpenApiParameter(name='event_type', type=str, location=OpenApiParameter.QUERY, required=False),
+            OpenApiParameter(
+                name='status',
+                type=str,
+                location=OpenApiParameter.QUERY,
+                required=False,
+                enum=['pending', 'delivered', 'failed', 'dead'],
+                description='Delivery status.',
+            ),
+            OpenApiParameter(
+                name='event_type',
+                type=str,
+                location=OpenApiParameter.QUERY,
+                required=False,
+                description='Webhook event type id to filter on.',
+            ),
             OpenApiParameter(name='action_rule_id', type=int, location=OpenApiParameter.QUERY, required=False),
             OpenApiParameter(
                 name='scheduled_job_run_id',
@@ -373,8 +379,7 @@ class ShellUIAdminActionRuleRotateSecretView(APIView):
             OpenApiParameter(name='page', type=int, location=OpenApiParameter.QUERY, required=False),
             OpenApiParameter(name='page_size', type=int, location=OpenApiParameter.QUERY, required=False),
         ],
-        responses={200: OpenApiResponse(description='Paginated delivery log')},
-        operation_id='api_v1_actions_deliveries_list',
+        responses={**ADMIN_API_ERRORS, 200: OpenApiResponse(description='Paginated delivery log')},
     ),
 )
 class ShellUIAdminActionDeliveryListView(APIView):
@@ -456,13 +461,9 @@ class ShellUIAdminActionDeliveryListView(APIView):
 
 @extend_schema_view(
     get=extend_schema(
+        **mcp_extend_schema_kwargs('identity_get_action_deliveries'),
+        responses={**ADMIN_API_ERRORS},
         tags=['actions-admin'],
-        summary='Retrieve action delivery with attempts (staff or company owner)',
-        description=(
-            'Each attempt has `trigger`: `dispatch` (right after the event) or `automatic_retry` '
-            '(the `retry_webhooks` scheduled job). Staff also get `scheduled_job_run_id`.'
-        ),
-        operation_id='api_v1_actions_deliveries_retrieve',
     ),
 )
 class ShellUIAdminActionDeliveryDetailView(APIView):
@@ -482,9 +483,9 @@ class ShellUIAdminActionDeliveryDetailView(APIView):
 
 @extend_schema_view(
     post=extend_schema(
+        **mcp_extend_schema_kwargs('identity_requeue_action_deliveries'),
+        responses={**ADMIN_API_ERRORS},
         tags=['actions-admin'],
-        summary='Re-queue action delivery (staff or company owner)',
-        operation_id='api_v1_actions_deliveries_requeue',
     ),
 )
 class ShellUIAdminActionDeliveryRequeueView(APIView):
