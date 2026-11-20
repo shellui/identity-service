@@ -66,6 +66,29 @@ class UserPreference(models.Model):
         return f'UserPreference(user_id={self.user_id})'
 
 
+class UserNavigationOverlay(models.Model):
+    """Per-user Shellui navigation overlay (schema version 1).
+
+    Same scope as ``UserPreference``: one row per account, not per company.
+    Callers still present a bearer token for a company they belong to.
+    """
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        related_name='navigation_overlay',
+        on_delete=models.CASCADE,
+    )
+    document = models.JSONField()
+    updated_at = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['user_id']
+
+    def __str__(self) -> str:
+        return f'UserNavigationOverlay(user_id={self.user_id})'
+
+
 class PersonalAccessToken(models.Model):
     """
     Metadata for a long-lived JWT (Shellui access token shape with ``pat_id``, ``pat_ro``, ``pat_agm``).

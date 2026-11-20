@@ -196,33 +196,29 @@ def build_signed_saml_response(
         '{urn:oasis:names:tc:SAML:2.0:assertion}AuthnContextClassRef',
     ).text = 'urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport'
 
-    attr_statement = (
-        etree.SubElement(assertion, '{urn:oasis:names:tc:SAML:2.0:assertion}AttributeStatement')
-        if include_attributes
-        else None
-    )
-    if attr_statement is None:
-        _sign_assertion(assertion, creds)
-        raw = etree.tostring(response)
-        return base64.b64encode(raw).decode('ascii')
-    email_value = assertion_email or (name_id if '@' in name_id else f'{name_id}@example.com')
-    for attr_name, attr_value in (
-        ('urn:oid:0.9.2342.19200300.100.1.3', email_value),
-        ('urn:oasis:names:tc:SAML:attribute:subject-id', name_id),
-    ):
-        attr = etree.SubElement(
-            attr_statement,
-            '{urn:oasis:names:tc:SAML:2.0:assertion}Attribute',
-            Name=attr_name,
+    if include_attributes:
+        attr_statement = etree.SubElement(
+            assertion,
+            '{urn:oasis:names:tc:SAML:2.0:assertion}AttributeStatement',
         )
-        av = etree.SubElement(
-            attr,
-            '{urn:oasis:names:tc:SAML:2.0:assertion}AttributeValue',
-            attrib={
-                '{http://www.w3.org/2001/XMLSchema-instance}type': 'xs:string',
-            },
-        )
-        av.text = attr_value
+        email_value = assertion_email or (name_id if '@' in name_id else f'{name_id}@example.com')
+        for attr_name, attr_value in (
+            ('urn:oid:0.9.2342.19200300.100.1.3', email_value),
+            ('urn:oasis:names:tc:SAML:attribute:subject-id', name_id),
+        ):
+            attr = etree.SubElement(
+                attr_statement,
+                '{urn:oasis:names:tc:SAML:2.0:assertion}Attribute',
+                Name=attr_name,
+            )
+            av = etree.SubElement(
+                attr,
+                '{urn:oasis:names:tc:SAML:2.0:assertion}AttributeValue',
+                attrib={
+                    '{http://www.w3.org/2001/XMLSchema-instance}type': 'xs:string',
+                },
+            )
+            av.text = attr_value
 
     _sign_assertion(assertion, creds)
 

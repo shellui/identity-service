@@ -39,7 +39,7 @@ To unblock a last owner, make another member an owner. Owning another company ne
 What happens depends on whether the user belongs to other companies:
 
 - **Other companies remain**: only this company's membership and company-scoped data are removed. That covers refresh sessions, personal access tokens, OAuth delivery codes, magic link tokens, group memberships, ownership, and provider links (`SocialAccount`) for apps that only this company owns. The account and the other memberships stay
-- **This was the last company**: the `User` row is deleted, as in Django admin. Cascades remove memberships, provider links, preferences, personal access token records, refresh sessions, and SCIM fields tied to the user
+- **This was the last company**: the `User` row is deleted, as in Django admin. Cascades remove memberships, provider links, preferences, the navigation overlay, personal access token records, refresh sessions, and SCIM fields tied to the user
 
 A full delete also revokes every refresh session and personal access token of the user, in every company. In both cases, the current access token goes on the logout denylist, and sign-in events for the company stay in the [event log](event-log.md) without the user link.
 

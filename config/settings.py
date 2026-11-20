@@ -357,6 +357,10 @@ SPECTACULAR_SETTINGS = {
         {'name': 'auth-social', 'description': 'OAuth/social login flow endpoints.'},
         {'name': 'auth-profile', 'description': 'Current authenticated user profile and metadata.'},
         {'name': 'auth-preferences', 'description': 'Current authenticated user preferences.'},
+        {
+            'name': 'auth-navigation',
+            'description': 'Per-user Shellui navigation overlay for the authenticated account.',
+        },
         {'name': 'directory-users', 'description': 'User directory management for staff/company owners.'},
         {'name': 'directory-groups', 'description': 'Group management for staff/company owners.'},
         {'name': 'oauth-clients', 'description': 'Company OAuth client mappings.'},

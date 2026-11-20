@@ -42,6 +42,7 @@ const sidebars = {
       doc('company-access', 'Company access'),
       doc('scim', 'SCIM provisioning'),
       doc('account-deletion', 'Account deletion'),
+      doc('navigation-overlay', 'Navigation overlay'),
     ]),
     category('Tokens', [
       doc('jwks', 'JWT and JWKS'),

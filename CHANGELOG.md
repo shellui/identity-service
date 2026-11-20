@@ -21,6 +21,12 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
 -->
 
+## [Unreleased]
+
+### ✨ Feature
+
+- `GET`, `PUT`, and `DELETE /api/v1/navigation-overlay` store one Shellui navigation overlay per account. The token must belong to a company that account is a member of. Third-party installed apps can request only `theme`, `locale`, `ui`, `navigate`, `storage`, and `ai`. The raw body is limited to 64 KB and `installedApps` to 100 entries.
+
 ## [0.12.0] - 2026-11-18
 
 ### Upgrade notes

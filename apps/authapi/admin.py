@@ -9,7 +9,7 @@ from apps.actions.user_hooks import (
 )
 from apps.authapi.account_lifecycle import delete_user_account
 
-from .models import PersonalAccessToken, UserActivity, UserPreference
+from .models import PersonalAccessToken, UserActivity, UserNavigationOverlay, UserPreference
 
 User = get_user_model()
 
@@ -193,3 +193,12 @@ class UserPreferenceAdmin(admin.ModelAdmin):
     search_fields = ('user__username', 'user__email', 'theme_name', 'region')
     ordering = ('user_id',)
     readonly_fields = ('created_at', 'updated_at')
+
+
+@admin.register(UserNavigationOverlay)
+class UserNavigationOverlayAdmin(admin.ModelAdmin):
+    list_display = ('id', 'user', 'updated_at', 'created_at')
+    list_select_related = ('user',)
+    search_fields = ('user__username', 'user__email')
+    ordering = ('user_id',)
+    readonly_fields = ('user', 'document', 'created_at', 'updated_at')
