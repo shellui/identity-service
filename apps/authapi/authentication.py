@@ -22,6 +22,53 @@ def _verifying_key():
     return api_settings.VERIFYING_KEY
 
 
+def _is_mcp_endpoint(request) -> bool:
+    path = getattr(request, 'path', '') or ''
+    return path.rstrip('/') == '/mcp'
+
+
+def _is_agent_token(validated) -> bool:
+    if validated is None or not hasattr(validated, 'get'):
+        return False
+    if validated.get('agent_id') is not None:
+        return True
+    return str(validated.get('sub') or '').startswith('agent:')
+
+
+def _reject_revoked_agent_refresh(validated) -> None:
+    """A revoked or unknown agent refresh session is not a bearer."""
+    from apps.agents.models import AgentRefreshSession
+
+    jti = str(validated.get('jti') or '').strip()
+    if not jti:
+        raise InvalidToken({'detail': 'Refresh token revoked or unknown.'})
+    try:
+        agent_uuid = uuid.UUID(str(validated.get('agent_id')))
+    except (TypeError, ValueError) as exc:
+        raise InvalidToken({'detail': 'Refresh token revoked or unknown.'}) from exc
+    try:
+        session = AgentRefreshSession.objects.get(jti=jti, agent_id=agent_uuid)
+    except AgentRefreshSession.DoesNotExist as exc:
+        raise InvalidToken({'detail': 'Refresh token revoked or unknown.'}) from exc
+    if session.revoked_at is not None or session.expires_at <= timezone.now():
+        raise InvalidToken({'detail': 'Refresh token revoked.'})
+
+
+def _reject_revoked_user_refresh(validated) -> None:
+    """A revoked or unknown user refresh session is not a bearer."""
+    from .models import RefreshTokenSession
+
+    jti = str(validated.get('jti') or '').strip()
+    if not jti:
+        raise InvalidToken({'detail': 'Refresh token revoked or unknown.'})
+    try:
+        session = RefreshTokenSession.objects.get(jti=jti)
+    except RefreshTokenSession.DoesNotExist as exc:
+        raise InvalidToken({'detail': 'Refresh token revoked or unknown.'}) from exc
+    if session.revoked_at is not None or session.expires_at <= timezone.now():
+        raise InvalidToken({'detail': 'Refresh token revoked.'})
+
+
 class ShellUIJWTAuthentication(JWTAuthentication):
     """Same as SimpleJWT, but rejects revoked PATs and mismatched ``jti`` / user."""
 
@@ -29,9 +76,9 @@ class ShellUIJWTAuthentication(JWTAuthentication):
         validated = self._decode_with_configured_keys(raw_token)
         if is_access_jti_denied(validated.get('jti')):
             raise InvalidToken({'detail': 'Access token revoked.'})
-        agent_id = validated.get('agent_id')
-        if agent_id is not None:
+        if _is_agent_token(validated):
             return self._validate_agent_access_token(validated)
+        self._require_identity_access_token(validated)
         pat_id = validated.get('pat_id')
         if pat_id is None:
             return validated
@@ -68,9 +115,26 @@ class ShellUIJWTAuthentication(JWTAuthentication):
         PersonalAccessToken.objects.filter(pk=pat.pk).update(last_used_at=timezone.now())
         return validated
 
+    def authenticate(self, request):
+        header = self.get_header(request)
+        if header is None:
+            return None
+        raw_token = self.get_raw_token(header)
+        if raw_token is None:
+            return None
+        validated_token = self.get_validated_token(raw_token)
+        if _is_agent_token(validated_token) and not _is_mcp_endpoint(request):
+            raise InvalidToken({'detail': 'Agent tokens are only accepted on the MCP endpoint.'})
+        return self.get_user(validated_token), validated_token
+
     def _validate_agent_access_token(self, validated):
         from apps.agents.models import Agent
 
+        token_type = str(validated.get('token_type') or '')
+        if token_type != 'access':
+            if token_type == 'refresh':
+                _reject_revoked_agent_refresh(validated)
+            raise InvalidToken({'detail': 'Bearer authentication requires an access token.'})
         try:
             agent_uuid = uuid.UUID(str(validated.get('agent_id')))
         except (TypeError, ValueError) as exc:
@@ -87,15 +151,42 @@ class ShellUIJWTAuthentication(JWTAuthentication):
         return validated
 
     def get_user(self, validated_token):
-        if validated_token.get('agent_id'):
+        if _is_agent_token(validated_token):
             from apps.agents.models import Agent
 
             agent = Agent.objects.select_related('created_by').get(pk=validated_token['agent_id'])
             user = agent.created_by
             if user is None or not user.is_active:
-                raise InvalidToken({'detail': 'Agent owner unavailable.'})
+                raise InvalidToken({'detail': 'Agent user unavailable.'})
+            # Company role stays the user's membership. This does not grant owner.
+            claim_owner = validated_token.get('owner_user_id')
+            if claim_owner is not None and int(claim_owner) != int(user.pk):
+                raise InvalidToken({'detail': 'Agent user mismatch.'})
             return user
         return super().get_user(validated_token)
+
+    def _require_identity_access_token(self, validated):
+        """Bearer calls outside an agent token need an access token for JWT_AUDIENCE."""
+        token_type = str(validated.get('token_type') or '')
+        if token_type == 'refresh':
+            _reject_revoked_user_refresh(validated)
+            raise InvalidToken({'detail': 'Bearer authentication requires an access token.'})
+        if token_type != 'access':
+            raise InvalidToken({'detail': 'Bearer authentication requires an access token.'})
+        # ``api_settings.AUDIENCE`` is the identity audience baked into access tokens.
+        # Tests often override ``JWT_AUDIENCE`` without reissuing that claim.
+        expected = getattr(api_settings, 'AUDIENCE', None)
+        if not expected:
+            return
+        aud = validated.get('aud')
+        if isinstance(aud, str):
+            matches = aud == expected
+        elif isinstance(aud, (list, tuple)):
+            matches = expected in aud
+        else:
+            matches = False
+        if not matches:
+            raise InvalidToken({'detail': 'Token audience is not the identity audience.'})
 
     def _decode_agent_jwt(self, raw_token: str) -> dict | None:
         import jwt

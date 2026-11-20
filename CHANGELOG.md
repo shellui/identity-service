@@ -21,6 +21,22 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
 -->
 
+## [Unreleased]
+
+### Upgrade notes
+
+- When the process starts with `DEBUG=false`, Django staff sign-in at `/admin/login/` requires a confirmed authenticator and locks the account after repeated failures. A process that starts with `DEBUG=true` still asks for the password only. `STAFF_ADMIN_LOGIN_HARDENED` overrides that. Enroll with `python manage.py enroll_staff_totp <username>`, then confirm with `--code`. Defaults are `STAFF_ADMIN_LOCKOUT_FAILURES=5` and `STAFF_ADMIN_LOCKOUT_SECONDS=900`. See [Security hardening](docs/security-hardening.md#django-admin-staff-sign-in).
+- An MCP agent access token is accepted as a bearer only on `POST /mcp`. Company admin HTTP routes require an access token whose audience is `JWT_AUDIENCE`. A refresh token is not a bearer, including after its session is revoked. On `/mcp`, the call runs as the creating user and keeps that user's company role.
+
+### 🚨 Changed
+
+- User token exchange refuses `is_global_staff` the same way it refuses `is_staff` and `is_superuser`.
+- Django staff sign-in uses a per-account lockout and a TOTP authenticator when `DEBUG` is false.
+
+### 🔒 Security
+
+- Agent access tokens authenticate only on `POST /mcp`. Refresh tokens are refused as bearer tokens, and a revoked refresh session stays refused.
+
 ## [0.12.0] - 2026-11-18
 
 ### Upgrade notes
