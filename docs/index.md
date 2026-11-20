@@ -97,6 +97,7 @@ Pick the row that matches what you are doing today:
 | Connect a headless MCP agent without pasting a token | [MCP device login](mcp-device-flow.md) |
 | Run automation when users join or leave | [Webhooks](actions.md) and [n8n](n8n.md) |
 | Audit sign-ins and changes | [Event log](event-log.md) |
+| Save navigation layout for an account | [Navigation overlay](navigation-overlay.md) |
 | Harden a production install | [Security hardening](security-hardening.md) |
 | Upgrade from an older release | [Upgrade notes](upgrading.md) |
 
@@ -111,6 +112,7 @@ These are the endpoints you meet first. The full, interactive reference is serve
 | `POST /api/v1/oauth/session` | Exchange the one-time `shellui_auth_code` for tokens |
 | `POST /api/v1/token?grant_type=refresh_token` | Refresh a session |
 | `GET /api/v1/user` | Current user profile and `user_metadata` |
+| `GET`, `PUT`, `DELETE /api/v1/navigation-overlay` | Saved navigation overlay for the signed-in account |
 | `GET /.well-known/jwks.json` | Public keys for token verification |
 | `GET /health/live` | Liveness probe for load balancers |
 
