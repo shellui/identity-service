@@ -17,6 +17,7 @@ from django.dispatch import receiver
 
 from .login_audit import LoginOutcome, record_login_event
 from .magic_link import delete_unused_magic_link_tokens_for_user, is_staff_account
+from .staff_admin_login import clear_staff_login_failures, record_staff_login_failure
 from .user_activity import touch_user_last_seen
 
 User = get_user_model()
@@ -54,6 +55,7 @@ def login_event_on_admin_session_login(sender, request, user, **kwargs):
         provider=PROVIDER_DJANGO_ADMIN,
         user=user,
     )
+    clear_staff_login_failures(user)
     touch_user_last_seen(user)
 
 
@@ -69,6 +71,7 @@ def login_event_on_admin_session_login_failed(sender, credentials, request, **kw
         user=candidate,
         failure_reason='Invalid credentials',
     )
+    record_staff_login_failure(candidate)
 
 
 @receiver(post_save, sender=User, dispatch_uid='authapi_staff_magic_link_tokens')

@@ -25,6 +25,24 @@ Abuse-prone endpoints are rate limited, with counters in the shared cache (Redis
 
 `AUTH_RATE_LIMIT_ENABLED=false` turns all limits off. Do not do this in production.
 
+## Django admin staff sign-in
+
+`POST /admin/login/` keeps the per-IP limit above. When the process starts with `DEBUG=false`, it also locks the staff account and asks for an authenticator code. `STAFF_ADMIN_LOGIN_HARDENED=false` turns those two controls off. `STAFF_ADMIN_LOGIN_HARDENED=true` turns them on even if `DEBUG=true`.
+
+| Control | Default | When |
+| --- | --- | --- |
+| Per-account lockout | 5 failures, then 900 seconds | `DEBUG` is false. `STAFF_ADMIN_LOCKOUT_FAILURES`, `STAFF_ADMIN_LOCKOUT_SECONDS` |
+| Authenticator code (TOTP) | 6 digits, 30 second step, SHA-1 | `DEBUG` is false. `DEBUG=true` asks for the password only |
+
+Enroll each staff account before production sign-in. The command prints a secret and an `otpauth://` URI. Add that URI to an authenticator app, then confirm with a current code:
+
+```bash
+python manage.py enroll_staff_totp your_staff_username
+python manage.py enroll_staff_totp your_staff_username --code 123456
+```
+
+`your_staff_username` is the Django username. `123456` stands in for the 6-digit code the app shows. `--rotate` replaces a confirmed secret. The next sign-in must use a code from the new secret. The database stores the secret. A staff account with no confirmed secret cannot sign in while `DEBUG` is false.
+
 ## HTTPS and cookies
 
 With `DEBUG=false`, these settings default to on. Each can be overridden with an environment variable of the same name (see `.env.example`):

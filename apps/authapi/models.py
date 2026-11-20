@@ -66,6 +66,23 @@ class UserPreference(models.Model):
         return f'UserPreference(user_id={self.user_id})'
 
 
+class StaffAdminGuard(models.Model):
+    """Per-account lockout and TOTP secret for Django staff sign-in."""
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='staff_admin_guard',
+    )
+    totp_secret = models.CharField(max_length=64, blank=True, default='')
+    totp_confirmed_at = models.DateTimeField(null=True, blank=True)
+    failed_attempts = models.PositiveIntegerField(default=0)
+    locked_until = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self) -> str:
+        return f'StaffAdminGuard(user_id={self.user_id})'
+
+
 class PersonalAccessToken(models.Model):
     """
     Metadata for a long-lived JWT (Shellui access token shape with ``pat_id`` and ``pat_ro``).

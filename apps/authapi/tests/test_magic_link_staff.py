@@ -418,6 +418,7 @@ class StaffTokenInvalidationTests(_Base):
 
 @override_settings(**_SETTINGS)
 class StaffOtherSignInMethodsTests(_Base):
+    @override_settings(STAFF_ADMIN_LOGIN_HARDENED=False)
     def test_staff_password_login_in_django_admin_still_works(self):
         response = Client().post('/admin/login/?next=/admin/', {'username': 'ops', 'password': 'pw-staff', 'next': '/admin/'})
         self.assertEqual(response.status_code, 302)

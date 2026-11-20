@@ -412,6 +412,8 @@ Refresh tokens use `grant_type=refresh_token` at `POST /oauth/token` (or `POST /
 
 Regional Identity deployments scope agents to the company only (no `project_scope` in consent or JWT). Project binding for SaaS is enforced in saas-service.
 
+An agent access token is a bearer only on `POST /mcp`. There it acts as the user in `owner_user_id` (`Agent.created_by`). Company role stays that user's membership: the token does not make a member an owner. Other routes, including the company admin HTTP API, require an access token whose `aud` is `JWT_AUDIENCE`. A refresh token is not a bearer. A revoked agent refresh session is rejected.
+
 Agent bearer tokens cannot pause, revoke, approve, list call logs, or change agent settings. Those admin routes require a human company owner token (`allow_agent_token=false`) and are not exported as MCP tools. Identity `/mcp` exposes the company admin operations on the MCP allowlist. Service discovery is `identity_list_services`.
 
 Staff accounts cannot call `/api/v1/mcp/*` company admin APIs (same refusal as MCP OAuth).
