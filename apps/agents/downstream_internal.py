@@ -131,10 +131,12 @@ class McpDownstreamAccessTokenView(APIView):
         if not jti or not _consume_request_jti(jti):
             return Response({'error': 'Delegation request already used.'}, status=status.HTTP_401_UNAUTHORIZED)
 
+        grant = claims.get('mcp_gateway_delegated')
+        action = str(grant.get('action') or '').strip() if isinstance(grant, dict) else ''
         try:
-            # Mark tokens minted for the AI company gateway so downstream /mcp servers
-            # do not open a second human approval after the gateway already consumed one.
-            access_token = encode_access_token(agent, resource=resource, gateway_delegated=True)
+            # The signed request names the tool the AI gateway already approved, so the
+            # downstream /mcp server skips a second approval for that tool only.
+            access_token = encode_access_token(agent, resource=resource, gateway_delegated_action=action)
         except ValueError:
             return Response({'error': 'Agent cannot issue tokens.'}, status=status.HTTP_403_FORBIDDEN)
         return Response({'access_token': access_token})

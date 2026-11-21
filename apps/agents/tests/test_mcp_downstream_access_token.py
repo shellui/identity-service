@@ -50,8 +50,9 @@ def _delegation_request(
     resource: str,
     issuer: str = AI_ISSUER,
     ttl: int = 60,
+    action: str = '',
 ) -> str:
-    return sign_downstream_token_request(
+    token = sign_downstream_token_request(
         private_pem,
         kid,
         issuer,
@@ -60,6 +61,12 @@ def _delegation_request(
         resource,
         ttl,
     )
+    if not action:
+        return token
+    # Same shape ai-service adds: re-sign the request with the approved tool.
+    claims = jwt.decode(token, options={'verify_signature': False})
+    claims['mcp_gateway_delegated'] = {'action': action, 'exp': claims['exp']}
+    return jwt.encode(claims, private_pem, algorithm='RS256', headers={'kid': kid})
 
 
 def _post_mint(client, *, token: str, agent_id: str, company_id: int, resource: str):
@@ -155,7 +162,7 @@ class McpDownstreamAccessTokenTests(TestCase):
         )
 
     def test_mints_access_token_for_allowed_resource(self):
-        token = self._sign()
+        token = self._sign(action='storage_list_files')
         response = _post_mint(
             self.client,
             token=token,
@@ -170,7 +177,10 @@ class McpDownstreamAccessTokenTests(TestCase):
         self.assertEqual(payload['agent_id'], str(self.agent.id))
         self.assertEqual(payload['company_id'], self.company.id)
         self.assertEqual(payload['company_name'], self.company.name)
-        self.assertTrue(payload.get('mcp_gateway_delegated'))
+        self.assertEqual(
+            payload.get('mcp_gateway_delegated'),
+            {'action': 'storage_list_files', 'exp': payload['exp']},
+        )
         self.assertEqual(payload['owner_user_id'], self.owner.pk)
         self.assertIsInstance(payload['owner_user_id'], int)
         self.assertNotIsInstance(payload['owner_user_id'], bool)

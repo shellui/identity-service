@@ -30,6 +30,7 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 ### 🚨 Changed
 
+- A downstream token minted for ai-service carries `mcp_gateway_delegated` as `{"action": "<tool name>", "exp": <unix seconds>}` only when the signed mint request names the approved tool. The `true` value is no longer issued, since `shellui-django` 0.6 and later ignore it.
 - User token exchange refuses `is_global_staff` the same way it refuses `is_staff` and `is_superuser`.
 - Django staff sign-in uses a per-account lockout and a TOTP authenticator when `DEBUG` is false.
 
