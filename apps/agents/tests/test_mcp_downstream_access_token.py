@@ -62,10 +62,13 @@ def _delegation_request(
     )
 
 
-def _post_mint(client, *, token: str, agent_id: str, company_id: int, resource: str):
+def _post_mint(client, *, token: str, agent_id: str, company_id: int, resource: str, action: str = ''):
+    body = {'agent_id': agent_id, 'company_id': company_id, 'resource': resource}
+    if action:
+        body['action'] = action
     return client.post(
         PATH,
-        data=json.dumps({'agent_id': agent_id, 'company_id': company_id, 'resource': resource}),
+        data=json.dumps(body),
         content_type='application/json',
         HTTP_AUTHORIZATION=f'Bearer {token}',
     )
@@ -162,6 +165,7 @@ class McpDownstreamAccessTokenTests(TestCase):
             agent_id=str(self.agent.id),
             company_id=self.company.id,
             resource=STORAGE_MCP,
+            action='storage_list_files',
         )
         self.assertEqual(response.status_code, 200)
         access = response.json()['access_token']
@@ -170,7 +174,10 @@ class McpDownstreamAccessTokenTests(TestCase):
         self.assertEqual(payload['agent_id'], str(self.agent.id))
         self.assertEqual(payload['company_id'], self.company.id)
         self.assertEqual(payload['company_name'], self.company.name)
-        self.assertTrue(payload.get('mcp_gateway_delegated'))
+        self.assertEqual(
+            payload.get('mcp_gateway_delegated'),
+            {'action': 'storage_list_files', 'exp': payload['exp']},
+        )
         self.assertEqual(payload['owner_user_id'], self.owner.pk)
         self.assertIsInstance(payload['owner_user_id'], int)
         self.assertNotIsInstance(payload['owner_user_id'], bool)

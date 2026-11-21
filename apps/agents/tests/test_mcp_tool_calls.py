@@ -14,6 +14,7 @@ from apps.actions.models import ActionOutbox, ActionRule
 from apps.actions.webhook_signing import generate_webhook_signing_secret
 from apps.actions.webhook_transport import WebhookPostResult
 from apps.agents.models import Agent, McpApprovalRequest, McpCallLog
+from apps.agents.tests.mcp_test_settings import McpEndpointSigningMixin
 from apps.agents.tokens import encode_access_token
 from apps.authapi.models import PersonalAccessToken
 from apps.authapi.openapi_mcp_registry import MCP_SPECS
@@ -44,7 +45,7 @@ def _rpc(method: str, **params) -> str:
     EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend',
     MAGIC_LINK_ENABLED=True,
 )
-class McpToolCallTests(TestCase):
+class McpToolCallTests(McpEndpointSigningMixin, TestCase):
     def setUp(self):
         self.company = Company.objects.create(name='Tool Co', slug='tool-co', enable_magic_link=True)
         self.owner = User.objects.create_user(

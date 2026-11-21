@@ -40,6 +40,8 @@ To create the superuser from the command line instead:
 docker compose exec -u appuser identity-service python manage.py createsuperuser
 ```
 
+With `DEBUG=false`, that account also needs an authenticator before `/admin/login/` accepts the password. [Django admin staff sign-in](security-hardening.md#django-admin-staff-sign-in) has the enroll command. `DEBUG=true` (this Compose file) asks for the password only.
+
 ### Run without Docker
 
 To work on the code, run identity-service with [uv](https://docs.astral.sh/uv/). With `DEBUG=true` and no `REDIS_URL`, it uses an in-process cache and skips the scheduled jobs:

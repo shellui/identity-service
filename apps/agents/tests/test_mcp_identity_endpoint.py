@@ -9,6 +9,7 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 
 from apps.agents.models import Agent, McpCallLog
+from apps.agents.tests.mcp_test_settings import McpEndpointSigningMixin
 from apps.agents.tokens import encode_access_token
 from apps.companies.access import set_company_access
 from apps.companies.models import Company
@@ -29,7 +30,7 @@ def _rpc(method: str, **params):
     STORAGE_SERVICE_URL='https://storage.test',
     AUTH_RATE_LIMIT_ENABLED=False,
 )
-class McpIdentityEndpointTests(TestCase):
+class McpIdentityEndpointTests(McpEndpointSigningMixin, TestCase):
     def setUp(self):
         self.company = Company.objects.create(name='Local Co', slug='local-co')
         self.owner = User.objects.create_user(username='local-owner', password='unused')
@@ -57,40 +58,27 @@ class McpIdentityEndpointTests(TestCase):
         self.assertIn('identity_list_services', names)
 
     @patch('requests.post')
-    def test_agent_claims_as_plain_dict_are_accepted(self, post):
-        """The RS256 agent path authenticates with a claims dict, not a simplejwt token object."""
-        import jwt
-
-        claims = jwt.decode(self.token, options={'verify_signature': False})
-        with patch(
-            'apps.agents.mcp_views.ShellUIJWTAuthentication.authenticate',
-            return_value=(self.owner, dict(claims)),
-        ):
-            response = self.client.post(
-                '/mcp',
-                data=_rpc('tools/list'),
-                content_type='application/json',
-                HTTP_AUTHORIZATION=f'Bearer {self.token}',
-            )
+    def test_verified_bearer_is_accepted(self, post):
+        """POST /mcp verifies the bearer. A caller-supplied user is not trusted."""
+        response = self.client.post(
+            '/mcp',
+            data=_rpc('tools/list'),
+            content_type='application/json',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
         self.assertEqual(response.status_code, 200)
         self.assertIn('result', response.json())
+        post.assert_not_called()
 
     def test_agent_claims_for_another_resource_are_refused(self):
-        import jwt
-
         other = encode_access_token(self.agent, resource='https://storage.test/mcp')
-        claims = jwt.decode(other, options={'verify_signature': False})
-        with patch(
-            'apps.agents.mcp_views.ShellUIJWTAuthentication.authenticate',
-            return_value=(self.owner, dict(claims)),
-        ):
-            response = self.client.post(
-                '/mcp',
-                data=_rpc('tools/list'),
-                content_type='application/json',
-                HTTP_AUTHORIZATION=f'Bearer {other}',
-            )
-        self.assertNotIn('result', response.json() if response.status_code == 200 else {})
+        response = self.client.post(
+            '/mcp',
+            data=_rpc('tools/list'),
+            content_type='application/json',
+            HTTP_AUTHORIZATION=f'Bearer {other}',
+        )
+        self.assertEqual(response.status_code, 401)
 
     def test_tools_call_does_not_write_call_log(self):
         response = self.client.post(

@@ -13,6 +13,28 @@ from shellui_django.mcp.internal import APPROVAL_AUDIENCE, APPROVAL_SCOPE
 
 from apps.authapi.jwks import build_jwks_document, generate_rsa_key_pair, load_signing_key
 
+# One RS256 key for identity ``POST /mcp`` tests. shellui-django 0.6.0 verifies
+# the bearer with this deployment's JWKS and rejects HS256.
+_MCP_TEST_PRIVATE, _MCP_TEST_PUBLIC = generate_rsa_key_pair(2048)
+MCP_TEST_SIGNING_KEY = load_signing_key(private_pem=_MCP_TEST_PRIVATE, public_pem=_MCP_TEST_PUBLIC)
+MCP_TEST_JWKS = build_jwks_document(MCP_TEST_SIGNING_KEY)
+
+
+class McpEndpointSigningMixin:
+    """Sign agent tokens with the same RS256 key ``POST /mcp`` verifies."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls._mcp_jwt = override_settings(
+            JWT_SIGNING_KEY=MCP_TEST_SIGNING_KEY,
+            JWT_ACTIVE_KEY_ID=MCP_TEST_SIGNING_KEY.kid,
+            JWT_ALGORITHM='RS256',
+            JWKS_ENABLED=True,
+        )
+        cls._mcp_jwt.enable()
+        cls.addClassCleanup(cls._mcp_jwt.disable)
+
 
 @contextmanager
 def rs256_identity_settings():

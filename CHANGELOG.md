@@ -21,6 +21,24 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
 -->
 
+## [Unreleased]
+
+### Upgrade notes
+
+- `shellui-django[mcp]` is `0.6.0`. `POST /mcp` verifies the agent bearer with `JWT_ISSUER`, audience `{JWT_ISSUER}/mcp`, and this deployment's JWKS. Set `JWT_PRIVATE_KEY` or that route rejects every token. Downstream mint accepts optional JSON `action`. When set, `mcp_gateway_delegated` is `{"action": "<tool name>", "exp": <unix seconds>}`.
+- When the process starts with `DEBUG=false`, Django staff sign-in at `/admin/login/` requires a confirmed authenticator and locks the account after repeated failures. A process that starts with `DEBUG=true` still asks for the password only. `STAFF_ADMIN_LOGIN_HARDENED` overrides that. Enroll with `python manage.py enroll_staff_totp <username>`, then confirm with `--code`. Defaults are `STAFF_ADMIN_LOCKOUT_FAILURES=5` and `STAFF_ADMIN_LOCKOUT_SECONDS=900`. See [Security hardening](docs/security-hardening.md#django-admin-staff-sign-in).
+- An MCP agent access token is accepted as a bearer only on `POST /mcp`. Company admin HTTP routes require an access token whose audience is `JWT_AUDIENCE`. A refresh token is not a bearer, including after its session is revoked. On `/mcp`, the call runs as the creating user and keeps that user's company role.
+
+### 🚨 Changed
+
+- Use `shellui-django[mcp]==0.6.0`. `POST /mcp` checks the bearer against this deployment's issuer, MCP audience, and JWKS.
+- User token exchange refuses `is_global_staff` the same way it refuses `is_staff` and `is_superuser`.
+- Django staff sign-in uses a per-account lockout and a TOTP authenticator when `DEBUG` is false.
+
+### 🔒 Security
+
+- Agent access tokens authenticate only on `POST /mcp`. Refresh tokens are refused as bearer tokens, and a revoked refresh session stays refused.
+
 ## [0.12.0] - 2026-11-18
 
 ### Upgrade notes

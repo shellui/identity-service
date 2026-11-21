@@ -131,7 +131,11 @@ class McpDownstreamAccessTokenView(APIView):
         try:
             # Mark tokens minted for the AI company gateway so downstream /mcp servers
             # do not open a second human approval after the gateway already consumed one.
-            access_token = encode_access_token(agent, resource=resource, gateway_delegated=True)
+            access_token = encode_access_token(
+                agent,
+                resource=resource,
+                gateway_delegated_action=_body_field(body, 'action'),
+            )
         except ValueError:
             return Response({'error': 'Agent cannot issue tokens.'}, status=status.HTTP_403_FORBIDDEN)
         return Response({'access_token': access_token})

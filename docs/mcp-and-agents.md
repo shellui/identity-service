@@ -369,7 +369,7 @@ When ai-service forwards `tools/call` to storage, hosting, email, SaaS, or Ident
 
 - **Endpoint:** `POST /api/v1/mcp/internal/mcp-downstream-access-token` (answers **404** unless `AI_SERVICE_URL`, `AI_SERVICE_ISSUER`, and pinned `AI_SERVICE_JWKS` or `AI_SERVICE_JWKS_URL` are set).
 - **Authorization:** `Bearer` RS256 delegation JWT signed by ai-service (`shellui_django.mcp.delegation.sign_downstream_token_request` on the caller). Identity verifies with `verify_downstream_token_request` against ai-service JWKS and expected issuer `AI_SERVICE_ISSUER`. Audience `shellui-mcp-downstream-token`, scope `mcp.downstream_token.mint`. Claims include `agent_id`, `company_id`, `resource`, and single-use `jti` (cached on Identity).
-- **JSON body:** `{ "agent_id": "<uuid>", "company_id": <int>, "resource": "<canonical /mcp URL>" }` must match the JWT claims.
+- **JSON body:** `{ "agent_id": "<uuid>", "company_id": <int>, "resource": "<canonical /mcp URL>", "action": "<tool name>" }`. `agent_id`, `company_id`, and `resource` must match the JWT claims. `action` is optional. When it is set, the access token includes `mcp_gateway_delegated` as `{"action": "<tool name>", "exp": <unix seconds>}`.
 - **Response:** `{ "access_token": "<Identity RS256 agent JWT>" }` with the same agent claims as OAuth, `aud` narrowed to `resource`. `owner_user_id` is included when the agent has an owner user.
 - **Checks:** agent exists, active, not revoked, belongs to `company_id`; `resource` is exactly one configured service `/mcp` URL and allowed in the agent's `services_allowed`. Per-agent and global rate limits apply. Identity never logs minted tokens.
 
@@ -405,12 +405,15 @@ Access tokens include:
 | `mcp_access` | `read_only`, `ask`, or `full` |
 | `mcp_read` | `safe` or `sensitive` |
 | `mcp_destructive` | Boolean on the JWT; `true` only for non-delegated agents that still have legacy `allow_destructive_without_asking`. Always `false` when `mcp_authority` is **`delegated`**. |
+| `mcp_gateway_delegated` | Object `{"action": "<tool name>", "exp": <unix seconds>}` on a downstream token minted for one tool. Omitted when the mint request has no `action`. A boolean does not skip approval |
 
 Personal tokens, OAuth authorization-code tokens, device-login tokens, tokens from agent token exchange, access tokens rotated with `refresh_token`, and downstream tokens minted for ai-service all follow that rule. A global agent or a company service agent with no `created_by` user omits `owner_user_id`.
 
 Refresh tokens use `grant_type=refresh_token` at `POST /oauth/token` (or `POST /oauth/mcp/token`) with the same `resource` parameter. Each refresh token is bound to one resource. The new access token keeps `owner_user_id` when the agent still has an owner user.
 
 Regional Identity deployments scope agents to the company only (no `project_scope` in consent or JWT). Project binding for SaaS is enforced in saas-service.
+
+`POST /mcp` verifies the bearer itself: RS256, `iss` equal to `JWT_ISSUER`, `aud` equal to `{JWT_ISSUER}/mcp`, and a key from this deployment's JWKS (`JWT_PRIVATE_KEY`). It does not fetch a JWKS URL. A paused, revoked, or expired agent is rejected. Set `JWT_PRIVATE_KEY` and `JWT_ISSUER` before calling `/mcp`, including in local Compose. An agent access token is a bearer only on that route. There it acts as the user in `owner_user_id` (`Agent.created_by`). Company role stays that user's membership: the token does not make a member an owner. Other routes, including the company admin HTTP API, require an access token whose `aud` is `JWT_AUDIENCE`. A refresh token is not a bearer. A revoked agent refresh session is rejected.
 
 Agent bearer tokens cannot pause, revoke, approve, list call logs, or change agent settings. Those admin routes require a human company owner token (`allow_agent_token=false`) and are not exported as MCP tools. Identity `/mcp` exposes the company admin operations on the MCP allowlist. Service discovery is `identity_list_services`.
 
