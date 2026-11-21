@@ -71,9 +71,16 @@ class AgentOwnerUserIdClaimTests(TestCase):
         self.assertEqual(claims['sub'], f'agent:{agent.id}')
         self.assertNotIn('mcp_gateway_delegated', claims)
 
-        delegated = build_agent_access_token(agent, resource=self.resource, gateway_delegated=True)
+        delegated = build_agent_access_token(
+            agent,
+            resource=self.resource,
+            gateway_delegated_action='identity_list_services',
+        )
         _assert_owner(self, delegated, self.user.pk)
-        self.assertTrue(delegated['mcp_gateway_delegated'])
+        self.assertEqual(
+            delegated['mcp_gateway_delegated'],
+            {'action': 'identity_list_services', 'exp': delegated['exp']},
+        )
         self.assertEqual(delegated['aud'], claims['aud'])
         self.assertEqual(delegated['scope'], claims['scope'])
 

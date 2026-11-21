@@ -13,6 +13,71 @@ from shellui_django.mcp.internal import APPROVAL_AUDIENCE, APPROVAL_SCOPE
 
 from apps.authapi.jwks import build_jwks_document, generate_rsa_key_pair, load_signing_key
 
+# One RS256 key for identity ``POST /mcp`` tests. shellui-django 0.6.0 verifies
+# the bearer with this deployment's JWKS and rejects HS256.
+_MCP_TEST_PRIVATE, _MCP_TEST_PUBLIC = generate_rsa_key_pair(2048)
+MCP_TEST_SIGNING_KEY = load_signing_key(private_pem=_MCP_TEST_PRIVATE, public_pem=_MCP_TEST_PUBLIC)
+MCP_TEST_JWKS = build_jwks_document(MCP_TEST_SIGNING_KEY)
+
+
+class McpEndpointSigningMixin:
+    """Sign agent tokens with the same RS256 key ``POST /mcp`` verifies."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls._mcp_jwt = override_settings(
+            JWT_SIGNING_KEY=MCP_TEST_SIGNING_KEY,
+            JWT_ACTIVE_KEY_ID=MCP_TEST_SIGNING_KEY.kid,
+            JWT_ALGORITHM='RS256',
+            JWKS_ENABLED=True,
+        )
+        cls._mcp_jwt.enable()
+        cls.addClassCleanup(cls._mcp_jwt.disable)
+        cls.addClassCleanup(_swap_mcp_test_signing())
+
+
+def _swap_mcp_test_signing():
+    from rest_framework_simplejwt.settings import api_settings as simplejwt_settings
+
+    from apps.agents import tokens as token_mod
+    from apps.authapi import authentication as auth_mod
+
+    holders = []
+    seen: set[int] = set()
+    for obj in (simplejwt_settings, token_mod.api_settings, auth_mod.api_settings):
+        if id(obj) in seen:
+            continue
+        seen.add(id(obj))
+        holders.append(obj)
+    saved = []
+    for obj in holders:
+        saved.append(
+            (
+                obj,
+                obj.ALGORITHM,
+                obj.SIGNING_KEY,
+                obj.VERIFYING_KEY,
+                obj.ISSUER,
+                obj.AUDIENCE,
+            )
+        )
+        obj.ALGORITHM = 'RS256'
+        obj.SIGNING_KEY = MCP_TEST_SIGNING_KEY.private_pem
+        obj.VERIFYING_KEY = MCP_TEST_SIGNING_KEY.public_pem
+        obj.ISSUER = 'https://identity.test'
+        obj.AUDIENCE = 'shellui-test'
+
+    def restore() -> None:
+        for obj, algorithm, signing, verifying, issuer, audience in saved:
+            obj.ALGORITHM = algorithm
+            obj.SIGNING_KEY = signing
+            obj.VERIFYING_KEY = verifying
+            obj.ISSUER = issuer
+            obj.AUDIENCE = audience
+
+    return restore
+
 
 @contextmanager
 def rs256_identity_settings():

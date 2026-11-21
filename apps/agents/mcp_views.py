@@ -13,9 +13,8 @@ from django.http import HttpRequest, JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from drf_spectacular.generators import SchemaGenerator
-from rest_framework.request import Request
-from rest_framework.test import APIRequestFactory
-from shellui_django.mcp.resources import access_token_audience_matches, mcp_resource_from_origin
+from rest_framework.test import APIRequestFactory, force_authenticate
+from shellui_django.mcp.resources import mcp_resource_from_origin
 from shellui_django.mcp.server import McpServer
 
 from apps.agents.approval_internal import (
@@ -25,7 +24,6 @@ from apps.agents.approval_internal import (
 )
 from apps.agents.models import Agent, McpApprovalRequest
 from apps.agents.revocation import blocked_agent_ids
-from apps.authapi.authentication import ShellUIJWTAuthentication
 from apps.authapi.mcp_tool_schema import append_query, publish_tools, rewrite_tool_call_arguments
 from shellui_django.mcp.masking import redact_mapping
 
@@ -120,9 +118,9 @@ def _install_result_redaction() -> None:
             return getattr(real_json, name)
 
     server_mod.json = _ResultJson()
-    # shellui-django 0.5.1 keeps decision.allowed false after a granted approval, so the
-    # call returns the gate reason and never runs the view (and consume already burned
-    # the single-use approval). The approval block still returns when the grant is missing.
+    # A granted approval still leaves decision.allowed false, so the call would stop
+    # after the approval block. Mark it allowed. The approval block still returns
+    # when the grant is missing.
     original_decide = server_mod.decide_write
 
     def decide_write(**kwargs):
@@ -169,19 +167,72 @@ def _schema() -> dict:
         return _schema_cache
 
 
-def _get_server() -> McpServer:
+def _agent_revoked(agent_id: str, company_id: int | None) -> bool:
+    """True when the agent is paused, revoked, or expired. A raise becomes HTTP 403."""
+    return str(agent_id) in set(blocked_agent_ids(company_id=company_id))
+
+
+def _identity_mcp_verification() -> tuple[str, str, dict]:
+    """Issuer, MCP audience, and this deployment's public JWKS.
+
+    ``POST /mcp`` verifies the bearer offline. No JWKS URL is fetched.
+    """
+    from apps.federation.signing import public_jwks
+
+    issuer = (getattr(settings, 'JWT_ISSUER', None) or '').strip().rstrip('/')
+    audience = mcp_resource_from_origin(issuer)
+    return issuer, audience, public_jwks()
+
+
+def _django_user_for_verified_agent(agent_claims: dict):
+    """Creating user for a token ``McpServer`` already verified. Not an owner grant."""
+    agent_id = str(agent_claims.get('agent_id') or '')
+    if not agent_id:
+        return None
+    try:
+        agent = Agent.objects.select_related('created_by').get(pk=agent_id)
+    except Agent.DoesNotExist:
+        return None
+    user = agent.created_by
+    if user is None or not user.is_active:
+        return None
+    return user
+
+
+class IdentityMcpServer(McpServer):
+    """Company tools run as the creating user. ``request.auth`` stays the verified claims."""
+
+    @staticmethod
+    def _attach_request_principal(target_request, agent_claims):
+        McpServer._attach_request_principal(target_request, agent_claims)
+        user = _django_user_for_verified_agent(agent_claims)
+        if user is not None:
+            force_authenticate(target_request, user=user, token=agent_claims)
+        target_request.auth = agent_claims
+
+
+def _get_server() -> IdentityMcpServer:
     global _server
+    issuer, audience, jwks = _identity_mcp_verification()
     if _server is None:
-        _server = McpServer(
+        _server = IdentityMcpServer(
             schema_provider=_schema,
             urlconf=settings.ROOT_URLCONF,
             service_name='identity',
-            identity_revocation_check=lambda agent_id, company_id: agent_id
-            in set(blocked_agent_ids(company_id=company_id)),
+            identity_issuer=issuer,
+            mcp_audience=audience,
+            identity_jwks=jwks,
+            identity_revocation_check=_agent_revoked,
             approval_handler=_maybe_create_approval,
             approval_state=_approval_state,
             approval_consume=_consume_approval,
         )
+    else:
+        _server.identity_issuer = issuer
+        _server.mcp_audience = audience
+        _server.identity_jwks = jwks
+        _server.identity_jwks_url = None
+        _server.identity_revocation_check = _agent_revoked
     _server._factory = _McpRequestFactory()
     return _server
 
@@ -273,30 +324,8 @@ def _maybe_create_approval(payload: dict) -> dict | None:
     return {'id': str(row.id)}
 
 
-def _agent_claims(request: HttpRequest) -> dict | None:
-    auth = ShellUIJWTAuthentication()
-    drf_request = Request(request)
-    try:
-        result = auth.authenticate(drf_request)
-    except Exception:
-        return None
-    if not result:
-        return None
-    _user, token = result
-    if not token.get('agent_id'):
-        return None
-    expected = mcp_resource_from_origin(getattr(settings, 'JWT_ISSUER', '') or '')
-    # simplejwt returns a token object; the RS256 agent path returns the decoded claims dict.
-    claims = dict(getattr(token, 'payload', token))
-    if not access_token_audience_matches(claims, expected):
-        return None
-    request.user = _user
-    return claims
-
-
 @csrf_exempt
 def mcp_endpoint(request: HttpRequest):
-    claims = _agent_claims(request)
     redact_token: contextvars.Token | None = None
     if request.method == 'POST':
         try:
@@ -310,7 +339,8 @@ def mcp_endpoint(request: HttpRequest):
             import shellui_django.mcp.server as server_mod
 
             rewrite_tool_call_arguments(request, server_mod.tools_from_schema(_schema()))
-        return _get_server().handle(request, agent_claims=claims)
+        # Authorization is the verified bearer inside McpServer.handle.
+        return _get_server().handle(request)
     finally:
         if redact_token is not None:
             _mcp_result_redaction.reset(redact_token)

@@ -9,7 +9,7 @@ services:
       - "${IDENTITY_SERVICE_PORT:-8000}:8000"
     environment:
       SECRET_KEY: "${SECRET_KEY:?SECRET_KEY is required — copy .env.example to .env and set SECRET_KEY}"
-      # Local compose: DEBUG=true (HS256 without JWT_PRIVATE_KEY). Set DEBUG=false + JWT_PRIVATE_KEY for production-like runs.
+      # Local compose: DEBUG=true (HS256 without JWT_PRIVATE_KEY). POST /mcp verifies RS256, so set JWT_PRIVATE_KEY and JWT_ISSUER to call it. Set DEBUG=false + JWT_PRIVATE_KEY for production-like runs.
       DEBUG: "${DEBUG:-true}"
       JWT_PRIVATE_KEY: "${JWT_PRIVATE_KEY:-}"
       JWT_PUBLIC_KEY: "${JWT_PUBLIC_KEY:-}"

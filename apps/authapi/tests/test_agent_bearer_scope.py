@@ -12,6 +12,7 @@ from rest_framework.test import APIClient
 from rest_framework_simplejwt.settings import api_settings
 
 from apps.agents.models import Agent
+from apps.agents.tests.mcp_test_settings import McpEndpointSigningMixin
 from apps.agents.tokens import encode_access_token, issue_agent_refresh
 from apps.authapi.views import _issue_shellui_tokens
 from apps.companies.access import set_company_access
@@ -36,7 +37,7 @@ def _with_aud(raw: str) -> str:
     JWT_AUDIENCE='shellui-test',
     AUTH_RATE_LIMIT_ENABLED=False,
 )
-class AgentBearerScopeTests(TestCase):
+class AgentBearerScopeTests(McpEndpointSigningMixin, TestCase):
     def setUp(self):
         self.client = APIClient()
         self.company = Company.objects.create(name='Acme', slug='acme-agent-bearer')

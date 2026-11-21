@@ -12,6 +12,7 @@ from drf_spectacular.generators import SchemaGenerator
 from shellui_django.mcp.openapi_tools import tools_from_schema
 
 from apps.agents.models import Agent
+from apps.agents.tests.mcp_test_settings import McpEndpointSigningMixin
 from apps.agents.tokens import encode_access_token
 from apps.authapi.mcp_openapi import MCP_REQUIRED_OPERATION_IDS
 from apps.authapi.mcp_parameter_schema import (
@@ -88,7 +89,7 @@ def _rpc(method: str, **params) -> str:
     JWT_AUDIENCE='shellui-test',
     AUTH_RATE_LIMIT_ENABLED=False,
 )
-class McpToolContractTests(TestCase):
+class McpToolContractTests(McpEndpointSigningMixin, TestCase):
     def setUp(self):
         self.company = Company.objects.create(name='Contract Co', slug='contract-co')
         self.owner = User.objects.create_user(username='contract-owner', email='owner@contract.test', password='x')
@@ -119,11 +120,15 @@ class McpToolContractTests(TestCase):
     def test_tools_list_matches_pinned_schema(self):
         tools = self._tools_list()
         pinned = json.loads(FIXTURE.read_text())
-        self.assertEqual(tools, pinned)
+        published = [{key: value for key, value in tool.items() if key != '_meta'} for tool in tools]
+        self.assertEqual(published, pinned)
         names = [tool['name'] for tool in tools]
         self.assertEqual(names, sorted(names))
         self.assertEqual(set(names), set(MCP_REQUIRED_OPERATION_IDS))
         for tool in tools:
+            meta = tool.get('_meta') or {}
+            self.assertTrue(meta.get('path'), tool['name'])
+            self.assertTrue(meta.get('method'), tool['name'])
             schema = tool['inputSchema']
             self.assertEqual(schema['type'], 'object', tool['name'])
             self.assertFalse(schema['additionalProperties'], tool['name'])
