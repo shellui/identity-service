@@ -34,49 +34,6 @@ class McpEndpointSigningMixin:
         )
         cls._mcp_jwt.enable()
         cls.addClassCleanup(cls._mcp_jwt.disable)
-        cls.addClassCleanup(_swap_mcp_test_signing())
-
-
-def _swap_mcp_test_signing():
-    from rest_framework_simplejwt.settings import api_settings as simplejwt_settings
-
-    from apps.agents import tokens as token_mod
-    from apps.authapi import authentication as auth_mod
-
-    holders = []
-    seen: set[int] = set()
-    for obj in (simplejwt_settings, token_mod.api_settings, auth_mod.api_settings):
-        if id(obj) in seen:
-            continue
-        seen.add(id(obj))
-        holders.append(obj)
-    saved = []
-    for obj in holders:
-        saved.append(
-            (
-                obj,
-                obj.ALGORITHM,
-                obj.SIGNING_KEY,
-                obj.VERIFYING_KEY,
-                obj.ISSUER,
-                obj.AUDIENCE,
-            )
-        )
-        obj.ALGORITHM = 'RS256'
-        obj.SIGNING_KEY = MCP_TEST_SIGNING_KEY.private_pem
-        obj.VERIFYING_KEY = MCP_TEST_SIGNING_KEY.public_pem
-        obj.ISSUER = 'https://identity.test'
-        obj.AUDIENCE = 'shellui-test'
-
-    def restore() -> None:
-        for obj, algorithm, signing, verifying, issuer, audience in saved:
-            obj.ALGORITHM = algorithm
-            obj.SIGNING_KEY = signing
-            obj.VERIFYING_KEY = verifying
-            obj.ISSUER = issuer
-            obj.AUDIENCE = audience
-
-    return restore
 
 
 @contextmanager

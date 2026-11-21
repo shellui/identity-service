@@ -92,9 +92,9 @@ def build_agent_access_token(agent: Agent, *, resource: str, gateway_delegated_a
         claims['mcp_gateway_delegated'] = {'action': action, 'exp': int(exp.timestamp())}
     if ga is not None:
         claims['mcp_authority'] = 'delegated'
-    # Tests often override ``JWT_ISSUER`` without refreshing ``SIMPLE_JWT['ISSUER']``;
-    # PyJWT rejects ``issuer=...`` when the token omits ``iss``, so mirror both sources.
-    _issuer = api_settings.ISSUER or getattr(settings, 'JWT_ISSUER', None)
+    # Tests often override ``JWT_ISSUER`` without refreshing ``SIMPLE_JWT['ISSUER']``.
+    # PyJWT rejects ``issuer=...`` when the token omits ``iss``.
+    _issuer = getattr(settings, 'JWT_ISSUER', None) or api_settings.ISSUER
     if _issuer:
         claims['iss'] = _issuer
     setup_until = getattr(agent, 'setup_context_expires_at', None)
@@ -133,6 +133,15 @@ def build_agent_access_token(agent: Agent, *, resource: str, gateway_delegated_a
     return claims
 
 
+def _agent_jwt_signing() -> tuple[str, str]:
+    """RS256 from the deployment key when it is configured. Otherwise the active SimpleJWT key."""
+    key = getattr(settings, 'JWT_SIGNING_KEY', None)
+    private = getattr(key, 'private_pem', None)
+    if getattr(settings, 'JWT_ALGORITHM', '') == 'RS256' and private:
+        return private, 'RS256'
+    return api_settings.SIGNING_KEY, api_settings.ALGORITHM
+
+
 def encode_access_token(agent: Agent, *, resource: str, gateway_delegated_action: str = '') -> str:
     import jwt
 
@@ -144,7 +153,8 @@ def encode_access_token(agent: Agent, *, resource: str, gateway_delegated_action
     kid = getattr(settings, 'JWT_ACTIVE_KEY_ID', '')
     if kid:
         headers['kid'] = kid
-    token = jwt.encode(claims, api_settings.SIGNING_KEY, algorithm=api_settings.ALGORITHM, headers=headers or None)
+    signing_key, algorithm = _agent_jwt_signing()
+    token = jwt.encode(claims, signing_key, algorithm=algorithm, headers=headers or None)
     return token.decode('utf-8') if isinstance(token, bytes) else token
 
 
