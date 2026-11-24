@@ -98,7 +98,7 @@ def register_metrics() -> None:
     ``AppConfig.ready()`` runs before ``apps.ready`` is set, so this checks
     ``models_ready``. The Celery worker skips the gauges: its thread pool shares
     one database connection, so the metric reader thread must not query there.
-    Gunicorn publishes them.
+    Gunicorn publishes them, and starts its active request count at 0.
     """
     from django.apps import apps
 
@@ -109,6 +109,23 @@ def register_metrics() -> None:
 
     ensure_auth_metrics()
     ensure_scheduled_job_metrics()
+    _publish_active_requests()
+
+
+def _publish_active_requests() -> None:
+    """Start ``http.server.active_requests`` at 0 in this web process.
+
+    The Django instrumentation creates the series on the first traced request.
+    Health checks are not traced, so a worker without real traffic exported no
+    series at all and looked down to the "no telemetry" alert.
+    """
+    try:
+        from opentelemetry.instrumentation.django.middleware.otel_middleware import _DjangoMiddleware
+    except ImportError:
+        return
+    active_requests = getattr(_DjangoMiddleware, '_active_request_counter', None)
+    if active_requests is not None:
+        active_requests.add(0, {})
 
 
 def tag_span(
