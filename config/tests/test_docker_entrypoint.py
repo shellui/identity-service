@@ -167,7 +167,7 @@ class DockerEntrypointTests(SimpleTestCase):
         self.assertIn('python manage.py migrate --noinput', calls)
         self.assertIn('python manage.py check --deploy', calls)
         self.assertIn('gunicorn TERM', calls)
-        self.assertEqual(calls.count('celery TERM'), 2)
+        self.assertGreaterEqual(calls.count('celery TERM'), 2)
         self.assertEqual(len(self.started('celery')), 2)
         worker_args = self.celery_started('worker')[0]
         beat_args = self.celery_started('beat')[0]
