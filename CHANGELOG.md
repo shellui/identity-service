@@ -21,6 +21,37 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
 -->
 
+## [Unreleased]
+
+### Upgrade notes
+
+`GET /api/v1/metrics` and `GET /api/v1/metrics/all` are removed. Read traces and metrics from the OpenTelemetry collector instead.
+
+- Set `OTEL_EXPORTER_OTLP_ENDPOINT` to turn telemetry on. Leave it empty and telemetry stays off.
+- Set `OTEL_EXPORTER_OTLP_HEADERS` when the collector requires auth (SigNoz basic auth).
+- `OTEL_SERVICE_NAME` overrides the default `identity-service`. identity-global and a regional identity both use that name unless you override it.
+- `OTEL_RESOURCE_ATTRIBUTES` can set `deployment.environment` and `cloud.region` (for example `deployment.environment=production,cloud.region=eu`).
+- `SHELLUI_REGION` sets `cloud.region` when `OTEL_RESOURCE_ATTRIBUTES` does not.
+- `shellui.instance_role` is `global` on identity-global, `region` on a regional identity, and `standalone` otherwise.
+- `POST /api/v1/personal-access-tokens` rejects `access_global_metrics: true`. New tokens do not include `pat_agm`. Tokens that already carry the claim still authenticate, and the claim is ignored. The `access_global_metrics` column stays.
+
+### ✨ Feature
+
+- OpenTelemetry traces, metrics, and log correlation through `shellui-django[otel]` 0.7.0. Log lines include `trace_id` and `span_id` next to `X-Request-ID`. The upstream token call and the MCP approval notify send W3C `traceparent`. Celery tasks stay on the same trace.
+
+### ⚠️ Deprecated
+
+- `PersonalAccessToken.access_global_metrics` is unused. The column remains so existing rows stay valid. Global metrics access is not issued or accepted.
+
+### 🗑 Removed
+
+- `GET /api/v1/metrics` and `GET /api/v1/metrics/all` (breaking). The `prometheus-client` dependency is gone.
+- The `pat_agm` claim is no longer issued. The API and Django admin no longer expose global metrics access.
+
+### 📚 Documentation
+
+- Metrics, configuration, scheduled jobs, JWKS, and the upgrade notes describe OpenTelemetry instead of Prometheus scrape endpoints.
+
 ## [0.12.0] - 2026-11-18
 
 ### Upgrade notes

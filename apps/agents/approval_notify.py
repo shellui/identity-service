@@ -35,15 +35,19 @@ def schedule_approval_decided_notify(row: McpApprovalRequest) -> None:
         return
     company_id = int(row.company_id) if row.company_id is not None else 0
     agent_id = str(row.agent_id) if row.agent_id is not None else str(row.global_agent_id or '')
+    from config.telemetry import bind_trace_context, current_trace_context
+
+    parent = current_trace_context()
 
     def _run() -> None:
         try:
-            notify_ai_approval_decided(
-                approval_id=approval_id,
-                status=status,
-                company_id=company_id,
-                agent_id=agent_id,
-            )
+            with bind_trace_context(parent):
+                notify_ai_approval_decided(
+                    approval_id=approval_id,
+                    status=status,
+                    company_id=company_id,
+                    agent_id=agent_id,
+                )
         except Exception:
             logger.exception('MCP approval decided notify failed approval_id=%s', approval_id)
 
@@ -75,6 +79,9 @@ def notify_ai_approval_decided(
         logger.exception('MCP approval decided assertion failed approval_id=%s', approval_id)
         return False
     url = f'{origin}{_NOTIFY_PATH}'
+    from config.telemetry import inject_trace_context, tag_span
+
+    tag_span(company_id=company_id, agent_id=agent_id)
     try:
         response = requests.post(
             url,
@@ -84,11 +91,13 @@ def notify_ai_approval_decided(
                 'company_id': company_id,
                 'agent_id': agent_id,
             },
-            headers={
-                'Authorization': f'Bearer {token}',
-                'Content-Type': 'application/json',
-                'Accept': 'application/json',
-            },
+            headers=inject_trace_context(
+                {
+                    'Authorization': f'Bearer {token}',
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                }
+            ),
             timeout=_NOTIFY_TIMEOUT_SECONDS,
         )
     except requests.RequestException as exc:

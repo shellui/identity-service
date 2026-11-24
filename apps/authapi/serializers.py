@@ -129,8 +129,15 @@ class UserPreferenceSerializer(serializers.Serializer):
 
 class ShellUIPersonalAccessTokenCreateSerializer(serializers.Serializer):
     read_only = serializers.BooleanField(required=False, default=False)
-    access_global_metrics = serializers.BooleanField(required=False, default=False)
     name = serializers.CharField(required=False, allow_blank=True, max_length=200)
+
+    def validate(self, attrs):
+        raw = self.initial_data
+        if isinstance(raw, dict) and raw.get('access_global_metrics') in (True, 'true', 'True', 1, '1'):
+            raise serializers.ValidationError(
+                {'access_global_metrics': 'Global metrics access is no longer accepted.'}
+            )
+        return attrs
 
 
 class ShellUIAdminScimTokenCreateSerializer(serializers.Serializer):

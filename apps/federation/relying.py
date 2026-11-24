@@ -188,6 +188,8 @@ def link_verified_user(claims: dict):
 def _exchange(code: str, saved: dict) -> str:
     oauth_base = (getattr(settings, 'GLOBAL_OAUTH_BASE_URL', '') or settings.GLOBAL_ISSUER_URL).rstrip('/')
     token_url = f'{oauth_base}/oauth/token'
+    from config.telemetry import inject_trace_context
+
     response = requests.post(
         token_url,
         data={
@@ -198,6 +200,7 @@ def _exchange(code: str, saved: dict) -> str:
             'client_secret': settings.GLOBAL_CLIENT_SECRET,
             'code_verifier': saved['verifier'],
         },
+        headers=inject_trace_context(),
         timeout=10,
         allow_redirects=False,
     )

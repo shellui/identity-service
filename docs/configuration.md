@@ -212,7 +212,11 @@ See [Security hardening](security-hardening.md) for the rate limit defaults, pro
 | `SENTRY_DSN` | empty | Turns on Sentry error reporting. No personal data is sent |
 | `SENTRY_ENVIRONMENT` | `production`, `development` with `DEBUG=true` | Sentry environment tag |
 | `SENTRY_RELEASE` | package version | Sentry release tag |
-| `SENTRY_TRACES_SAMPLE_RATE` | `0` | Share of requests traced. `0` reports errors only; `0.1` shows slow requests |
+| `SENTRY_TRACES_SAMPLE_RATE` | `0` | Share of requests traced in Sentry. `0` reports errors only; `0.1` shows slow requests. This is separate from OpenTelemetry |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | empty | OpenTelemetry OTLP/HTTP endpoint. Unset leaves traces and metrics off. See [Metrics](metrics.md) |
+| `OTEL_EXPORTER_OTLP_HEADERS` | empty | Exporter headers, including SigNoz basic auth |
+| `OTEL_SERVICE_NAME` | `identity-service` | Overrides `service.name` |
+| `OTEL_RESOURCE_ATTRIBUTES` | empty | Overrides `deployment.environment`, `service.version`, and `cloud.region` when those keys are set. Example: `deployment.environment=production,cloud.region=eu` |
 | `SHELLUI_GEOIP_DATABASE_PATH` | empty | MaxMind GeoLite2 City file (`.mmdb`), adds country and city to sign-in events. Also needs the optional `geoip2` package, which the image does not include |
 
 ## Instance role
@@ -221,7 +225,8 @@ Leave `SHELLUI_INSTANCE_ROLE` unset for a standalone deployment. `global` turns 
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `SHELLUI_INSTANCE_ROLE` | unset | `global`, `region`, or unset |
+| `SHELLUI_INSTANCE_ROLE` | unset | `global`, `region`, or unset. Traces record this as `shellui.instance_role` so identity-global and a regional identity stay distinct |
+| `SHELLUI_REGION` | empty | `cloud.region` on traces when `OTEL_RESOURCE_ATTRIBUTES` does not set it |
 | `OIDC_CLIENTS` | empty | JSON list of confidential clients, provider role |
 | `OIDC_CORS_ALLOWED_ORIGINS` | empty | Origins allowed on the OpenID endpoints. The Bearer API is unchanged |
 | `OIDC_SESSION_TTL_SECONDS` | `43200` | Provider browser-session lifetime |

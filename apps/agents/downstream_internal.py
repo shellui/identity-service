@@ -114,6 +114,9 @@ class McpDownstreamAccessTokenView(APIView):
             agent = Agent.objects.select_related('company').get(pk=agent_id, company_id=body_company)
         except Agent.DoesNotExist:
             return Response({'error': 'Agent not found.'}, status=status.HTTP_404_NOT_FOUND)
+        from config.telemetry import tag_span
+
+        tag_span(company_id=body_company, agent_id=agent.pk)
 
         if not agent.is_active:
             return Response({'error': 'Agent inactive.'}, status=status.HTTP_403_FORBIDDEN)

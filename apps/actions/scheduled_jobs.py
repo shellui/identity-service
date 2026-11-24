@@ -7,7 +7,7 @@ are both visible. Each finished run writes:
 
 - one ``ScheduledJobRun`` row (kept ``RUN_RETENTION_DAYS``)
 - the latest timestamps in ``ScheduledJobState``
-- monotonic counters in ``ScheduledJobCounter`` for Prometheus
+- monotonic counters in ``ScheduledJobCounter`` for OpenTelemetry
 - one staff-only platform event (``identity.scheduled_job.succeeded`` / ``.failed``)
 
 A failed run logs at ERROR with the run id as request id (``[req=sjr-<id>]``), which also
