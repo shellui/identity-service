@@ -252,8 +252,8 @@ MCP_SPECS: dict[str, _McpSpec] = {
         sensitive=True,
     ),
     'identity_create_personal_access_tokens': _McpSpec(
-        'Creates a personal access token with optional name, read_only, and access_global_metrics, and returns its metadata. The token is shown once on the admin HTTP response and is masked in this result.',
-        'Creates a personal access token with optional name, read_only, and access_global_metrics, and returns its metadata. The token is shown once on the admin HTTP response and is masked in this result.',
+        'Creates a personal access token with optional name and read_only, and returns its metadata. The token is shown once on the admin HTTP response and is masked in this result.',
+        'Creates a personal access token with optional name and read_only, and returns its metadata. The token is shown once on the admin HTTP response and is masked in this result.',
         'Inserts PAT row.',
         destructive=True,
         sensitive=True,

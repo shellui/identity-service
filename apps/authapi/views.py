@@ -68,7 +68,6 @@ from .client_pkce import (
     presented_pkce_error,
 )
 from .desktop_return import client_redirect_reports_success, client_redirect_response
-from .renderers import PrometheusTextRenderer
 from .login_audit import LoginOutcome, oauth_provider_redirect_uri, record_login_event
 from .oauth_state import (
     apple_oauth_bridge_cookie_value,
@@ -969,7 +968,6 @@ def _issue_personal_access_token(
     company: Company,
     *,
     read_only: bool,
-    access_global_metrics: bool = False,
     name: str = '',
 ) -> tuple[PersonalAccessToken, str]:
     _refuse_deleting_company(company)
@@ -992,7 +990,6 @@ def _issue_personal_access_token(
     access['app_metadata'] = {'provider': 'personal_access_token'}
     access['pat_id'] = str(pat_id)
     access['pat_ro'] = bool(read_only)
-    access['pat_agm'] = bool(access_global_metrics)
     access.set_exp(lifetime=settings.PERSONAL_ACCESS_TOKEN_LIFETIME)
     jti = access['jti']
     row = PersonalAccessToken.objects.create(
@@ -1001,7 +998,6 @@ def _issue_personal_access_token(
         user=user,
         jti=jti,
         read_only=read_only,
-        access_global_metrics=access_global_metrics,
         name=(name or '')[:200],
     )
     return row, str(access)
@@ -1605,19 +1601,6 @@ def _company_from_bearer_token_only(request, user: User) -> tuple[Company | None
     return company, None
 
 
-def _require_staff_or_company_owner_metrics(request):
-    """Like `_require_staff_or_company_owner` but company scope is taken only from the Bearer token."""
-    user = _authenticate_bearer_user(request)
-    if not user:
-        return None, None, Response({'error': 'Unauthorized'}, status=status.HTTP_401_UNAUTHORIZED)
-    company, cerr = _company_from_bearer_token_only(request, user=user)
-    if cerr:
-        return None, None, cerr
-    if user.is_staff or _is_user_company_owner(user, company):
-        return user, company, None
-    return None, None, Response({'error': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
-
-
 def _require_authenticated_company_member(request):
     """Current user must belong to the company implied by JWT ``company_id`` (or explicit ``company_id``)."""
     user = _authenticate_bearer_user(request)
@@ -1725,7 +1708,6 @@ def _personal_access_token_row(t: PersonalAccessToken, *, include_access_token: 
         'id': str(t.id),
         'user_id': t.user_id,
         'read_only': t.read_only,
-        'access_global_metrics': t.access_global_metrics,
         'name': t.name or '',
         'created_at': t.created_at,
         'last_used_at': t.last_used_at,
@@ -4693,18 +4675,11 @@ class ShellUIPersonalAccessTokenListCreateView(APIView):
         serializer = ShellUIPersonalAccessTokenCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         read_only = bool(serializer.validated_data.get('read_only'))
-        access_global_metrics = bool(serializer.validated_data.get('access_global_metrics'))
-        if access_global_metrics and not user.is_staff:
-            return Response(
-                {'error': 'Only staff may create tokens with access to global metrics.'},
-                status=status.HTTP_403_FORBIDDEN,
-            )
         name = serializer.validated_data.get('name') or ''
         row, access_token_str = _issue_personal_access_token(
             user,
             company,
             read_only=read_only,
-            access_global_metrics=access_global_metrics,
             name=name,
         )
         return Response(
@@ -4892,71 +4867,3 @@ class ShellUIAdminAuthMethodsView(APIView):
 
     def put(self, request):
         return self._update(request)
-
-
-@extend_schema_view(
-    get=extend_schema(
-        tags=['platform-metrics'],
-        summary='Prometheus metrics for one company (staff or company owner)',
-        description=(
-            'Company-scoped Prometheus text exposition. Requires a Django staff user or a company '
-            'owner JWT with `company_id`. Not exposed as an MCP tool.'
-        ),
-        responses={
-            200: OpenApiResponse(description='text/plain Prometheus exposition'),
-            400: OpenApiResponse(
-                description='Missing company_id in token, or company_id was sent in the query string'
-            ),
-            401: OpenApiResponse(description='Missing or invalid Bearer token'),
-            403: OpenApiResponse(description='Forbidden'),
-        },
-    ),
-)
-class ShellUIAdminMetricsView(APIView):
-    permission_classes = [ShellUIPermission]
-    renderer_classes = [PrometheusTextRenderer]
-
-    def get(self, request):
-        _actor, company, err = _require_staff_or_company_owner_metrics(request)
-        if err:
-            return err
-        return HttpResponse(
-            auth_metrics.metrics_http_body(company_id=company.id),
-            content_type=auth_metrics.METRICS_CONTENT_TYPE,
-        )
-
-
-@extend_schema_view(
-    get=extend_schema(
-        tags=['platform-metrics'],
-        summary='Prometheus metrics for all companies (staff)',
-        description=(
-            'Global Prometheus text exposition across all companies. Requires a Django staff user '
-            'or a PAT created by staff with `access_global_metrics` (claim `pat_agm`).'
-        ),
-        responses={
-            200: OpenApiResponse(description='text/plain Prometheus exposition'),
-            401: OpenApiResponse(description='Missing or invalid Bearer token'),
-            403: OpenApiResponse(description='Forbidden (not staff and no global-metrics PAT)'),
-        },
-    ),
-)
-class ShellUIAdminGlobalMetricsView(APIView):
-    permission_classes = [ShellUIPermission]
-    renderer_classes = [PrometheusTextRenderer]
-
-    def get(self, request):
-        user = getattr(request, 'user', None)
-        if user is None or not user.is_authenticated:
-            return Response({'error': 'Unauthorized'}, status=status.HTTP_401_UNAUTHORIZED)
-        auth = getattr(request, 'auth', None)
-        if user.is_staff:
-            pass
-        elif auth is not None and auth.get('pat_agm') is True:
-            pass
-        else:
-            return Response({'error': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
-        return HttpResponse(
-            auth_metrics.metrics_http_body(),
-            content_type=auth_metrics.METRICS_CONTENT_TYPE,
-        )

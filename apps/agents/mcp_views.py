@@ -32,6 +32,7 @@ from shellui_django.mcp.masking import redact_mapping
 _server: McpServer | None = None
 _schema_cache: dict | None = None
 _schema_lock = threading.Lock()
+_mcp_actor: contextvars.ContextVar = contextvars.ContextVar('identity_mcp_actor', default=None)
 
 # First ``redact_mapping`` call inside a tools/call is the tool result. Later calls redact logs.
 _mcp_result_redaction: contextvars.ContextVar[bool] = contextvars.ContextVar(
@@ -169,10 +170,37 @@ def _schema() -> dict:
         return _schema_cache
 
 
+class _IdentityMcpServer(McpServer):
+    """Verify the bearer with identity's own JWT authenticator.
+
+    shellui-django 0.7.0 verifies RS256 against a pinned JWKS and ignores claims
+    passed into ``handle``. This process is the issuer, including HS256 in local
+    development, so the check stays on ``ShellUIJWTAuthentication``.
+    """
+
+    def _claims_from_bearer(self, request: HttpRequest) -> dict | None:
+        claims = _agent_claims(request)
+        if claims is not None:
+            _mcp_actor.set(getattr(request, 'user', None))
+        return claims
+
+    def _attach_request_principal(self, target_request, agent_claims: dict) -> None:
+        """Run the inner view as the agent owner, which this issuer already resolved."""
+        user = _mcp_actor.get()
+        if user is None:
+            super()._attach_request_principal(target_request, agent_claims)
+            return
+        from rest_framework.test import force_authenticate
+
+        force_authenticate(target_request, user=user, token=agent_claims)
+        target_request.auth = agent_claims
+
+
 def _get_server() -> McpServer:
     global _server
     if _server is None:
-        _server = McpServer(
+        issuer = (getattr(settings, 'JWT_ISSUER', '') or '').strip()
+        _server = _IdentityMcpServer(
             schema_provider=_schema,
             urlconf=settings.ROOT_URLCONF,
             service_name='identity',
@@ -181,6 +209,8 @@ def _get_server() -> McpServer:
             approval_handler=_maybe_create_approval,
             approval_state=_approval_state,
             approval_consume=_consume_approval,
+            identity_issuer=issuer,
+            mcp_audience=mcp_resource_from_origin(issuer) if issuer else None,
         )
     _server._factory = _McpRequestFactory()
     return _server

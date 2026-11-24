@@ -297,56 +297,28 @@ A failed run:
 - is stored with `status=failed` and its `error_key`
 - logs one ERROR line with the job, run id, trigger and sanitized error, plus the traceback. The original exception message is replaced by the sanitized one, so a URL query string or credential in it never reaches the logs
 - is reported to Sentry when `SENTRY_DSN` is set, through the same scrubbing as other events, tagged `scheduled_job`, `scheduled_job_trigger` and `scheduled_job_run_id`
-- increments `shellui_auth_scheduled_job_runs_total{status="failed"}`
+- increments `shellui.auth.scheduled.job.runs` with `status=failed`
 - makes the command exit with status 1 and print `retry_webhooks failed: OperationalError: … (run_id=1234)`, so an external scheduler that alerts on failed jobs still works
 
 If Redis is down when a Celery run tries to take its lock, that run is recorded as `failed` with `error_key=redis_error`.
 
-### Prometheus metrics
+### OpenTelemetry metrics
 
-`GET /api/v1/metrics/all` includes the scheduled job metrics. It needs Django staff or a personal access token with `access_global_metrics` (see [Metrics](metrics.md)). The company endpoint `GET /api/v1/metrics` never includes them. Values come from the database, so they are the same whichever gunicorn worker answers and survive restarts.
+Scheduled job metrics are exported with the rest of the OpenTelemetry stream. There is no scrape endpoint. Values come from the database, so every process reports the same numbers and they survive restarts. See [Metrics](metrics.md).
 
-| Metric | Type | Labels | Meaning |
-| ------ | ---- | ------ | ------- |
-| `shellui_auth_scheduled_job_runs_total` | counter | `job`, `status` | Finished runs: `succeeded`, `failed`, `skipped_locked` |
-| `shellui_auth_scheduled_job_items_total` | counter | `job`, `kind` | Items processed, `kind` is a `counts` name |
-| `shellui_auth_scheduled_job_last_success_timestamp_seconds` | gauge | `job` | Unix time of the last successful run (0 before the first one) |
-| `shellui_auth_scheduled_job_last_run_timestamp_seconds` | gauge | `job` | Unix time the last run started (0 before the first one) |
-| `shellui_auth_scheduled_job_last_run_duration_seconds` | gauge | `job` | Duration of the last finished run |
-| `shellui_auth_scheduled_job_overdue` | gauge | `job` | 1 when overdue (see the table above) |
-| `shellui_auth_scheduler_enabled` | gauge | none | 1 when `SCHEDULER_ENABLED` is true |
-| `shellui_auth_scheduler_redis_up` | gauge | none | 1 when the broker answers `PING`. Absent without a broker |
-| `shellui_auth_scheduler_beat_last_seen_timestamp_seconds` | gauge | none | Unix time beat last published a job. Absent before the first one |
+| Instrument | Kind | Attributes | Meaning |
+| --- | --- | --- | --- |
+| `shellui.auth.scheduled.job.runs` | counter | `job`, `status` | Finished runs: `succeeded`, `failed`, `skipped_locked` |
+| `shellui.auth.scheduled.job.items` | counter | `job`, `kind` | Items processed. `kind` is a `counts` name |
+| `shellui.auth.scheduled.job.last.success.timestamp.seconds` | gauge | `job` | Unix time of the last successful run (0 before the first one) |
+| `shellui.auth.scheduled.job.last.run.timestamp.seconds` | gauge | `job` | Unix time the last run started (0 before the first one) |
+| `shellui.auth.scheduled.job.last.run.duration.seconds` | gauge | `job` | Duration of the last finished run |
+| `shellui.auth.scheduled.job.overdue` | gauge | `job` | 1 when overdue (see the table above) |
+| `shellui.auth.scheduler.enabled` | gauge | none | 1 when `SCHEDULER_ENABLED` is true |
+| `shellui.auth.scheduler.redis.up` | gauge | none | 1 when the broker answers `PING`. Absent without a broker |
+| `shellui.auth.scheduler.beat.last.seen.timestamp.seconds` | gauge | none | Unix time beat last published a job. Absent before the first one |
 
-Suggested alert rules:
-
-```yaml
-groups:
-  - name: identity-scheduled-jobs
-    rules:
-      - alert: IdentityScheduledJobOverdue
-        expr: shellui_auth_scheduled_job_overdue == 1
-        for: 5m
-        labels:
-          severity: warning
-        annotations:
-          summary: "identity-service job {{ $labels.job }} has no recent successful run"
-      - alert: IdentityScheduledJobFailing
-        expr: increase(shellui_auth_scheduled_job_runs_total{status="failed"}[15m]) >= 3
-        labels:
-          severity: warning
-      - alert: IdentitySchedulerRedisDown
-        expr: shellui_auth_scheduler_redis_up == 0
-        for: 2m
-        labels:
-          severity: critical
-      - alert: IdentityWebhooksGivenUp
-        expr: increase(shellui_auth_scheduled_job_items_total{kind="webhook_deliveries_given_up"}[1h]) > 0
-        labels:
-          severity: info
-```
-
-The overdue alert covers a stopped beat, a stuck worker and a missing cron line alike. Scrape every 30 to 60 seconds: each scrape runs a few indexed queries and one Redis `PING`.
+Alert when `shellui.auth.scheduled.job.overdue` stays 1 (stopped beat, stuck worker, or a missing cron line), when failed runs keep increasing, when `shellui.auth.scheduler.redis.up` is 0, and when `shellui.auth.scheduled.job.items` with `kind=webhook_deliveries_given_up` increases. Each export runs a few indexed queries and one Redis `PING`. The default export interval is 60 seconds.
 
 ### Other safety nets
 

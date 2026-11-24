@@ -491,32 +491,27 @@ class MetricsTests(TestCase):
         retry.return_value = {'processed': 2, 'delivered': 2, 'retried': 0, 'dead': 0}
         retry_email.return_value = dict(_EMPTY_STATS)
         call_command('retry_webhooks', stdout=StringIO())
-        staff = User.objects.create_user(username='staff', email='s@x.test', password='x', is_staff=True)
         client = APIClient()
-        client.force_authenticate(user=staff)
 
-        body = client.get('/api/v1/metrics/all').content.decode()
-
-        self.assertIn('shellui_auth_scheduled_job_runs_total{job="retry_webhooks",status="succeeded"} 1.0', body)
-        self.assertIn('shellui_auth_scheduled_job_runs_total{job="purge_expired_data",status="failed"} 0.0', body)
-        self.assertIn(
-            'shellui_auth_scheduled_job_items_total{job="retry_webhooks",kind="webhook_deliveries_succeeded"} 2.0',
-            body,
+        from apps.actions.scheduled_job_metrics import (
+            ITEMS,
+            OVERDUE,
+            RUNS,
+            SCHEDULER_ENABLED,
+            scheduled_job_points,
         )
-        self.assertIn('shellui_auth_scheduled_job_overdue{job="retry_webhooks"} 0.0', body)
-        self.assertIn('shellui_auth_scheduled_job_last_success_timestamp_seconds{job="retry_webhooks"}', body)
-        self.assertIn('shellui_auth_scheduled_job_last_run_duration_seconds{job="retry_webhooks"}', body)
-        self.assertIn('shellui_auth_scheduler_enabled', body)
 
-        owner = User.objects.create_user(username='owner', email='o@x.test', password='x')
-        client.force_authenticate(user=owner)
-        self.assertEqual(client.get('/api/v1/metrics/all').status_code, 403)
-
-    def test_company_metrics_never_include_scheduled_jobs(self):
-        from apps.authapi.metrics import metrics_http_body
-
-        company = Company.objects.create(name='Acme', slug='acme-metrics')
-        self.assertNotIn(b'scheduled_job', metrics_http_body(company_id=company.pk))
+        points = {(name, tuple(sorted(attrs.items()))): value for name, attrs, value in scheduled_job_points()}
+        self.assertEqual(points[(RUNS, (('job', 'retry_webhooks'), ('status', 'succeeded')))], 1.0)
+        self.assertEqual(points[(RUNS, (('job', 'purge_expired_data'), ('status', 'failed')))], 0.0)
+        self.assertEqual(
+            points[(ITEMS, (('job', 'retry_webhooks'), ('kind', 'webhook_deliveries_succeeded')))],
+            2.0,
+        )
+        self.assertEqual(points[(OVERDUE, (('job', 'retry_webhooks'),))], 0.0)
+        self.assertIn((SCHEDULER_ENABLED, ()), points)
+        self.assertEqual(client.get('/api/v1/metrics/all').status_code, 404)
+        self.assertEqual(client.get('/api/v1/metrics').status_code, 404)
 
 
 @override_settings(ACTIONS_WEBHOOK_SYNC_DELIVERY=True)
