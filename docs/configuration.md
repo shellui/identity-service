@@ -112,12 +112,11 @@ The Docker image runs `retry_webhooks` every minute and `purge_expired_data` eve
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `SCHEDULER_ENABLED` | `true` | Start the worker in the web container. Set `false` when a `worker` container or your own cron runs the jobs |
+| `SCHEDULER_ENABLED` | `true` | Start the worker and beat in the web container. Set `false` when a `worker` container or your own cron runs the jobs |
 | `CELERY_BROKER_URL` | `REDIS_URL` | A different broker for the jobs |
 | `CELERY_WORKER_CONCURRENCY` | `2` | Worker threads, so the hourly purge and a webhook retry can run together |
-| `CELERY_BEAT_SCHEDULE_FILE` | `/tmp/celerybeat-schedule` | Where Celery beat keeps its schedule state (Docker entrypoint) |
 
-The container command picks what runs: `web` (default: migrations, gunicorn, and the worker), `worker` (the worker only, no migrations), or any other command, run as `appuser`.
+The container command picks what runs: `web` (default: migrations, gunicorn, the worker, and beat), `worker` (the worker and beat only, no migrations), or any other command, run as `appuser`.
 
 ## Database
 

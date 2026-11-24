@@ -805,6 +805,10 @@ CELERY_WORKER_HIJACK_ROOT_LOGGER = False
 CELERY_WORKER_REDIRECT_STDOUTS = False
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
 CELERY_BEAT_SCHEDULE = scheduled_jobs_beat_schedule()
+# In-memory scheduler. PersistentScheduler writes a shelve/dbm file, and on
+# Python 3.13 and later the default dbm is sqlite, which can crash Beat with
+# "locking protocol". Last-run times are not kept; the schedule is CELERY_BEAT_SCHEDULE.
+CELERY_BEAT_SCHEDULER = 'celery.beat.Scheduler'
 
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases

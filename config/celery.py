@@ -1,8 +1,9 @@
 """
 Celery app for the scheduled jobs (``retry_webhooks`` and ``purge_expired_data``).
 
-The Docker entrypoint starts a worker with an embedded beat next to gunicorn, so a
-self-hosted install needs no cron setup. Redis (``REDIS_URL``) is the broker.
+The Docker entrypoint starts a Celery worker and a Celery beat process next to
+gunicorn, so a self-hosted install needs no cron setup. Redis (``REDIS_URL``) is
+the broker. Beat uses the in-memory scheduler (``CELERY_BEAT_SCHEDULER``).
 See docs/scheduled-jobs.md.
 
 The worker calls ``setup_process_telemetry`` before the Celery app is created.
