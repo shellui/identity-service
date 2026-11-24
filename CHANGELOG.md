@@ -21,6 +21,12 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
 -->
 
+## [0.13.1] - 2026-11-24
+
+### 🐛 Bug Fixes
+
+- The identity and scheduled-job gauges (for example active users and logins) were never registered, because registration waited for `apps.ready`, which Django sets only after every `AppConfig.ready()` has run. Registration now waits for the models. The Celery worker skips these gauges, because its thread pool shares one database connection with the metric reader thread; Gunicorn publishes them.
+
 ## [0.13.0] - 2026-11-24
 
 ### Upgrade notes
