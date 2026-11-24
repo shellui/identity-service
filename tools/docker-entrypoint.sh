@@ -179,7 +179,11 @@ stop_children() {
 # SIGKILLs the container (exit 137). After a short grace period, SIGKILL any
 # process that is still running so the container can exit 0 on a clean stop.
 reap_or_kill() {
-  local grace="${STOP_GRACE_SECONDS:-8}"
+  local grace=8
+  # Optional test hook (plain expansion, not a documented setting).
+  if [ -n "${STOP_GRACE_SECONDS}" ]; then
+    grace="${STOP_GRACE_SECONDS}"
+  fi
   local pid still
   local deadline=$((SECONDS + grace))
   while true; do
