@@ -25,7 +25,7 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 ### 🐛 Bug Fixes
 
-- Celery Beat used the default PersistentScheduler, which writes a shelve/dbm file under `/tmp`. On Python 3.14 that file is `dbm.sqlite3`, and Beat can crash with `locking protocol` while the worker stays up, so the container stayed healthy after scheduled jobs had stopped. Beat now uses the in-memory scheduler (`celery.beat.Scheduler`) and runs as its own supervised process. If Beat exits, the entrypoint stops gunicorn and the worker and the container exits, so Coolify restarts it.
+- Celery Beat used the default PersistentScheduler, which writes a shelve/dbm file under `/tmp`. On Python 3.14 that file is `dbm.sqlite3`, and Beat can crash with `locking protocol` while the worker stays up, so the container stayed healthy after scheduled jobs had stopped. Beat now uses the in-memory scheduler (`celery.beat.Scheduler`) and runs as its own supervised process. If Beat exits, the entrypoint stops gunicorn and the worker and the container exits, so Coolify restarts it. If a child ignores SIGTERM, the entrypoint sends SIGKILL after 8 seconds so `docker stop` can finish cleanly.
 
 
 ### 🐛 Bug Fixes

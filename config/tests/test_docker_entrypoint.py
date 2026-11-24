@@ -48,6 +48,15 @@ _SERVICE_STUB = textwrap.dedent(
     # The sleep must not keep the test's stdout/stderr pipes open after we exit.
     sleep 30 >/dev/null 2>&1 &
     sleeper=$!
+    if [ -n "${STUB_IGNORE_TERM:-}" ]; then
+      # Stay up after SIGTERM so the entrypoint must SIGKILL us.
+      trap 'echo "${name} TERM" >> "${STUB_LOG}"' TERM
+      while true; do
+        wait "${sleeper}" 2>/dev/null || true
+        sleep 30 >/dev/null 2>&1 &
+        sleeper=$!
+      done
+    fi
     trap 'echo "${name} TERM" >> "${STUB_LOG}"; kill "${sleeper}"; exit 0' TERM
     wait
     '''
@@ -170,6 +179,35 @@ class DockerEntrypointTests(SimpleTestCase):
         self.assertIn('--scheduler celery.beat.Scheduler', beat_args)
         self.assertNotRegex(beat_args, r'--schedule(?:\s|=|$)')
         self.assertIn('config.wsgi:application', self.started('gunicorn')[0])
+
+    def test_web_stop_kills_a_child_that_ignores_sigterm(self):
+        proc = subprocess.Popen(
+            ['bash', str(ENTRYPOINT)],
+            env=self._env(
+                REDIS_URL='redis://redis:6379/0',
+                STUB_IGNORE_TERM='1',
+                STOP_GRACE_SECONDS='1',
+            ),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        try:
+            self.assertTrue(
+                self.wait_for(lambda: self.started('gunicorn') and self.started('celery')),
+                self.calls(),
+            )
+            time.sleep(0.3)
+            proc.send_signal(signal.SIGTERM)
+            _, stderr = proc.communicate(timeout=10)
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+                proc.communicate()
+
+        self.assertEqual(proc.returncode, 0, stderr)
+        self.assertIn('did not stop, sending SIGKILL', stderr)
+        self.assertIn('entrypoint: stopped', stderr)
 
     def test_web_exits_when_the_scheduler_dies(self):
         result = self.run_entrypoint(REDIS_URL='redis://redis:6379/0', STUB_CELERY_EXIT='3')

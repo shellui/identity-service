@@ -174,6 +174,39 @@ stop_children() {
   done
 }
 
+# Reap children after SIGTERM. Celery beat can ignore or delay SIGTERM (for
+# example a non-daemon telemetry thread), which would hang `wait` until Docker
+# SIGKILLs the container (exit 137). After a short grace period, SIGKILL any
+# process that is still running so the container can exit 0 on a clean stop.
+reap_or_kill() {
+  local grace="${STOP_GRACE_SECONDS:-8}"
+  local pid still
+  local deadline=$((SECONDS + grace))
+  while true; do
+    still=0
+    for pid in "${PIDS[@]}"; do
+      if kill -0 "${pid}" 2>/dev/null; then
+        still=1
+        break
+      fi
+    done
+    if [ "${still}" -eq 0 ]; then
+      break
+    fi
+    if [ "${SECONDS}" -ge "${deadline}" ]; then
+      for pid in "${PIDS[@]}"; do
+        if kill -0 "${pid}" 2>/dev/null; then
+          log "process ${pid} did not stop, sending SIGKILL"
+          kill -KILL "${pid}" 2>/dev/null || true
+        fi
+      done
+      break
+    fi
+    sleep 0.2
+  done
+  wait "${PIDS[@]}" 2>/dev/null || true
+}
+
 on_signal() {
   STOP_SIGNAL="$1"
   log "received ${STOP_SIGNAL}, stopping"
@@ -192,7 +225,7 @@ supervise() {
   wait -n "${PIDS[@]}"
   status=$?
   stop_children
-  wait "${PIDS[@]}"
+  reap_or_kill
   set -e
   if [ -n "${STOP_SIGNAL}" ]; then
     log "stopped"
