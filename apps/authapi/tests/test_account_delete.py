@@ -287,7 +287,6 @@ class SelfServiceAccountDeleteTests(TestCase):
             self.user,
             self.other_company,
             read_only=False,
-            access_global_metrics=False,
             name='other',
         )
         own_event = EventLog.objects.create(
@@ -418,6 +417,5 @@ class SelfServiceAccountDeleteTests(TestCase):
             self.user,
             self.company,
             read_only=False,
-            access_global_metrics=False,
             name='test',
         )

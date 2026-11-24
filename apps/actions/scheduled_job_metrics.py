@@ -1,17 +1,17 @@
-"""
-Prometheus metrics for the scheduled jobs, served by ``GET /api/v1/metrics/all`` only.
+"""OpenTelemetry metrics for scheduled jobs.
 
-Runs happen in the Celery worker or a cron process, not in gunicorn, so values are read
-from the database at scrape time (``ScheduledJobCounter``, ``ScheduledJobState``) instead
-of in-process counters. A dedicated registry keeps them out of the company-scoped
-``GET /api/v1/metrics``. Labels: ``job``, ``status`` and ``kind`` only (low cardinality).
+Runs happen in the Celery worker or a cron process, so values are read from
+``ScheduledJobCounter`` and ``ScheduledJobState`` when the SDK collects them.
+Attributes are ``job``, ``status``, and ``kind`` only.
 """
 
 from __future__ import annotations
 
+import logging
+import time
+
 from django.utils import timezone
-from prometheus_client import CollectorRegistry, generate_latest
-from prometheus_client.core import CounterMetricFamily, GaugeMetricFamily
+from shellui_django.telemetry import canonical_metric_name, get_meter
 
 from apps.actions.models import ScheduledJobCounter
 from apps.actions.scheduled_jobs import (
@@ -24,83 +24,136 @@ from apps.actions.scheduled_jobs import (
     scheduler_enabled,
 )
 
-PREFIX = 'shellui_auth_scheduled_job'
+logger = logging.getLogger(__name__)
+
+_METER = 'shellui.identity'
+_bound_generation = -1
+_CACHE_SECONDS = 1.0
+_points_cache: dict = {'at': 0.0, 'points': None}
+
+RUNS = 'shellui.auth.scheduled.job.runs'
+ITEMS = 'shellui.auth.scheduled.job.items'
+LAST_SUCCESS = 'shellui.auth.scheduled.job.last.success.timestamp.seconds'
+LAST_RUN = 'shellui.auth.scheduled.job.last.run.timestamp.seconds'
+DURATION = 'shellui.auth.scheduled.job.last.run.duration.seconds'
+OVERDUE = 'shellui.auth.scheduled.job.overdue'
+SCHEDULER_ENABLED = 'shellui.auth.scheduler.enabled'
+REDIS_UP = 'shellui.auth.scheduler.redis.up'
+BEAT_LAST_SEEN = 'shellui.auth.scheduler.beat.last.seen.timestamp.seconds'
 
 
-class ScheduledJobsCollector:
-    def collect(self):
-        now = timezone.now()
-        states = ensure_states()
-        counters = {(c.job, c.name): c.value for c in ScheduledJobCounter.objects.filter(job__in=list(JOBS))}
-
-        runs = CounterMetricFamily(
-            f'{PREFIX}_runs',
-            'Finished scheduled job runs by status (succeeded, failed, skipped_locked).',
-            labels=('job', 'status'),
+def scheduled_job_points() -> list[tuple[str, dict[str, str], float]]:
+    """Current observations as ``(instrument name, attributes, value)``."""
+    now = timezone.now()
+    states = ensure_states()
+    counters = {(row.job, row.name): row.value for row in ScheduledJobCounter.objects.filter(job__in=list(JOBS))}
+    points: list[tuple[str, dict[str, str], float]] = []
+    for name, spec in JOBS.items():
+        state = states[name]
+        for status in RUN_STATUSES:
+            points.append((RUNS, {'job': name, 'status': status}, float(counters.get((name, f'runs.{status}'), 0))))
+        for kind in spec.item_kinds:
+            points.append((ITEMS, {'job': name, 'kind': kind}, float(counters.get((name, f'items.{kind}'), 0))))
+        points.append(
+            (LAST_SUCCESS, {'job': name}, state.last_success_at.timestamp() if state.last_success_at else 0.0)
         )
-        items = CounterMetricFamily(
-            f'{PREFIX}_items',
-            'Items processed by scheduled job runs, by kind.',
-            labels=('job', 'kind'),
-        )
-        last_success = GaugeMetricFamily(
-            f'{PREFIX}_last_success_timestamp_seconds',
-            'Unix time when the last successful run finished (0 before the first one).',
-            labels=('job',),
-        )
-        last_run = GaugeMetricFamily(
-            f'{PREFIX}_last_run_timestamp_seconds',
-            'Unix time when the last run started (0 before the first one).',
-            labels=('job',),
-        )
-        duration = GaugeMetricFamily(
-            f'{PREFIX}_last_run_duration_seconds',
-            'Duration of the last finished run.',
-            labels=('job',),
-        )
-        overdue = GaugeMetricFamily(
-            f'{PREFIX}_overdue',
-            '1 when the last successful run is older than 3 times the job interval.',
-            labels=('job',),
-        )
-        for name, spec in JOBS.items():
-            state = states[name]
-            for st in RUN_STATUSES:
-                runs.add_metric([name, st], counters.get((name, f'runs.{st}'), 0))
-            for kind in spec.item_kinds:
-                items.add_metric([name, kind], counters.get((name, f'items.{kind}'), 0))
-            last_success.add_metric([name], state.last_success_at.timestamp() if state.last_success_at else 0)
-            last_run.add_metric([name], state.last_started_at.timestamp() if state.last_started_at else 0)
-            if state.last_duration_ms is not None:
-                duration.add_metric([name], state.last_duration_ms / 1000.0)
-            overdue.add_metric([name], 1 if is_overdue(spec, state, now) else 0)
-        yield from (runs, items, last_success, last_run, duration, overdue)
-
-        yield GaugeMetricFamily(
-            'shellui_auth_scheduler_enabled',
-            '1 when the in-container Celery worker and beat run (SCHEDULER_ENABLED).',
-            value=1 if scheduler_enabled() else 0,
-        )
-        reachable = redis_reachable()
-        if reachable is not None:
-            yield GaugeMetricFamily(
-                'shellui_auth_scheduler_redis_up',
-                '1 when the scheduler broker (Redis) answers PING.',
-                value=1 if reachable else 0,
-            )
+        points.append((LAST_RUN, {'job': name}, state.last_started_at.timestamp() if state.last_started_at else 0.0))
+        if state.last_duration_ms is not None:
+            points.append((DURATION, {'job': name}, state.last_duration_ms / 1000.0))
+        points.append((OVERDUE, {'job': name}, 1.0 if is_overdue(spec, state, now) else 0.0))
+    points.append((SCHEDULER_ENABLED, {}, 1.0 if scheduler_enabled() else 0.0))
+    reachable = redis_reachable()
+    if reachable is not None:
+        points.append((REDIS_UP, {}, 1.0 if reachable else 0.0))
         beat = beat_last_seen() if reachable else None
         if beat is not None:
-            yield GaugeMetricFamily(
-                'shellui_auth_scheduler_beat_last_seen_timestamp_seconds',
-                'Unix time when Celery beat last published a scheduled job.',
-                value=beat.timestamp(),
-            )
+            points.append((BEAT_LAST_SEEN, {}, beat.timestamp()))
+    return points
 
 
-_registry = CollectorRegistry(auto_describe=False)
-_registry.register(ScheduledJobsCollector())
+def _cached_points() -> list[tuple[str, dict[str, str], float]]:
+    now = time.monotonic()
+    cached = _points_cache['points']
+    if cached is not None and now - _points_cache['at'] < _CACHE_SECONDS:
+        return cached
+    points = scheduled_job_points()
+    _points_cache['at'] = now
+    _points_cache['points'] = points
+    return points
 
 
-def scheduled_jobs_metrics_body() -> bytes:
-    return generate_latest(_registry)
+def _callback(name: str):
+    def callback(_options):
+        from opentelemetry.metrics import Observation
 
+        try:
+            rows = [point for point in _cached_points() if point[0] == name]
+        except Exception:
+            logger.exception('scheduled job metric %s failed', name)
+            return
+        for _instrument, attributes, value in rows:
+            yield Observation(value, attributes)
+
+    return callback
+
+
+def ensure_scheduled_job_metrics() -> None:
+    """Register scheduled-job instruments. No effect when telemetry is off."""
+    global _bound_generation
+    from shellui_django.telemetry._state import state
+
+    if not state.active or _bound_generation == state.generation:
+        return
+    meter = get_meter(_METER)
+    if not hasattr(meter, 'create_observable_counter'):
+        return
+    meter.create_observable_counter(
+        canonical_metric_name(RUNS),
+        callbacks=[_callback(RUNS)],
+        description='Finished scheduled job runs by status (succeeded, failed, skipped_locked).',
+    )
+    meter.create_observable_counter(
+        canonical_metric_name(ITEMS),
+        callbacks=[_callback(ITEMS)],
+        description='Items processed by scheduled job runs, by kind.',
+    )
+    meter.create_observable_gauge(
+        canonical_metric_name(LAST_SUCCESS),
+        callbacks=[_callback(LAST_SUCCESS)],
+        unit='s',
+        description='Unix time when the last successful run finished (0 before the first one).',
+    )
+    meter.create_observable_gauge(
+        canonical_metric_name(LAST_RUN),
+        callbacks=[_callback(LAST_RUN)],
+        unit='s',
+        description='Unix time when the last run started (0 before the first one).',
+    )
+    meter.create_observable_gauge(
+        canonical_metric_name(DURATION),
+        callbacks=[_callback(DURATION)],
+        unit='s',
+        description='Duration of the last finished run.',
+    )
+    meter.create_observable_gauge(
+        canonical_metric_name(OVERDUE),
+        callbacks=[_callback(OVERDUE)],
+        description='1 when the last successful run is older than 3 times the job interval.',
+    )
+    meter.create_observable_gauge(
+        canonical_metric_name(SCHEDULER_ENABLED),
+        callbacks=[_callback(SCHEDULER_ENABLED)],
+        description='1 when the in-container Celery worker and beat run (SCHEDULER_ENABLED).',
+    )
+    meter.create_observable_gauge(
+        canonical_metric_name(REDIS_UP),
+        callbacks=[_callback(REDIS_UP)],
+        description='1 when the scheduler broker (Redis) answers PING. Absent without a broker.',
+    )
+    meter.create_observable_gauge(
+        canonical_metric_name(BEAT_LAST_SEEN),
+        callbacks=[_callback(BEAT_LAST_SEEN)],
+        unit='s',
+        description='Unix time when Celery beat last published a scheduled job. Absent before the first one.',
+    )
+    _bound_generation = state.generation

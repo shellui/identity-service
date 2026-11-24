@@ -96,6 +96,8 @@ A standalone instance with `DEBUG` set to `false` needs these variables to start
 
 Leave `SHELLUI_INSTANCE_ROLE` unset for this standalone set. A `global` or `region` instance needs more variables. Optional settings stay at their defaults until you set them. The [configuration reference](https://docs.shellui.com/identity/configuration) lists every variable.
 
+Traces and metrics stay off until `OTEL_EXPORTER_OTLP_ENDPOINT` is set. `OTEL_EXPORTER_OTLP_HEADERS` carries collector auth. `OTEL_SERVICE_NAME` defaults to `identity-service`. `OTEL_RESOURCE_ATTRIBUTES` can set `deployment.environment` and `cloud.region`. `SHELLUI_REGION` sets `cloud.region` when that attribute is absent. identity-global and a regional identity are distinguished by `shellui.instance_role`.
+
 ## Image tags
 
 Publishing a release adds the version and the minor line. A stable release also moves `latest`.

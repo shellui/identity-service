@@ -62,7 +62,7 @@ identity-service covers six areas. Each card opens the guide for that area.
   <div className="col col--6">
     <Link className="card padding--lg" to="/identity/scheduled-jobs" style={{height:'100%',color:'inherit',textDecoration:'none'}}>
       <strong style={{fontSize:'1.05rem'}}>Run it in production</strong>
-      <span style={{marginTop:'0.5rem',color:'var(--ifm-color-emphasis-700)'}}>One Docker image with built-in scheduled jobs, rate limits, a liveness probe, and Prometheus metrics.</span>
+      <span style={{marginTop:'0.5rem',color:'var(--ifm-color-emphasis-700)'}}>One Docker image with built-in scheduled jobs, rate limits, a liveness probe, and OpenTelemetry traces and metrics.</span>
     </Link>
   </div>
 </div>

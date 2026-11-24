@@ -25,7 +25,7 @@ Besides the standard claims (`iss`, `aud`, `exp`, `iat`, `jti`, and `user_id`), 
 | `user_metadata` | `name`, `full_name`, `avatar_url`, `is_staff`, `is_company_owner`, `shelluiPreferences`, and `groups` |
 | `app_metadata` | `provider`: how the user signed in (`google`, `magic_link`, `personal_access_token`, …) |
 | `auth_time` | When the user last signed in. A refresh keeps the original value |
-| `pat_id`, `pat_ro`, `pat_agm` | PATs only: the token ID, read-only flag, and global metrics flag |
+| `pat_id`, `pat_ro` | PATs only: the token ID and the read-only flag. New tokens do not include `pat_agm` |
 
 ### Groups claim
 

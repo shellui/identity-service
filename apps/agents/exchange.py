@@ -468,6 +468,9 @@ def handle_agent_token_exchange(request, *, data: dict[str, Any] | None = None) 
     company = _resolve_company(data)
     if company is None:
         return _error('invalid_target', 'Company not found.')
+    from config.telemetry import tag_span
+
+    tag_span(company_id=company.pk)
 
     resource_raw = str(data.get('resource') or '').strip()
     if not is_regional_gateway_resource_for_company(resource_raw, company.pk):
@@ -806,6 +809,7 @@ def handle_agent_token_exchange(request, *, data: dict[str, Any] | None = None) 
     except ValueError as exc:
         return _error('invalid_grant', str(exc) or 'The agent cannot issue tokens.')
     refresh, _session = issue_agent_refresh(agent, resource=resource_url)
+    tag_span(company_id=company.pk, agent_id=agent.pk)
     logger.info(
         'agent token exchange: issued company_id=%s agent_id=%s global_agent_id=%s',
         company.pk,

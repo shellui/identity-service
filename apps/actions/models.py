@@ -344,10 +344,10 @@ class ScheduledJobState(models.Model):
 
 class ScheduledJobCounter(models.Model):
     """
-    Monotonic counters for Prometheus (``runs.<status>``, ``items.<kind>``).
+    Monotonic counters (``runs.<status>``, ``items.<kind>``) for OpenTelemetry.
 
     Stored in the database because runs happen in the Celery worker or a cron process,
-    while ``/api/v1/metrics/all`` is served by gunicorn workers.
+    and every process exports the same values.
     """
 
     job = models.CharField(max_length=64)

@@ -53,7 +53,7 @@ The handbook lives in [`docs/`](docs/index.md) and is published at [docs.shellui
 - [OAuth login](docs/oauth-login.md) and [OAuth providers](docs/oauth-providers.md)
 - [SAML](docs/saml.md), [magic links](docs/magic-link.md) and [desktop apps](docs/desktop-apps.md)
 - [Company access](docs/company-access.md) and [SCIM](docs/scim.md)
-- [JWKS and key rotation](docs/jwks.md) and [instance roles](docs/instance-roles.md)
+- [JWKS and key rotation](docs/jwks.md), [metrics](docs/metrics.md) and [instance roles](docs/instance-roles.md)
 - [Webhooks](docs/actions.md), [event log](docs/event-log.md) and [scheduled jobs](docs/scheduled-jobs.md)
 - [Security hardening](docs/security-hardening.md) and [upgrading](docs/upgrading.md)
 

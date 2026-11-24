@@ -273,7 +273,6 @@ class InvitationAccessControlTests(InvitationTestCase):
             self.owner,
             self.company,
             read_only=True,
-            access_global_metrics=False,
             name='ro',
         )
         self.client.force_authenticate(user=None)

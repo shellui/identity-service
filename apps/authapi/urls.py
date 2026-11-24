@@ -44,8 +44,6 @@ from .views import (
     ShellUIAdminScimTokenRevokeView,
     ShellUIPersonalAccessTokenListCreateView,
     ShellUIPersonalAccessTokenRevokeView,
-    ShellUIAdminGlobalMetricsView,
-    ShellUIAdminMetricsView,
     ShellUIAdminUserDetailView,
     ShellUIAdminUserListView,
     ShellUIAuthSettingsView,
@@ -104,8 +102,6 @@ urlpatterns = [
     ),
     path('oauth-social-apps', ShellUIAdminOAuthSocialAppListView.as_view(), name='shellui-admin-oauth-social-apps'),
     path('oauth-social-apps/<int:pk>', ShellUIAdminOAuthSocialAppDetailView.as_view(), name='shellui-admin-oauth-social-app-detail'),
-    path('metrics', ShellUIAdminMetricsView.as_view(), name='shellui-admin-metrics'),
-    path('metrics/all', ShellUIAdminGlobalMetricsView.as_view(), name='shellui-admin-metrics-all'),
     path(
         'personal-access-tokens/<uuid:key_id>/revoke',
         ShellUIPersonalAccessTokenRevokeView.as_view(),
