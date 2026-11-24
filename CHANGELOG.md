@@ -21,6 +21,12 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
 -->
 
+## [0.13.2] - 2026-11-24
+
+### 🐛 Bug Fixes
+
+- Gunicorn workers that had not yet served a traced request exported no `http.server.active_requests` series, because the Django instrumentation creates it on the first request and health checks are not traced. After a restart with little traffic, monitoring that waits for this series saw the service as down. Each web worker now starts the series at 0.
+
 ## [0.13.1] - 2026-11-24
 
 ### 🐛 Bug Fixes

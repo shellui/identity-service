@@ -174,3 +174,33 @@ class RegisterMetricsTests(TestCase):
         ) as auth:
             telemetry.register_metrics()
         auth.assert_not_called()
+
+    def test_web_process_publishes_active_requests_before_traffic(self):
+        """A quiet Gunicorn worker still exports ``http.server.active_requests``."""
+        from opentelemetry.sdk.metrics.export import InMemoryMetricReader
+
+        from config import telemetry
+
+        reader = InMemoryMetricReader()
+        self.addCleanup(_reset_for_tests)
+        self.assertTrue(
+            setup_telemetry(
+                'identity-service',
+                service_version='test',
+                span_exporter=InMemorySpanExporter(),
+                metric_reader=reader,
+            )
+        )
+        with mock.patch('apps.authapi.metrics.ensure_auth_metrics'), mock.patch(
+            'apps.actions.scheduled_job_metrics.ensure_scheduled_job_metrics'
+        ):
+            telemetry.register_metrics()
+        data = reader.get_metrics_data()
+        points = {
+            metric.name: list(metric.data.data_points)
+            for resource in (data.resource_metrics if data else [])
+            for scope in resource.scope_metrics
+            for metric in scope.metrics
+        }
+        self.assertIn('http.server.active_requests', points)
+        self.assertEqual(sum(point.value for point in points['http.server.active_requests']), 0)
