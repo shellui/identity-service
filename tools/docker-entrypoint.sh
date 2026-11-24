@@ -181,7 +181,7 @@ stop_children() {
 reap_or_kill() {
   local grace=8
   # Optional test hook (plain expansion, not a documented setting).
-  if [ -n "${STOP_GRACE_SECONDS}" ]; then
+  if [ -n "${STOP_GRACE_SECONDS-}" ]; then
     grace="${STOP_GRACE_SECONDS}"
   fi
   local pid still
