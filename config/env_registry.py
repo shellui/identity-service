@@ -108,7 +108,6 @@ OPTIONAL = (
     Var('SCHEDULER_ENABLED', 'true', 'Scheduled jobs'),
     Var('CELERY_BROKER_URL', ''),
     Var('CELERY_WORKER_CONCURRENCY', '2'),
-    Var('CELERY_BEAT_SCHEDULE_FILE', '/tmp/celerybeat-schedule'),
     Var('TRUSTED_PROXY_IPS', '', 'Security'),
     Var('CORS_ALLOW_ALL_ORIGINS', 'true'),
     Var('CORS_ALLOW_CREDENTIALS', 'false'),

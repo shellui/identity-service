@@ -15,20 +15,21 @@ Both jobs are safe to run when there is nothing to do: they finish after one or 
 
 ## How it works
 
-The container starts two processes:
+The container starts three processes:
 
 - **gunicorn**, the web app
-- a **Celery worker with an embedded beat** (`celery -A config worker --beat`). Beat sends each job on time, the worker runs it. It uses one process with a pool of 2 threads, so an hourly purge never delays webhook retries.
+- a **Celery worker** (`celery -A config worker --pool threads`). It runs the jobs. The default concurrency is 2 threads, so an hourly purge never delays webhook retries
+- **Celery beat** (`celery -A config beat --scheduler celery.beat.Scheduler`). It sends each job on time. Beat uses an in-memory scheduler, not a schedule file. A restart starts a fresh schedule from the job definitions
 
 Redis is the message broker. The jobs are the same code as the `purge_expired_data` and `retry_webhooks` management commands, so their output and behavior are identical.
 
-The container entrypoint watches both processes. A `SIGTERM` (for example `docker stop` or a redeploy) is passed to both, so in-flight work finishes cleanly. If either process exits, the entrypoint stops the other one and the container exits, so Docker or Coolify restarts it.
+The container entrypoint watches all three processes. A `SIGTERM` (for example `docker stop` or a redeploy) is passed to all of them, so in-flight work finishes cleanly. If any process exits, the entrypoint stops the others and the container exits, so Docker or Coolify restarts it. Beat is a process of its own, not a child of the worker, so a Beat crash restarts the container.
 
 | Variable | Default | Purpose |
 | -------- | ------- | ------- |
 | `REDIS_URL` | unset | Redis for the shared cache and the job broker. **Required when `DEBUG=false`:** without it the container logs `REDIS_URL is required when DEBUG is false` and exits with status 1, also with `SCHEDULER_ENABLED=false`. With `DEBUG=true` the jobs do not run, the container logs a warning and the web app still starts |
 | `CELERY_BROKER_URL` | `REDIS_URL` | Use a different Redis for the jobs. Does not replace `REDIS_URL`, which the cache needs |
-| `SCHEDULER_ENABLED` | `true` | `false` keeps the worker out of this container. Use it with a dedicated worker container or your own cron. `REDIS_URL` is still required in production |
+| `SCHEDULER_ENABLED` | `true` | `false` keeps the worker and beat out of this container. Use it with a dedicated worker container or your own cron. `REDIS_URL` is still required in production |
 | `CELERY_WORKER_CONCURRENCY` | `2` | Threads in the worker. 2 lets a purge and a retry run at the same time |
 
 The worker uses the same settings as the web app: `LOG_LEVEL` and stdout logging, Sentry (task errors are reported when `SENTRY_DSN` is set), and `POSTGRES_STATEMENT_TIMEOUT` / `POSTGRES_LOCK_TIMEOUT`.
@@ -51,8 +52,8 @@ The image takes a mode as its command:
 
 | Command | Starts |
 | ------- | ------ |
-| `web` (default) | migrations, then gunicorn and the worker (unless `SCHEDULER_ENABLED=false`) |
-| `worker` | only the worker with beat. No migrations, no web server. Needs `REDIS_URL` (`CELERY_BROKER_URL` alone is enough only with `DEBUG=true`) |
+| `web` (default) | migrations, then gunicorn, the worker, and beat (unless `SCHEDULER_ENABLED=false`) |
+| `worker` | only the worker and beat. No migrations, no web server. Needs `REDIS_URL` (`CELERY_BROKER_URL` alone is enough only with `DEBUG=true`) |
 | anything else | runs that command as `appuser`, for example `python manage.py createsuperuser` |
 
 Docker Compose example with the same image and environment:
