@@ -58,7 +58,7 @@ Names follow OpenTelemetry conventions. A Prometheus `_total` suffix is dropped 
 | `shellui_auth_company_weekly_active_users` | `shellui.auth.company.weekly.active.users` | gauge (`company_id`) |
 | `shellui_auth_company_monthly_active_users` | `shellui.auth.company.monthly.active.users` | gauge (`company_id`) |
 
-The login counter counts sign-ins in that process since it started. Gauges are read from the database at export time. Django also records `http.server.request.duration` and `http.server.active_requests`. Process and Python runtime series that the Prometheus client added on the old global scrape are not re-exported. Collect those from the host or the collector.
+The login counter counts sign-ins in that process since it started. Gauges are read from the database at export time. Django also records `http.server.request.duration` and `http.server.active_requests`. Each Gunicorn worker starts `http.server.active_requests` at 0, so a worker without traffic still exports it (health checks are not traced). The Celery worker does not export it. Process and Python runtime series that the Prometheus client added on the old global scrape are not re-exported. Collect those from the host or the collector.
 
 Scheduled job instruments are in [Scheduled jobs](scheduled-jobs.md#opentelemetry-metrics).
 
