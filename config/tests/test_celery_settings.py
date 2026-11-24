@@ -26,6 +26,9 @@ class CeleryBrokerUrlTests(SimpleTestCase):
             self.skipTest('SCHEDULER_ENABLED is set in this environment')
         self.assertTrue(settings.SCHEDULER_ENABLED)
 
+    def test_beat_uses_the_in_memory_scheduler(self):
+        self.assertEqual(settings.CELERY_BEAT_SCHEDULER, 'celery.beat.Scheduler')
+
 
 class CeleryLoggingTests(SimpleTestCase):
     def test_celery_logs_go_to_stdout_handler(self):

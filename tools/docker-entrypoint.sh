@@ -2,8 +2,8 @@
 # Container entrypoint.
 #
 # Modes (first argument, default "web"):
-#   web     migrate, then gunicorn plus the scheduler (Celery worker with embedded beat)
-#   worker  only the scheduler; for a dedicated worker container from the same image
+#   web     migrate, then gunicorn plus the scheduler (Celery worker and beat)
+#   worker  only the scheduler (worker and beat); for a dedicated worker container
 #   other   run the given command as appuser, for example: python manage.py shell
 #
 # Production (DEBUG false, the image default) requires REDIS_URL in web and worker modes:
@@ -17,9 +17,11 @@
 # The scheduler needs REDIS_URL (or CELERY_BROKER_URL). Set SCHEDULER_ENABLED=false to
 # keep it out of the web container. See docs/scheduled-jobs.md.
 #
-# Supervision: in web mode both processes run as children of this script. A SIGTERM or
-# SIGINT is forwarded to both, and if either one exits the other is stopped and the
-# container exits with that status, so Docker or Coolify restarts it.
+# Supervision: gunicorn, the Celery worker, and Celery beat run as children of this
+# script (web mode). A SIGTERM or SIGINT is forwarded to all of them, and if any one
+# exits the others are stopped and the container exits with that status, so Docker or
+# Coolify restarts it. Beat is a process of its own, not a child of the worker, so a
+# Beat crash restarts the container.
 set -euo pipefail
 
 MODE="${1:-web}"
@@ -120,16 +122,15 @@ gunicorn_cmd() {
   )
 }
 
-scheduler_cmd() {
-  # One worker process with a small thread pool, plus beat embedded in it (-B).
-  # Threads keep memory low: a purge run (up to 5 minutes) never blocks webhook retries
-  # with the default concurrency of 2. The beat schedule file goes to /tmp, which is
-  # writable for appuser; losing it on restart only means beat starts a fresh schedule.
+# Marker read by tools/healthcheck.py: worker mode has no HTTP server.
+WORKER_MODE_MARKER="/tmp/identity-worker-mode"
+
+worker_cmd() {
+  # One worker process with a small thread pool. Threads keep memory low: a purge run
+  # (up to 5 minutes) never blocks webhook retries with the default concurrency of 2.
   # --quiet drops the startup banner, which prints the broker URL.
-  SCHEDULER_ARGS=(
+  WORKER_ARGS=(
     celery -A config --quiet worker
-    --beat
-    --schedule "${CELERY_BEAT_SCHEDULE_FILE:-/tmp/celerybeat-schedule}"
     --pool threads
     --concurrency "${CELERY_WORKER_CONCURRENCY:-2}"
     --hostname "identity-service@%h"
@@ -137,6 +138,30 @@ scheduler_cmd() {
     --without-mingle
     --without-heartbeat
   )
+}
+
+beat_cmd() {
+  # In-memory scheduler: no shelve or dbm schedule file. On Python 3.13 and later the
+  # default PersistentScheduler uses dbm.sqlite3, which can crash Beat with
+  # "locking protocol" while the worker stays up, so the container looks healthy
+  # after jobs have stopped. The schedule lives in CELERY_BEAT_SCHEDULE, so a restart
+  # starts a fresh run from those definitions.
+  # --quiet drops the startup banner, which prints the broker URL.
+  BEAT_ARGS=(
+    celery -A config --quiet beat
+    --scheduler celery.beat.Scheduler
+  )
+}
+
+start_scheduler_processes() {
+  worker_cmd
+  beat_cmd
+  log "starting Celery worker"
+  "${AS_APP[@]}" "${WORKER_ARGS[@]}" &
+  PIDS+=("$!")
+  log "starting Celery beat"
+  "${AS_APP[@]}" "${BEAT_ARGS[@]}" &
+  PIDS+=("$!")
 }
 
 PIDS=()
@@ -147,6 +172,43 @@ stop_children() {
   for pid in "${PIDS[@]}"; do
     kill -TERM "${pid}" 2>/dev/null || true
   done
+}
+
+# Reap children after SIGTERM. Celery beat can ignore or delay SIGTERM (for
+# example a non-daemon telemetry thread), which would hang `wait` until Docker
+# SIGKILLs the container (exit 137). After a short grace period, SIGKILL any
+# process that is still running so the container can exit 0 on a clean stop.
+reap_or_kill() {
+  local grace=8
+  # Optional test hook (plain expansion, not a documented setting).
+  if [ -n "${STOP_GRACE_SECONDS-}" ]; then
+    grace="${STOP_GRACE_SECONDS}"
+  fi
+  local pid still
+  local deadline=$((SECONDS + grace))
+  while true; do
+    still=0
+    for pid in "${PIDS[@]}"; do
+      if kill -0 "${pid}" 2>/dev/null; then
+        still=1
+        break
+      fi
+    done
+    if [ "${still}" -eq 0 ]; then
+      break
+    fi
+    if [ "${SECONDS}" -ge "${deadline}" ]; then
+      for pid in "${PIDS[@]}"; do
+        if kill -0 "${pid}" 2>/dev/null; then
+          log "process ${pid} did not stop, sending SIGKILL"
+          kill -KILL "${pid}" 2>/dev/null || true
+        fi
+      done
+      break
+    fi
+    sleep 0.2
+  done
+  wait "${PIDS[@]}" 2>/dev/null || true
 }
 
 on_signal() {
@@ -167,7 +229,7 @@ supervise() {
   wait -n "${PIDS[@]}"
   status=$?
   stop_children
-  wait "${PIDS[@]}"
+  reap_or_kill
   set -e
   if [ -n "${STOP_SIGNAL}" ]; then
     log "stopped"
@@ -203,12 +265,9 @@ case "${MODE}" in
       exec "${AS_APP[@]}" "${GUNICORN_ARGS[@]}"
     fi
 
-    scheduler_cmd
     "${AS_APP[@]}" "${GUNICORN_ARGS[@]}" &
     PIDS+=("$!")
-    log "starting scheduler (Celery worker and beat)"
-    "${AS_APP[@]}" "${SCHEDULER_ARGS[@]}" &
-    PIDS+=("$!")
+    start_scheduler_processes
     supervise
     ;;
   worker)
@@ -218,9 +277,9 @@ case "${MODE}" in
       exit 1
     fi
     prepare_data_dir
-    scheduler_cmd
-    log "starting scheduler (Celery worker and beat)"
-    exec "${AS_APP[@]}" "${SCHEDULER_ARGS[@]}"
+    : > "${WORKER_MODE_MARKER}"
+    start_scheduler_processes
+    supervise
     ;;
   *)
     prepare_data_dir

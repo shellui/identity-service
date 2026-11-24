@@ -27,6 +27,19 @@ _SERVICE_STUB = textwrap.dedent(
     #!/usr/bin/env bash
     name="$(basename "$0")"
     echo "${name} $*" >> "${STUB_LOG}"
+    sub=""
+    for arg in "$@"; do
+      case "$arg" in
+        worker|beat) sub="$arg"; break ;;
+      esac
+    done
+    if [ -n "${sub}" ]; then
+      subvar="STUB_$(echo "${name}_${sub}" | tr '[:lower:]' '[:upper:]')_EXIT"
+      if [ -n "${!subvar:-}" ]; then
+        sleep 0.2
+        exit "${!subvar}"
+      fi
+    fi
     var="STUB_$(echo "${name}" | tr '[:lower:]' '[:upper:]')_EXIT"
     if [ -n "${!var:-}" ]; then
       sleep 0.2
@@ -35,6 +48,15 @@ _SERVICE_STUB = textwrap.dedent(
     # The sleep must not keep the test's stdout/stderr pipes open after we exit.
     sleep 30 >/dev/null 2>&1 &
     sleeper=$!
+    if [ -n "${STUB_IGNORE_TERM:-}" ]; then
+      # Stay up after SIGTERM so the entrypoint must SIGKILL us.
+      trap 'echo "${name} TERM" >> "${STUB_LOG}"' TERM
+      while true; do
+        wait "${sleeper}" 2>/dev/null || true
+        sleep 30 >/dev/null 2>&1 &
+        sleeper=$!
+      done
+    fi
     trap 'echo "${name} TERM" >> "${STUB_LOG}"; kill "${sleeper}"; exit 0' TERM
     wait
     '''
@@ -106,6 +128,10 @@ class DockerEntrypointTests(SimpleTestCase):
     def started(self, name):
         return [line for line in self.calls() if line.startswith(f'{name} ') and line != f'{name} TERM']
 
+    def celery_started(self, subcommand):
+        token = f' {subcommand} '
+        return [line for line in self.started('celery') if token in f' {line} ']
+
     def wait_for(self, predicate, timeout=10):
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
@@ -141,18 +167,62 @@ class DockerEntrypointTests(SimpleTestCase):
         self.assertIn('python manage.py migrate --noinput', calls)
         self.assertIn('python manage.py check --deploy', calls)
         self.assertIn('gunicorn TERM', calls)
-        self.assertIn('celery TERM', calls)
-        celery_args = self.started('celery')[0]
-        self.assertIn('-A config --quiet worker --beat', celery_args)
-        self.assertIn('--schedule /tmp/celerybeat-schedule', celery_args)
-        self.assertIn('--pool threads --concurrency 2', celery_args)
+        self.assertGreaterEqual(calls.count('celery TERM'), 2)
+        self.assertEqual(len(self.started('celery')), 2)
+        worker_args = self.celery_started('worker')[0]
+        beat_args = self.celery_started('beat')[0]
+        self.assertIn('-A config --quiet worker', worker_args)
+        self.assertNotIn('--beat', worker_args)
+        self.assertNotRegex(worker_args, r'--schedule(?:\s|=|$)')
+        self.assertIn('--pool threads --concurrency 2', worker_args)
+        self.assertIn('-A config --quiet beat', beat_args)
+        self.assertIn('--scheduler celery.beat.Scheduler', beat_args)
+        self.assertNotRegex(beat_args, r'--schedule(?:\s|=|$)')
         self.assertIn('config.wsgi:application', self.started('gunicorn')[0])
+
+    def test_web_stop_kills_a_child_that_ignores_sigterm(self):
+        proc = subprocess.Popen(
+            ['bash', str(ENTRYPOINT)],
+            env=self._env(
+                REDIS_URL='redis://redis:6379/0',
+                STUB_IGNORE_TERM='1',
+                STOP_GRACE_SECONDS='1',
+            ),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        try:
+            self.assertTrue(
+                self.wait_for(lambda: self.started('gunicorn') and self.started('celery')),
+                self.calls(),
+            )
+            time.sleep(0.3)
+            proc.send_signal(signal.SIGTERM)
+            _, stderr = proc.communicate(timeout=10)
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+                proc.communicate()
+
+        self.assertEqual(proc.returncode, 0, stderr)
+        self.assertIn('did not stop, sending SIGKILL', stderr)
+        self.assertIn('entrypoint: stopped', stderr)
 
     def test_web_exits_when_the_scheduler_dies(self):
         result = self.run_entrypoint(REDIS_URL='redis://redis:6379/0', STUB_CELERY_EXIT='3')
         self.assertEqual(result.returncode, 3, result.stderr)
         self.assertIn('gunicorn TERM', self.calls())
         self.assertIn('a process exited with status 3', result.stderr)
+
+    def test_web_exits_when_beat_dies(self):
+        result = self.run_entrypoint(REDIS_URL='redis://redis:6379/0', STUB_CELERY_BEAT_EXIT='3')
+        self.assertEqual(result.returncode, 3, result.stderr)
+        self.assertIn('gunicorn TERM', self.calls())
+        self.assertIn('celery TERM', self.calls())
+        self.assertIn('a process exited with status 3', result.stderr)
+        self.assertTrue(self.celery_started('worker'))
+        self.assertTrue(self.celery_started('beat'))
 
     def test_web_exits_non_zero_when_gunicorn_exits(self):
         result = self.run_entrypoint(REDIS_URL='redis://redis:6379/0', STUB_GUNICORN_EXIT='0')
@@ -224,14 +294,26 @@ class DockerEntrypointTests(SimpleTestCase):
             STUB_CELERY_EXIT='0',
         )
         self.assertEqual(result.returncode, 1, result.stderr)
-        self.assertIn('--concurrency 4', self.started('celery')[0])
+        self.assertIn('--concurrency 4', self.celery_started('worker')[0])
+        self.assertTrue(self.celery_started('beat'))
 
     def test_worker_mode_runs_only_the_scheduler(self):
         result = self.run_entrypoint('worker', REDIS_URL='redis://redis:6379/0', STUB_CELERY_EXIT='0')
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertTrue(self.started('celery'))
+        # Unexpected exits are raised to 1 so Docker or Coolify restarts the container.
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertTrue(self.celery_started('worker'))
+        self.assertTrue(self.celery_started('beat'))
         self.assertFalse(self.started('gunicorn'))
         self.assertFalse(self.started('python'), 'worker mode leaves migrations to the web container')
+        self.assertIn('a process exited', result.stderr)
+
+    def test_worker_mode_exits_when_beat_dies(self):
+        result = self.run_entrypoint('worker', REDIS_URL='redis://redis:6379/0', STUB_CELERY_BEAT_EXIT='3')
+        self.assertEqual(result.returncode, 3, result.stderr)
+        self.assertIn('a process exited with status 3', result.stderr)
+        self.assertTrue(self.celery_started('worker'))
+        self.assertTrue(self.celery_started('beat'))
+        self.assertFalse(self.started('gunicorn'))
 
     def test_worker_mode_in_production_without_redis_refuses_to_start(self):
         self.assert_refused_without_redis(self.run_entrypoint('worker', STUB_CELERY_EXIT='0'))
