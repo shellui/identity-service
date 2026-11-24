@@ -153,3 +153,24 @@ class TelemetryTests(TestCase):
             worker.join(timeout=5)
         self.assertFalse(worker.is_alive())
         self.assertEqual(captured['traceparent'].split('-')[1], parent)
+
+
+class RegisterMetricsTests(TestCase):
+    def test_registers_while_apps_are_loading(self):
+        from config import telemetry
+
+        with mock.patch('django.apps.apps.ready', False), mock.patch(
+            'apps.authapi.metrics.ensure_auth_metrics'
+        ) as auth, mock.patch('apps.actions.scheduled_job_metrics.ensure_scheduled_job_metrics') as jobs:
+            telemetry.register_metrics()
+        auth.assert_called_once_with()
+        jobs.assert_called_once_with()
+
+    def test_celery_worker_skips_gauges(self):
+        from config import telemetry
+
+        with mock.patch('sys.argv', ['/app/.venv/bin/celery', '-A', 'config', 'worker']), mock.patch(
+            'apps.authapi.metrics.ensure_auth_metrics'
+        ) as auth:
+            telemetry.register_metrics()
+        auth.assert_not_called()

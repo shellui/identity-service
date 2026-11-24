@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 import tomllib
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
@@ -92,10 +93,16 @@ def setup_process_telemetry() -> bool:
 
 
 def register_metrics() -> None:
-    """Bind observable gauges once Django apps are ready and telemetry is on."""
+    """Bind observable gauges once Django models are loaded and telemetry is on.
+
+    ``AppConfig.ready()`` runs before ``apps.ready`` is set, so this checks
+    ``models_ready``. The Celery worker skips the gauges: its thread pool shares
+    one database connection, so the metric reader thread must not query there.
+    Gunicorn publishes them.
+    """
     from django.apps import apps
 
-    if not apps.ready:
+    if not apps.models_ready or _in_celery_worker():
         return
     from apps.actions.scheduled_job_metrics import ensure_scheduled_job_metrics
     from apps.authapi.metrics import ensure_auth_metrics
@@ -174,3 +181,7 @@ class ShelluiSpanMiddleware:
         if user is not None and getattr(user, 'is_authenticated', False):
             tag_span(user_id=getattr(user, 'pk', None))
         return response
+
+
+def _in_celery_worker() -> bool:
+    return bool(sys.argv) and os.path.basename(sys.argv[0]) == 'celery'
