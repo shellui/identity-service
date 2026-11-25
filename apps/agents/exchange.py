@@ -803,6 +803,8 @@ def handle_agent_token_exchange(request, *, data: dict[str, Any] | None = None) 
                     'grant_version',
                 ]
             )
+            # A permission change on save bumps grant_version in a signal; issue tokens with the stored value.
+            agent.refresh_from_db(fields=['grant_version'])
 
     try:
         access = encode_access_token(agent, resource=resource_url)
