@@ -476,7 +476,7 @@ wheels = [
 
 [[package]]
 name = "identity-service"
-version = "0.13.4"
+version = "0.13.5"
 source = { virtual = "." }
 dependencies = [
     { name = "celery" },
@@ -525,7 +525,7 @@ requires-dist = [
     { name = "redis", specifier = "==8.1.0" },
     { name = "requests", specifier = "==2.33.0" },
     { name = "sentry-sdk", specifier = "==2.63.0" },
-    { name = "shellui-django", extras = ["mcp", "otel"], specifier = "==0.7.0" },
+    { name = "shellui-django", extras = ["mcp", "otel"], specifier = "==0.7.2" },
     { name = "whitenoise", specifier = "==6.12.0" },
 ]
 
@@ -1239,15 +1239,15 @@ wheels = [
 
 [[package]]
 name = "shellui-django"
-version = "0.7.0"
+version = "0.7.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "django" },
     { name = "djangorestframework" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/12/65/886f666f9cc2e0ade87ef3d9163ba30133c392e3c4556edfc89e10b11f10/shellui_django-0.7.0.tar.gz", hash = "sha256:3b80bff7f76372d9e2b419dca19af0cd012828248f1fcd5889248e5ff0187c19", size = 61888, upload-time = "2026-11-24T05:47:17.49Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/4b/08/ad6216aab971258171ad5106c4961e861035e04c2c81032d5512a09a7021/shellui_django-0.7.2.tar.gz", hash = "sha256:16d89ecfe26a45753b33c0663b69d276e50e513da93f72faf64de2d466f6d40d", size = 66810, upload-time = "2026-11-25T10:20:51.659Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/62/28/0ff228f1bbc144ae2436fbb57bdf821b9b9aee1be40c9052ed85698c0136/shellui_django-0.7.0-py3-none-any.whl", hash = "sha256:b7353081ce9c927e3bc69391407ff27df0284efd245c774c15e3e079096c05c5", size = 47530, upload-time = "2026-11-24T05:47:16.205Z" },
+    { url = "https://files.pythonhosted.org/packages/25/f9/8462623a03dccc70c474b3c2ba41916eaea3df6ae31267045f648baea4b8/shellui_django-0.7.2-py3-none-any.whl", hash = "sha256:a8036f1728b85b52b9e054ebb90c426f071c59265c99e430ec494f0f053be14f", size = 52942, upload-time = "2026-11-25T10:20:50.544Z" },
 ]
 
 [package.optional-dependencies]
