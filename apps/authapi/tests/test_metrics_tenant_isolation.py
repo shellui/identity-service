@@ -62,3 +62,55 @@ class MetricsEndpointTests(TestCase):
         )
         self.assertEqual(response.status_code, 400)
         self.assertIn('access_global_metrics', response.data)
+
+
+    def test_stats_requires_auth_and_owner_or_staff(self):
+        self.assertEqual(self.client.get('/api/v1/stats').status_code, 401)
+        member = User.objects.create_user(username='member-a', email='m@acme.test', password='x')
+        set_company_access(self.acme, member, enabled=True)
+        member_token = _issue_shellui_tokens(member, company=self.acme)['access_token']
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {member_token}')
+        self.assertEqual(self.client.get('/api/v1/stats').status_code, 403)
+
+        # Disabled owner is also refused.
+        set_company_access(self.acme, self.owner_a, enabled=False)
+        owner_token = _issue_shellui_tokens(self.owner_a, company=self.acme)['access_token']
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {owner_token}')
+        self.assertEqual(self.client.get('/api/v1/stats').status_code, 403)
+
+    def test_stats_rejects_company_id_query_override(self):
+        owner_token = _issue_shellui_tokens(self.owner_a, company=self.acme)['access_token']
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {owner_token}')
+        response = self.client.get(f'/api/v1/stats?company_id={self.globex.id}')
+        self.assertEqual(response.status_code, 400)
+
+    def test_stats_returns_company_scoped_counts_and_logins(self):
+        auth_metrics._reset_login_counts_for_tests()
+        auth_metrics.record_successful_login('google', self.acme.id)
+        auth_metrics.record_successful_login('google', self.acme.id)
+        auth_metrics.record_successful_login('magic_link', self.acme.id)
+        auth_metrics.record_successful_login('github', self.globex.id)
+
+        owner_token = _issue_shellui_tokens(self.owner_a, company=self.acme)['access_token']
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {owner_token}')
+        response = self.client.get('/api/v1/stats')
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body['company_id'], self.acme.id)
+        self.assertEqual(body['users_total'], 2)
+        self.assertEqual(body['users_active'], 2)
+        self.assertEqual(body['users_staff'], 1)
+        self.assertEqual(
+            body['successful_logins'],
+            [
+                {'provider': 'google', 'total': 2},
+                {'provider': 'magic_link', 'total': 1},
+            ],
+        )
+
+        # Staff with a token scoped to acme also gets acme-only stats.
+        staff_token = _issue_shellui_tokens(self.staff, company=self.acme)['access_token']
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {staff_token}')
+        staff_res = self.client.get('/api/v1/stats')
+        self.assertEqual(staff_res.status_code, 200)
+        self.assertEqual(staff_res.json()['company_id'], self.acme.id)

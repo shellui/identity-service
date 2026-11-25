@@ -278,3 +278,23 @@ class ShellUIHostingOAuthRedirectDeleteSerializer(serializers.Serializer):
         max_length=500,
         help_text='Redirect origin to remove, including scheme and host.',
     )
+
+
+class ShellUIAdminSuccessfulLoginSerializer(serializers.Serializer):
+    provider = serializers.CharField(help_text='Authentication provider slug.')
+    total = serializers.IntegerField(help_text='Successful sign-ins recorded in this process.')
+
+
+class ShellUIAdminStatsSerializer(serializers.Serializer):
+    company_id = serializers.IntegerField(help_text='Company id from the caller access token.')
+    users_total = serializers.IntegerField(help_text='Users linked to this company.')
+    users_active = serializers.IntegerField(help_text='Company memberships with access enabled.')
+    users_staff = serializers.IntegerField(help_text='Staff users linked to this company.')
+    social_accounts_total = serializers.IntegerField(help_text='Linked OAuth social accounts for company users.')
+    daily_active_users = serializers.IntegerField(help_text='Company users active since 00:00 today.')
+    weekly_active_users = serializers.IntegerField(help_text='Company users active since Monday 00:00.')
+    monthly_active_users = serializers.IntegerField(help_text='Company users active in the current month.')
+    successful_logins = ShellUIAdminSuccessfulLoginSerializer(
+        many=True,
+        help_text='Successful sign-ins by provider since the current server process started.',
+    )
