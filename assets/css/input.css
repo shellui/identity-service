@@ -2,7 +2,8 @@
 @import "./extras.css";
 
 @source "../../templates/**/*.html";
-@source not "../../templates/authapi/signin_error.html";
+@source "../../.venv/lib/python3.14/site-packages/shellui_django/ui/templates/**/*.html";
+@source inline("bg-muted dark:bg-background py-12 sm:py-16 max-w-[480px]");
 @source not "../../docs";
 @source not "../../static/vendor";
 @source not "../../tools";
