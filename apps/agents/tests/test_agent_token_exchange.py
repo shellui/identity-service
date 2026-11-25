@@ -727,3 +727,18 @@ class AgentTokenExchangeTests(_CryptoMixin, TestCase):
         self.assertEqual(agent.services_allowed, ['ai', 'identity'])
         self.assertIsNone(refresh_agent_access(refresh, resource=self._gateway_mcp))
         self.assertIsNone(refresh_agent_access(r1, resource=self._gateway_mcp))
+
+    def test_access_token_grant_version_matches_row_after_permission_change(self):
+        self._member()
+        gc = str(self.saas_global_company_id)
+        first = self._post(
+            self._global_agent_token(scope='identity storage ai', global_company_id=gc, company_binding_version=1)
+        )
+        self.assertEqual(first.status_code, 200)
+        second = self._post(
+            self._global_agent_token(scope='identity ai', global_company_id=gc, company_binding_version=1)
+        )
+        self.assertEqual(second.status_code, 200)
+        agent = Agent.objects.get(global_agent_id=self.global_agent_id)
+        claims = jwt.decode(second.json()['access_token'], options={'verify_signature': False})
+        self.assertEqual(claims['grant_version'], agent.grant_version)

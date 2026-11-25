@@ -21,6 +21,12 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
 -->
 
+## [0.13.6] - 2026-11-26
+
+### 🐛 Bug Fixes
+
+- Agent token exchange: when an exchange changes an agent's permissions, the access token now carries the stored `grant_version`. Before, the token kept the previous value, so regional gateways refused it until the next exchange.
+
 ## [0.13.5] - 2026-11-25
 
 ### 🛠 Improvements
