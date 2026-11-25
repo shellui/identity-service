@@ -21,6 +21,12 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
 -->
 
+## [0.13.4] - 2026-11-25
+
+### ✨ Feature
+
+- Add `GET /api/v1/stats`, returning company-scoped user, active-user, social account, and process-local successful sign-in counts as JSON for staff and enabled company owners.
+
 ## [0.13.3] - 2026-11-24
 
 ### 🐛 Bug Fixes

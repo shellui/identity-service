@@ -8,6 +8,7 @@ and ``provider``. There is no scrape endpoint.
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from datetime import timedelta
 
@@ -32,6 +33,8 @@ _successful_logins = counter(
     description='Successful sign-ins since this process started (browser callback or API login).',
     meter_name=_METER,
 )
+_login_counts_lock = threading.Lock()
+_login_counts: dict[tuple[int, str], int] = {}
 
 _PLATFORM_GAUGES: tuple[tuple[str, str], ...] = (
     ('shellui_auth_users_total', 'Number of Django user rows.'),
@@ -128,6 +131,43 @@ def _cached_snapshots() -> tuple[dict[str, int], list[tuple[str, dict[str, int]]
 def record_successful_login(provider: str, company_id: int) -> None:
     name = (provider or 'unknown').strip().lower() or 'unknown'
     _successful_logins.add(1, {'provider': name, 'company_id': str(company_id)})
+    with _login_counts_lock:
+        key = (int(company_id), name)
+        _login_counts[key] = _login_counts.get(key, 0) + 1
+
+
+def company_successful_logins(company_id: int) -> list[dict[str, int | str]]:
+    """Per-process successful sign-ins for one company since process start."""
+    cid = int(company_id)
+    with _login_counts_lock:
+        rows = [
+            {'provider': provider, 'total': total}
+            for (row_cid, provider), total in _login_counts.items()
+            if row_cid == cid and total > 0
+        ]
+    rows.sort(key=lambda row: (-int(row['total']), str(row['provider'])))
+    return rows
+
+
+def company_stats_snapshot(company: Company) -> dict:
+    """Company-scoped JSON statistics for the admin dashboard and identity stats page."""
+    values = company_gauge_values(company)
+    return {
+        'company_id': company.id,
+        'users_total': values['shellui_auth_company_users_total'],
+        'users_active': values['shellui_auth_company_users_active'],
+        'users_staff': values['shellui_auth_company_users_staff'],
+        'social_accounts_total': values['shellui_auth_company_social_accounts_total'],
+        'daily_active_users': values['shellui_auth_company_daily_active_users'],
+        'weekly_active_users': values['shellui_auth_company_weekly_active_users'],
+        'monthly_active_users': values['shellui_auth_company_monthly_active_users'],
+        'successful_logins': company_successful_logins(company.id),
+    }
+
+
+def _reset_login_counts_for_tests() -> None:
+    with _login_counts_lock:
+        _login_counts.clear()
 
 
 def _observe(reader):

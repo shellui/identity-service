@@ -6,7 +6,7 @@ description: OpenTelemetry traces and metrics for identity-service, and personal
 
 identity-service exports traces and metrics with OpenTelemetry. A request can be followed from this service into other Shellui services and into Celery tasks. Telemetry stays off until `OTEL_EXPORTER_OTLP_ENDPOINT` is set.
 
-`GET /api/v1/metrics` and `GET /api/v1/metrics/all` are removed. There is no Prometheus scrape endpoint. Scheduled job state is still available as JSON at `GET /api/v1/scheduled-jobs` (staff).
+`GET /api/v1/metrics` and `GET /api/v1/metrics/all` are removed. There is no Prometheus scrape endpoint. Company user and sign-in statistics are available as JSON at `GET /api/v1/stats` (staff or company owner), and scheduled job state is available as JSON at `GET /api/v1/scheduled-jobs` (staff).
 
 ## Enable
 
