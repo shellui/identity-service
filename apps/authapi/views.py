@@ -138,6 +138,7 @@ from .serializers import (
     ShellUIAdminOAuthRedirectCreateSerializer,
     ShellUIAdminOAuthRedirectUpdateSerializer,
     ShellUIHostingOAuthRedirectSyncSerializer,
+    ShellUIAdminStatsSerializer,
     ShellUIHostingOAuthRedirectDeleteSerializer,
     ShellUIPersonalAccessTokenCreateSerializer,
     ShellUIAdminScimTokenCreateSerializer,
@@ -4867,3 +4868,52 @@ class ShellUIAdminAuthMethodsView(APIView):
 
     def put(self, request):
         return self._update(request)
+
+
+def _require_staff_or_company_owner_metrics(request):
+    """Like `_require_staff_or_company_owner`, with company scope taken from the Bearer token only."""
+    user = _authenticate_bearer_user(request)
+    if not user:
+        return None, None, Response({'error': 'Unauthorized'}, status=status.HTTP_401_UNAUTHORIZED)
+    company, cerr = _company_from_bearer_token_only(request, user=user)
+    if cerr:
+        return None, None, cerr
+    if user.is_staff:
+        return user, company, None
+    if not _is_user_company_owner(user, company):
+        return None, None, Response({'error': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
+    if not is_company_access_enabled(company, user):
+        return None, None, Response(
+            {'error': 'Company access is disabled for this user.'},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    return user, company, None
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=['stats'],
+        operation_id='api_v1_stats_retrieve',
+        summary='Company user and sign-in statistics',
+        description=(
+            'Returns JSON user counts, active-user windows, and per-provider sign-in totals '
+            'for the company carried by the caller access token. Requires a staff user or a '
+            'company owner with access enabled.'
+        ),
+        responses={
+            200: ShellUIAdminStatsSerializer,
+            400: OpenApiResponse(description='Missing company_id in token or unexpected query override.'),
+            401: OpenApiResponse(description='Missing or invalid Bearer token.'),
+            403: OpenApiResponse(description='Forbidden (not staff or company owner, or access disabled).'),
+            404: OpenApiResponse(description='Company not found.'),
+        },
+    ),
+)
+class ShellUIAdminStatsView(APIView):
+    permission_classes = [ShellUIPermission]
+
+    def get(self, request):
+        _actor, company, err = _require_staff_or_company_owner_metrics(request)
+        if err:
+            return err
+        return Response(auth_metrics.company_stats_snapshot(company))
