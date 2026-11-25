@@ -65,3 +65,121 @@
     @apply mb-3 grid gap-1.5;
   }
 }
+
+
+@layer components {
+  .su-flow h1 {
+    @apply m-0 text-xl font-semibold tracking-tight text-balance text-foreground;
+  }
+  .su-flow .subtitle,
+  .su-flow .why,
+  .su-flow .consent-body,
+  .su-flow .redirect-notice {
+    @apply mt-3 mb-4 text-sm leading-relaxed text-muted-foreground;
+  }
+  .su-flow .note,
+  .su-flow .hint,
+  .su-flow .status {
+    @apply mt-2 text-xs leading-relaxed text-muted-foreground;
+  }
+  .su-flow .warning {
+    @apply my-4 rounded-lg border border-amber-500/50 bg-amber-500/10 p-3.5 text-sm leading-relaxed text-foreground;
+  }
+  .su-flow .errors,
+  .su-flow .error {
+    @apply mb-4 rounded-lg border border-destructive/40 bg-destructive/10 p-3.5 text-sm leading-relaxed text-destructive;
+  }
+  .su-flow label {
+    @apply mt-4 mb-1.5 block text-sm font-semibold text-foreground;
+  }
+  .su-flow input[type="email"],
+  .su-flow input[type="text"],
+  .su-flow input[type="password"],
+  .su-flow select {
+    @apply w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-foreground focus:ring-2 focus:ring-ring/30;
+  }
+  .su-flow fieldset {
+    @apply mt-4 border-0 p-0;
+  }
+  .su-flow legend {
+    @apply text-sm font-semibold text-foreground;
+  }
+  .su-flow .check {
+    @apply mt-1.5 flex items-start gap-2.5 text-sm font-normal leading-relaxed text-foreground;
+  }
+  .su-flow .stack > * + * {
+    @apply mt-3;
+  }
+  .su-flow h2 {
+    @apply mt-5 mb-2 text-sm font-semibold text-foreground;
+  }
+  .su-flow .access-list {
+    @apply mt-2 list-disc space-y-1 pl-5 text-sm leading-relaxed text-muted-foreground;
+  }
+  .su-flow .actions {
+    @apply mt-5;
+  }
+  .su-flow a.button,
+  .su-flow button.button,
+  .su-flow .button-primary,
+  .su-flow button {
+    @apply inline-flex min-h-11 w-full cursor-pointer items-center justify-center rounded-md border-0 bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground no-underline transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary;
+  }
+  .su-flow a.button-secondary,
+  .su-flow button.button-secondary {
+    @apply mt-3 border border-border bg-transparent text-foreground hover:bg-muted hover:opacity-100;
+  }
+  .su-flow .meta {
+    @apply mb-4 text-sm;
+  }
+  .su-flow .meta dt {
+    @apply mt-2.5 text-muted-foreground;
+  }
+  .su-flow .meta dd {
+    @apply mt-0.5 text-foreground;
+  }
+  .su-flow .host {
+    @apply mt-1 block break-all rounded-md border border-border px-2.5 py-2 font-mono text-sm font-semibold text-foreground;
+  }
+  .su-flow .identity {
+    @apply mb-5 flex items-center gap-3.5 rounded-lg border border-border bg-muted p-3.5;
+  }
+  .su-flow .avatar {
+    @apply size-12 shrink-0 rounded-full bg-border object-cover;
+  }
+  .su-flow .avatar-fallback {
+    @apply grid place-items-center text-lg font-semibold text-muted-foreground;
+  }
+  .su-flow .name {
+    @apply m-0 break-words text-sm font-semibold text-foreground;
+  }
+  .su-flow .email {
+    @apply m-0 break-all text-sm text-muted-foreground;
+  }
+  .su-flow .identity .meta {
+    @apply mt-1 mb-0 text-xs capitalize text-muted-foreground;
+  }
+  .su-flow .methods {
+    @apply mt-5 border-t border-border pt-4;
+  }
+  .su-flow .methods-title {
+    @apply m-0 mb-2.5 text-sm font-semibold text-foreground;
+  }
+  .su-flow .methods-list {
+    @apply m-0 grid list-none gap-2 p-0;
+  }
+  .su-flow .method,
+  .su-flow .method-button {
+    @apply block rounded-md border border-border bg-muted px-3 py-2.5 text-sm font-semibold text-foreground no-underline;
+  }
+  .su-flow .method-link:hover,
+  .su-flow .method-button:hover {
+    @apply border-foreground;
+  }
+  .su-flow .method-current {
+    @apply border-dashed text-muted-foreground;
+  }
+  .su-flow .badge {
+    @apply ml-1.5 inline-block rounded-full bg-muted-foreground/15 px-1.5 py-0.5 text-[0.68rem] font-semibold;
+  }
+}

@@ -303,6 +303,7 @@ INSTALLED_APPS = [
     'django.contrib.sites',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'shellui_django.ui',
     'allauth',
     'allauth.account',
     'allauth.socialaccount',

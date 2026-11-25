@@ -340,7 +340,7 @@ class StaffMagicLinkVerifyTests(_Base):
             HTTP_ACCEPT_LANGUAGE='fr-CH,fr;q=0.9,en;q=0.8',
         )
         page = response.content.decode()
-        self.assertIn('<html lang="fr">', page)
+        self.assertIn('lang="fr"', page)
         self.assertIn('Les liens de connexion sont désactivés pour les comptes staff', page)
         self.assertIn('Aller à la connexion', page)
         self.assertIn('Connectez-vous avec votre méthode de connexion habituelle.', page)
