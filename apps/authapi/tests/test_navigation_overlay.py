@@ -417,6 +417,8 @@ class NavigationOverlayApiTests(TestCase):
 
         missing = self._put(_overlay(hiddenPaths=['/later']))
         self.assertEqual(missing.status_code, 412)
+        # The 412 carries the current ETag, so a client can retry after reading the document.
+        self.assertEqual(self._etag(missing), etag)
         wrong = self._put(_overlay(hiddenPaths=['/later']), if_match='"not-the-etag"')
         self.assertEqual(wrong.status_code, 412)
         self.assertEqual(self._get().data['hiddenPaths'], ['/archive'])
@@ -430,6 +432,7 @@ class NavigationOverlayApiTests(TestCase):
 
         stale_delete = self._delete(if_match=etag)
         self.assertEqual(stale_delete.status_code, 412)
+        self.assertEqual(self._etag(stale_delete), new_etag)
         self.assertTrue(UserNavigationOverlay.objects.exists())
         self.assertEqual(self._delete(if_match=new_etag).status_code, 204)
 

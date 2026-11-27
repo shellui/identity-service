@@ -82,5 +82,6 @@ A rejected `PUT` leaves the previous document in place.
 | Body is not the version 1 document | `400` with `error` |
 | Body is larger than `64 KB`, or `installedApps` has more than 100 entries | `400` with `error` |
 | Read-only personal access token on `PUT` or `DELETE` | `403` |
+| `PUT` or `DELETE` with a missing or stale `If-Match` once a document exists | `412` with `error`, and the current `ETag` header. Read the document before you retry: it can change again |
 
 `GET` with a read-only personal access token still returns the saved document.

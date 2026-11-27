@@ -469,11 +469,19 @@ def _if_match_header(request) -> str | None:
     return request.headers.get('If-Match') or request.META.get('HTTP_IF_MATCH')
 
 
-def _precondition_failed():
-    return Response(
+def _precondition_failed(user, company):
+    """412 with the current ETag, when a document exists, so a client can retry after a read.
+
+    Clients must not rely on it: the row can change again before the retry.
+    """
+    response = Response(
         {'error': 'If-Match does not match the current navigation overlay.'},
         status=status.HTTP_412_PRECONDITION_FAILED,
     )
+    row = _row_for(user, company)
+    if row is not None:
+        response['ETag'] = _overlay_etag(row)
+    return response
 
 
 def _replace_overlay_row(user, company, document: dict, header: str | None):
@@ -600,6 +608,20 @@ def _cross_user_response(request, user) -> Response | None:
     return None
 
 
+_PRECONDITION_FAILED_DESCRIPTION = (
+    'If-Match is missing or does not match the current ETag. The response carries the '
+    'current ETag header when a document exists. Clients should still read the document '
+    'before they retry.'
+)
+
+_ETAG_RESPONSE_HEADER = OpenApiParameter(
+    name='ETag',
+    type=str,
+    location=OpenApiParameter.HEADER,
+    response=[200, 412],
+    description='Current version of the saved document, for If-Match on the next write.',
+)
+
 _COMPANY_ID_PARAMETER = OpenApiParameter(
     name='company_id',
     type=int,
@@ -655,7 +677,7 @@ def _emit_overlay_event(event_id: str, company, user, *, source: str, app_ids: l
             'already exists, If-Match must equal the current ETag (or *). Document '
             'updatedAt is set by the server.'
         ),
-        parameters=[_COMPANY_ID_PARAMETER],
+        parameters=[_COMPANY_ID_PARAMETER, _ETAG_RESPONSE_HEADER],
         request=NavigationOverlaySerializer,
         responses={
             200: OpenApiResponse(response=NavigationOverlaySerializer, description='Saved overlay document'),
@@ -665,7 +687,7 @@ def _emit_overlay_event(event_id: str, company, user, *, source: str, app_ids: l
                 description='Company mismatch, disabled membership, agent or personal access token, or a user id for someone else'
             ),
             404: OpenApiResponse(description='Unknown company'),
-            412: OpenApiResponse(description='If-Match is missing or does not match the current ETag'),
+            412: OpenApiResponse(description=_PRECONDITION_FAILED_DESCRIPTION),
             413: OpenApiResponse(description='Payload is larger than 64 KB'),
             429: OpenApiResponse(description='Write rate limit exceeded'),
         },
@@ -678,7 +700,7 @@ def _emit_overlay_event(event_id: str, company, user, *, source: str, app_ids: l
             'Delete the navigation overlay saved for the authenticated user and the token '
             'company. When a document exists, If-Match must equal the current ETag (or *).'
         ),
-        parameters=[_COMPANY_ID_PARAMETER],
+        parameters=[_COMPANY_ID_PARAMETER, _ETAG_RESPONSE_HEADER],
         responses={
             204: OpenApiResponse(description='Overlay deleted, or no document was saved'),
             401: OpenApiResponse(description='Missing or invalid bearer token'),
@@ -686,7 +708,7 @@ def _emit_overlay_event(event_id: str, company, user, *, source: str, app_ids: l
                 description='Company mismatch, disabled membership, agent or personal access token, or a user id for someone else'
             ),
             404: OpenApiResponse(description='Unknown company'),
-            412: OpenApiResponse(description='If-Match is missing or does not match the current ETag'),
+            412: OpenApiResponse(description=_PRECONDITION_FAILED_DESCRIPTION),
             429: OpenApiResponse(description='Write rate limit exceeded'),
         },
     ),
@@ -740,7 +762,7 @@ class ShellUINavigationOverlayView(APIView):
             user, company, serializer.validated_data, _if_match_header(request)
         )
         if row is None:
-            return _precondition_failed()
+            return _precondition_failed(user, company)
         stored = _document_for_row(row)
         _emit_overlay_event(
             'identity.navigation_overlay.updated',
@@ -769,7 +791,7 @@ class ShellUINavigationOverlayView(APIView):
             return cross_user
         deleted, precondition_ok = _delete_overlay_row(user, company, _if_match_header(request))
         if not precondition_ok:
-            return _precondition_failed()
+            return _precondition_failed(user, company)
         if deleted:
             _emit_overlay_event('identity.navigation_overlay.deleted', company, user, source='api')
         return Response(status=status.HTTP_204_NO_CONTENT)
