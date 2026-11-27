@@ -86,7 +86,8 @@
       ],
       "read_only": false,
       "destructive": false,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   },
   {
@@ -123,7 +124,8 @@
       ],
       "read_only": false,
       "destructive": false,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   },
   {
@@ -177,7 +179,8 @@
       ],
       "read_only": false,
       "destructive": true,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   },
   {
@@ -218,7 +221,8 @@
       ],
       "read_only": false,
       "destructive": true,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   },
   {
@@ -273,7 +277,8 @@
       ],
       "read_only": false,
       "destructive": true,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   },
   {
@@ -372,7 +377,8 @@
       ],
       "read_only": false,
       "destructive": true,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   },
   {
@@ -408,7 +414,8 @@
       "body_required": null,
       "read_only": false,
       "destructive": true,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   },
   {
@@ -440,7 +447,8 @@
       "body_required": null,
       "read_only": false,
       "destructive": true,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   },
   {
@@ -476,7 +484,8 @@
       "body_required": null,
       "read_only": false,
       "destructive": true,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   },
   {
@@ -512,7 +521,8 @@
       "body_required": null,
       "read_only": false,
       "destructive": true,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   },
   {
@@ -551,7 +561,8 @@
       ],
       "read_only": false,
       "destructive": true,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   },
   {
@@ -587,7 +598,8 @@
       "body_required": null,
       "read_only": false,
       "destructive": true,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   },
   {
@@ -623,7 +635,8 @@
       "body_required": null,
       "read_only": false,
       "destructive": true,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   },
   {
@@ -659,7 +672,8 @@
       "body_required": null,
       "read_only": false,
       "destructive": true,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   },
   {
@@ -695,7 +709,8 @@
       "body_required": null,
       "read_only": false,
       "destructive": true,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   },
   {
@@ -731,7 +746,8 @@
       "body_required": null,
       "read_only": false,
       "destructive": true,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   },
   {
@@ -768,7 +784,8 @@
       "body_required": null,
       "read_only": true,
       "destructive": false,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   },
   {
@@ -804,7 +821,8 @@
       "body_required": null,
       "read_only": true,
       "destructive": false,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   },
   {
@@ -830,7 +848,8 @@
       "body_required": null,
       "read_only": true,
       "destructive": false,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   },
   {
@@ -866,7 +885,8 @@
       "body_required": null,
       "read_only": true,
       "destructive": false,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   },
   {
@@ -912,7 +932,8 @@
       "body_required": null,
       "read_only": true,
       "destructive": false,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   },
   {
@@ -938,7 +959,8 @@
       "body_required": null,
       "read_only": true,
       "destructive": false,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   },
   {
@@ -974,7 +996,8 @@
       "body_required": null,
       "read_only": true,
       "destructive": false,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   },
   {
@@ -1010,7 +1033,8 @@
       "body_required": null,
       "read_only": true,
       "destructive": false,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   },
   {
@@ -1042,7 +1066,8 @@
       "body_required": null,
       "read_only": true,
       "destructive": false,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   },
   {
@@ -1078,7 +1103,8 @@
       "body_required": null,
       "read_only": true,
       "destructive": false,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   },
   {
@@ -1104,7 +1130,8 @@
       "body_required": null,
       "read_only": true,
       "destructive": false,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   },
   {
@@ -1140,7 +1167,8 @@
       "body_required": null,
       "read_only": true,
       "destructive": false,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   },
   {
@@ -1227,7 +1255,8 @@
       "body_required": null,
       "read_only": true,
       "destructive": false,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   },
   {
@@ -1312,7 +1341,8 @@
       "body_required": null,
       "read_only": true,
       "destructive": false,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   },
   {
@@ -1338,7 +1368,8 @@
       "body_required": null,
       "read_only": true,
       "destructive": false,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   },
   {
@@ -1364,7 +1395,8 @@
       "body_required": null,
       "read_only": true,
       "destructive": false,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   },
   {
@@ -1390,7 +1422,8 @@
       "body_required": null,
       "read_only": true,
       "destructive": false,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   },
   {
@@ -1482,7 +1515,8 @@
       "body_required": null,
       "read_only": true,
       "destructive": false,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   },
   {
@@ -1508,7 +1542,8 @@
       "body_required": null,
       "read_only": true,
       "destructive": false,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   },
   {
@@ -1534,7 +1569,8 @@
       "body_required": null,
       "read_only": true,
       "destructive": false,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   },
   {
@@ -1560,7 +1596,8 @@
       "body_required": null,
       "read_only": true,
       "destructive": false,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   },
   {
@@ -1586,7 +1623,8 @@
       "body_required": null,
       "read_only": true,
       "destructive": false,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   },
   {
@@ -1612,7 +1650,8 @@
       "body_required": null,
       "read_only": true,
       "destructive": false,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   },
   {
@@ -1638,7 +1677,8 @@
       "body_required": null,
       "read_only": true,
       "destructive": false,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   },
   {
@@ -1664,7 +1704,8 @@
       "body_required": null,
       "read_only": true,
       "destructive": false,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   },
   {
@@ -1690,7 +1731,8 @@
       "body_required": null,
       "read_only": true,
       "destructive": false,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   },
   {
@@ -1716,7 +1758,8 @@
       "body_required": null,
       "read_only": true,
       "destructive": false,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   },
   {
@@ -1756,7 +1799,8 @@
       "body_required": null,
       "read_only": true,
       "destructive": false,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   },
   {
@@ -1794,7 +1838,8 @@
       ],
       "read_only": false,
       "destructive": true,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   },
   {
@@ -1872,7 +1917,8 @@
       "body_required": null,
       "read_only": false,
       "destructive": true,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   },
   {
@@ -1916,7 +1962,8 @@
       ],
       "read_only": false,
       "destructive": false,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   },
   {
@@ -1960,7 +2007,8 @@
       ],
       "read_only": false,
       "destructive": true,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   },
   {
@@ -2007,7 +2055,8 @@
       "body_required": null,
       "read_only": false,
       "destructive": true,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   },
   {
@@ -2062,7 +2111,8 @@
       "body_required": null,
       "read_only": false,
       "destructive": true,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   },
   {
@@ -2124,7 +2174,8 @@
       "body_required": null,
       "read_only": false,
       "destructive": true,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   },
   {
@@ -2161,7 +2212,8 @@
       "body_required": null,
       "read_only": false,
       "destructive": true,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   },
   {
@@ -2197,7 +2249,8 @@
       "body_required": null,
       "read_only": false,
       "destructive": true,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   },
   {
@@ -2234,7 +2287,8 @@
       "body_required": null,
       "read_only": false,
       "destructive": true,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   },
   {
@@ -2271,7 +2325,8 @@
       "body_required": null,
       "read_only": false,
       "destructive": true,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   },
   {
@@ -2307,7 +2362,8 @@
       "body_required": null,
       "read_only": false,
       "destructive": true,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   },
   {
@@ -2343,7 +2399,8 @@
       "body_required": null,
       "read_only": false,
       "destructive": true,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   },
   {
@@ -2432,7 +2489,8 @@
       "body_required": null,
       "read_only": false,
       "destructive": false,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   },
   {
@@ -2470,7 +2528,8 @@
       ],
       "read_only": false,
       "destructive": true,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   },
   {
@@ -2548,7 +2607,8 @@
       "body_required": null,
       "read_only": false,
       "destructive": true,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   },
   {
@@ -2592,7 +2652,8 @@
       ],
       "read_only": false,
       "destructive": false,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   },
   {
@@ -2645,7 +2706,8 @@
       "body_required": null,
       "read_only": false,
       "destructive": true,
-      "mcp_tagged": true
+      "mcp_tagged": true,
+      "destinations_declared": true
     }
   }
 ]
