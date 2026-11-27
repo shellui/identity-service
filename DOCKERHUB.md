@@ -8,7 +8,7 @@ You use this image to run identity-service in production. Gunicorn listens on po
 
 | Piece | Value |
 | --- | --- |
-| Base image | `python:3.15-slim` |
+| Base image | `python:3.14-slim` |
 | Port | `8000` |
 | Entrypoint | `/app/tools/docker-entrypoint.sh` |
 | User | `appuser` |
