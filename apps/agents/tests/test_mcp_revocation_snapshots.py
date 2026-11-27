@@ -16,6 +16,7 @@ from apps.agents.tests.mcp_test_settings import (
     rs256_identity_settings,
 )
 from apps.agents.trusted_revocation import parse_trusted_revocation_poll_response_identity
+from apps.companies.access import set_company_access
 from apps.companies.models import Company
 
 User = get_user_model()
@@ -46,6 +47,7 @@ class McpRevocationSnapshotTests(TestCase):
         self.company = Company.objects.create(name='Rev Co', slug='rev-co')
         self.owner = User.objects.create_user('rev-own', 'rev@example.com', 'x')
         self.company.owners.add(self.owner)
+        set_company_access(self.company, self.owner, enabled=True)
 
     def _get(self, *, company_id: int | None = None):
         assertion = build_mcp_revocation_assertion(audience_url=_ORIGIN, **TEST_CALLER_SIGNING)

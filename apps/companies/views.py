@@ -6,6 +6,8 @@ from rest_framework.response import Response
 
 from apps.actions.user_hooks import emit_profile_snapshots, snapshot_profiles_for_ids
 
+from apps.agents.permissions import is_agent_request
+
 from .models import Company
 from .serializers import CompanySerializer, CompanyUpdateSerializer
 
@@ -72,6 +74,17 @@ class CompanyViewSet(
             key in validated for key in ('name', 'owner_ids', 'access_mode', 'allowed_email_domains')
         ):
             return Response({'error': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
+
+        if 'owner_ids' in validated and is_agent_request(request):
+            # An agent acts as the person who created it, but who owns a project is a human
+            # decision. No approval mode lets an agent grant, move or remove ownership.
+            return Response(
+                {
+                    'error': 'Agents cannot change who owns a company.',
+                    'error_code': 'agent_cannot_change_owners',
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
         if 'owner_ids' in validated and not validated['owner_ids']:
             return Response(

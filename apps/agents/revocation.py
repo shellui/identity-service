@@ -41,15 +41,81 @@ def expired_agent_ids(*, company_id: int | None = None) -> list[str]:
     return [str(aid) for aid in qs.values_list('id', flat=True)]
 
 
+CREATOR_OWNER = 'owner'
+CREATOR_MEMBER = 'member'
+CREATOR_GONE = 'gone'
+
+
+def creator_statuses(agents) -> dict[str, str]:
+    """The creator's current standing in the agent's company, by agent id.
+
+    ``owner`` or ``member`` for a creator with enabled access to the company (an owner is also
+    in ``Company.owners``), ``gone`` when the account is inactive, the membership was removed
+    or disabled, or the user no longer exists. This is the same test that decides whether the
+    person can get a token for the company, so an agent never outlives its creator's access.
+
+    Global agents are left out: their regional row records ``created_by`` but they are not the
+    creator's personal agent, and services must not read a role for them. So are agents with
+    no creator (company service agents).
+    """
+    from django.contrib.auth import get_user_model
+
+    from apps.companies.models import Company, CompanyMembership
+
+    rows = [
+        (str(a.pk), a.created_by_id, a.company_id)
+        for a in agents
+        if getattr(a, 'global_agent_id', None) is None and a.created_by_id is not None
+    ]
+    if not rows:
+        return {}
+    user_ids = {uid for _a, uid, _c in rows}
+    company_ids = {cid for _a, _u, cid in rows}
+    active = set(get_user_model().objects.filter(pk__in=user_ids, is_active=True).values_list('pk', flat=True))
+    enabled = set(
+        CompanyMembership.objects.filter(
+            user_id__in=user_ids, company_id__in=company_ids, is_enabled=True
+        ).values_list('user_id', 'company_id')
+    )
+    owners = set(
+        Company.owners.through.objects.filter(user_id__in=user_ids, company_id__in=company_ids).values_list(
+            'user_id', 'company_id'
+        )
+    )
+    out: dict[str, str] = {}
+    for agent_id, uid, cid in rows:
+        if uid not in active or (uid, cid) not in enabled:
+            out[agent_id] = CREATOR_GONE
+        elif (uid, cid) in owners:
+            out[agent_id] = CREATOR_OWNER
+        else:
+            out[agent_id] = CREATOR_MEMBER
+    return out
+
+
+def gone_creator_agent_ids(*, company_id: int | None = None) -> list[str]:
+    """Live agents whose creator no longer has access to the company."""
+    qs = Agent.objects.filter(revoked_at__isnull=True, global_agent_id__isnull=True, created_by__isnull=False)
+    if company_id is not None:
+        qs = qs.filter(company_id=company_id)
+    return [aid for aid, status in creator_statuses(list(qs)).items() if status == CREATOR_GONE]
+
+
 def blocked_agent_ids(*, company_id: int | None = None) -> list[str]:
     ids = set(revoked_agent_ids(company_id=company_id))
     ids.update(paused_agent_ids(company_id=company_id))
     ids.update(expired_agent_ids(company_id=company_id))
+    ids.update(gone_creator_agent_ids(company_id=company_id))
     return sorted(ids)
 
 
-def agent_snapshot(agent: Agent) -> dict:
-    """One regional agent row. ``agent_id`` is the regional primary key, never a global agent id."""
+def agent_snapshot(agent: Agent, *, creator_status: str | None = None) -> dict:
+    """One regional agent row. ``agent_id`` is the regional primary key, never a global agent id.
+
+    ``creator_status`` (``owner``, ``member`` or ``gone``) is the creator's live standing in the
+    company. Services give a personal agent the creator's role from this field and refuse an
+    agent whose creator is ``gone``. It is absent for global agents and agents with no creator.
+    """
     snap: dict = {
         'agent_id': str(agent.id),
         'company_id': int(agent.company_id),
@@ -63,6 +129,8 @@ def agent_snapshot(agent: Agent) -> dict:
         snap['global_company_id'] = str(gc)
     if cb is not None:
         snap['company_binding_version'] = int(cb)
+    if creator_status is not None:
+        snap['creator_status'] = creator_status
     return snap
 
 
@@ -71,7 +139,9 @@ def regional_agent_snapshots(*, company_id: int | None = None) -> list[dict]:
     qs = Agent.objects.all().order_by('id')
     if company_id is not None:
         qs = qs.filter(company_id=company_id)
-    return [agent_snapshot(agent) for agent in qs]
+    rows = list(qs)
+    statuses = creator_statuses(rows)
+    return [agent_snapshot(agent, creator_status=statuses.get(str(agent.pk))) for agent in rows]
 
 
 def blocked_agent_snapshots(*, company_id: int | None = None) -> list[dict]:
@@ -79,5 +149,6 @@ def blocked_agent_snapshots(*, company_id: int | None = None) -> list[dict]:
     ids = blocked_agent_ids(company_id=company_id)
     if not ids:
         return []
-    qs = Agent.objects.filter(pk__in=ids).order_by('id')
-    return [agent_snapshot(agent) for agent in qs]
+    rows = list(Agent.objects.filter(pk__in=ids).order_by('id'))
+    statuses = creator_statuses(rows)
+    return [agent_snapshot(agent, creator_status=statuses.get(str(agent.pk))) for agent in rows]

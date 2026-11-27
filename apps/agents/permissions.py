@@ -45,6 +45,14 @@ def _agent_access_from_bearer(request) -> dict | None:
     return claims
 
 
+def is_agent_request(request) -> bool:
+    """True when the caller is an MCP agent: through ``/mcp`` or with an agent bearer."""
+    auth = getattr(request, 'auth', None)
+    if isinstance(auth, dict) and auth.get('agent_id'):
+        return True
+    return _agent_access_from_bearer(request) is not None
+
+
 def require_company_admin(request, *, allow_agent_token: bool = True):
     from apps.authapi.views import (
         _authenticate_bearer_user,

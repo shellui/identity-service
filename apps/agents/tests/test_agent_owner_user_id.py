@@ -85,23 +85,6 @@ class AgentOwnerUserIdClaimTests(TestCase):
         self.assertEqual(delegated['aud'], claims['aud'])
         self.assertEqual(delegated['scope'], claims['scope'])
 
-    def test_claim_carries_the_creators_real_company_role(self):
-        member_agent = self._owned_agent()
-        claims = build_agent_access_token(member_agent, resource=self.resource)
-        self.assertIs(claims['owner_is_company_owner'], False)
-
-        self.company.owners.add(self.user)
-        owner_agent = self._owned_agent(name='Owner made')
-        claims = build_agent_access_token(owner_agent, resource=self.resource)
-        self.assertIs(claims['owner_is_company_owner'], True)
-        self.assertNotIn('is_staff', claims)
-        self.assertNotIn('is_company_owner', claims)
-
-    def test_role_claim_is_absent_with_no_owner(self):
-        agent = self._owned_agent(created_by=None, name='No owner')
-        claims = build_agent_access_token(agent, resource=self.resource)
-        self.assertNotIn('owner_is_company_owner', claims)
-
     def test_omits_claim_when_agent_has_no_owner(self):
         service_agent = Agent.objects.create(
             company=self.company,

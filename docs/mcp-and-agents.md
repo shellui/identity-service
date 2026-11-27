@@ -333,6 +333,7 @@ Services poll `GET /api/v1/mcp/internal/mcp-revocations` with a signed assertion
 - `cache_seconds`: `30`
 - `max_active_grant_version`: integer, the largest `grant_version` among agents with `revoked_at` null, or `0` when there is none. The JSON value and the signed claim are the same integer.
 - **`revocation_policy_version`**: integer fingerprint of `revoked_agent_ids`, every agent snapshot, `cache_seconds`, and `max_active_grant_version`. It changes when a blocked id set changes, when any snapshot changes (`is_active`, `paused`, `grant_version`, or SaaS binding), or when the active grant cap changes.
+- **`agents[].creator_status`**: `owner`, `member` or `gone`, the live standing of the person who created the agent in the agent's company. `owner` means the creator is in `Company.owners` and has enabled access, `member` means enabled access only, `gone` means the membership was removed or disabled or the account is inactive. It is present only for agents that have a creator and are not global agents. Services use it to give a personal agent its creator's role (storage-service does) instead of trusting a claim in the token, and to refuse the agent when the creator is `gone`. Every `gone` agent is also listed in `revoked_agent_ids`, so services that ignore the field still refuse it. Identity does not put a role claim in agent access tokens.
 - `revocation_assertion`: RS256 JWT (scope `mcp.revocation.list`, short `exp`) whose payload repeats `revoked_agent_ids`, `agents`, `cache_seconds`, `revocation_policy_version`, and `max_active_grant_version`. A body that omits or disagrees with any of those claims fails closed (`Revocation list body mismatch`). There is no feature flag.
 
 Verify `revocation_assertion` with RS256 against Identity `/.well-known/jwks.json` (issuer `JWT_ISSUER`, audience `shellui-mcp-revocation`). Gateways that cache **positive** decisions (agent not in `revoked_agent_ids`) must treat the cache as stale when **`revocation_policy_version`** or the signed **`revocation_assertion`** JWT changes, or when the agent access token `jti` / `exp` / `grant_version` / `company_binding_version` no longer match.
@@ -397,8 +398,7 @@ Access tokens include:
 | `sub` | `agent:{uuid}` |
 | `agent_id` | Agent uuid |
 | `company_id` | Company id |
-| `owner_user_id` | Regional user id the agent acts for. JSON integer, the same value as `Agent.created_by_id`. Omitted when the agent has no owner user. Not sent as null. |
-| `owner_is_company_owner` | Boolean, sent with `owner_user_id`. `true` when the creating user is an owner of the agent's company, `false` for a member. It never carries staff status. Services use it to give the agent the creator's role (storage-service does). Omitted when the agent has no owner user. |
+| `owner_user_id` | Regional user id the agent acts for. JSON integer, the same value as `Agent.created_by_id`. Omitted when the agent has no owner user, and for global agents. Not sent as null. |
 | `scope` | Space-separated service ids |
 | `grant_version` | Bumps when company-scoped MCP permissions invalidate session Allow grants |
 | `global_company_id` | SaaS global company uuid when the regional agent is bound |

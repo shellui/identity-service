@@ -48,21 +48,21 @@ def company_name_for_agent(agent: Agent) -> str:
 def apply_owner_user_id_claim(claims: dict, agent: Agent) -> None:
     """Add ``owner_user_id`` when the agent has a created-by user.
 
-    The value is the regional user id (``Agent.created_by_id``), as a JSON integer. It also
-    sets ``owner_is_company_owner`` (a boolean) from the creator's role in the company.
+    The value is the regional user id (``Agent.created_by_id``), as a JSON integer.
     Agents with no owner user, such as a global agent or a company service agent
     that was never linked to a user, omit the claim. The key is not set to null.
+
+    A global agent never carries it, even though its regional row records ``created_by``
+    from the first exchange: it is not that person's personal agent. Services learn the
+    creator's role from the signed revocation snapshot (``creator_status``), never from a
+    token claim, so a role change takes effect without waiting for a token to expire.
     """
+    if getattr(agent, 'global_agent_id', None) is not None:
+        return
     raw = getattr(agent, 'created_by_id', None)
     if raw is None:
         return
     claims['owner_user_id'] = int(raw)
-    # The creator's role in this company, so a service can give the agent the same access
-    # as that person. Never carries staff status: services refuse staff claims on agents.
-    claims['owner_is_company_owner'] = bool(
-        agent.company_id
-        and agent.company.owners.filter(pk=int(raw)).exists()
-    )
 
 
 DELEGATED_GRANT_MAX_SECONDS = 60
@@ -286,6 +286,12 @@ def refresh_agent_access(refresh_token: str, *, resource: str) -> tuple[str, str
     if session.expires_at <= timezone.now():
         return None
     if not agent.is_active:
+        return None
+    from apps.agents.revocation import CREATOR_GONE, creator_statuses
+
+    if creator_statuses([agent]).get(str(agent.pk)) == CREATOR_GONE:
+        # The person who created this agent no longer has access to the company.
+        revoke_all_agent_refresh_sessions(agent)
         return None
     if not _session_authority_ok(agent, session):
         revoke_all_agent_refresh_sessions(agent)
