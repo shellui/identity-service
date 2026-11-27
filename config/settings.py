@@ -303,6 +303,7 @@ INSTALLED_APPS = [
     'django.contrib.sites',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'shellui_django.ui',
     'allauth',
     'allauth.account',
     'allauth.socialaccount',
@@ -366,7 +367,6 @@ SPECTACULAR_SETTINGS = {
         {'name': 'oauth-clients', 'description': 'Company OAuth client mappings.'},
         {'name': 'oauth-social-apps', 'description': 'SocialApp key catalog and setup flows.'},
         {'name': 'audit-events', 'description': 'Login audit events and filters.'},
-        {'name': 'platform-metrics', 'description': 'Prometheus metrics endpoints.'},
         {'name': 'personal-access-tokens', 'description': 'User-personal JWT access tokens (read-only or read/write).'},
         {'name': 'companies', 'description': 'Company membership and company settings endpoints.'},
         {'name': 'mcp-tools', 'description': 'Operations exposed to MCP agents (Shellui admin and list_services).'},
@@ -439,6 +439,7 @@ MIDDLEWARE = [
 
 _auth_middleware_index = MIDDLEWARE.index('django.contrib.auth.middleware.AuthenticationMiddleware')
 MIDDLEWARE.insert(_auth_middleware_index + 1, 'apps.scim.middleware.ScimBearerAuthMiddleware')
+MIDDLEWARE.append('config.telemetry.ShelluiSpanMiddleware')
 
 ROOT_URLCONF = 'config.urls'
 
@@ -809,6 +810,10 @@ CELERY_WORKER_HIJACK_ROOT_LOGGER = False
 CELERY_WORKER_REDIRECT_STDOUTS = False
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
 CELERY_BEAT_SCHEDULE = scheduled_jobs_beat_schedule()
+# In-memory scheduler. PersistentScheduler writes a shelve/dbm file, and on
+# Python 3.13 and later the default dbm is sqlite, which can crash Beat with
+# "locking protocol". Last-run times are not kept; the schedule is CELERY_BEAT_SCHEDULE.
+CELERY_BEAT_SCHEDULER = 'celery.beat.Scheduler'
 
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
@@ -986,7 +991,8 @@ LOGGING = {
     },
     'formatters': {
         'console': {
-            'format': '{asctime} {levelname} [{name}] [req={request_id}] {message}',
+            '()': 'shellui_django.telemetry.TraceContextFormatter',
+            'format': '{asctime} {levelname} [{name}] [req={request_id}] trace_id={trace_id} span_id={span_id} {message}',
             'style': '{',
             'datefmt': '%Y-%m-%d %H:%M:%S',
         },

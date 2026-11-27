@@ -25,6 +25,18 @@ def _verifying_key():
 class ShellUIJWTAuthentication(JWTAuthentication):
     """Same as SimpleJWT, but rejects revoked PATs and mismatched ``jti`` / user."""
 
+    def authenticate(self, request):
+        result = super().authenticate(request)
+        if result is None:
+            return None
+        user, validated = result
+        company_id = validated.get('company_id') if hasattr(validated, 'get') else None
+        agent_id = validated.get('agent_id') if hasattr(validated, 'get') else None
+        from config.telemetry import tag_span
+
+        tag_span(company_id=company_id, user_id=getattr(user, 'pk', None), agent_id=agent_id)
+        return result
+
     def get_validated_token(self, raw_token):
         validated = self._decode_with_configured_keys(raw_token)
         if is_access_jti_denied(validated.get('jti')):
@@ -61,10 +73,7 @@ class ShellUIJWTAuthentication(JWTAuthentication):
         if claim_ro is not None and bool(pat.read_only) != bool(claim_ro):
             raise InvalidToken({'detail': 'Personal access token scope mismatch.'})
 
-        claim_agm = validated.get('pat_agm')
-        if claim_agm is not None and bool(pat.access_global_metrics) != bool(claim_agm):
-            raise InvalidToken({'detail': 'Personal access token scope mismatch.'})
-
+        # pat_agm is no longer issued or consulted. Tokens that still carry it stay valid.
         PersonalAccessToken.objects.filter(pk=pat.pk).update(last_used_at=timezone.now())
         return validated
 

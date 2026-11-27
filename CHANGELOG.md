@@ -27,6 +27,74 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 - `GET`, `PUT`, and `DELETE /api/v1/navigation-overlay` store one Shellui navigation overlay per account. The token must belong to a company that account is a member of. Third-party installed apps can request only `theme`, `locale`, `ui`, `navigate`, `storage`, and `ai`. The raw body is limited to 64 KB and `installedApps` to 100 entries.
 
+## [0.13.6] - 2026-11-26
+
+### 🐛 Bug Fixes
+
+- Agent token exchange: when an exchange changes an agent's permissions, the access token now carries the stored `grant_version`. Before, the token kept the previous value, so regional gateways refused it until the next exchange.
+
+## [0.13.5] - 2026-11-25
+
+### 🛠 Improvements
+
+- Sign-in, consent, device login, magic link, and related identity pages use the same Shellui header, card, and dark-mode layout as the Identity home and error pages, via `shellui-django` 0.7.2.
+
+## [0.13.4] - 2026-11-25
+
+### ✨ Feature
+
+- Add `GET /api/v1/stats`, returning company-scoped user, active-user, social account, and process-local successful sign-in counts as JSON for staff and enabled company owners.
+
+## [0.13.3] - 2026-11-24
+
+### 🐛 Bug Fixes
+
+- Celery Beat used the default PersistentScheduler, which writes a shelve/dbm file under `/tmp`. On Python 3.14 that file is `dbm.sqlite3`, and Beat can crash with `locking protocol` while the worker stays up, so the container stayed healthy after scheduled jobs had stopped. Beat now uses the in-memory scheduler (`celery.beat.Scheduler`) and runs as its own supervised process. If Beat exits, the entrypoint stops gunicorn and the worker and the container exits, so Coolify restarts it. If a child ignores SIGTERM, the entrypoint sends SIGKILL after 8 seconds so `docker stop` can finish cleanly.
+
+## [0.13.2] - 2026-11-24
+
+### 🐛 Bug Fixes
+
+- Gunicorn workers that had not yet served a traced request exported no `http.server.active_requests` series, because the Django instrumentation creates it on the first request and health checks are not traced. After a restart with little traffic, monitoring that waits for this series saw the service as down. Each web worker now starts the series at 0.
+
+## [0.13.1] - 2026-11-24
+
+### 🐛 Bug Fixes
+
+- The identity and scheduled-job gauges (for example active users and logins) were never registered, because registration waited for `apps.ready`, which Django sets only after every `AppConfig.ready()` has run. Registration now waits for the models. The Celery worker skips these gauges, because its thread pool shares one database connection with the metric reader thread; Gunicorn publishes them.
+
+## [0.13.0] - 2026-11-24
+
+### Upgrade notes
+
+`GET /api/v1/metrics` and `GET /api/v1/metrics/all` are removed. Read traces and metrics from the OpenTelemetry collector instead.
+
+- Set `OTEL_EXPORTER_OTLP_ENDPOINT` to turn telemetry on. Leave it empty and telemetry stays off.
+- Set `OTEL_EXPORTER_OTLP_HEADERS` when the collector requires auth (SigNoz basic auth).
+- `OTEL_SERVICE_NAME` overrides the default `identity-service`. identity-global and a regional identity both use that name unless you override it.
+- `OTEL_RESOURCE_ATTRIBUTES` can set `deployment.environment` and `cloud.region` (for example `deployment.environment=production,cloud.region=eu`).
+- `SHELLUI_REGION` sets `cloud.region` when `OTEL_RESOURCE_ATTRIBUTES` does not.
+- `shellui.instance_role` is `global` on identity-global, `region` on a regional identity, and `standalone` otherwise.
+- `POST /api/v1/personal-access-tokens` rejects `access_global_metrics: true`. New tokens do not include `pat_agm`. Tokens that already carry the claim still authenticate, and the claim is ignored. The `access_global_metrics` column stays.
+
+### ✨ Feature
+
+- OpenTelemetry traces, metrics, and log correlation through `shellui-django[otel]` 0.7.0. Log lines include `trace_id` and `span_id` next to `X-Request-ID`. The upstream token call and the MCP approval notify send W3C `traceparent`. Celery tasks stay on the same trace.
+
+### ⚠️ Deprecated
+
+- `PersonalAccessToken.access_global_metrics` is unused. The column remains so existing rows stay valid. Global metrics access is not issued or accepted.
+
+### 🗑 Removed
+
+- `GET /api/v1/metrics` and `GET /api/v1/metrics/all` (breaking). The `prometheus-client` dependency is gone.
+- The `pat_agm` claim is no longer issued. The API and Django admin no longer expose global metrics access.
+
+### 📚 Documentation
+
+- Metrics, configuration, scheduled jobs, JWKS, and the upgrade notes describe OpenTelemetry instead of Prometheus scrape endpoints.
+
+
 ## [0.12.0] - 2026-11-18
 
 ### Upgrade notes

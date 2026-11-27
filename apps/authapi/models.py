@@ -91,10 +91,11 @@ class UserNavigationOverlay(models.Model):
 
 class PersonalAccessToken(models.Model):
     """
-    Metadata for a long-lived JWT (Shellui access token shape with ``pat_id``, ``pat_ro``, ``pat_agm``).
+    Metadata for a long-lived JWT (Shellui access token shape with ``pat_id`` and ``pat_ro``).
 
     The secret is only the signed JWT returned once at creation; we store ``jti`` to validate
-    revocation; ``read_only`` / ``access_global_metrics`` must match claims ``pat_ro`` / ``pat_agm``.
+    revocation. ``read_only`` must match claim ``pat_ro``. ``access_global_metrics`` is retained
+    and unused: new tokens do not set it, and the API does not accept it.
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -115,7 +116,7 @@ class PersonalAccessToken(models.Model):
     )
     access_global_metrics = models.BooleanField(
         default=False,
-        help_text='If True, PAT may call GET /api/v1/metrics/all (cross-company). Only staff may enable.',
+        help_text='Retained column. Global metrics access is no longer issued or accepted.',
     )
     name = models.CharField(max_length=200, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)

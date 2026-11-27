@@ -60,6 +60,32 @@
     "annotations": {
       "readOnlyHint": false,
       "destructiveHint": false
+    },
+    "_meta": {
+      "path": "/api/v1/actions/rules",
+      "method": "POST",
+      "operationId": "identity_create_action_rules",
+      "path_params": [],
+      "query_fields": null,
+      "query_required": null,
+      "body_fields": [
+        "allow_private_urls",
+        "authorization_header",
+        "description",
+        "enabled",
+        "event_type",
+        "name",
+        "secret",
+        "url"
+      ],
+      "body_required": [
+        "event_type",
+        "name",
+        "url"
+      ],
+      "read_only": false,
+      "destructive": false,
+      "mcp_tagged": true
     }
   },
   {
@@ -80,6 +106,23 @@
     "annotations": {
       "readOnlyHint": false,
       "destructiveHint": false
+    },
+    "_meta": {
+      "path": "/api/v1/groups",
+      "method": "POST",
+      "operationId": "identity_create_groups",
+      "path_params": [],
+      "query_fields": null,
+      "query_required": null,
+      "body_fields": [
+        "display_name"
+      ],
+      "body_required": [
+        "display_name"
+      ],
+      "read_only": false,
+      "destructive": false,
+      "mcp_tagged": true
     }
   },
   {
@@ -113,6 +156,25 @@
     "annotations": {
       "readOnlyHint": false,
       "destructiveHint": true
+    },
+    "_meta": {
+      "path": "/api/v1/invitations",
+      "method": "POST",
+      "operationId": "identity_create_invitations",
+      "path_params": [],
+      "query_fields": null,
+      "query_required": null,
+      "body_fields": [
+        "app_url",
+        "email",
+        "language"
+      ],
+      "body_required": [
+        "email"
+      ],
+      "read_only": false,
+      "destructive": true,
+      "mcp_tagged": true
     }
   },
   {
@@ -136,6 +198,24 @@
     "annotations": {
       "readOnlyHint": false,
       "destructiveHint": true
+    },
+    "_meta": {
+      "path": "/api/v1/oauth-clients",
+      "method": "POST",
+      "operationId": "identity_create_oauth_clients",
+      "path_params": [],
+      "query_fields": null,
+      "query_required": null,
+      "body_fields": [
+        "is_active",
+        "social_app_id"
+      ],
+      "body_required": [
+        "social_app_id"
+      ],
+      "read_only": false,
+      "destructive": true,
+      "mcp_tagged": true
     }
   },
   {
@@ -170,6 +250,26 @@
     "annotations": {
       "readOnlyHint": false,
       "destructiveHint": true
+    },
+    "_meta": {
+      "path": "/api/v1/oauth-redirects",
+      "method": "POST",
+      "operationId": "identity_create_oauth_redirects",
+      "path_params": [],
+      "query_fields": null,
+      "query_required": null,
+      "body_fields": [
+        "base_url",
+        "is_active",
+        "label",
+        "source"
+      ],
+      "body_required": [
+        "base_url"
+      ],
+      "read_only": false,
+      "destructive": true,
+      "mcp_tagged": true
     }
   },
   {
@@ -246,18 +346,38 @@
     "annotations": {
       "readOnlyHint": false,
       "destructiveHint": true
+    },
+    "_meta": {
+      "path": "/api/v1/oauth-social-apps",
+      "method": "POST",
+      "operationId": "identity_create_oauth_social_apps",
+      "path_params": [],
+      "query_fields": null,
+      "query_required": null,
+      "body_fields": [
+        "client_id",
+        "client_secret",
+        "docs_slug",
+        "extra_settings",
+        "provider",
+        "tenant"
+      ],
+      "body_required": [
+        "client_id",
+        "client_secret"
+      ],
+      "read_only": false,
+      "destructive": true,
+      "mcp_tagged": true
     }
   },
   {
     "name": "identity_create_personal_access_tokens",
-    "description": "Creates a personal access token with optional name, read_only, and access_global_metrics, and returns its metadata. The token is shown once on the admin HTTP response and is masked in this result.",
+    "description": "Creates a personal access token with optional name and read_only, and returns its metadata. The token is shown once on the admin HTTP response and is masked in this result.",
     "inputSchema": {
       "type": "object",
       "properties": {
         "read_only": {
-          "type": "boolean"
-        },
-        "access_global_metrics": {
           "type": "boolean"
         },
         "name": {
@@ -269,6 +389,22 @@
     "annotations": {
       "readOnlyHint": false,
       "destructiveHint": true
+    },
+    "_meta": {
+      "path": "/api/v1/personal-access-tokens",
+      "method": "POST",
+      "operationId": "identity_create_personal_access_tokens",
+      "path_params": [],
+      "query_fields": null,
+      "query_required": null,
+      "body_fields": [
+        "name",
+        "read_only"
+      ],
+      "body_required": null,
+      "read_only": false,
+      "destructive": true,
+      "mcp_tagged": true
     }
   },
   {
@@ -286,6 +422,21 @@
     "annotations": {
       "readOnlyHint": false,
       "destructiveHint": true
+    },
+    "_meta": {
+      "path": "/api/v1/scim/tokens",
+      "method": "POST",
+      "operationId": "identity_create_scim_tokens",
+      "path_params": [],
+      "query_fields": null,
+      "query_required": null,
+      "body_fields": [
+        "name"
+      ],
+      "body_required": null,
+      "read_only": false,
+      "destructive": true,
+      "mcp_tagged": true
     }
   },
   {
@@ -307,6 +458,21 @@
     "annotations": {
       "readOnlyHint": false,
       "destructiveHint": true
+    },
+    "_meta": {
+      "path": "/api/v1/actions/rules/{id}",
+      "method": "DELETE",
+      "operationId": "identity_delete_action_rules",
+      "path_params": [
+        "id"
+      ],
+      "query_fields": null,
+      "query_required": null,
+      "body_fields": null,
+      "body_required": null,
+      "read_only": false,
+      "destructive": true,
+      "mcp_tagged": true
     }
   },
   {
@@ -328,6 +494,21 @@
     "annotations": {
       "readOnlyHint": false,
       "destructiveHint": true
+    },
+    "_meta": {
+      "path": "/api/v1/groups/{id}",
+      "method": "DELETE",
+      "operationId": "identity_delete_groups",
+      "path_params": [
+        "id"
+      ],
+      "query_fields": null,
+      "query_required": null,
+      "body_fields": null,
+      "body_required": null,
+      "read_only": false,
+      "destructive": true,
+      "mcp_tagged": true
     }
   },
   {
@@ -349,6 +530,23 @@
     "annotations": {
       "readOnlyHint": false,
       "destructiveHint": true
+    },
+    "_meta": {
+      "path": "/api/v1/hosting-oauth-redirects",
+      "method": "DELETE",
+      "operationId": "identity_delete_hosting_oauth_redirects",
+      "path_params": [],
+      "query_fields": null,
+      "query_required": null,
+      "body_fields": [
+        "base_url"
+      ],
+      "body_required": [
+        "base_url"
+      ],
+      "read_only": false,
+      "destructive": true,
+      "mcp_tagged": true
     }
   },
   {
@@ -370,6 +568,21 @@
     "annotations": {
       "readOnlyHint": false,
       "destructiveHint": true
+    },
+    "_meta": {
+      "path": "/api/v1/invitations/{id}",
+      "method": "DELETE",
+      "operationId": "identity_delete_invitations",
+      "path_params": [
+        "id"
+      ],
+      "query_fields": null,
+      "query_required": null,
+      "body_fields": null,
+      "body_required": null,
+      "read_only": false,
+      "destructive": true,
+      "mcp_tagged": true
     }
   },
   {
@@ -391,6 +604,21 @@
     "annotations": {
       "readOnlyHint": false,
       "destructiveHint": true
+    },
+    "_meta": {
+      "path": "/api/v1/oauth-clients/{id}",
+      "method": "DELETE",
+      "operationId": "identity_delete_oauth_clients",
+      "path_params": [
+        "id"
+      ],
+      "query_fields": null,
+      "query_required": null,
+      "body_fields": null,
+      "body_required": null,
+      "read_only": false,
+      "destructive": true,
+      "mcp_tagged": true
     }
   },
   {
@@ -412,6 +640,21 @@
     "annotations": {
       "readOnlyHint": false,
       "destructiveHint": true
+    },
+    "_meta": {
+      "path": "/api/v1/oauth-redirects/{id}",
+      "method": "DELETE",
+      "operationId": "identity_delete_oauth_redirects",
+      "path_params": [
+        "id"
+      ],
+      "query_fields": null,
+      "query_required": null,
+      "body_fields": null,
+      "body_required": null,
+      "read_only": false,
+      "destructive": true,
+      "mcp_tagged": true
     }
   },
   {
@@ -433,6 +676,21 @@
     "annotations": {
       "readOnlyHint": false,
       "destructiveHint": true
+    },
+    "_meta": {
+      "path": "/api/v1/oauth-social-apps/{id}",
+      "method": "DELETE",
+      "operationId": "identity_delete_oauth_social_apps",
+      "path_params": [
+        "id"
+      ],
+      "query_fields": null,
+      "query_required": null,
+      "body_fields": null,
+      "body_required": null,
+      "read_only": false,
+      "destructive": true,
+      "mcp_tagged": true
     }
   },
   {
@@ -454,6 +712,21 @@
     "annotations": {
       "readOnlyHint": false,
       "destructiveHint": true
+    },
+    "_meta": {
+      "path": "/api/v1/users/{id}",
+      "method": "DELETE",
+      "operationId": "identity_delete_users",
+      "path_params": [
+        "id"
+      ],
+      "query_fields": null,
+      "query_required": null,
+      "body_fields": null,
+      "body_required": null,
+      "read_only": false,
+      "destructive": true,
+      "mcp_tagged": true
     }
   },
   {
@@ -476,6 +749,21 @@
     "annotations": {
       "readOnlyHint": true,
       "destructiveHint": false
+    },
+    "_meta": {
+      "path": "/api/v1/actions/deliveries/{delivery_id}",
+      "method": "GET",
+      "operationId": "identity_get_action_deliveries",
+      "path_params": [
+        "delivery_id"
+      ],
+      "query_fields": null,
+      "query_required": null,
+      "body_fields": null,
+      "body_required": null,
+      "read_only": true,
+      "destructive": false,
+      "mcp_tagged": true
     }
   },
   {
@@ -497,6 +785,21 @@
     "annotations": {
       "readOnlyHint": true,
       "destructiveHint": false
+    },
+    "_meta": {
+      "path": "/api/v1/actions/rules/{id}",
+      "method": "GET",
+      "operationId": "identity_get_action_rules",
+      "path_params": [
+        "id"
+      ],
+      "query_fields": null,
+      "query_required": null,
+      "body_fields": null,
+      "body_required": null,
+      "read_only": true,
+      "destructive": false,
+      "mcp_tagged": true
     }
   },
   {
@@ -510,6 +813,19 @@
     "annotations": {
       "readOnlyHint": true,
       "destructiveHint": false
+    },
+    "_meta": {
+      "path": "/api/v1/auth-methods",
+      "method": "GET",
+      "operationId": "identity_get_auth_methods",
+      "path_params": [],
+      "query_fields": null,
+      "query_required": null,
+      "body_fields": null,
+      "body_required": null,
+      "read_only": true,
+      "destructive": false,
+      "mcp_tagged": true
     }
   },
   {
@@ -531,6 +847,21 @@
     "annotations": {
       "readOnlyHint": true,
       "destructiveHint": false
+    },
+    "_meta": {
+      "path": "/api/v1/companies/{id}/",
+      "method": "GET",
+      "operationId": "identity_get_companies",
+      "path_params": [
+        "id"
+      ],
+      "query_fields": null,
+      "query_required": null,
+      "body_fields": null,
+      "body_required": null,
+      "read_only": true,
+      "destructive": false,
+      "mcp_tagged": true
     }
   },
   {
@@ -560,6 +891,23 @@
     "annotations": {
       "readOnlyHint": true,
       "destructiveHint": false
+    },
+    "_meta": {
+      "path": "/api/v1/events/{id}",
+      "method": "GET",
+      "operationId": "identity_get_events",
+      "path_params": [
+        "id"
+      ],
+      "query_fields": [
+        "scope"
+      ],
+      "query_required": null,
+      "body_fields": null,
+      "body_required": null,
+      "read_only": true,
+      "destructive": false,
+      "mcp_tagged": true
     }
   },
   {
@@ -573,6 +921,19 @@
     "annotations": {
       "readOnlyHint": true,
       "destructiveHint": false
+    },
+    "_meta": {
+      "path": "/api/v1/events/retention",
+      "method": "GET",
+      "operationId": "identity_get_events_retention",
+      "path_params": [],
+      "query_fields": null,
+      "query_required": null,
+      "body_fields": null,
+      "body_required": null,
+      "read_only": true,
+      "destructive": false,
+      "mcp_tagged": true
     }
   },
   {
@@ -594,6 +955,21 @@
     "annotations": {
       "readOnlyHint": true,
       "destructiveHint": false
+    },
+    "_meta": {
+      "path": "/api/v1/groups/{id}",
+      "method": "GET",
+      "operationId": "identity_get_groups",
+      "path_params": [
+        "id"
+      ],
+      "query_fields": null,
+      "query_required": null,
+      "body_fields": null,
+      "body_required": null,
+      "read_only": true,
+      "destructive": false,
+      "mcp_tagged": true
     }
   },
   {
@@ -615,6 +991,21 @@
     "annotations": {
       "readOnlyHint": true,
       "destructiveHint": false
+    },
+    "_meta": {
+      "path": "/api/v1/oauth-clients/{id}",
+      "method": "GET",
+      "operationId": "identity_get_oauth_clients",
+      "path_params": [
+        "id"
+      ],
+      "query_fields": null,
+      "query_required": null,
+      "body_fields": null,
+      "body_required": null,
+      "read_only": true,
+      "destructive": false,
+      "mcp_tagged": true
     }
   },
   {
@@ -632,6 +1023,21 @@
     "annotations": {
       "readOnlyHint": true,
       "destructiveHint": false
+    },
+    "_meta": {
+      "path": "/api/v1/oauth-provider-catalog",
+      "method": "GET",
+      "operationId": "identity_get_oauth_provider_catalog",
+      "path_params": [],
+      "query_fields": [
+        "include_legacy"
+      ],
+      "query_required": null,
+      "body_fields": null,
+      "body_required": null,
+      "read_only": true,
+      "destructive": false,
+      "mcp_tagged": true
     }
   },
   {
@@ -653,6 +1059,21 @@
     "annotations": {
       "readOnlyHint": true,
       "destructiveHint": false
+    },
+    "_meta": {
+      "path": "/api/v1/oauth-redirects/{id}",
+      "method": "GET",
+      "operationId": "identity_get_oauth_redirects",
+      "path_params": [
+        "id"
+      ],
+      "query_fields": null,
+      "query_required": null,
+      "body_fields": null,
+      "body_required": null,
+      "read_only": true,
+      "destructive": false,
+      "mcp_tagged": true
     }
   },
   {
@@ -666,6 +1087,19 @@
     "annotations": {
       "readOnlyHint": true,
       "destructiveHint": false
+    },
+    "_meta": {
+      "path": "/api/v1/scim",
+      "method": "GET",
+      "operationId": "identity_get_scim_status",
+      "path_params": [],
+      "query_fields": null,
+      "query_required": null,
+      "body_fields": null,
+      "body_required": null,
+      "read_only": true,
+      "destructive": false,
+      "mcp_tagged": true
     }
   },
   {
@@ -687,6 +1121,21 @@
     "annotations": {
       "readOnlyHint": true,
       "destructiveHint": false
+    },
+    "_meta": {
+      "path": "/api/v1/users/{id}",
+      "method": "GET",
+      "operationId": "identity_get_users",
+      "path_params": [
+        "id"
+      ],
+      "query_fields": null,
+      "query_required": null,
+      "body_fields": null,
+      "body_required": null,
+      "read_only": true,
+      "destructive": false,
+      "mcp_tagged": true
     }
   },
   {
@@ -749,6 +1198,31 @@
     "annotations": {
       "readOnlyHint": true,
       "destructiveHint": false
+    },
+    "_meta": {
+      "path": "/api/v1/users/audience",
+      "method": "GET",
+      "operationId": "identity_get_users_audience",
+      "path_params": [],
+      "query_fields": [
+        "access",
+        "count_only",
+        "group_ids",
+        "joined_after",
+        "joined_before",
+        "page",
+        "page_size",
+        "roles",
+        "seen_after",
+        "seen_before",
+        "user_ids"
+      ],
+      "query_required": null,
+      "body_fields": null,
+      "body_required": null,
+      "read_only": true,
+      "destructive": false,
+      "mcp_tagged": true
     }
   },
   {
@@ -812,6 +1286,28 @@
     "annotations": {
       "readOnlyHint": true,
       "destructiveHint": false
+    },
+    "_meta": {
+      "path": "/api/v1/actions/deliveries",
+      "method": "GET",
+      "operationId": "identity_list_action_deliveries",
+      "path_params": [],
+      "query_fields": [
+        "action_rule_id",
+        "created_after",
+        "created_before",
+        "event_type",
+        "page",
+        "page_size",
+        "scheduled_job_run_id",
+        "status"
+      ],
+      "query_required": null,
+      "body_fields": null,
+      "body_required": null,
+      "read_only": true,
+      "destructive": false,
+      "mcp_tagged": true
     }
   },
   {
@@ -825,6 +1321,19 @@
     "annotations": {
       "readOnlyHint": true,
       "destructiveHint": false
+    },
+    "_meta": {
+      "path": "/api/v1/actions/events",
+      "method": "GET",
+      "operationId": "identity_list_action_events",
+      "path_params": [],
+      "query_fields": null,
+      "query_required": null,
+      "body_fields": null,
+      "body_required": null,
+      "read_only": true,
+      "destructive": false,
+      "mcp_tagged": true
     }
   },
   {
@@ -838,6 +1347,19 @@
     "annotations": {
       "readOnlyHint": true,
       "destructiveHint": false
+    },
+    "_meta": {
+      "path": "/api/v1/actions/rules",
+      "method": "GET",
+      "operationId": "identity_list_action_rules",
+      "path_params": [],
+      "query_fields": null,
+      "query_required": null,
+      "body_fields": null,
+      "body_required": null,
+      "read_only": true,
+      "destructive": false,
+      "mcp_tagged": true
     }
   },
   {
@@ -851,6 +1373,19 @@
     "annotations": {
       "readOnlyHint": true,
       "destructiveHint": false
+    },
+    "_meta": {
+      "path": "/api/v1/companies/",
+      "method": "GET",
+      "operationId": "identity_list_companies",
+      "path_params": [],
+      "query_fields": null,
+      "query_required": null,
+      "body_fields": null,
+      "body_required": null,
+      "read_only": true,
+      "destructive": false,
+      "mcp_tagged": true
     }
   },
   {
@@ -921,6 +1456,28 @@
     "annotations": {
       "readOnlyHint": true,
       "destructiveHint": false
+    },
+    "_meta": {
+      "path": "/api/v1/events",
+      "method": "GET",
+      "operationId": "identity_list_events",
+      "path_params": [],
+      "query_fields": [
+        "created_after",
+        "created_before",
+        "event_type",
+        "page",
+        "page_size",
+        "scope",
+        "user",
+        "user_id"
+      ],
+      "query_required": null,
+      "body_fields": null,
+      "body_required": null,
+      "read_only": true,
+      "destructive": false,
+      "mcp_tagged": true
     }
   },
   {
@@ -934,6 +1491,19 @@
     "annotations": {
       "readOnlyHint": true,
       "destructiveHint": false
+    },
+    "_meta": {
+      "path": "/api/v1/events/types",
+      "method": "GET",
+      "operationId": "identity_list_events_types",
+      "path_params": [],
+      "query_fields": null,
+      "query_required": null,
+      "body_fields": null,
+      "body_required": null,
+      "read_only": true,
+      "destructive": false,
+      "mcp_tagged": true
     }
   },
   {
@@ -947,6 +1517,19 @@
     "annotations": {
       "readOnlyHint": true,
       "destructiveHint": false
+    },
+    "_meta": {
+      "path": "/api/v1/groups",
+      "method": "GET",
+      "operationId": "identity_list_groups",
+      "path_params": [],
+      "query_fields": null,
+      "query_required": null,
+      "body_fields": null,
+      "body_required": null,
+      "read_only": true,
+      "destructive": false,
+      "mcp_tagged": true
     }
   },
   {
@@ -960,6 +1543,19 @@
     "annotations": {
       "readOnlyHint": true,
       "destructiveHint": false
+    },
+    "_meta": {
+      "path": "/api/v1/invitations",
+      "method": "GET",
+      "operationId": "identity_list_invitations",
+      "path_params": [],
+      "query_fields": null,
+      "query_required": null,
+      "body_fields": null,
+      "body_required": null,
+      "read_only": true,
+      "destructive": false,
+      "mcp_tagged": true
     }
   },
   {
@@ -973,6 +1569,19 @@
     "annotations": {
       "readOnlyHint": true,
       "destructiveHint": false
+    },
+    "_meta": {
+      "path": "/api/v1/oauth-clients",
+      "method": "GET",
+      "operationId": "identity_list_oauth_clients",
+      "path_params": [],
+      "query_fields": null,
+      "query_required": null,
+      "body_fields": null,
+      "body_required": null,
+      "read_only": true,
+      "destructive": false,
+      "mcp_tagged": true
     }
   },
   {
@@ -986,6 +1595,19 @@
     "annotations": {
       "readOnlyHint": true,
       "destructiveHint": false
+    },
+    "_meta": {
+      "path": "/api/v1/oauth-redirects",
+      "method": "GET",
+      "operationId": "identity_list_oauth_redirects",
+      "path_params": [],
+      "query_fields": null,
+      "query_required": null,
+      "body_fields": null,
+      "body_required": null,
+      "read_only": true,
+      "destructive": false,
+      "mcp_tagged": true
     }
   },
   {
@@ -999,6 +1621,19 @@
     "annotations": {
       "readOnlyHint": true,
       "destructiveHint": false
+    },
+    "_meta": {
+      "path": "/api/v1/oauth-social-apps",
+      "method": "GET",
+      "operationId": "identity_list_oauth_social_apps",
+      "path_params": [],
+      "query_fields": null,
+      "query_required": null,
+      "body_fields": null,
+      "body_required": null,
+      "read_only": true,
+      "destructive": false,
+      "mcp_tagged": true
     }
   },
   {
@@ -1012,6 +1647,19 @@
     "annotations": {
       "readOnlyHint": true,
       "destructiveHint": false
+    },
+    "_meta": {
+      "path": "/api/v1/personal-access-tokens",
+      "method": "GET",
+      "operationId": "identity_list_personal_access_tokens",
+      "path_params": [],
+      "query_fields": null,
+      "query_required": null,
+      "body_fields": null,
+      "body_required": null,
+      "read_only": true,
+      "destructive": false,
+      "mcp_tagged": true
     }
   },
   {
@@ -1025,6 +1673,19 @@
     "annotations": {
       "readOnlyHint": true,
       "destructiveHint": false
+    },
+    "_meta": {
+      "path": "/api/v1/scim/tokens",
+      "method": "GET",
+      "operationId": "identity_list_scim_tokens",
+      "path_params": [],
+      "query_fields": null,
+      "query_required": null,
+      "body_fields": null,
+      "body_required": null,
+      "read_only": true,
+      "destructive": false,
+      "mcp_tagged": true
     }
   },
   {
@@ -1038,6 +1699,19 @@
     "annotations": {
       "readOnlyHint": true,
       "destructiveHint": false
+    },
+    "_meta": {
+      "path": "/api/v1/mcp/services",
+      "method": "GET",
+      "operationId": "identity_list_services",
+      "path_params": [],
+      "query_fields": null,
+      "query_required": null,
+      "body_fields": null,
+      "body_required": null,
+      "read_only": true,
+      "destructive": false,
+      "mcp_tagged": true
     }
   },
   {
@@ -1061,6 +1735,23 @@
     "annotations": {
       "readOnlyHint": true,
       "destructiveHint": false
+    },
+    "_meta": {
+      "path": "/api/v1/users",
+      "method": "GET",
+      "operationId": "identity_list_users",
+      "path_params": [],
+      "query_fields": [
+        "page",
+        "page_size",
+        "q"
+      ],
+      "query_required": null,
+      "body_fields": null,
+      "body_required": null,
+      "read_only": true,
+      "destructive": false,
+      "mcp_tagged": true
     }
   },
   {
@@ -1082,6 +1773,23 @@
     "annotations": {
       "readOnlyHint": false,
       "destructiveHint": true
+    },
+    "_meta": {
+      "path": "/api/v1/auth-methods",
+      "method": "PUT",
+      "operationId": "identity_replace_auth_methods",
+      "path_params": [],
+      "query_fields": null,
+      "query_required": null,
+      "body_fields": [
+        "enable_magic_link"
+      ],
+      "body_required": [
+        "enable_magic_link"
+      ],
+      "read_only": false,
+      "destructive": true,
+      "mcp_tagged": true
     }
   },
   {
@@ -1136,6 +1844,28 @@
     "annotations": {
       "readOnlyHint": false,
       "destructiveHint": true
+    },
+    "_meta": {
+      "path": "/api/v1/companies/{id}/",
+      "method": "PUT",
+      "operationId": "identity_replace_companies",
+      "path_params": [
+        "id"
+      ],
+      "query_fields": null,
+      "query_required": null,
+      "body_fields": [
+        "access_mode",
+        "allow_desktop_dev_scheme",
+        "allowed_email_domains",
+        "desktop_redirect_schemes",
+        "name",
+        "owner_ids"
+      ],
+      "body_required": null,
+      "read_only": false,
+      "destructive": true,
+      "mcp_tagged": true
     }
   },
   {
@@ -1161,6 +1891,25 @@
     "annotations": {
       "readOnlyHint": false,
       "destructiveHint": false
+    },
+    "_meta": {
+      "path": "/api/v1/groups/{id}",
+      "method": "PUT",
+      "operationId": "identity_replace_groups",
+      "path_params": [
+        "id"
+      ],
+      "query_fields": null,
+      "query_required": null,
+      "body_fields": [
+        "display_name"
+      ],
+      "body_required": [
+        "display_name"
+      ],
+      "read_only": false,
+      "destructive": false,
+      "mcp_tagged": true
     }
   },
   {
@@ -1186,6 +1935,24 @@
     "annotations": {
       "readOnlyHint": false,
       "destructiveHint": true
+    },
+    "_meta": {
+      "path": "/api/v1/hosting-oauth-redirects",
+      "method": "PUT",
+      "operationId": "identity_replace_hosting_oauth_redirects",
+      "path_params": [],
+      "query_fields": null,
+      "query_required": null,
+      "body_fields": [
+        "base_url",
+        "label"
+      ],
+      "body_required": [
+        "base_url"
+      ],
+      "read_only": false,
+      "destructive": true,
+      "mcp_tagged": true
     }
   },
   {
@@ -1215,6 +1982,24 @@
     "annotations": {
       "readOnlyHint": false,
       "destructiveHint": true
+    },
+    "_meta": {
+      "path": "/api/v1/oauth-clients/{id}",
+      "method": "PUT",
+      "operationId": "identity_replace_oauth_clients",
+      "path_params": [
+        "id"
+      ],
+      "query_fields": null,
+      "query_required": null,
+      "body_fields": [
+        "is_active",
+        "social_app_id"
+      ],
+      "body_required": null,
+      "read_only": false,
+      "destructive": true,
+      "mcp_tagged": true
     }
   },
   {
@@ -1250,6 +2035,26 @@
     "annotations": {
       "readOnlyHint": false,
       "destructiveHint": true
+    },
+    "_meta": {
+      "path": "/api/v1/oauth-social-apps/{id}",
+      "method": "PUT",
+      "operationId": "identity_replace_oauth_social_apps",
+      "path_params": [
+        "id"
+      ],
+      "query_fields": null,
+      "query_required": null,
+      "body_fields": [
+        "client_id",
+        "client_secret",
+        "extra_settings",
+        "tenant"
+      ],
+      "body_required": null,
+      "read_only": false,
+      "destructive": true,
+      "mcp_tagged": true
     }
   },
   {
@@ -1291,6 +2096,27 @@
     "annotations": {
       "readOnlyHint": false,
       "destructiveHint": true
+    },
+    "_meta": {
+      "path": "/api/v1/users/{id}",
+      "method": "PUT",
+      "operationId": "identity_replace_users",
+      "path_params": [
+        "id"
+      ],
+      "query_fields": null,
+      "query_required": null,
+      "body_fields": [
+        "data",
+        "first_name",
+        "group_ids",
+        "is_active",
+        "last_name"
+      ],
+      "body_required": null,
+      "read_only": false,
+      "destructive": true,
+      "mcp_tagged": true
     }
   },
   {
@@ -1313,6 +2139,21 @@
     "annotations": {
       "readOnlyHint": false,
       "destructiveHint": true
+    },
+    "_meta": {
+      "path": "/api/v1/actions/deliveries/{delivery_id}/requeue",
+      "method": "POST",
+      "operationId": "identity_requeue_action_deliveries",
+      "path_params": [
+        "delivery_id"
+      ],
+      "query_fields": null,
+      "query_required": null,
+      "body_fields": null,
+      "body_required": null,
+      "read_only": false,
+      "destructive": true,
+      "mcp_tagged": true
     }
   },
   {
@@ -1334,6 +2175,21 @@
     "annotations": {
       "readOnlyHint": false,
       "destructiveHint": true
+    },
+    "_meta": {
+      "path": "/api/v1/invitations/{id}/revoke",
+      "method": "POST",
+      "operationId": "identity_revoke_invitations",
+      "path_params": [
+        "id"
+      ],
+      "query_fields": null,
+      "query_required": null,
+      "body_fields": null,
+      "body_required": null,
+      "read_only": false,
+      "destructive": true,
+      "mcp_tagged": true
     }
   },
   {
@@ -1356,6 +2212,21 @@
     "annotations": {
       "readOnlyHint": false,
       "destructiveHint": true
+    },
+    "_meta": {
+      "path": "/api/v1/personal-access-tokens/{key_id}/revoke",
+      "method": "POST",
+      "operationId": "identity_revoke_personal_access_tokens",
+      "path_params": [
+        "key_id"
+      ],
+      "query_fields": null,
+      "query_required": null,
+      "body_fields": null,
+      "body_required": null,
+      "read_only": false,
+      "destructive": true,
+      "mcp_tagged": true
     }
   },
   {
@@ -1378,6 +2249,21 @@
     "annotations": {
       "readOnlyHint": false,
       "destructiveHint": true
+    },
+    "_meta": {
+      "path": "/api/v1/scim/tokens/{token_id}/revoke",
+      "method": "POST",
+      "operationId": "identity_revoke_scim_tokens",
+      "path_params": [
+        "token_id"
+      ],
+      "query_fields": null,
+      "query_required": null,
+      "body_fields": null,
+      "body_required": null,
+      "read_only": false,
+      "destructive": true,
+      "mcp_tagged": true
     }
   },
   {
@@ -1399,6 +2285,21 @@
     "annotations": {
       "readOnlyHint": false,
       "destructiveHint": true
+    },
+    "_meta": {
+      "path": "/api/v1/actions/rules/{id}/rotate-secret",
+      "method": "POST",
+      "operationId": "identity_rotate_rule_secret",
+      "path_params": [
+        "id"
+      ],
+      "query_fields": null,
+      "query_required": null,
+      "body_fields": null,
+      "body_required": null,
+      "read_only": false,
+      "destructive": true,
+      "mcp_tagged": true
     }
   },
   {
@@ -1420,6 +2321,21 @@
     "annotations": {
       "readOnlyHint": false,
       "destructiveHint": true
+    },
+    "_meta": {
+      "path": "/api/v1/actions/rules/{id}/send-test",
+      "method": "POST",
+      "operationId": "identity_send_test_rule",
+      "path_params": [
+        "id"
+      ],
+      "query_fields": null,
+      "query_required": null,
+      "body_fields": null,
+      "body_required": null,
+      "read_only": false,
+      "destructive": true,
+      "mcp_tagged": true
     }
   },
   {
@@ -1484,6 +2400,30 @@
     "annotations": {
       "readOnlyHint": false,
       "destructiveHint": false
+    },
+    "_meta": {
+      "path": "/api/v1/actions/rules/{id}",
+      "method": "PATCH",
+      "operationId": "identity_update_action_rules",
+      "path_params": [
+        "id"
+      ],
+      "query_fields": null,
+      "query_required": null,
+      "body_fields": [
+        "allow_private_urls",
+        "authorization_header",
+        "description",
+        "enabled",
+        "event_type",
+        "name",
+        "secret",
+        "url"
+      ],
+      "body_required": null,
+      "read_only": false,
+      "destructive": false,
+      "mcp_tagged": true
     }
   },
   {
@@ -1505,6 +2445,23 @@
     "annotations": {
       "readOnlyHint": false,
       "destructiveHint": true
+    },
+    "_meta": {
+      "path": "/api/v1/auth-methods",
+      "method": "PATCH",
+      "operationId": "identity_update_auth_methods",
+      "path_params": [],
+      "query_fields": null,
+      "query_required": null,
+      "body_fields": [
+        "enable_magic_link"
+      ],
+      "body_required": [
+        "enable_magic_link"
+      ],
+      "read_only": false,
+      "destructive": true,
+      "mcp_tagged": true
     }
   },
   {
@@ -1559,6 +2516,28 @@
     "annotations": {
       "readOnlyHint": false,
       "destructiveHint": true
+    },
+    "_meta": {
+      "path": "/api/v1/companies/{id}/",
+      "method": "PATCH",
+      "operationId": "identity_update_companies",
+      "path_params": [
+        "id"
+      ],
+      "query_fields": null,
+      "query_required": null,
+      "body_fields": [
+        "access_mode",
+        "allow_desktop_dev_scheme",
+        "allowed_email_domains",
+        "desktop_redirect_schemes",
+        "name",
+        "owner_ids"
+      ],
+      "body_required": null,
+      "read_only": false,
+      "destructive": true,
+      "mcp_tagged": true
     }
   },
   {
@@ -1584,6 +2563,25 @@
     "annotations": {
       "readOnlyHint": false,
       "destructiveHint": false
+    },
+    "_meta": {
+      "path": "/api/v1/groups/{id}",
+      "method": "PATCH",
+      "operationId": "identity_update_groups",
+      "path_params": [
+        "id"
+      ],
+      "query_fields": null,
+      "query_required": null,
+      "body_fields": [
+        "display_name"
+      ],
+      "body_required": [
+        "display_name"
+      ],
+      "read_only": false,
+      "destructive": false,
+      "mcp_tagged": true
     }
   },
   {
@@ -1617,6 +2615,25 @@
     "annotations": {
       "readOnlyHint": false,
       "destructiveHint": true
+    },
+    "_meta": {
+      "path": "/api/v1/oauth-redirects/{id}",
+      "method": "PATCH",
+      "operationId": "identity_update_oauth_redirects",
+      "path_params": [
+        "id"
+      ],
+      "query_fields": null,
+      "query_required": null,
+      "body_fields": [
+        "base_url",
+        "is_active",
+        "label"
+      ],
+      "body_required": null,
+      "read_only": false,
+      "destructive": true,
+      "mcp_tagged": true
     }
   }
 ]

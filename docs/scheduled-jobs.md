@@ -15,20 +15,21 @@ Both jobs are safe to run when there is nothing to do: they finish after one or 
 
 ## How it works
 
-The container starts two processes:
+The container starts three processes:
 
 - **gunicorn**, the web app
-- a **Celery worker with an embedded beat** (`celery -A config worker --beat`). Beat sends each job on time, the worker runs it. It uses one process with a pool of 2 threads, so an hourly purge never delays webhook retries.
+- a **Celery worker** (`celery -A config worker --pool threads`). It runs the jobs. The default concurrency is 2 threads, so an hourly purge never delays webhook retries
+- **Celery beat** (`celery -A config beat --scheduler celery.beat.Scheduler`). It sends each job on time. Beat uses an in-memory scheduler, not a schedule file. A restart starts a fresh schedule from the job definitions
 
 Redis is the message broker. The jobs are the same code as the `purge_expired_data` and `retry_webhooks` management commands, so their output and behavior are identical.
 
-The container entrypoint watches both processes. A `SIGTERM` (for example `docker stop` or a redeploy) is passed to both, so in-flight work finishes cleanly. If either process exits, the entrypoint stops the other one and the container exits, so Docker or Coolify restarts it.
+The container entrypoint watches all three processes. A `SIGTERM` (for example `docker stop` or a redeploy) is passed to all of them, so in-flight work finishes cleanly. If any process exits, the entrypoint stops the others and the container exits, so Docker or Coolify restarts it. Beat is a process of its own, not a child of the worker, so a Beat crash restarts the container.
 
 | Variable | Default | Purpose |
 | -------- | ------- | ------- |
 | `REDIS_URL` | unset | Redis for the shared cache and the job broker. **Required when `DEBUG=false`:** without it the container logs `REDIS_URL is required when DEBUG is false` and exits with status 1, also with `SCHEDULER_ENABLED=false`. With `DEBUG=true` the jobs do not run, the container logs a warning and the web app still starts |
 | `CELERY_BROKER_URL` | `REDIS_URL` | Use a different Redis for the jobs. Does not replace `REDIS_URL`, which the cache needs |
-| `SCHEDULER_ENABLED` | `true` | `false` keeps the worker out of this container. Use it with a dedicated worker container or your own cron. `REDIS_URL` is still required in production |
+| `SCHEDULER_ENABLED` | `true` | `false` keeps the worker and beat out of this container. Use it with a dedicated worker container or your own cron. `REDIS_URL` is still required in production |
 | `CELERY_WORKER_CONCURRENCY` | `2` | Threads in the worker. 2 lets a purge and a retry run at the same time |
 
 The worker uses the same settings as the web app: `LOG_LEVEL` and stdout logging, Sentry (task errors are reported when `SENTRY_DSN` is set), and `POSTGRES_STATEMENT_TIMEOUT` / `POSTGRES_LOCK_TIMEOUT`.
@@ -51,8 +52,8 @@ The image takes a mode as its command:
 
 | Command | Starts |
 | ------- | ------ |
-| `web` (default) | migrations, then gunicorn and the worker (unless `SCHEDULER_ENABLED=false`) |
-| `worker` | only the worker with beat. No migrations, no web server. Needs `REDIS_URL` (`CELERY_BROKER_URL` alone is enough only with `DEBUG=true`) |
+| `web` (default) | migrations, then gunicorn, the worker, and beat (unless `SCHEDULER_ENABLED=false`) |
+| `worker` | only the worker and beat. No migrations, no web server. Needs `REDIS_URL` (`CELERY_BROKER_URL` alone is enough only with `DEBUG=true`) |
 | anything else | runs that command as `appuser`, for example `python manage.py createsuperuser` |
 
 Docker Compose example with the same image and environment:
@@ -297,56 +298,28 @@ A failed run:
 - is stored with `status=failed` and its `error_key`
 - logs one ERROR line with the job, run id, trigger and sanitized error, plus the traceback. The original exception message is replaced by the sanitized one, so a URL query string or credential in it never reaches the logs
 - is reported to Sentry when `SENTRY_DSN` is set, through the same scrubbing as other events, tagged `scheduled_job`, `scheduled_job_trigger` and `scheduled_job_run_id`
-- increments `shellui_auth_scheduled_job_runs_total{status="failed"}`
+- increments `shellui.auth.scheduled.job.runs` with `status=failed`
 - makes the command exit with status 1 and print `retry_webhooks failed: OperationalError: … (run_id=1234)`, so an external scheduler that alerts on failed jobs still works
 
 If Redis is down when a Celery run tries to take its lock, that run is recorded as `failed` with `error_key=redis_error`.
 
-### Prometheus metrics
+### OpenTelemetry metrics
 
-`GET /api/v1/metrics/all` includes the scheduled job metrics. It needs Django staff or a personal access token with `access_global_metrics` (see [Metrics](metrics.md)). The company endpoint `GET /api/v1/metrics` never includes them. Values come from the database, so they are the same whichever gunicorn worker answers and survive restarts.
+Scheduled job metrics are exported with the rest of the OpenTelemetry stream. There is no scrape endpoint. Values come from the database, so every process reports the same numbers and they survive restarts. See [Metrics](metrics.md).
 
-| Metric | Type | Labels | Meaning |
-| ------ | ---- | ------ | ------- |
-| `shellui_auth_scheduled_job_runs_total` | counter | `job`, `status` | Finished runs: `succeeded`, `failed`, `skipped_locked` |
-| `shellui_auth_scheduled_job_items_total` | counter | `job`, `kind` | Items processed, `kind` is a `counts` name |
-| `shellui_auth_scheduled_job_last_success_timestamp_seconds` | gauge | `job` | Unix time of the last successful run (0 before the first one) |
-| `shellui_auth_scheduled_job_last_run_timestamp_seconds` | gauge | `job` | Unix time the last run started (0 before the first one) |
-| `shellui_auth_scheduled_job_last_run_duration_seconds` | gauge | `job` | Duration of the last finished run |
-| `shellui_auth_scheduled_job_overdue` | gauge | `job` | 1 when overdue (see the table above) |
-| `shellui_auth_scheduler_enabled` | gauge | none | 1 when `SCHEDULER_ENABLED` is true |
-| `shellui_auth_scheduler_redis_up` | gauge | none | 1 when the broker answers `PING`. Absent without a broker |
-| `shellui_auth_scheduler_beat_last_seen_timestamp_seconds` | gauge | none | Unix time beat last published a job. Absent before the first one |
+| Instrument | Kind | Attributes | Meaning |
+| --- | --- | --- | --- |
+| `shellui.auth.scheduled.job.runs` | counter | `job`, `status` | Finished runs: `succeeded`, `failed`, `skipped_locked` |
+| `shellui.auth.scheduled.job.items` | counter | `job`, `kind` | Items processed. `kind` is a `counts` name |
+| `shellui.auth.scheduled.job.last.success.timestamp.seconds` | gauge | `job` | Unix time of the last successful run (0 before the first one) |
+| `shellui.auth.scheduled.job.last.run.timestamp.seconds` | gauge | `job` | Unix time the last run started (0 before the first one) |
+| `shellui.auth.scheduled.job.last.run.duration.seconds` | gauge | `job` | Duration of the last finished run |
+| `shellui.auth.scheduled.job.overdue` | gauge | `job` | 1 when overdue (see the table above) |
+| `shellui.auth.scheduler.enabled` | gauge | none | 1 when `SCHEDULER_ENABLED` is true |
+| `shellui.auth.scheduler.redis.up` | gauge | none | 1 when the broker answers `PING`. Absent without a broker |
+| `shellui.auth.scheduler.beat.last.seen.timestamp.seconds` | gauge | none | Unix time beat last published a job. Absent before the first one |
 
-Suggested alert rules:
-
-```yaml
-groups:
-  - name: identity-scheduled-jobs
-    rules:
-      - alert: IdentityScheduledJobOverdue
-        expr: shellui_auth_scheduled_job_overdue == 1
-        for: 5m
-        labels:
-          severity: warning
-        annotations:
-          summary: "identity-service job {{ $labels.job }} has no recent successful run"
-      - alert: IdentityScheduledJobFailing
-        expr: increase(shellui_auth_scheduled_job_runs_total{status="failed"}[15m]) >= 3
-        labels:
-          severity: warning
-      - alert: IdentitySchedulerRedisDown
-        expr: shellui_auth_scheduler_redis_up == 0
-        for: 2m
-        labels:
-          severity: critical
-      - alert: IdentityWebhooksGivenUp
-        expr: increase(shellui_auth_scheduled_job_items_total{kind="webhook_deliveries_given_up"}[1h]) > 0
-        labels:
-          severity: info
-```
-
-The overdue alert covers a stopped beat, a stuck worker and a missing cron line alike. Scrape every 30 to 60 seconds: each scrape runs a few indexed queries and one Redis `PING`.
+Alert when `shellui.auth.scheduled.job.overdue` stays 1 (stopped beat, stuck worker, or a missing cron line), when failed runs keep increasing, when `shellui.auth.scheduler.redis.up` is 0, and when `shellui.auth.scheduled.job.items` with `kind=webhook_deliveries_given_up` increases. Each export runs a few indexed queries and one Redis `PING`. The default export interval is 60 seconds.
 
 ### Other safety nets
 

@@ -6,6 +6,16 @@ description: Steps to take when you upgrade identity-service, release by release
 
 This page lists what you must change when you move to a newer identity-service release. Releases not listed here need no action beyond deploying the new image, which runs the database migrations on start. The full list of changes is in the [changelog](../CHANGELOG.md).
 
+## Unreleased
+
+The Prometheus scrape endpoints are removed. Dashboards that called them need to read OpenTelemetry metrics instead.
+
+1. **Stop scraping `/api/v1/metrics` and `/api/v1/metrics/all`.** Both routes answer **404**. Set `OTEL_EXPORTER_OTLP_ENDPOINT` (and `OTEL_EXPORTER_OTLP_HEADERS` when the collector requires auth). Leave the endpoint empty to keep telemetry off. See [Metrics](metrics.md).
+2. **Retarget scheduled-job alerts.** Instrument names use dots (`shellui.auth.scheduled.job.overdue` and the rest). See [Scheduled jobs](scheduled-jobs.md#opentelemetry-metrics).
+3. **Stop sending `access_global_metrics: true` when you create a personal access token.** The API returns **400**. New tokens do not include `pat_agm`. Tokens that already have the claim still sign in. The claim is ignored. The database column stays.
+
+`service.name` stays `identity-service` on identity-global and on a regional identity. Traces set `shellui.instance_role` to `global`, `region`, or `standalone`. Set `SHELLUI_REGION` when you want `cloud.region` and `OTEL_RESOURCE_ATTRIBUTES` does not already set it.
+
 ## Upgrade to 0.12.0
 
 0.12.0 keeps accepting saas-service agent tokens while ai-service global becomes the issuer. A standalone install that does not exchange those tokens needs no new variables.

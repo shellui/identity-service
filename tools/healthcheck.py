@@ -7,8 +7,10 @@ in LivenessMiddleware, before SecurityMiddleware, sessions and the database, so 
 auth, does no DB or Redis work and is never redirected to https. The Host and
 X-Forwarded-Proto headers keep it passing even if that middleware order changes.
 
-Worker mode (entrypoint `worker`): PID 1 is the Celery process. There is no HTTP server, and
-Docker already restarts the container when that process exits, so the check passes.
+Worker mode (entrypoint `worker`): there is no HTTP server. The entrypoint writes
+``/tmp/identity-worker-mode`` and supervises the Celery worker and beat. If either
+exits, the entrypoint stops the other and the container exits, so Docker restarts it.
+The check passes when that marker is present.
 
 Output never includes env values; only the error class is printed.
 """
@@ -17,9 +19,14 @@ import os
 import sys
 import urllib.request
 
+WORKER_MODE_MARKER = '/tmp/identity-worker-mode'
+
 
 def _is_worker_mode() -> bool:
-    """True when PID 1 is Celery (entrypoint `worker` execs it as PID 1)."""
+    """True when this container is running the worker entrypoint (no gunicorn)."""
+    if os.path.exists(WORKER_MODE_MARKER):
+        return True
+    # Images before 0.13.3 exec'd Celery as PID 1 in worker mode.
     try:
         with open('/proc/1/cmdline', 'rb') as fh:
             argv = fh.read().decode('utf-8', 'replace').split('\0')

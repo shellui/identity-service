@@ -1,12 +1,13 @@
 """
 Celery app for the scheduled jobs (``retry_webhooks`` and ``purge_expired_data``).
 
-The Docker entrypoint starts a worker with an embedded beat next to gunicorn, so a
-self-hosted install needs no cron setup. Redis (``REDIS_URL``) is the broker.
+The Docker entrypoint starts a Celery worker and a Celery beat process next to
+gunicorn, so a self-hosted install needs no cron setup. Redis (``REDIS_URL``) is
+the broker. Beat uses the in-memory scheduler (``CELERY_BEAT_SCHEDULER``).
 See docs/scheduled-jobs.md.
 
-This module only depends on Django settings named ``CELERY_*`` and
-``SCHEDULER_LOCK_PREFIX``, so it can be copied as-is to the other Shellui services.
+The worker calls ``setup_process_telemetry`` before the Celery app is created.
+Beat and the worker then share Django's ``CELERY_*`` settings and ``SCHEDULER_LOCK_PREFIX``.
 """
 
 import os
@@ -15,6 +16,10 @@ from celery import Celery
 from celery.signals import before_task_publish, setup_logging
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
+
+from config.telemetry import setup_process_telemetry
+
+setup_process_telemetry()
 
 app = Celery('config')
 app.config_from_object('django.conf:settings', namespace='CELERY')

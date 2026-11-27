@@ -129,8 +129,15 @@ class UserPreferenceSerializer(serializers.Serializer):
 
 class ShellUIPersonalAccessTokenCreateSerializer(serializers.Serializer):
     read_only = serializers.BooleanField(required=False, default=False)
-    access_global_metrics = serializers.BooleanField(required=False, default=False)
     name = serializers.CharField(required=False, allow_blank=True, max_length=200)
+
+    def validate(self, attrs):
+        raw = self.initial_data
+        if isinstance(raw, dict) and raw.get('access_global_metrics') in (True, 'true', 'True', 1, '1'):
+            raise serializers.ValidationError(
+                {'access_global_metrics': 'Global metrics access is no longer accepted.'}
+            )
+        return attrs
 
 
 class ShellUIAdminScimTokenCreateSerializer(serializers.Serializer):
@@ -270,4 +277,24 @@ class ShellUIHostingOAuthRedirectDeleteSerializer(serializers.Serializer):
     base_url = serializers.CharField(
         max_length=500,
         help_text='Redirect origin to remove, including scheme and host.',
+    )
+
+
+class ShellUIAdminSuccessfulLoginSerializer(serializers.Serializer):
+    provider = serializers.CharField(help_text='Authentication provider slug.')
+    total = serializers.IntegerField(help_text='Successful sign-ins recorded in this process.')
+
+
+class ShellUIAdminStatsSerializer(serializers.Serializer):
+    company_id = serializers.IntegerField(help_text='Company id from the caller access token.')
+    users_total = serializers.IntegerField(help_text='Users linked to this company.')
+    users_active = serializers.IntegerField(help_text='Company memberships with access enabled.')
+    users_staff = serializers.IntegerField(help_text='Staff users linked to this company.')
+    social_accounts_total = serializers.IntegerField(help_text='Linked OAuth social accounts for company users.')
+    daily_active_users = serializers.IntegerField(help_text='Company users active since 00:00 today.')
+    weekly_active_users = serializers.IntegerField(help_text='Company users active since Monday 00:00.')
+    monthly_active_users = serializers.IntegerField(help_text='Company users active in the current month.')
+    successful_logins = ShellUIAdminSuccessfulLoginSerializer(
+        many=True,
+        help_text='Successful sign-ins by provider since the current server process started.',
     )

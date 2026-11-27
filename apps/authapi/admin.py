@@ -124,14 +124,12 @@ class PersonalAccessTokenAdmin(admin.ModelAdmin):
         'company',
         'user',
         'read_only',
-        'access_global_metrics',
         'name',
         'created_at',
         'last_used_at',
         'revoked_at',
     )
-    list_editable = ('access_global_metrics',)
-    list_filter = ('read_only', 'access_global_metrics', 'revoked_at')
+    list_filter = ('read_only', 'revoked_at')
     search_fields = ('user__email', 'user__username', 'id', 'name')
     ordering = ('-created_at',)
     list_select_related = ('company', 'user')
@@ -149,10 +147,10 @@ class PersonalAccessTokenAdmin(admin.ModelAdmin):
         (
             'Token',
             {
-                'fields': ('jti', 'read_only', 'access_global_metrics'),
+                'fields': ('jti', 'read_only'),
                 'description': (
-                    'JWT claims pat_ro / pat_agm must match these flags; changing a flag invalidates '
-                    'existing JWTs until you re-issue the PAT. Only staff may enable global metrics.'
+                    'JWT claim pat_ro must match read_only. Changing the flag invalidates '
+                    'existing JWTs until you re-issue the PAT.'
                 ),
             },
         ),

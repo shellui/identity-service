@@ -69,6 +69,9 @@ def handle_token_exchange(request) -> Response:
         company = Company.objects.get(pk=cid)
     except Company.DoesNotExist:
         return _error('invalid_target', 'Company not found.')
+    from config.telemetry import tag_span
+
+    tag_span(company_id=company.pk)
 
     try:
         claims = verify_pinned(
@@ -127,6 +130,7 @@ def handle_token_exchange(request) -> Response:
         user=user,
         company=company,
     )
+    tag_span(company_id=company.pk, user_id=user.pk)
     logger.info('token exchange: issued company_id=%s user_id=%s', company.pk, user.pk)
     return Response(
         {
