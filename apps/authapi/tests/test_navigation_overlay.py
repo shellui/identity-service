@@ -474,6 +474,8 @@ class NavigationOverlayApiTests(TestCase):
             'Files\u200c',
             'Fi\u200d\u200dles',
             'Fi \u200dles',
+            'Fi\u200d les',
+            'Fi\u200c les',
             '\u3164\u200d\u3164',
         ):
             with self.subTest(name=repr(name)):
@@ -505,6 +507,18 @@ class NavigationOverlayApiTests(TestCase):
             self.assertEqual(response.status_code, 400, response.content)
             self.assertNotIn(long_key, response.content.decode())
             self.assertIn('k' * 40 + '...', response.content.decode())
+
+        # The cut is exactly 40 characters: 40 is shown in full, 41 is truncated.
+        exact = 'k' * 40
+        response = self._put({**_overlay(), exact: 1})
+        self.assertEqual(response.status_code, 400, response.content)
+        self.assertEqual(response.json()['error'], f'Unknown field "{exact}".')
+
+        over = 'k' * 41
+        response = self._put({**_overlay(), over: 1})
+        self.assertEqual(response.status_code, 400, response.content)
+        self.assertEqual(response.json()['error'], f'Unknown field "{"k" * 40}...".')
+        self.assertNotIn(over, response.content.decode())
 
     def test_lone_surrogates_are_a_400_not_a_database_error(self):
         cases = {
