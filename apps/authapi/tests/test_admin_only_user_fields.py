@@ -190,3 +190,83 @@ class ScimCannotSetAdminFlagsTests(TestCase):
         user.refresh_from_db()
         self.assertFalse(user.is_staff)
         self.assertFalse(user.is_superuser)
+
+
+@override_settings(ALLOWED_HOSTS=['testserver'], AUTH_RATE_LIMIT_ENABLED=False)
+class CompanyAdminMetadataIsPrivilegedTests(TestCase):
+    """is_company_admin cannot be set through metadata, and GET overwrites a cached value."""
+
+    def setUp(self):
+        cache.clear()
+        self.company = Company.objects.create(name='Admin Claim Co', slug='admin-claim-co')
+        self.owner = User.objects.create_user(username='own', email='own@claim.test', password='x')
+        self.member = User.objects.create_user(username='mem', email='mem@claim.test', password='x')
+        for user in (self.owner, self.member):
+            set_company_access(self.company, user, enabled=True)
+        self.company.owners.add(self.owner)
+
+    def _client(self, user) -> APIClient:
+        client = APIClient()
+        tokens = _issue_shellui_tokens(user, company=self.company)
+        client.credentials(HTTP_AUTHORIZATION=f'Bearer {tokens["access_token"]}')
+        return client
+
+    def _user_url(self) -> str:
+        return f'/api/v1/user?company_id={self.company.pk}'
+
+    def _users_url(self, user) -> str:
+        return f'/api/v1/users/{user.pk}?company_id={self.company.pk}'
+
+    def test_is_company_admin_is_on_the_privileged_strip_list(self):
+        from apps.authapi.views import _SHELLUI_JWT_PRIVILEGED_METADATA_KEYS
+
+        self.assertIn('is_company_admin', _SHELLUI_JWT_PRIVILEGED_METADATA_KEYS)
+        for key in ('is_staff', 'is_superuser', 'is_company_owner', 'groups'):
+            self.assertIn(key, _SHELLUI_JWT_PRIVILEGED_METADATA_KEYS)
+
+    def test_a_metadata_merge_cannot_set_is_company_admin(self):
+        client = self._client(self.member)
+        response = client.put(
+            self._user_url(),
+            {'data': {'is_company_admin': True, 'nickname': 'x'}},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertIs(response.data['user_metadata']['is_company_admin'], False)
+        cached = cache.get(f'shellui:user_metadata:{self.member.pk}') or {}
+        self.assertIs(cached.get('is_company_admin'), False)
+        self.assertEqual(cached.get('nickname'), 'x')
+
+    def test_get_user_overwrites_a_cached_is_company_admin(self):
+        cache.set(
+            f'shellui:user_metadata:{self.member.pk}',
+            {'name': 'Mem', 'is_company_admin': True, 'is_staff': True},
+            timeout=60,
+        )
+        response = self._client(self.member).get(self._user_url())
+        self.assertEqual(response.status_code, 200, response.data)
+        meta = response.data['user_metadata']
+        self.assertIs(meta['is_company_admin'], False)
+        self.assertIs(meta['is_staff'], False)
+
+    def test_admin_user_payload_overwrites_a_cached_is_company_admin(self):
+        cache.set(
+            f'shellui:user_metadata:{self.member.pk}',
+            {'name': 'Mem', 'is_company_admin': True},
+            timeout=60,
+        )
+        response = self._client(self.owner).get(self._users_url(self.member))
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertIs(response.data['user_metadata']['is_company_admin'], False)
+
+    def test_admin_metadata_merge_cannot_set_is_company_admin(self):
+        response = self._client(self.owner).put(
+            self._users_url(self.member),
+            {'data': {'is_company_admin': True, 'nickname': 'y'}},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertIs(response.data['user_metadata']['is_company_admin'], False)
+        cached = cache.get(f'shellui:user_metadata:{self.member.pk}') or {}
+        self.assertIs(cached.get('is_company_admin'), False)
+        self.assertEqual(cached.get('nickname'), 'y')

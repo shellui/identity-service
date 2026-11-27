@@ -180,7 +180,7 @@ logger = logging.getLogger(__name__)
 logger = logging.getLogger(__name__)
 
 # Client-supplied user_metadata merges cannot set these; they are derived from Django / company state.
-_SHELLUI_JWT_PRIVILEGED_METADATA_KEYS = frozenset({'is_staff', 'is_superuser', 'is_company_owner', 'groups'})
+_SHELLUI_JWT_PRIVILEGED_METADATA_KEYS = frozenset({'is_staff', 'is_superuser', 'is_company_owner', 'is_company_admin', 'groups'})
 
 # Only Django admin may change these. No REST API writes them.
 ADMIN_ONLY_USER_FIELDS = ('is_staff', 'is_superuser')
@@ -1729,6 +1729,7 @@ def _admin_user_payload(user: User, company: Company) -> dict:
     }
     user_metadata['is_staff'] = bool(user.is_staff)
     user_metadata['is_company_owner'] = _is_user_company_owner(user, company)
+    user_metadata['is_company_admin'] = False
     user_metadata['shelluiPreferences'] = _user_preferences_payload(user)
     group_rows = _admin_user_group_rows(user, company)
     user_metadata['groups'] = [row['display_name'] for row in group_rows]
@@ -3227,6 +3228,7 @@ class ShellUIUserView(APIView):
         _apply_display_name(user, user_metadata)
         user_metadata['is_staff'] = bool(user.is_staff)
         user_metadata['is_company_owner'] = _is_user_company_owner(user, company)
+        user_metadata['is_company_admin'] = False
         user_metadata['shelluiPreferences'] = _user_preferences_payload(user)
         user_metadata['groups'] = _user_group_names(user, company)
         user_metadata['last_seen_at'] = _last_seen_at_for_user(user)
@@ -3306,6 +3308,7 @@ class ShellUIUserView(APIView):
         _apply_display_name(user, merged)
         merged['is_staff'] = bool(user.is_staff)
         merged['is_company_owner'] = _is_user_company_owner(user, company)
+        merged['is_company_admin'] = False
         _enrich_user_metadata_avatar(user, merged)
         cache.set(cache_key, merged, timeout=60 * 60 * 24 * 30)
         if 'avatar_url' not in data:
@@ -3695,6 +3698,7 @@ class ShellUIAdminUserDetailView(APIView):
             merged.pop('last_seen_at', None)
             merged['is_staff'] = bool(target.is_staff)
             merged['is_company_owner'] = _is_user_company_owner(target, company)
+            merged['is_company_admin'] = False
             cache.set(cache_key, merged, timeout=60 * 60 * 24 * 30)
             incoming_preferences = merged.get('shelluiPreferences')
             if isinstance(incoming_preferences, dict):
