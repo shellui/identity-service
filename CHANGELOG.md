@@ -25,7 +25,7 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 ### ✨ Feature
 
-- `GET`, `PUT`, and `DELETE /api/v1/navigation-overlay` store one Shellui navigation overlay per account. The token must belong to a company that account is a member of. Third-party installed apps can request only `theme`, `locale`, `ui`, `navigate`, `storage`, and `ai`. The raw body is limited to 64 KB and `installedApps` to 100 entries.
+- `GET`, `PUT`, and `DELETE /api/v1/navigation-overlay` store one Shellui navigation overlay per user and company. Installed apps are third-party only: `firstParty` is rejected, `thirdParty` must be true, and the `auth` capability is never accepted. Each app must include `origin`, `url`, `path`, `installedAt`, and `updatedAt`, matching the shared schema in `apps/authapi/schemas/navigation-overlay.v1.json`. App URLs must be https and must not use a loopback or private host. Apps may not claim or hide reserved core paths. The raw body is limited to 64 KB (413 when larger) and `installedApps` to 100 entries. Writes require an enabled company membership, refuse agent tokens and personal access tokens, honor `If-Match` / `ETag`, and are rate-limited. Leaving a company deletes that company overlay. Overlay writes are recorded in the company event log. The migration is named `0024_user_navigation_overlay` and currently depends on `0021_personal_access_token_global_metrics_unused`; it will be renumbered to depend on authapi 0023 once those migrations land on develop.
 
 ## [0.13.6] - 2026-11-26
 

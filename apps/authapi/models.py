@@ -67,15 +67,16 @@ class UserPreference(models.Model):
 
 
 class UserNavigationOverlay(models.Model):
-    """Per-user Shellui navigation overlay (schema version 1).
+    """Shellui navigation overlay (schema version 1), one row per user and company."""
 
-    Same scope as ``UserPreference``: one row per account, not per company.
-    Callers still present a bearer token for a company they belong to.
-    """
-
-    user = models.OneToOneField(
+    user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
-        related_name='navigation_overlay',
+        related_name='navigation_overlays',
+        on_delete=models.CASCADE,
+    )
+    company = models.ForeignKey(
+        'companies.Company',
+        related_name='navigation_overlays',
         on_delete=models.CASCADE,
     )
     document = models.JSONField()
@@ -83,10 +84,16 @@ class UserNavigationOverlay(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        ordering = ['user_id']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'company'],
+                name='uniq_user_navigation_overlay_user_company',
+            ),
+        ]
+        ordering = ['user_id', 'company_id']
 
     def __str__(self) -> str:
-        return f'UserNavigationOverlay(user_id={self.user_id})'
+        return f'UserNavigationOverlay(user_id={self.user_id}, company_id={self.company_id})'
 
 
 class PersonalAccessToken(models.Model):

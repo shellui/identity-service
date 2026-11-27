@@ -131,6 +131,32 @@ register_event(
     )
 )
 
+register_event(
+    DomainEventType(
+        id='identity.navigation_overlay.updated',
+        label='Navigation overlay updated',
+        description=(
+            'The authenticated user saved a navigation overlay for this company. '
+            'app_ids lists the installed third-party app ids. Recorded in the company event log.'
+        ),
+        payload_fields=_USER
+        + (EventFieldDoc('app_ids', 'Installed third-party app ids', ['notes']),),
+        webhook=False,
+    )
+)
+
+register_event(
+    DomainEventType(
+        id='identity.navigation_overlay.deleted',
+        label='Navigation overlay deleted',
+        description=(
+            'The navigation overlay for this user and company was deleted, from the API or Django admin.'
+        ),
+        payload_fields=_USER,
+        webhook=False,
+    )
+)
+
 _GROUP = (
     EventFieldDoc('group_id', 'CompanyGroup primary key', 7),
     EventFieldDoc('display_name', 'Group display name', 'Engineering'),
