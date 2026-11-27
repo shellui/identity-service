@@ -340,6 +340,7 @@ Services poll `GET /api/v1/mcp/internal/mcp-revocations` with a signed assertion
   - Personal access tokens and webhook secrets: `identity_create_personal_access_tokens` and `identity_rotate_rule_secret`.
   - Redirect allowlist writes: `identity_create_oauth_redirects`, `identity_update_oauth_redirects` and `identity_replace_hosting_oauth_redirects`.
   - Desktop redirect settings: `desktop_redirect_schemes` or `allow_desktop_dev_scheme` changed through `identity_update_companies` or `identity_replace_companies`. Sending the values the company already has is not a change.
+  - Sign-in methods: `identity_update_auth_methods` and `identity_replace_auth_methods` (the magic-link switch), and the matching REST paths.
   - Social apps and OAuth clients: `identity_create_oauth_social_apps`, `identity_replace_oauth_social_apps`, `identity_create_oauth_clients` and `identity_replace_oauth_clients` (which also activates a client).
   - Webhook rules: a non-empty `secret` or `authorization_header`, or `allow_private_urls: true`, on `identity_create_action_rules` or `identity_update_action_rules`.
 

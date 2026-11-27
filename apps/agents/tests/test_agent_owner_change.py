@@ -513,6 +513,8 @@ class AgentsCannotMintCredentialsTests(TestCase):
             'identity_replace_oauth_social_apps',
             'identity_create_oauth_clients',
             'identity_replace_oauth_clients',
+            'identity_update_auth_methods',
+            'identity_replace_auth_methods',
         }
         # Reads and calls that only remove access stay available to agents.
         still_allowed = {
@@ -530,8 +532,6 @@ class AgentsCannotMintCredentialsTests(TestCase):
             'identity_list_oauth_social_apps',
             'identity_get_oauth_provider_catalog',
             'identity_get_auth_methods',
-            'identity_update_auth_methods',
-            'identity_replace_auth_methods',
         }
         self.assertEqual(found, refused_for_agents | still_allowed)
 
@@ -614,6 +614,7 @@ class AgentsCannotChangeSignInTests(AgentsCannotMintCredentialsTests):
             'apps': sorted(SocialApp.objects.values_list('client_id', 'secret')),
             'clients': sorted(CompanyOAuthClient.objects.values_list('social_app_id', 'is_active')),
             'desktop': (self.company.desktop_redirect_schemes, self.company.allow_desktop_dev_scheme),
+            'magic_link': self.company.enable_magic_link,
             'rules': sorted((r.name, json.dumps(r.config, sort_keys=True)) for r in ActionRule.objects.all()),
         }
 
@@ -630,6 +631,39 @@ class AgentsCannotChangeSignInTests(AgentsCannotMintCredentialsTests):
         self._probe('identity_update_oauth_redirects', {'id': self.redirect.pk, 'base_url': 'https://evil.example.com'})
         self._probe('identity_update_oauth_redirects', {'id': self.redirect.pk, 'label': 'Renamed'})
         self._probe('identity_replace_hosting_oauth_redirects', {'base_url': 'https://evil.example.com', 'label': 'x'})
+
+    def test_agent_cannot_change_the_auth_methods(self):
+        for tool in ('identity_update_auth_methods', 'identity_replace_auth_methods'):
+            for enable in (False, True):
+                self._probe(tool, {'enable_magic_link': enable})
+
+    def test_agent_cannot_reach_the_auth_methods_routes_over_rest(self):
+        _agent, token = self._agent(Agent.ACCESS_FULL)
+        client = APIClient()
+        before = self._state()
+        for method in ('patch', 'put'):
+            response = getattr(client, method)(
+                '/api/v1/auth-methods', {'enable_magic_link': not self.company.enable_magic_link},
+                format='json', HTTP_AUTHORIZATION=f'Bearer {token}',
+            )
+            self.assertIn(response.status_code, (401, 403), response.content)
+        self.company.refresh_from_db()
+        self.assertEqual(self._state(), before)
+
+    def test_a_person_can_still_change_the_auth_methods(self):
+        from apps.authapi.views import _issue_shellui_tokens
+
+        auth = f'Bearer {_issue_shellui_tokens(self.owner, company=self.company)["access_token"]}'
+        client = APIClient()
+        for method in ('patch', 'put'):
+            type(self.company).objects.filter(pk=self.company.pk).update(enable_magic_link=False)
+            response = getattr(client, method)(
+                '/api/v1/auth-methods', {'enable_magic_link': True}, format='json', HTTP_AUTHORIZATION=auth
+            )
+            self.assertEqual(response.status_code, 200, response.content)
+            self.company.refresh_from_db()
+            self.assertTrue(self.company.enable_magic_link)
+        self.assertEqual(client.get('/api/v1/auth-methods', HTTP_AUTHORIZATION=auth).status_code, 200)
 
     def test_agent_cannot_change_the_desktop_redirect_fields_on_update_or_replace(self):
         for tool in ('identity_update_companies', 'identity_replace_companies'):

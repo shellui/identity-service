@@ -455,13 +455,19 @@ def _auth_methods_retrieve(self):
 
 
 def _auth_methods_partial_update(self):
-    body = self.call('identity_update_auth_methods', body={'enable_magic_link': False})
-    self.assertFalse(body['enable_magic_link'])
+    self.company.refresh_from_db()
+    was = self.company.enable_magic_link
+    self.call_refused('identity_update_auth_methods', body={'enable_magic_link': not was})
+    self.company.refresh_from_db()
+    self.assertEqual(self.company.enable_magic_link, was)
 
 
 def _auth_methods_update(self):
-    body = self.call('identity_replace_auth_methods', body={'enable_magic_link': True})
-    self.assertTrue(body['enable_magic_link'])
+    self.company.refresh_from_db()
+    was = self.company.enable_magic_link
+    self.call_refused('identity_replace_auth_methods', body={'enable_magic_link': not was})
+    self.company.refresh_from_db()
+    self.assertEqual(self.company.enable_magic_link, was)
 
 
 def _scim_status(self):

@@ -4929,6 +4929,9 @@ class ShellUIAdminAuthMethodsView(APIView):
         _actor, company, err = _require_staff_or_company_owner(request)
         if err:
             return err
+        refused = _agent_cannot_change_signin_or_credentials_response(request)
+        if refused is not None:
+            return refused
         serializer = ShellUIAdminAuthMethodsUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         if 'enable_magic_link' not in serializer.validated_data:
