@@ -232,7 +232,7 @@ django-allauth ships 98 more provider modules. They stay in `GET /api/v1/oauth-p
 
 ## Update this page
 
-This page is generated from `apps/authapi/provider_catalog.json` (catalog version 2, django-allauth 65.19.5). After a catalog change, regenerate it:
+This page is generated from `apps/authapi/provider_catalog.json` (catalog version 2, django-allauth 65.23.0). After a catalog change, regenerate it:
 
 ```bash
 uv run python tools/render_oauth_providers_doc.py
