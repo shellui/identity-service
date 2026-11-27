@@ -3530,6 +3530,25 @@ def _agent_cannot_touch_owner_response(request, company, target) -> Response | N
     )
 
 
+def _agent_cannot_mint_credentials_response(request) -> Response | None:
+    """403 when an agent tries to create, rotate or list a credential.
+
+    SCIM tokens, personal access tokens and webhook signing secrets let a caller act as a
+    person or a company with no agent limits. An agent can neither mint them nor read their
+    metadata. No approval mode changes this, and it holds after a person approved the call.
+    """
+    from apps.agents.permissions import is_agent_request
+
+    if not is_agent_request(request):
+        return None
+    return Response(
+        {
+            'error': 'Agents cannot create, rotate or list credentials.',
+            'error_code': 'agent_cannot_manage_credentials',
+        },
+        status=status.HTTP_403_FORBIDDEN,
+    )
+
 
 @extend_schema_view(
     get=extend_schema(
@@ -4704,6 +4723,9 @@ class ShellUIPersonalAccessTokenListCreateView(APIView):
         user, company, err = _require_authenticated_company_member(request)
         if err:
             return err
+        refused = _agent_cannot_mint_credentials_response(request)
+        if refused is not None:
+            return refused
         serializer = ShellUIPersonalAccessTokenCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         read_only = bool(serializer.validated_data.get('read_only'))
@@ -4786,6 +4808,9 @@ class ShellUIAdminScimTokenListCreateView(APIView):
         _actor, company, err = _require_staff_or_company_owner(request)
         if err:
             return err
+        refused = _agent_cannot_mint_credentials_response(request)
+        if refused is not None:
+            return refused
         qs = CompanyScimToken.objects.filter(company=company).order_by('-created_at')
         return Response({'results': [_scim_token_row(t) for t in qs]})
 
@@ -4793,6 +4818,9 @@ class ShellUIAdminScimTokenListCreateView(APIView):
         _actor, company, err = _require_staff_or_company_owner(request)
         if err:
             return err
+        refused = _agent_cannot_mint_credentials_response(request)
+        if refused is not None:
+            return refused
         if not getattr(settings, 'SCIM_ENABLED', True):
             return Response(
                 {'error': 'SCIM is not enabled on this identity deployment.'},

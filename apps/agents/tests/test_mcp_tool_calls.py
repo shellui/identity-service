@@ -235,6 +235,20 @@ class McpToolCallTests(TestCase):
         return json.loads(result['content'][0]['text'])
 
 
+    def call_refused(self, name: str, *, path_params=None, body=None, query=None) -> None:
+        """The agent is refused, even after a person approved the call. Nothing is minted."""
+        arguments = self._arguments(name, path_params=path_params, body=body, query=query)
+        payload = self._post(name, arguments)
+        if self._needs_approval(payload):
+            McpApprovalRequest.objects.filter(pk=payload['result']['meta']['approval_id']).update(
+                status=McpApprovalRequest.STATUS_APPROVED,
+            )
+            payload = self._post(name, arguments)
+        result = payload['result']
+        self.assertTrue(result.get('isError'), result)
+        self.assertIn('agent_cannot_manage_credentials', json.dumps(result))
+
+
 def _bind_tool_tests() -> None:
     def _make(tool_name: str):
         def test(self):
@@ -453,15 +467,12 @@ def _scim_status(self):
 
 
 def _scim_tokens_list(self):
-    body = self.call('identity_list_scim_tokens')
-    self.assertIn('scimprefix', json.dumps(body))
+    self.call_refused('identity_list_scim_tokens')
 
 
 def _scim_tokens_create(self):
-    body = self.call('identity_create_scim_tokens', body={'name': 'minted'})
-    self.assertEqual(body.get('token'), '[redacted]')
-    self.assertEqual(body.get('name'), 'minted')
-    self.assertTrue(CompanyScimToken.objects.filter(company=self.company, name='minted', revoked_at__isnull=True).exists())
+    self.call_refused('identity_create_scim_tokens', body={'name': 'minted'})
+    self.assertFalse(CompanyScimToken.objects.filter(company=self.company, name='minted').exists())
 
 
 def _scim_tokens_revoke(self):
@@ -476,13 +487,8 @@ def _pat_list(self):
 
 
 def _pat_create(self):
-    body = self.call('identity_create_personal_access_tokens', body={'name': 'minted', 'read_only': True})
-    self.assertEqual(body.get('access_token'), '[redacted]')
-    self.assertTrue(body['read_only'])
-    self.assertEqual(body['name'], 'minted')
-    self.assertTrue(
-        PersonalAccessToken.objects.filter(company=self.company, user=self.owner, name='minted').exists()
-    )
+    self.call_refused('identity_create_personal_access_tokens', body={'name': 'minted', 'read_only': True})
+    self.assertFalse(PersonalAccessToken.objects.filter(company=self.company, name='minted').exists())
 
 
 def _pat_revoke(self):
@@ -612,12 +618,9 @@ def _actions_rules_destroy(self):
 
 
 def _actions_rules_rotate_secret(self):
-    body = self.call('identity_rotate_rule_secret', path_params={'id': self.rule.pk})
-    self.assertEqual(body.get('secret'), '[redacted]')
+    self.call_refused('identity_rotate_rule_secret', path_params={'id': self.rule.pk})
     self.rule.refresh_from_db()
-    stored = self.rule.config['secret']
-    self.assertNotEqual(stored, self.rule_secret)
-    self.assertNotIn(stored, json.dumps(body))
+    self.assertEqual(self.rule.config['secret'], self.rule_secret)
 
 
 def _actions_rules_send_test(self):

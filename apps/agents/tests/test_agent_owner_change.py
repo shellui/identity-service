@@ -405,3 +405,148 @@ class AgentsCannotRemoveOrDisableOwnersTests(TestCase):
         response = APIClient().delete(reverse('shellui-admin-user-detail', args=[self.co_owner.pk]), HTTP_AUTHORIZATION=auth)
         self.assertEqual(response.status_code, 204, response.content)
         self.assertEqual(sorted(self.company.owners.values_list('pk', flat=True)), [self.owner.pk])
+
+
+@override_settings(**SETTINGS)
+class AgentsCannotMintCredentialsTests(TestCase):
+    """SCIM tokens, personal access tokens and webhook signing secrets act as a person or a company."""
+
+    def setUp(self):
+        from apps.actions.models import ActionRule
+
+        self.company = Company.objects.create(name='Creds Co', slug='creds-co-agent')
+        self.owner = User.objects.create_user(username='cown', email='cown@u.test', password='x')
+        set_company_access(self.company, self.owner, enabled=True)
+        self.company.owners.add(self.owner)
+        self.rule = ActionRule.objects.create(
+            company=self.company,
+            name='hook',
+            event_type='user.created',
+            config={'url': 'https://example.com/hook', 'secret': 'original-secret-value'},
+            enabled=True,
+        )
+
+    def _agent(self, mode):
+        agent = Agent.objects.create(
+            company=self.company,
+            name='Caller',
+            created_by=self.owner,
+            access_mode=mode,
+            read_level=Agent.READ_SENSITIVE,
+            services_allowed=['identity'],
+        )
+        return agent, encode_access_token(agent, resource=IDENTITY_MCP)
+
+    def _mcp(self, token, name, arguments):
+        response = self.client.post(
+            '/mcp',
+            data=_rpc('tools/call', name=name, arguments=arguments),
+            content_type='application/json',
+            HTTP_AUTHORIZATION=f'Bearer {token}',
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        return response.json()['result']
+
+    def _call_through_approval(self, mode, tool, args):
+        """The agent's call, repeated after a person approved it if it asked."""
+        agent, token = self._agent(mode)
+        result = self._mcp(token, tool, args)
+        if (result.get('meta') or {}).get('status') == 'pending':
+            McpApprovalRequest.objects.filter(agent=agent).update(status=McpApprovalRequest.STATUS_APPROVED)
+            result = self._mcp(token, tool, args)
+        return result
+
+    def _refused(self, result):
+        text = json.dumps(result)
+        self.assertTrue(result.get('isError'), text)
+        self.assertIn('agent_cannot_manage_credentials', text)
+
+    def _assert_nothing_minted(self):
+        from apps.authapi.models import PersonalAccessToken
+        from apps.scim.models import CompanyScimToken
+
+        self.assertFalse(CompanyScimToken.objects.filter(company=self.company).exists())
+        self.assertFalse(PersonalAccessToken.objects.filter(company=self.company).exists())
+        self.rule.refresh_from_db()
+        self.assertEqual(self.rule.config['secret'], 'original-secret-value')
+
+    def test_agent_cannot_create_or_list_scim_tokens_in_any_mode(self):
+        for mode in (Agent.ACCESS_FULL, Agent.ACCESS_ASK):
+            for tool, args in (
+                ('identity_create_scim_tokens', {'name': 'idp'}),
+                ('identity_list_scim_tokens', {}),
+            ):
+                with self.subTest(mode=mode, tool=tool):
+                    self._refused(self._call_through_approval(mode, tool, args))
+        self._assert_nothing_minted()
+
+    def test_agent_cannot_create_a_personal_access_token_in_any_mode(self):
+        for mode in (Agent.ACCESS_FULL, Agent.ACCESS_ASK):
+            with self.subTest(mode=mode):
+                self._refused(self._call_through_approval(mode, 'identity_create_personal_access_tokens', {'name': 'x'}))
+        self._assert_nothing_minted()
+
+    def test_agent_cannot_rotate_a_webhook_signing_secret_in_any_mode(self):
+        for mode in (Agent.ACCESS_FULL, Agent.ACCESS_ASK):
+            with self.subTest(mode=mode):
+                self._refused(self._call_through_approval(mode, 'identity_rotate_rule_secret', {'id': self.rule.pk}))
+        self._assert_nothing_minted()
+
+    def test_the_credential_tools_on_mcp_are_exactly_the_known_ones(self):
+        """A new tool that names a token, key or secret must be looked at before it ships."""
+        from shellui_django.mcp import server as mcp_server
+
+        from apps.agents import mcp_views
+
+        names = {t['name'] for t in mcp_server.tools_from_schema(mcp_views._schema())}
+        credential_like = {n for n in names if any(w in n for w in ('token', 'secret', 'key', 'credential'))}
+        self.assertEqual(
+            credential_like,
+            {
+                'identity_create_scim_tokens',
+                'identity_list_scim_tokens',
+                'identity_revoke_scim_tokens',
+                'identity_create_personal_access_tokens',
+                'identity_list_personal_access_tokens',
+                'identity_revoke_personal_access_tokens',
+                'identity_rotate_rule_secret',
+            },
+        )
+
+    def test_a_person_can_still_manage_credentials(self):
+        from apps.authapi.views import _issue_shellui_tokens
+
+        auth = f'Bearer {_issue_shellui_tokens(self.owner, company=self.company)["access_token"]}'
+        client = APIClient()
+        created = client.post('/api/v1/scim/tokens', {'name': 'idp'}, format='json', HTTP_AUTHORIZATION=auth)
+        self.assertEqual(created.status_code, 201, created.content)
+        self.assertEqual(client.get('/api/v1/scim/tokens', HTTP_AUTHORIZATION=auth).status_code, 200)
+        pat = client.post('/api/v1/personal-access-tokens', {'name': 'x'}, format='json', HTTP_AUTHORIZATION=auth)
+        self.assertEqual(pat.status_code, 201, pat.content)
+        rotated = client.post(f'/api/v1/actions/rules/{self.rule.pk}/rotate-secret', HTTP_AUTHORIZATION=auth)
+        self.assertEqual(rotated.status_code, 200, rotated.content)
+
+    def test_an_agent_can_still_revoke_a_credential(self):
+        """Revoking only narrows access, so it stays available."""
+        from apps.scim.models import CompanyScimToken
+
+        row = CompanyScimToken.objects.create(company=self.company, token_prefix='scim_ab', token_hash='h' * 64, name='n')
+        result = self._call_through_approval(Agent.ACCESS_FULL, 'identity_revoke_scim_tokens', {'token_id': str(row.pk)})
+        self.assertFalse(result.get('isError'), json.dumps(result))
+        row.refresh_from_db()
+        self.assertIsNotNone(row.revoked_at)
+
+    def test_an_agent_bearer_on_the_rest_routes_gets_nothing(self):
+        _agent, token = self._agent(Agent.ACCESS_FULL)
+        client = APIClient()
+        auth = {'HTTP_AUTHORIZATION': f'Bearer {token}'}
+        for method, path in (
+            ('post', '/api/v1/scim/tokens'),
+            ('get', '/api/v1/scim/tokens'),
+            ('post', '/api/v1/personal-access-tokens'),
+            ('post', f'/api/v1/actions/rules/{self.rule.pk}/rotate-secret'),
+        ):
+            with self.subTest(path=path, method=method):
+                response = getattr(client, method)(path, **auth)
+                self.assertIn(response.status_code, (401, 403), response.content)
+        self._assert_nothing_minted()

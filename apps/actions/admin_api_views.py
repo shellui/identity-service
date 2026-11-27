@@ -331,6 +331,11 @@ class ShellUIAdminActionRuleRotateSecretView(APIView):
         _actor, company, err = _require_staff_or_company_owner(request)
         if err:
             return err
+        from apps.authapi.views import _agent_cannot_mint_credentials_response
+
+        refused = _agent_cannot_mint_credentials_response(request)
+        if refused is not None:
+            return refused
         try:
             rule = ActionRule.objects.get(pk=pk, company=company)
         except ActionRule.DoesNotExist:
