@@ -109,6 +109,30 @@ def _agent_credential_fields_refusal(request, data: dict) -> Response | None:
     return None
 
 
+def _agent_cannot_change_webhook_url_response(request, rule: ActionRule, data: dict) -> Response | None:
+    """403 when an agent tries to point an existing webhook rule at another URL.
+
+    The rule's signing secret and authorization header stay with the rule, so a new URL sends
+    every later event, signed, to an address the agent chose. That stays a person's decision in
+    every approval mode and after approval. Sending the URL the rule already has is not a
+    change, and creating a rule with a URL is unchanged.
+    """
+    from apps.agents.permissions import is_agent_request
+
+    if 'url' not in data or not is_agent_request(request):
+        return None
+    current = str((rule.config or {}).get('url') or '').strip()
+    if str(data.get('url') or '').strip() == current:
+        return None
+    return Response(
+        {
+            'error': 'Agents cannot change the URL of an existing webhook rule.',
+            'error_code': 'agent_cannot_change_webhook_url',
+        },
+        status=status.HTTP_403_FORBIDDEN,
+    )
+
+
 def _apply_rule_config(
     rule: ActionRule,
     data: dict,
@@ -283,6 +307,9 @@ class ShellUIAdminActionRuleDetailView(APIView):
         serializer = ActionRuleUpdateSerializer(data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
+        refused = _agent_cannot_change_webhook_url_response(request, rule, data)
+        if refused is not None:
+            return refused
         for field in ('name', 'description', 'event_type', 'enabled'):
             if field in data:
                 setattr(rule, field, data[field])

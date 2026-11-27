@@ -709,6 +709,72 @@ class AgentsCannotChangeSignInTests(AgentsCannotMintCredentialsTests):
         ):
             self._probe('identity_update_action_rules', {'id': self.rule.pk, **extra})
 
+    def _refused_url(self, result):
+        text = json.dumps(result)
+        self.assertTrue(result.get('isError'), text)
+        self.assertIn('agent_cannot_change_webhook_url', text)
+
+    def test_agent_cannot_change_the_url_of_an_existing_rule(self):
+        for mode in (Agent.ACCESS_FULL, Agent.ACCESS_ASK):
+            for extra in (
+                {'url': 'https://evil.example.com/steal'},
+                {'url': 'https://example.com/hook2'},
+                {'name': 'renamed', 'url': 'https://evil.example.com/steal'},
+            ):
+                before = self._state()
+                with self.subTest(mode=mode, extra=sorted(extra)):
+                    self._refused_url(
+                        self._call_through_approval(mode, 'identity_update_action_rules', {'id': self.rule.pk, **extra})
+                    )
+                    self.assertEqual(self._state(), before)
+        self.rule.refresh_from_db()
+        self.assertEqual(self.rule.config['url'], 'https://example.com/hook')
+        self.assertEqual(self.rule.config['secret'], 'original-secret-value')
+
+    def test_agent_can_send_the_same_url_and_can_still_create_a_rule_with_one(self):
+        from apps.actions.models import ActionRule
+
+        same = self._call_through_approval(
+            Agent.ACCESS_FULL,
+            'identity_update_action_rules',
+            {'id': self.rule.pk, 'name': 'same-url', 'url': 'https://example.com/hook'},
+        )
+        self.assertFalse(same.get('isError'), json.dumps(same))
+        self.assertEqual(ActionRule.objects.get(pk=self.rule.pk).name, 'same-url')
+        created = self._call_through_approval(
+            Agent.ACCESS_ASK,
+            'identity_create_action_rules',
+            {'name': 'with-url', 'event_type': 'identity.user.created', 'url': 'https://hooks.example.com/w'},
+        )
+        self.assertFalse(created.get('isError'), json.dumps(created))
+        self.assertEqual(ActionRule.objects.get(name='with-url').config['url'], 'https://hooks.example.com/w')
+
+    def test_a_person_can_still_change_the_url_of_a_rule(self):
+        from apps.actions.models import ActionRule
+        from apps.authapi.views import _issue_shellui_tokens
+
+        auth = f'Bearer {_issue_shellui_tokens(self.owner, company=self.company)["access_token"]}'
+        response = APIClient().patch(
+            f'/api/v1/actions/rules/{self.rule.pk}',
+            {'url': 'https://hooks.example.com/moved'},
+            format='json',
+            HTTP_AUTHORIZATION=auth,
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(ActionRule.objects.get(pk=self.rule.pk).config['url'], 'https://hooks.example.com/moved')
+
+    def test_an_agent_bearer_cannot_patch_a_rule_url_over_rest(self):
+        _agent, token = self._agent(Agent.ACCESS_FULL)
+        before = self._state()
+        response = APIClient().patch(
+            f'/api/v1/actions/rules/{self.rule.pk}',
+            {'url': 'https://evil.example.com/steal'},
+            format='json',
+            HTTP_AUTHORIZATION=f'Bearer {token}',
+        )
+        self.assertIn(response.status_code, (401, 403), response.content)
+        self.assertEqual(self._state(), before)
+
     def test_agent_can_still_create_and_rename_a_rule_without_those_fields(self):
         from apps.actions.models import ActionRule
 
