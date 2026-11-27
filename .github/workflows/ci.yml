@@ -37,7 +37,7 @@ jobs:
           --health-retries 5
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install uv
         uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
@@ -51,9 +51,9 @@ jobs:
         run: uv sync --frozen --no-dev
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: '22'
+          node-version: '26'
           cache: npm
           cache-dependency-path: package-lock.json
 
@@ -113,7 +113,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -181,7 +181,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Link check (lychee)
         uses: lycheeverse/lychee-action@v2
@@ -206,13 +206,13 @@ jobs:
       SHELLUI_DOCS_REF: ${{ vars.SHELLUI_DOCS_REF || 'main' }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           path: identity-service
 
       # Sibling checkout: the shellui docs fetch script reads ../identity-service/docs.
       - name: Checkout shellui/shellui
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: shellui/shellui
           ref: ${{ env.SHELLUI_DOCS_REF }}
@@ -224,7 +224,7 @@ jobs:
           package_json_file: shellui/package.json
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version-file: shellui/.nvmrc
           cache: pnpm
@@ -251,13 +251,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Build image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: false
@@ -267,7 +267,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build dev target
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           target: dev

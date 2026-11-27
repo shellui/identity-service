@@ -1,6 +1,6 @@
 {
   "catalog_version": "2",
-  "allauth_version": "65.19.5",
+  "allauth_version": "65.23.0",
   "providers": [
     {
       "docs_slug": "apple",
