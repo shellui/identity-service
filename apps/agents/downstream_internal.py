@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import re
+import time
+
 from django.conf import settings
 from django.core.cache import cache
 from rest_framework import status
@@ -25,12 +28,35 @@ from apps.agents.ai_service_config import (
 )
 from apps.agents.mcp_resources import catalog_resources_by_url
 from apps.agents.models import Agent
-from apps.agents.revocation import blocked_agent_ids
+from apps.agents.revocation import is_agent_blocked
 from apps.agents.services import service_allowed
 from apps.agents.tokens import encode_access_token
 from apps.authapi.throttling import check_rate_limit
 
 _JTI_CACHE_PREFIX = 'mcp_downstream_jti:'
+_GRANT_KEYS = {'action', 'exp'}
+_GRANT_ACTION_RE = re.compile(r'^[A-Za-z0-9_.-]{1,128}$')
+
+
+def parse_delegated_grant(raw) -> tuple[str, int] | None | bool:
+    """Validate the signed ``mcp_gateway_delegated`` claim.
+
+    Returns ``None`` when there is no claim, ``False`` when the claim is malformed or already
+    expired, and ``(action, exp)`` when it is valid. Only the shape ``{action, exp}`` is accepted.
+    """
+    if raw is None:
+        return None
+    if not isinstance(raw, dict) or set(raw) != _GRANT_KEYS:
+        return False
+    action = raw.get('action')
+    exp = raw.get('exp')
+    if not isinstance(action, str) or not _GRANT_ACTION_RE.fullmatch(action):
+        return False
+    if isinstance(exp, bool) or not isinstance(exp, int):
+        return False
+    if exp <= int(time.time()):
+        return False
+    return action, exp
 
 
 def _bearer_token(request) -> str:
@@ -120,21 +146,32 @@ class McpDownstreamAccessTokenView(APIView):
 
         if not agent.is_active:
             return Response({'error': 'Agent inactive.'}, status=status.HTTP_403_FORBIDDEN)
-        if str(agent.id) in set(blocked_agent_ids(company_id=body_company)):
+        if is_agent_blocked(agent):
             return Response({'error': 'Agent revoked.'}, status=status.HTTP_403_FORBIDDEN)
 
         service_id = catalog[resource]
         if not service_allowed(agent.services_allowed or [], service_id):
             return Response({'error': 'Resource not allowed for agent.'}, status=status.HTTP_403_FORBIDDEN)
 
+        grant = parse_delegated_grant(claims.get('mcp_gateway_delegated'))
+        if grant is False:
+            return Response({'error': 'Invalid delegated grant.'}, status=status.HTTP_400_BAD_REQUEST)
+        action, grant_exp = grant if grant else ('', None)
+
         jti = str(claims.get('jti') or '').strip()
         if not jti or not _consume_request_jti(jti):
             return Response({'error': 'Delegation request already used.'}, status=status.HTTP_401_UNAUTHORIZED)
 
         try:
-            # Mark tokens minted for the AI company gateway so downstream /mcp servers
-            # do not open a second human approval after the gateway already consumed one.
-            access_token = encode_access_token(agent, resource=resource, gateway_delegated=True)
+            # The signed request names the tool the AI gateway already approved, so the
+            # downstream /mcp server skips a second approval for that tool only. The grant
+            # lives until the signed exp, capped at 60 seconds.
+            access_token = encode_access_token(
+                agent,
+                resource=resource,
+                gateway_delegated_action=action,
+                gateway_delegated_exp=grant_exp,
+            )
         except ValueError:
             return Response({'error': 'Agent cannot issue tokens.'}, status=status.HTTP_403_FORBIDDEN)
         return Response({'access_token': access_token})

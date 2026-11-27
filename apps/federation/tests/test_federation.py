@@ -583,6 +583,34 @@ class StartupCheckTests(TestCase):
             ),
             [],
         )
+        missing_jwks = region_startup_errors(
+            role='region',
+            debug=False,
+            email_service_url='https://email.example.com',
+            csrf_trusted_origins=['https://admin.example.com'],
+            allowed_hosts=['auth.example.com'],
+            issuer_url='https://issuer.example',
+            jwks={'keys': []},
+            client_id='app',
+            client_secret='secret',
+            jwt_issuer='https://region.example',
+        )
+        self.assertTrue(any('GLOBAL_JWKS' in message for message in missing_jwks))
+        self.assertEqual(
+            region_startup_errors(
+                role='region',
+                debug=True,
+                email_service_url='https://email.example.com',
+                csrf_trusted_origins=['https://admin.example.com'],
+                allowed_hosts=['auth.example.com'],
+                issuer_url='https://issuer.example',
+                jwks={'keys': []},
+                client_id='app',
+                client_secret='secret',
+                jwt_issuer='https://region.example',
+            ),
+            [],
+        )
         self.assertEqual(
             region_startup_errors(
                 role='region',

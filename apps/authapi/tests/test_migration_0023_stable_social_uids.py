@@ -6,7 +6,7 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase
 
 User = get_user_model()
-_migration = importlib.import_module('apps.authapi.migrations.0022_stable_social_account_uids')
+_migration = importlib.import_module('apps.authapi.migrations.0023_stable_social_account_uids')
 
 
 def _account(provider: str, uid: str, extra_data, name: str):

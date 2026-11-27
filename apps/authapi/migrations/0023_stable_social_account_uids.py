@@ -85,7 +85,7 @@ def rekey_social_accounts(apps, schema_editor):
 
 class Migration(migrations.Migration):
     dependencies = [
-        ('authapi', '0021_personal_access_token_global_metrics_unused'),
+        ('authapi', '0022_staff_admin_guard'),
         ('socialaccount', '0006_alter_socialaccount_extra_data'),
     ]
 
