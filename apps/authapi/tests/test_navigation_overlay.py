@@ -445,8 +445,19 @@ class NavigationOverlayApiTests(TestCase):
                     self.assertEqual(response.status_code, 400, response.content)
         self.assertFalse(UserNavigationOverlay.objects.exists())
 
-    def test_names_with_invisible_format_characters_are_rejected(self):
-        for name in ('Files\u202e', 'Fi\u200bles', '\ufeffFiles'):
+    def test_names_with_invisible_or_blank_characters_are_rejected(self):
+        for name in (
+            'Files\u202e',
+            'Fi\u200bles',
+            '\ufeffFiles',
+            '\u3164',
+            '\u2800\u2800',
+            'Files\u115f',
+            'Fi\u1160les',
+            '\uffa0',
+            'Files\u2028',
+            'Files\u2029',
+        ):
             with self.subTest(name=repr(name)):
                 response = self._put(_overlay(installedApps=[_app(name=name)]))
                 self.assertEqual(response.status_code, 400, response.content)

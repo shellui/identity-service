@@ -84,9 +84,14 @@ def _control_chars(value: str) -> bool:
     return any(ord(ch) < 32 or ord(ch) == 127 for ch in value)
 
 
-def _format_chars(value: str) -> bool:
-    """Invisible format characters (category Cf), such as U+202E or U+200B, that can disguise a name."""
-    return any(unicodedata.category(ch) == 'Cf' for ch in value)
+# Letters and symbols that render as blank space, so a name made of them looks empty.
+_BLANK_FILLERS = frozenset('\u115f\u1160\u3164\uffa0\u2800')
+
+
+def _invisible_chars(value: str) -> bool:
+    """Characters that can disguise a name: format characters (Cf, such as U+202E or U+200B),
+    line and paragraph separators (Zl, Zp), and blank fillers such as U+3164 or U+2800."""
+    return any(ch in _BLANK_FILLERS or unicodedata.category(ch) in {'Cf', 'Zl', 'Zp'} for ch in value)
 
 
 def _split_url(value: str, label: str):
@@ -299,7 +304,7 @@ def _installed_app(value, *, index: int) -> dict:
         or name != name.strip()
         or len(name) > MAX_NAME_LENGTH
         or _control_chars(name)
-        or _format_chars(name)
+        or _invisible_chars(name)
     ):
         raise OverlayValidationError(f'{label}.name must be 1 to {MAX_NAME_LENGTH} characters.')
     if value.get('thirdParty') is not True:
