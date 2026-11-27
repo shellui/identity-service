@@ -38,7 +38,8 @@
         "url": {
           "description": "HTTPS webhook URL. Required when creating a rule.",
           "type": "string",
-          "format": "uri"
+          "format": "uri",
+          "x-mcp-destination": true
         },
         "secret": {
           "type": "string"
@@ -133,7 +134,8 @@
       "properties": {
         "email": {
           "type": "string",
-          "format": "email"
+          "format": "email",
+          "x-mcp-destination": true
         },
         "language": {
           "description": "Email language: en or fr.",
@@ -145,7 +147,8 @@
         },
         "app_url": {
           "description": "App URL linked from the email. An http(s) origin must match the company redirect allowlist. A desktop app uses the exact custom-scheme URI from that allowlist. Omit to send the email without a link.",
-          "type": "string"
+          "type": "string",
+          "x-mcp-destination": true
         }
       },
       "additionalProperties": false,
@@ -225,7 +228,8 @@
       "type": "object",
       "properties": {
         "base_url": {
-          "type": "string"
+          "type": "string",
+          "x-mcp-destination": true
         },
         "label": {
           "type": "string"
@@ -519,7 +523,8 @@
       "properties": {
         "base_url": {
           "description": "Redirect origin to remove, including scheme and host.",
-          "type": "string"
+          "type": "string",
+          "x-mcp-destination": true
         }
       },
       "additionalProperties": false,
@@ -1823,13 +1828,15 @@
         "allowed_email_domains": {
           "type": "array",
           "items": {
-            "type": "string"
+            "type": "string",
+            "x-mcp-destination": true
           }
         },
         "desktop_redirect_schemes": {
           "type": "array",
           "items": {
-            "type": "string"
+            "type": "string",
+            "x-mcp-destination": true
           }
         },
         "allow_desktop_dev_scheme": {
@@ -1920,7 +1927,8 @@
       "properties": {
         "base_url": {
           "description": "Redirect origin to sync, including scheme and host.",
-          "type": "string"
+          "type": "string",
+          "x-mcp-destination": true
         },
         "label": {
           "description": "Label stored on the redirect.",
@@ -2380,7 +2388,8 @@
         },
         "url": {
           "type": "string",
-          "format": "uri"
+          "format": "uri",
+          "x-mcp-destination": true
         },
         "secret": {
           "type": "string"
@@ -2495,13 +2504,15 @@
         "allowed_email_domains": {
           "type": "array",
           "items": {
-            "type": "string"
+            "type": "string",
+            "x-mcp-destination": true
           }
         },
         "desktop_redirect_schemes": {
           "type": "array",
           "items": {
-            "type": "string"
+            "type": "string",
+            "x-mcp-destination": true
           }
         },
         "allow_desktop_dev_scheme": {
@@ -2596,7 +2607,8 @@
         },
         "base_url": {
           "description": "Required when label and is_active are omitted.",
-          "type": "string"
+          "type": "string",
+          "x-mcp-destination": true
         },
         "label": {
           "description": "Required when base_url and is_active are omitted.",

@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from shellui_django.mcp.fields import McpDestinationURLField
 
 from apps.actions.models import ActionRule
 from apps.actions.registry import is_webhook_event
@@ -10,7 +11,7 @@ class ActionRuleWriteSerializer(serializers.Serializer):
     event_type = serializers.CharField(max_length=128, required=False)
     enabled = serializers.BooleanField(required=False)
 
-    url = serializers.URLField(required=False, allow_blank=True)
+    url = McpDestinationURLField(required=False, allow_blank=True)
     secret = serializers.CharField(required=False, allow_blank=True, trim_whitespace=False)
     authorization_header = serializers.CharField(required=False, allow_blank=True, trim_whitespace=False)
     allow_private_urls = serializers.BooleanField(required=False)
@@ -24,7 +25,7 @@ class ActionRuleWriteSerializer(serializers.Serializer):
 class ActionRuleCreateSerializer(ActionRuleWriteSerializer):
     name = serializers.CharField(max_length=200)
     event_type = serializers.CharField(max_length=128)
-    url = serializers.URLField(help_text='HTTPS webhook URL. Required when creating a rule.')
+    url = McpDestinationURLField(help_text='HTTPS webhook URL. Required when creating a rule.')
 
     def validate_event_type(self, value):
         if not is_webhook_event(value):

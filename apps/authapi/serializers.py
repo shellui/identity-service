@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from shellui_django.mcp.fields import McpDestinationCharField, McpDestinationEmailField
 
 
 class ShellUIOpenAPISerializer(serializers.Serializer):
@@ -53,14 +54,14 @@ class ShellUIMagicLinkRequestSerializer(serializers.Serializer):
 
 
 class ShellUIInvitationCreateSerializer(serializers.Serializer):
-    email = serializers.EmailField(max_length=254)
+    email = McpDestinationEmailField(max_length=254)
     language = serializers.CharField(
         required=False,
         allow_blank=True,
         max_length=35,
         help_text='Email language: en or fr.',
     )
-    app_url = serializers.CharField(
+    app_url = McpDestinationCharField(
         required=False,
         allow_blank=True,
         max_length=2048,
@@ -230,7 +231,7 @@ class ShellUIAdminOAuthSocialAppUpdateSerializer(serializers.Serializer):
 
 
 class ShellUIAdminOAuthRedirectCreateSerializer(serializers.Serializer):
-    base_url = serializers.CharField(max_length=500)
+    base_url = McpDestinationCharField(max_length=500)
     label = serializers.CharField(required=False, allow_blank=True, max_length=150)
     is_active = serializers.BooleanField(required=False, default=True)
     source = serializers.ChoiceField(
@@ -242,7 +243,7 @@ class ShellUIAdminOAuthRedirectCreateSerializer(serializers.Serializer):
 
 
 class ShellUIAdminOAuthRedirectUpdateSerializer(serializers.Serializer):
-    base_url = serializers.CharField(
+    base_url = McpDestinationCharField(
         required=False,
         allow_blank=False,
         max_length=500,
@@ -266,7 +267,7 @@ class ShellUIAdminOAuthRedirectUpdateSerializer(serializers.Serializer):
 
 
 class ShellUIHostingOAuthRedirectSyncSerializer(serializers.Serializer):
-    base_url = serializers.CharField(
+    base_url = McpDestinationCharField(
         max_length=500,
         help_text='Redirect origin to sync, including scheme and host.',
     )
@@ -274,7 +275,7 @@ class ShellUIHostingOAuthRedirectSyncSerializer(serializers.Serializer):
 
 
 class ShellUIHostingOAuthRedirectDeleteSerializer(serializers.Serializer):
-    base_url = serializers.CharField(
+    base_url = McpDestinationCharField(
         max_length=500,
         help_text='Redirect origin to remove, including scheme and host.',
     )
