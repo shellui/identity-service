@@ -880,7 +880,7 @@ class AgentsCannotChangeSignInTests(AgentsCannotMintCredentialsTests):
         )
         self.assertFalse(ActionRule.objects.filter(name='padded').exists())
 
-    def test_lookalike_and_invisible_characters_are_refused_before_any_approval_exists(self):
+    def test_lookalike_and_nonprinting_characters_are_refused_before_any_approval_exists(self):
         from apps.actions.models import ActionRule
 
         base = {'name': 'lookalike', 'event_type': 'identity.user.created', 'url': 'https://hooks.example.com/n'}

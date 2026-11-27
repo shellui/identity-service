@@ -86,7 +86,7 @@ def agent_webhook_value_problem(data: dict) -> str | None:
     url = str(data.get('url') or '').strip()
     description = str(data.get('description') or '')
     if has_control_or_format_char(str(data.get('url') or '')) or has_control_or_format_char(description):
-        return 'Agents cannot use control or invisible characters in a webhook URL or description.'
+        return 'Agents cannot use control or non-printing characters in a webhook URL or description.'
     if url and url_has_userinfo(url):
         return 'Agents cannot use a webhook URL that contains user information before the host.'
     if url and not url_host_is_ascii(url):
