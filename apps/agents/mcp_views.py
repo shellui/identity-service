@@ -275,18 +275,19 @@ def _consume_approval(approval_id: str, payload: dict | None = None) -> bool:
 
 
 def _approval_summary(payload: dict) -> str:
-    """A short line for the approval page, including a webhook destination when there is one."""
+    """A short line for the approval page. A webhook shows its destination host first, then the URL.
+
+    Only this direct ``/mcp`` path builds a summary from the arguments. On the gateway path
+    ai-service builds it and sends it as ``arguments_summary`` (`approval_arguments_summary`).
+    """
+    from apps.actions.agent_webhook_guard import webhook_approval_summary
+
     action = str(payload.get('action') or '')
     arguments = payload.get('arguments') or {}
-    body = arguments.get('body') if isinstance(arguments, dict) and isinstance(arguments.get('body'), dict) else {}
-    url = ''
-    if isinstance(arguments, dict):
-        url = str(arguments.get('url') or body.get('url') or '').strip()
-    if action == 'identity_create_action_rules':
-        if url:
-            return f'Create a webhook that posts to {url}'[:500]
-        return 'Create a webhook rule'
-    return ''
+    if action != 'identity_create_action_rules' or not isinstance(arguments, dict):
+        return ''
+    body = arguments.get('body') if isinstance(arguments.get('body'), dict) else {}
+    return webhook_approval_summary(str(arguments.get('url') or body.get('url') or ''))
 
 
 def _maybe_create_approval(payload: dict) -> dict | None:
