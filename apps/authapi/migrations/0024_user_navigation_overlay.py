@@ -9,7 +9,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
-        ('authapi', '0022_staff_admin_guard'),
+        ('authapi', '0023_stable_social_account_uids'),
         ('companies', '0034_backfill_social_app_created_by_company'),
     ]
 

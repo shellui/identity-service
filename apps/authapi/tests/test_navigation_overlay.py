@@ -176,6 +176,40 @@ class NavigationOverlayApiTests(TestCase):
         self.assertEqual(self._put(_overlay()).status_code, 403)
         self.assertEqual(self._delete(if_match='*').status_code, 403)
 
+    def test_disabled_members_cannot_read_or_write_preferences(self):
+        # The shared company check is used by all 22 endpoints, including preferences.
+        set_company_access(self.company, self.user, enabled=False)
+        headers = {'HTTP_AUTHORIZATION': self.auth}
+        self.assertEqual(self.client.get('/api/v1/preferences', **headers).status_code, 403)
+        put = self.client.put(
+            '/api/v1/preferences', {'themeName': 'dark'}, format='json', **headers
+        )
+        self.assertEqual(put.status_code, 403)
+        self.assertEqual(self.client.delete('/api/v1/preferences', **headers).status_code, 403)
+
+    def test_unknown_company_returns_404(self):
+        # The bearer still names this company after the row is deleted.
+        auth = self.auth
+        self.company.delete()
+        response = self._get(auth=auth)
+        self.assertEqual(response.status_code, 404, response.data)
+        self.assertEqual(response.data['error'], 'Company not found.')
+        self.assertEqual(self._put(_overlay(), auth=auth).status_code, 404)
+        self.assertEqual(self._delete(auth=auth, if_match='*').status_code, 404)
+
+    def test_numeric_and_cgnat_hosts_are_blocked(self):
+        cases = [
+            ('decimal ipv4', 'https://2130706433', 'https://2130706433/'),
+            ('hex ipv4', 'https://0x7f000001', 'https://0x7f000001/'),
+            ('short ipv4', 'https://127.1', 'https://127.1/'),
+            ('cgnat', 'https://100.64.0.1', 'https://100.64.0.1/'),
+        ]
+        for label, origin, url in cases:
+            with self.subTest(label=label):
+                response = self._put(_overlay(installedApps=[_app(origin=origin, url=url)]))
+                self.assertEqual(response.status_code, 400, response.data)
+                self.assertIn('blocked', str(response.data).lower())
+
     def test_read_only_and_write_personal_access_tokens_cannot_write(self):
         for read_only, name in ((True, 'overlay-read'), (False, 'overlay-write')):
             with self.subTest(read_only=read_only):

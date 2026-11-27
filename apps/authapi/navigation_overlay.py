@@ -14,6 +14,7 @@ import re
 from datetime import datetime, timezone as dt_timezone
 from urllib.parse import urlsplit
 
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 from drf_spectacular.utils import (
     OpenApiParameter,
@@ -46,7 +47,9 @@ MAX_ORIGIN_LENGTH = 2048
 # Overlay entries are third-party only. ``auth`` is never accepted.
 THIRD_PARTY_CAPABILITIES = frozenset({'theme', 'locale', 'ui', 'navigate', 'storage', 'ai'})
 
-# First path segment, compared case-insensitively. Keep in sync with Shellui.
+# First path segment, compared case-insensitively. Keep this list in sync with
+# the reserved paths in the Shellui shell (packages/sdk, plus admin from
+# getAdminPath). test_reserved_segments_match_the_shell_list pins the same set.
 RESERVED_PATH_SEGMENTS = frozenset(
     {'admin', '__settings', 'legal', 'files', 'login', 'marketplace', 'settings'}
 )
@@ -80,6 +83,22 @@ def _control_chars(value: str) -> bool:
     return any(ord(ch) < 32 or ord(ch) == 127 for ch in value)
 
 
+# Carrier-grade NAT. ipaddress treats it as public (is_private is false).
+_CGNAT = ipaddress.ip_network('100.64.0.0/10')
+
+
+def _host_ends_in_a_number(host: str) -> bool:
+    """WHATWG 'ends in a number': last label is all digits or starts with 0x.
+
+    Browsers parse those forms as IPv4 (decimal 2130706433, hex 0x7f000001,
+    short 127.1), so a hostname check that only looks at dotted literals
+    would miss them.
+    """
+    last = host.rsplit('.', 1)[-1]
+    lowered = last.lower()
+    return lowered.startswith('0x') or last.isdigit()
+
+
 def _blocked_host(host: str) -> bool:
     lowered = host.lower().rstrip('.')
     if (
@@ -92,7 +111,9 @@ def _blocked_host(host: str) -> bool:
     try:
         ip = ipaddress.ip_address(lowered)
     except ValueError:
-        return False
+        # Reject numeric IPv4 forms before the hostname regex, which would
+        # otherwise accept them as ordinary labels.
+        return _host_ends_in_a_number(lowered)
     return bool(
         ip.is_private
         or ip.is_loopback
@@ -100,6 +121,7 @@ def _blocked_host(host: str) -> bool:
         or ip.is_multicast
         or ip.is_unspecified
         or ip.is_reserved
+        or ip in _CGNAT
     )
 
 
@@ -436,8 +458,70 @@ def _document_for_row(row: UserNavigationOverlay | None) -> dict | None:
     return document
 
 
-def _row_for(user, company) -> UserNavigationOverlay | None:
-    return UserNavigationOverlay.objects.filter(user=user, company=company).first()
+def _row_for(user, company, *, for_update: bool = False) -> UserNavigationOverlay | None:
+    queryset = UserNavigationOverlay.objects.filter(user=user, company=company)
+    if for_update:
+        queryset = queryset.select_for_update()
+    return queryset.first()
+
+
+def _if_match_header(request) -> str | None:
+    return request.headers.get('If-Match') or request.META.get('HTTP_IF_MATCH')
+
+
+def _precondition_failed():
+    return Response(
+        {'error': 'If-Match does not match the current navigation overlay.'},
+        status=status.HTTP_412_PRECONDITION_FAILED,
+    )
+
+
+def _replace_overlay_row(user, company, document: dict, header: str | None):
+    """Create or replace the overlay if If-Match matches the current row version.
+
+    The write is a conditional UPDATE on ``updated_at`` (the ETag version) so
+    two requests that both passed a stale check cannot both commit.
+    """
+    now = timezone.now()
+    stored = dict(document)
+    stored['updatedAt'] = now.astimezone(dt_timezone.utc).isoformat().replace('+00:00', 'Z')
+    with transaction.atomic():
+        row = _row_for(user, company, for_update=True)
+        if not _if_match_ok(header, row):
+            return None
+        if row is None:
+            try:
+                return UserNavigationOverlay.objects.create(
+                    user=user, company=company, document=stored
+                )
+            except IntegrityError:
+                return None
+        # Conditional update on the current ETag timestamp, the row version.
+        updated = UserNavigationOverlay.objects.filter(
+            pk=row.pk,
+            updated_at=row.updated_at,
+        ).update(document=stored, updated_at=now)
+        if updated != 1:
+            return None
+        row.refresh_from_db()
+        return row
+
+
+def _delete_overlay_row(user, company, header: str | None) -> tuple[bool, bool]:
+    """Delete the overlay if If-Match matches. Returns (deleted, precondition_ok)."""
+    with transaction.atomic():
+        row = _row_for(user, company, for_update=True)
+        if row is None:
+            return False, True
+        if not _if_match_ok(header, row):
+            return False, False
+        deleted, _ = UserNavigationOverlay.objects.filter(
+            pk=row.pk,
+            updated_at=row.updated_at,
+        ).delete()
+        if not deleted:
+            return False, False
+        return True, True
 
 
 def _overlay_response(document, *, status_code: int, row: UserNavigationOverlay | None = None) -> Response:
@@ -516,6 +600,15 @@ def _cross_user_response(request, user) -> Response | None:
     return None
 
 
+_COMPANY_ID_PARAMETER = OpenApiParameter(
+    name='company_id',
+    type=int,
+    location=OpenApiParameter.QUERY,
+    required=False,
+    description='Must match the bearer token company_id when provided.',
+)
+
+
 def _emit_overlay_event(event_id: str, company, user, *, source: str, app_ids: list[str] | None = None) -> None:
     payload = {'user_id': user.pk, 'source': source, 'email': getattr(user, 'email', '') or ''}
     if app_ids is not None:
@@ -536,15 +629,7 @@ def _emit_overlay_event(event_id: str, company, user, *, source: str, app_ids: l
             'user is rejected. Successful responses include an ETag derived from the row '
             'timestamp, for use with If-Match on later writes.'
         ),
-        parameters=[
-            OpenApiParameter(
-                name='company_id',
-                type=int,
-                location=OpenApiParameter.QUERY,
-                required=False,
-                description='Must match the bearer token company_id when provided.',
-            ),
-        ],
+        parameters=[_COMPANY_ID_PARAMETER],
         responses={
             200: OpenApiResponse(
                 response=NavigationOverlaySerializer,
@@ -552,6 +637,7 @@ def _emit_overlay_event(event_id: str, company, user, *, source: str, app_ids: l
             ),
             401: OpenApiResponse(description='Missing or invalid bearer token'),
             403: OpenApiResponse(description='Company mismatch, disabled membership, agent token, or a user id for someone else'),
+            404: OpenApiResponse(description='Unknown company'),
         },
     ),
     put=extend_schema(
@@ -569,6 +655,7 @@ def _emit_overlay_event(event_id: str, company, user, *, source: str, app_ids: l
             'already exists, If-Match must equal the current ETag (or *). Document '
             'updatedAt is set by the server.'
         ),
+        parameters=[_COMPANY_ID_PARAMETER],
         request=NavigationOverlaySerializer,
         responses={
             200: OpenApiResponse(response=NavigationOverlaySerializer, description='Saved overlay document'),
@@ -577,6 +664,7 @@ def _emit_overlay_event(event_id: str, company, user, *, source: str, app_ids: l
             403: OpenApiResponse(
                 description='Company mismatch, disabled membership, agent or personal access token, or a user id for someone else'
             ),
+            404: OpenApiResponse(description='Unknown company'),
             412: OpenApiResponse(description='If-Match is missing or does not match the current ETag'),
             413: OpenApiResponse(description='Payload is larger than 64 KB'),
             429: OpenApiResponse(description='Write rate limit exceeded'),
@@ -590,12 +678,14 @@ def _emit_overlay_event(event_id: str, company, user, *, source: str, app_ids: l
             'Delete the navigation overlay saved for the authenticated user and the token '
             'company. When a document exists, If-Match must equal the current ETag (or *).'
         ),
+        parameters=[_COMPANY_ID_PARAMETER],
         responses={
             204: OpenApiResponse(description='Overlay deleted, or no document was saved'),
             401: OpenApiResponse(description='Missing or invalid bearer token'),
             403: OpenApiResponse(
                 description='Company mismatch, disabled membership, agent or personal access token, or a user id for someone else'
             ),
+            404: OpenApiResponse(description='Unknown company'),
             412: OpenApiResponse(description='If-Match is missing or does not match the current ETag'),
             429: OpenApiResponse(description='Write rate limit exceeded'),
         },
@@ -646,23 +736,11 @@ class ShellUINavigationOverlayView(APIView):
         serializer = NavigationOverlaySerializer(data=request.data)
         if not serializer.is_valid():
             return Response({'error': _error_message(serializer.errors)}, status=status.HTTP_400_BAD_REQUEST)
-        row = _row_for(user, company)
-        if not _if_match_ok(request.headers.get('If-Match') or request.META.get('HTTP_IF_MATCH'), row):
-            return Response(
-                {'error': 'If-Match does not match the current navigation overlay.'},
-                status=status.HTTP_412_PRECONDITION_FAILED,
-            )
-        document = dict(serializer.validated_data)
-        now = timezone.now().astimezone(dt_timezone.utc).isoformat().replace('+00:00', 'Z')
-        document['updatedAt'] = now
-        row, _created = UserNavigationOverlay.objects.update_or_create(
-            user=user,
-            company=company,
-            defaults={'document': document},
+        row = _replace_overlay_row(
+            user, company, serializer.validated_data, _if_match_header(request)
         )
-        # auto_now may not change updated_at if update_or_create hits an identical write;
-        # refresh so ETag matches the stored timestamp.
-        row.refresh_from_db()
+        if row is None:
+            return _precondition_failed()
         stored = _document_for_row(row)
         _emit_overlay_event(
             'identity.navigation_overlay.updated',
@@ -689,15 +767,9 @@ class ShellUINavigationOverlayView(APIView):
         cross_user = _cross_user_response(request, user)
         if cross_user:
             return cross_user
-        row = _row_for(user, company)
-        if row is not None and not _if_match_ok(
-            request.headers.get('If-Match') or request.META.get('HTTP_IF_MATCH'), row
-        ):
-            return Response(
-                {'error': 'If-Match does not match the current navigation overlay.'},
-                status=status.HTTP_412_PRECONDITION_FAILED,
-            )
-        deleted, _ = UserNavigationOverlay.objects.filter(user=user, company=company).delete()
+        deleted, precondition_ok = _delete_overlay_row(user, company, _if_match_header(request))
+        if not precondition_ok:
+            return _precondition_failed()
         if deleted:
             _emit_overlay_event('identity.navigation_overlay.deleted', company, user, source='api')
         return Response(status=status.HTTP_204_NO_CONTENT)
