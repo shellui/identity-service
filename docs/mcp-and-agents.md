@@ -398,6 +398,7 @@ Access tokens include:
 | `agent_id` | Agent uuid |
 | `company_id` | Company id |
 | `owner_user_id` | Regional user id the agent acts for. JSON integer, the same value as `Agent.created_by_id`. Omitted when the agent has no owner user. Not sent as null. |
+| `owner_is_company_owner` | Boolean, sent with `owner_user_id`. `true` when the creating user is an owner of the agent's company, `false` for a member. It never carries staff status. Services use it to give the agent the creator's role (storage-service does). Omitted when the agent has no owner user. |
 | `scope` | Space-separated service ids |
 | `grant_version` | Bumps when company-scoped MCP permissions invalidate session Allow grants |
 | `global_company_id` | SaaS global company uuid when the regional agent is bound |

@@ -32,6 +32,7 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 ### 🚨 Changed
 
+- Agent access tokens with an owner user also carry `owner_is_company_owner`, a boolean for the creator's role in the agent's company, so a service can give the agent the same access as its creator. It is omitted when there is no owner user.
 - A downstream token minted for ai-service carries `mcp_gateway_delegated` as `{"action": "<tool name>", "exp": <unix seconds>}` only when the signed mint request names the approved tool. The grant `exp` is the signed request's `exp`, capped at 60 seconds from the mint. A claim that is not exactly `{action, exp}` with a plain string action and an integer, unexpired `exp` is refused with a 400. The `true` value is no longer issued, since `shellui-django` 0.6 and later ignore it.
 - User token exchange refuses `is_global_staff` the same way it refuses `is_staff` and `is_superuser`.
 - Django staff sign-in uses a per-account lockout and a TOTP authenticator when `DEBUG` is false. An accepted code cannot be used again: the last accepted 30 second step is stored (`totp_last_step`, created by migration `0022`) and a code at or below it is refused.

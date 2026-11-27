@@ -48,7 +48,8 @@ def company_name_for_agent(agent: Agent) -> str:
 def apply_owner_user_id_claim(claims: dict, agent: Agent) -> None:
     """Add ``owner_user_id`` when the agent has a created-by user.
 
-    The value is the regional user id (``Agent.created_by_id``), as a JSON integer.
+    The value is the regional user id (``Agent.created_by_id``), as a JSON integer. It also
+    sets ``owner_is_company_owner`` (a boolean) from the creator's role in the company.
     Agents with no owner user, such as a global agent or a company service agent
     that was never linked to a user, omit the claim. The key is not set to null.
     """
@@ -56,6 +57,12 @@ def apply_owner_user_id_claim(claims: dict, agent: Agent) -> None:
     if raw is None:
         return
     claims['owner_user_id'] = int(raw)
+    # The creator's role in this company, so a service can give the agent the same access
+    # as that person. Never carries staff status: services refuse staff claims on agents.
+    claims['owner_is_company_owner'] = bool(
+        agent.company_id
+        and agent.company.owners.filter(pk=int(raw)).exists()
+    )
 
 
 DELEGATED_GRANT_MAX_SECONDS = 60
