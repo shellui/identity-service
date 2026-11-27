@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
 <!---
+## [Unreleased]
+
+### 🏗 Chore
+
+- Python 3.15: the image uses `python:3.15-slim`, and CI and `.python-version` use 3.15.
+- Node.js 26, the current LTS, for the image build stage and CI.
+- GitHub Actions: actions/checkout v7, actions/setup-node v7, astral-sh/setup-uv v10.4.0, docker/build-push-action v7, docker/login-action v4, docker/metadata-action v6, docker/setup-buildx-action v4, docker/setup-qemu-action v4, peter-evans/dockerhub-description v5.0.0.
+- Python dependencies: django-allauth 65.23.0, drf-spectacular 0.30.0, python-dotenv 1.2.4, requests 2.34.2, sentry-sdk 2.77.0, psycopg 3.3.9, cryptography 50.0.2, django-scim2 0.24.0, redis 8.2.0, celery 5.7.0.
+- The SAML ACS tests no longer call `xmlsec.shutdown()` and `xmlsec.init()` between cases. xmlsec 1.3.18 crashes the process on that re-init.
+- npm dependencies: @tailwindcss/cli 4.3.5, tailwindcss 4.3.5.
+
+### 🚨 Changed
+
+- gunicorn 27.0.1. A request whose `Transfer-Encoding` does not end with `chunked` (for example `identity` alone) now gets HTTP 400. No gunicorn setting changed.
+
 ## [x.y.z] - yyyy-mm-dd
 
 ### ✨ Feature - for new features
