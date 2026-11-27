@@ -468,6 +468,13 @@ class NavigationOverlayApiTests(TestCase):
             '\ufe00\ufe0f',
             '\U000e0100\U000e01ef',
             ' \u034f ',
+            '\u200d',
+            '\u200c',
+            '\u200dFiles',
+            'Files\u200c',
+            'Fi\u200d\u200dles',
+            'Fi \u200dles',
+            '\u3164\u200d\u3164',
         ):
             with self.subTest(name=repr(name)):
                 response = self._put(_overlay(installedApps=[_app(name=name)]))
@@ -477,6 +484,28 @@ class NavigationOverlayApiTests(TestCase):
         response = self._put(_overlay(installedApps=[_app(name='Caf\u0065\u0301 \u2601\ufe0f')]))
         self.assertEqual(response.status_code, 200, response.content)
 
+    def test_joiners_between_visible_characters_and_symbol_or_punctuation_names_are_kept(self):
+        for name in (
+            '\u0645\u06cc\u200c\u062e\u0648\u0627\u0647\u0645',  # Persian with ZWNJ
+            '\u0915\u094d\u200d\u0937',  # Devanagari with ZWJ after a virama
+            '\U0001f468\u200d\U0001f469\u200d\U0001f467',  # family emoji sequence
+            '\u2764\ufe0f\u200d\U0001f525',  # ZWJ after a variation selector
+            '\u2605\u2606',  # symbols only
+            '!?',  # punctuation only
+        ):
+            with self.subTest(name=repr(name)):
+                UserNavigationOverlay.objects.all().delete()
+                response = self._put(_overlay(installedApps=[_app(name=name)]))
+                self.assertEqual(response.status_code, 200, response.content)
+
+    def test_a_long_unknown_key_is_cut_short_in_the_error(self):
+        long_key = 'k' * 500
+        for body in ({**_overlay(), long_key: 1}, _overlay(installedApps=[_app(**{long_key: 1})])):
+            response = self._put(body)
+            self.assertEqual(response.status_code, 400, response.content)
+            self.assertNotIn(long_key, response.content.decode())
+            self.assertIn('k' * 40 + '...', response.content.decode())
+
     def test_lone_surrogates_are_a_400_not_a_database_error(self):
         cases = {
             'name': {'name': 'App \ud800'},
@@ -485,11 +514,13 @@ class NavigationOverlayApiTests(TestCase):
             'url': {'url': 'https://app0.example.com/\ud800', 'origin': 'https://app0.example.com'},
             'key': {'\udfff': True},
         }
-        for field, extra in cases.items():
+        bodies = {field: _overlay(installedApps=[_app(**extra)]) for field, extra in cases.items()}
+        bodies['top-level key'] = {**_overlay(), '\ud800': True}
+        for field, overlay in bodies.items():
             with self.subTest(field=field):
                 # A fresh user each time, so the write is reached and not refused with a 412.
                 UserNavigationOverlay.objects.all().delete()
-                body = json.dumps(_overlay(installedApps=[_app(**extra)]))
+                body = json.dumps(overlay)
                 response = self.client.put(
                     URL, data=body, content_type='application/json', HTTP_AUTHORIZATION=self.auth
                 )

@@ -80,6 +80,11 @@ class OverlayValidationError(Exception):
         super().__init__(message)
 
 
+def _shown(key: str, limit: int = 40) -> str:
+    """A key as echoed in an error, cut short so a long key does not fill the response."""
+    return key if len(key) <= limit else f'{key[:limit]}...'
+
+
 def _control_chars(value: str) -> bool:
     """C0, DEL and C1 controls (category Cc)."""
     return any(unicodedata.category(ch) == 'Cc' for ch in value)
@@ -89,10 +94,25 @@ def _control_chars(value: str) -> bool:
 _BLANK_FILLERS = frozenset('\u115f\u1160\u3164\uffa0\u2800')
 
 
+_JOINERS = frozenset('\u200c\u200d')
+
+
+def _joins(ch: str) -> bool:
+    """A character a joiner may sit next to: a letter, mark, number, punctuation or symbol."""
+    return unicodedata.category(ch)[0] in 'LMNPS' and ch not in _BLANK_FILLERS
+
+
 def _invisible_chars(value: str) -> bool:
     """Characters that can disguise a name: format characters (Cf, such as U+202E or U+200B),
-    line and paragraph separators (Zl, Zp), and blank fillers such as U+3164 or U+2800."""
-    return any(ch in _BLANK_FILLERS or unicodedata.category(ch) in {'Cf', 'Zl', 'Zp'} for ch in value)
+    line and paragraph separators (Zl, Zp), and blank fillers such as U+3164 or U+2800.
+    ZWNJ and ZWJ (U+200C, U+200D) are allowed between two visible characters only, as in
+    Persian, Indic scripts and emoji sequences."""
+    for i, ch in enumerate(value):
+        if ch in _JOINERS and 0 < i < len(value) - 1 and _joins(value[i - 1]) and _joins(value[i + 1]):
+            continue
+        if ch in _BLANK_FILLERS or unicodedata.category(ch) in {'Cf', 'Zl', 'Zp'}:
+            return True
+    return False
 
 
 def _has_visible_char(value: str) -> bool:
@@ -292,8 +312,7 @@ def _installed_app(value, *, index: int) -> dict:
         raise OverlayValidationError(f'{label} must be an object.')
     unknown = set(value) - APP_KEYS
     if unknown:
-        name = sorted(unknown)[0]
-        raise OverlayValidationError(f'{label} has unknown field "{name}".')
+        raise OverlayValidationError(f'{label} has unknown field "{_shown(min(unknown))}".')
     missing = APP_REQUIRED_KEYS - set(value)
     if missing:
         name = sorted(missing)[0]
@@ -352,8 +371,7 @@ def validate_navigation_overlay(data) -> dict:
         raise OverlayValidationError('Navigation overlay must be a JSON object.') from exc
     unknown = set(data) - TOP_LEVEL_KEYS - SCOPING_KEYS
     if unknown:
-        name = sorted(unknown)[0]
-        raise OverlayValidationError(f'Unknown field "{name}".')
+        raise OverlayValidationError(f'Unknown field "{_shown(min(unknown))}".')
     missing = {'version', 'installedApps', 'order', 'hiddenPaths'} - set(data)
     if missing:
         name = sorted(missing)[0]
