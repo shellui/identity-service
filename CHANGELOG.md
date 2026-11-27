@@ -48,10 +48,27 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 - A downstream token minted for ai-service carries `mcp_gateway_delegated` as `{"action": "<tool name>", "exp": <unix seconds>}` only when the signed mint request names the approved tool. The grant `exp` is the signed request's `exp`, capped at 60 seconds from the mint. A claim that is not exactly `{action, exp}` with a plain string action and an integer, unexpired `exp` is refused with a 400. The `true` value is no longer issued, since `shellui-django` 0.6 and later ignore it.
 - User token exchange refuses `is_global_staff` the same way it refuses `is_staff` and `is_superuser`.
 - Django staff sign-in uses a per-account lockout and a TOTP authenticator when `DEBUG` is false. An accepted code cannot be used again: the last accepted 30 second step is stored (`totp_last_step`, created by migration `0022`) and a code at or below it is refused.
+- `shellui-django` 0.8.0 with Django 6.1.3, Django REST framework 3.18.3 and drf-spectacular 0.30.0. The shellui-django pins are exact, so these move together.
+- gunicorn 27.0.1. A request whose `Transfer-Encoding` does not end with `chunked` (for example `identity` alone) now gets HTTP 400. No gunicorn setting changed.
 
 ### 🔒 Security
 
 - Agent access tokens authenticate only on `POST /mcp`. Refresh tokens are refused as bearer tokens, and a revoked refresh session stays refused.
+- django-allauth 65.19.6 to 65.23.0 identify accounts by stable ids: Bitbucket and Pinterest now use stable ids, and Tumblr uses the primary blog UUID. Migration `authapi.0023_stable_social_account_uids` rewrites `SocialAccount.uid` for existing `bitbucket_oauth2`, `pinterest`, `tumblr` and `tumblr_oauth2` rows from `extra_data`, as allauth's upgrade notes describe, so existing links keep matching. A row whose `extra_data` has no usable value, or whose new uid is already taken, is left as it was and logged by id. That person links the account again. The migration cannot be reversed (its reverse step does nothing), so to roll back after it ran, restore the database from a backup taken before the deploy. Deploying the previous image alone leaves the rewritten uids in place and those people are offered a new account.
+- Django 6.1.3 includes the Django security releases of October and November 2026, among them a fix for memory use when parsing large multipart uploads.
+
+### 🏗 Chore
+
+- Node.js 26, the current LTS, for the image build stage and CI.
+- GitHub Actions: actions/checkout v7, actions/setup-node v7, astral-sh/setup-uv v10.4.0, docker/build-push-action v7, docker/login-action v4, docker/metadata-action v6, docker/setup-buildx-action v4, docker/setup-qemu-action v4, peter-evans/dockerhub-description v5.0.0.
+- Python dependencies: django-allauth 65.23.0, drf-spectacular 0.30.0, python-dotenv 1.2.4, requests 2.34.2, sentry-sdk 2.77.0, psycopg 3.3.9, cryptography 50.0.2, django-scim2 0.24.0, redis 8.2.0, celery 5.7.0.
+- The SAML ACS tests no longer call `xmlsec.shutdown()` and `xmlsec.init()` between cases. xmlsec 1.3.18 crashes the process on that re-init.
+- npm dependencies: @tailwindcss/cli 4.3.5, tailwindcss 4.3.5.
+- Django 6.1 requires PostgreSQL 15 or newer, and drops 14. Check the database of any deployment before upgrading. CI runs PostgreSQL 18.
+- drf-spectacular 0.30 describes blank URL and slug fields as `oneOf` (the field's format or an empty string) in the OpenAPI schema. Generated clients and the published schema see that change. The API itself does not change.
+- CI runs `manage.py makemigrations --check --dry-run`, so a model change without a migration fails the build.
+- CI pins Python 3.14.10 and uv 0.13.10, and the Dockerfile copies the same uv, so CI and the image run the same interpreter and the same tool.
+- Migrations `agents.0028_sync_model_state` and `companies.0035_sync_data_retention_days_state` record help text, choices, validators and Meta options the models already had. `companies.0035` changes nothing in the database. `agents.0028` also creates three indexes the models already declared with `db_index=True` but the migration history never built: `agents_agent(global_company_id)`, `agents_mcpapprovalrequest(global_agent_id)` and `agents_mcpapprovalrequest(global_company_id)`. The `CREATE INDEX` statements are not concurrent, so each takes a write lock on its table while it builds.
 
 ## [0.13.6] - 2026-11-26
 
