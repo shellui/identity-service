@@ -21,6 +21,14 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog-emoji/master/CHANGELOG.md
 -->
 
+## [Unreleased]
+
+### 🏗 Chore
+
+- CI runs `manage.py makemigrations --check --dry-run`, so a model change without a migration fails the build.
+- CI uses uv 0.13.10, which resolves Python 3.14.10, the patch the `python:3.14-slim` image ships. uv 0.12.1 resolved 3.14.6.
+- Migrations `agents.0027_sync_model_state` and `companies.0035_sync_data_retention_days_state` record help text, choices, validators and Meta options the models already had. They change no table or column (no SQL on PostgreSQL).
+
 ## [0.13.6] - 2026-11-26
 
 ### 🐛 Bug Fixes

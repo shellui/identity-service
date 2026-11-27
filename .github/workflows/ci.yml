@@ -44,7 +44,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          version: '0.12.1'
+          version: '0.13.10'
           python-version: '3.14'
           enable-cache: true
           cache-dependency-glob: 'uv.lock'
@@ -83,6 +83,9 @@ jobs:
 
       - name: Django system checks
         run: uv run python manage.py check
+
+      - name: Verify migrations are up to date
+        run: uv run python manage.py makemigrations --check --dry-run
 
       - name: Production deployment checks
         run: |
@@ -129,7 +132,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          version: '0.12.1'
+          version: '0.13.10'
           python-version: '3.14'
           enable-cache: true
           cache-dependency-glob: 'uv.lock'
