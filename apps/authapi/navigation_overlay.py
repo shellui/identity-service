@@ -12,6 +12,7 @@ import ipaddress
 import json
 import re
 from datetime import datetime, timezone as dt_timezone
+import unicodedata
 from urllib.parse import urlsplit
 
 from django.db import IntegrityError, transaction
@@ -83,6 +84,20 @@ def _control_chars(value: str) -> bool:
     return any(ord(ch) < 32 or ord(ch) == 127 for ch in value)
 
 
+def _format_chars(value: str) -> bool:
+    """Invisible format characters (category Cf), such as U+202E or U+200B, that can disguise a name."""
+    return any(unicodedata.category(ch) == 'Cf' for ch in value)
+
+
+def _split_url(value: str, label: str):
+    """urlsplit plus hostname and port, with malformed input (``https://[::1``, ``:99999``) as a 400."""
+    try:
+        parts = urlsplit(value)
+        return parts, parts.hostname, parts.port
+    except ValueError as exc:
+        raise OverlayValidationError(f'{label} is not a valid URL.') from exc
+
+
 # Carrier-grade NAT. ipaddress treats it as public (is_private is false).
 _CGNAT = ipaddress.ip_network('100.64.0.0/10')
 
@@ -130,25 +145,17 @@ def _https_url(value, *, label: str) -> str:
         raise OverlayValidationError(f'{label} must be an https URL of at most {MAX_URL_LENGTH} characters.')
     if value != value.strip() or _control_chars(value) or '\\' in value or any(ch.isspace() for ch in value):
         raise OverlayValidationError(f'{label} must be an https URL.')
-    parts = urlsplit(value)
+    parts, host, port = _split_url(value, label)
     if parts.scheme.lower() != 'https':
         raise OverlayValidationError(f'{label} must use https.')
     if parts.username is not None or parts.password is not None:
         raise OverlayValidationError(f'{label} must not include a username or password.')
-    try:
-        host = parts.hostname
-    except ValueError as exc:
-        raise OverlayValidationError(f'{label} must include a host.') from exc
     if not host:
         raise OverlayValidationError(f'{label} must include a host.')
     try:
         host.encode('idna')
     except UnicodeError as exc:
         raise OverlayValidationError(f'{label} has an invalid host.') from exc
-    try:
-        port = parts.port
-    except ValueError as exc:
-        raise OverlayValidationError(f'{label} has an invalid port.') from exc
     if port == 0:
         raise OverlayValidationError(f'{label} has an invalid port.')
     if _blocked_host(host):
@@ -161,14 +168,13 @@ def _https_url(value, *, label: str) -> str:
     return value
 
 
-def _origin_of(url: str) -> str:
-    parts = urlsplit(url)
-    host = parts.hostname
+def _origin_of(url: str, label: str = 'url') -> str:
+    _parts, host, port = _split_url(url, label)
     if host is None:
-        raise OverlayValidationError('url must include a host.')
+        raise OverlayValidationError(f'{label} must include a host.')
     origin = f'https://{host}'
-    if parts.port and parts.port != 443:
-        origin = f'{origin}:{parts.port}'
+    if port and port != 443:
+        origin = f'{origin}:{port}'
     return origin
 
 
@@ -177,7 +183,7 @@ def _https_origin(value, *, url: str, label: str) -> str:
         raise OverlayValidationError(f'{label} must be an https origin of at most {MAX_ORIGIN_LENGTH} characters.')
     if value != value.strip() or _control_chars(value) or '\\' in value or any(ch.isspace() for ch in value):
         raise OverlayValidationError(f'{label} must be an https origin.')
-    parts = urlsplit(value)
+    parts, host, _port = _split_url(value, label)
     if (
         parts.scheme.lower() != 'https'
         or parts.path not in ('', '/')
@@ -185,11 +191,11 @@ def _https_origin(value, *, url: str, label: str) -> str:
         or parts.fragment
         or parts.username is not None
         or parts.password is not None
-        or not parts.hostname
+        or not host
     ):
         raise OverlayValidationError(f'{label} must be an https origin with no path, query, or fragment.')
     expected = _origin_of(url)
-    origin = _origin_of(value)
+    origin = _origin_of(value, label)
     if origin != expected:
         raise OverlayValidationError(f'{label} must match the origin of url.')
     return origin
@@ -293,6 +299,7 @@ def _installed_app(value, *, index: int) -> dict:
         or name != name.strip()
         or len(name) > MAX_NAME_LENGTH
         or _control_chars(name)
+        or _format_chars(name)
     ):
         raise OverlayValidationError(f'{label}.name must be 1 to {MAX_NAME_LENGTH} characters.')
     if value.get('thirdParty') is not True:
@@ -441,7 +448,8 @@ def _parse_if_match(header: str | None) -> list[str] | None:
 def _if_match_ok(header: str | None, row: UserNavigationOverlay | None) -> bool:
     tags = _parse_if_match(header)
     if row is None:
-        return tags is None or tags == ['*'] or tags == []
+        # Creating needs no If-Match. `*` means "a document exists", so it fails here.
+        return tags is None
     if tags is None:
         return False
     if tags == ['*']:
@@ -466,7 +474,15 @@ def _row_for(user, company, *, for_update: bool = False) -> UserNavigationOverla
 
 
 def _if_match_header(request) -> str | None:
-    return request.headers.get('If-Match') or request.META.get('HTTP_IF_MATCH')
+    header = request.headers.get('If-Match')
+    return header if header is not None else request.META.get('HTTP_IF_MATCH')
+
+
+def _empty_if_match(request) -> Response | None:
+    header = _if_match_header(request)
+    if header is not None and not header.strip():
+        return Response({'error': 'If-Match must not be empty.'}, status=status.HTTP_400_BAD_REQUEST)
+    return None
 
 
 def _precondition_failed(user, company):
@@ -755,6 +771,9 @@ class ShellUINavigationOverlayView(APIView):
         cross_user = _cross_user_response(request, user)
         if cross_user:
             return cross_user
+        empty = _empty_if_match(request)
+        if empty:
+            return empty
         serializer = NavigationOverlaySerializer(data=request.data)
         if not serializer.is_valid():
             return Response({'error': _error_message(serializer.errors)}, status=status.HTTP_400_BAD_REQUEST)
@@ -789,6 +808,9 @@ class ShellUINavigationOverlayView(APIView):
         cross_user = _cross_user_response(request, user)
         if cross_user:
             return cross_user
+        empty = _empty_if_match(request)
+        if empty:
+            return empty
         deleted, precondition_ok = _delete_overlay_row(user, company, _if_match_header(request))
         if not precondition_ok:
             return _precondition_failed(user, company)

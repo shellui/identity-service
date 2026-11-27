@@ -73,6 +73,8 @@ class UserNavigationOverlay(models.Model):
         settings.AUTH_USER_MODEL,
         related_name='navigation_overlays',
         on_delete=models.CASCADE,
+        # The (user, company) unique constraint already indexes user first.
+        db_index=False,
     )
     company = models.ForeignKey(
         'companies.Company',

@@ -436,6 +436,30 @@ class NavigationOverlayApiTests(TestCase):
         self.assertTrue(UserNavigationOverlay.objects.exists())
         self.assertEqual(self._delete(if_match=new_etag).status_code, 204)
 
+    def test_malformed_urls_are_a_400_not_a_500(self):
+        bad = ['https://[::1/', 'https://example.com]/', 'https://[::1]@example.com/', 'https://a.example:99999/', 'https://a.example:abc/']
+        for value in bad:
+            for field in ('url', 'icon', 'origin'):
+                with self.subTest(field=field, value=value):
+                    response = self._put(_overlay(installedApps=[_app(**{field: value})]))
+                    self.assertEqual(response.status_code, 400, response.content)
+        self.assertFalse(UserNavigationOverlay.objects.exists())
+
+    def test_names_with_invisible_format_characters_are_rejected(self):
+        for name in ('Files\u202e', 'Fi\u200bles', '\ufeffFiles'):
+            with self.subTest(name=repr(name)):
+                response = self._put(_overlay(installedApps=[_app(name=name)]))
+                self.assertEqual(response.status_code, 400, response.content)
+
+    def test_if_match_star_or_empty_does_not_create_a_document(self):
+        self.assertEqual(self._put(_overlay(), if_match='*').status_code, 412)
+        self.assertEqual(self._put(_overlay(), if_match='').status_code, 400)
+        self.assertEqual(self._delete(if_match='').status_code, 400)
+        self.assertFalse(UserNavigationOverlay.objects.exists())
+        created = self._put(_overlay())
+        self.assertEqual(created.status_code, 200)
+        self.assertEqual(self._put(_overlay(hiddenPaths=['/x']), if_match='*').status_code, 200)
+
     def test_writes_are_recorded_in_the_event_log(self):
         created = self._put(_overlay())
         self.assertEqual(created.status_code, 200)
