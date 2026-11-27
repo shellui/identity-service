@@ -51,14 +51,30 @@ def apply_owner_user_id_claim(claims: dict, agent: Agent) -> None:
     The value is the regional user id (``Agent.created_by_id``), as a JSON integer.
     Agents with no owner user, such as a global agent or a company service agent
     that was never linked to a user, omit the claim. The key is not set to null.
+
+    A global agent never carries it, even though its regional row records ``created_by``
+    from the first exchange: it is not that person's personal agent. Services learn the
+    creator's role from the signed revocation snapshot (``creator_status``), never from a
+    token claim, so a role change takes effect without waiting for a token to expire.
     """
+    if getattr(agent, 'global_agent_id', None) is not None:
+        return
     raw = getattr(agent, 'created_by_id', None)
     if raw is None:
         return
     claims['owner_user_id'] = int(raw)
 
 
-def build_agent_access_token(agent: Agent, *, resource: str, gateway_delegated: bool = False) -> dict:
+DELEGATED_GRANT_MAX_SECONDS = 60
+
+
+def build_agent_access_token(
+    agent: Agent,
+    *,
+    resource: str,
+    gateway_delegated_action: str = '',
+    gateway_delegated_exp: int | None = None,
+) -> dict:
     audience = normalize_resource_indicator(resource)
     if not audience:
         raise ValueError('Invalid MCP resource for access token audience.')
@@ -86,9 +102,14 @@ def build_agent_access_token(agent: Agent, *, resource: str, gateway_delegated: 
         'exp': int(exp.timestamp()),
         'aud': audience,
     }
-    if gateway_delegated:
-        # AI company gateway already enforced human approval for this tools/call.
-        claims['mcp_gateway_delegated'] = True
+    action = str(gateway_delegated_action or '').strip()
+    if action:
+        # Downstream /mcp skips a second approval only for this tool until exp.
+        # The grant expires at the signed request's own exp, never later than 60 seconds from now.
+        # Without a signed exp (not expected from the gateway) it gets the cap, not the token lifetime.
+        cap = int(now.timestamp()) + DELEGATED_GRANT_MAX_SECONDS
+        grant_exp = min(int(gateway_delegated_exp), cap) if gateway_delegated_exp is not None else cap
+        claims['mcp_gateway_delegated'] = {'action': action, 'exp': min(grant_exp, int(exp.timestamp()))}
     if ga is not None:
         claims['mcp_authority'] = 'delegated'
     # Tests often override ``JWT_ISSUER`` without refreshing ``SIMPLE_JWT['ISSUER']``;
@@ -132,13 +153,24 @@ def build_agent_access_token(agent: Agent, *, resource: str, gateway_delegated: 
     return claims
 
 
-def encode_access_token(agent: Agent, *, resource: str, gateway_delegated: bool = False) -> str:
+def encode_access_token(
+    agent: Agent,
+    *,
+    resource: str,
+    gateway_delegated_action: str = '',
+    gateway_delegated_exp: int | None = None,
+) -> str:
     import jwt
 
     ga = getattr(agent, 'global_agent_id', None)
     if ga is not None and global_agent_exchange_blocked(ga):
         raise ValueError('Global agent is revoked.')
-    claims = build_agent_access_token(agent, resource=resource, gateway_delegated=gateway_delegated)
+    claims = build_agent_access_token(
+        agent,
+        resource=resource,
+        gateway_delegated_action=gateway_delegated_action,
+        gateway_delegated_exp=gateway_delegated_exp,
+    )
     headers = {}
     kid = getattr(settings, 'JWT_ACTIVE_KEY_ID', '')
     if kid:
@@ -254,6 +286,12 @@ def refresh_agent_access(refresh_token: str, *, resource: str) -> tuple[str, str
     if session.expires_at <= timezone.now():
         return None
     if not agent.is_active:
+        return None
+    from apps.agents.revocation import CREATOR_GONE, creator_statuses
+
+    if creator_statuses([agent]).get(str(agent.pk)) == CREATOR_GONE:
+        # The person who created this agent no longer has access to the company.
+        revoke_all_agent_refresh_sessions(agent)
         return None
     if not _session_authority_ok(agent, session):
         revoke_all_agent_refresh_sessions(agent)

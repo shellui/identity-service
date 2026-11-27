@@ -74,14 +74,14 @@ class McpTenantIsolationTests(TestCase):
             '/api/v1/mcp/agents',
             HTTP_AUTHORIZATION=f'Bearer {self.agent_token_a}',
         )
-        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.status_code, 401)
 
     def test_agent_cannot_pause_company_b_agent(self):
         response = self.client.post(
             f'/api/v1/mcp/agents/{self.agent_b.id}/pause',
             HTTP_AUTHORIZATION=f'Bearer {self.agent_token_a}',
         )
-        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.status_code, 401)
 
     def test_agent_cannot_revoke_own_or_other_agent(self):
         for agent_id in (self.agent_a.id, self.agent_b.id):
@@ -89,7 +89,7 @@ class McpTenantIsolationTests(TestCase):
                 f'/api/v1/mcp/agents/{agent_id}/revoke',
                 HTTP_AUTHORIZATION=f'Bearer {self.agent_token_a}',
             )
-            self.assertEqual(response.status_code, 403, agent_id)
+            self.assertEqual(response.status_code, 401, agent_id)
 
     def test_agent_cannot_approve_company_b_request(self):
         row = McpApprovalRequest.objects.create(
@@ -104,7 +104,7 @@ class McpTenantIsolationTests(TestCase):
             f'/api/v1/mcp/approvals/{row.id}/approve',
             HTTP_AUTHORIZATION=f'Bearer {self.agent_token_a}',
         )
-        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.status_code, 401)
 
     def test_agent_cannot_list_company_b_call_logs(self):
         McpCallLog.objects.create(
@@ -119,7 +119,7 @@ class McpTenantIsolationTests(TestCase):
             '/api/v1/mcp/call-logs',
             HTTP_AUTHORIZATION=f'Bearer {self.agent_token_a}',
         )
-        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.status_code, 401)
 
     def test_internal_consume_rejects_cross_company_binding(self):
         row = McpApprovalRequest.objects.create(

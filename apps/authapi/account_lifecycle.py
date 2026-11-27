@@ -50,7 +50,11 @@ def delete_user_account(user, *, source: str) -> None:
 
     Matches Django admin delete semantics (hard delete with cascading FKs).
     """
+    from apps.agents.revocation import revoke_agents_created_by
+
     invalidate_user_auth_state(user)
+    # ``Agent.created_by`` is SET_NULL, so revoke the user's agents before the row goes.
+    revoke_agents_created_by(user)
     emit_user_deleted_for_all_companies(user, source=source)
     user.delete()
 

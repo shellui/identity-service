@@ -6,8 +6,26 @@ from rest_framework.response import Response
 
 from apps.actions.user_hooks import emit_profile_snapshots, snapshot_profiles_for_ids
 
+from apps.agents.permissions import is_agent_request
+
 from .models import Company
 from .serializers import CompanySerializer, CompanyUpdateSerializer
+
+
+def _changes_desktop_sign_in(company: Company, validated: dict) -> bool:
+    """True when the request would change where a desktop app's sign-in can redirect.
+
+    A scheme added to ``desktop_redirect_schemes``, or the dev scheme switched on, lets an app
+    the caller names receive the sign-in code, so agents may not change either. Sending the
+    values the company already has is not a change.
+    """
+    if 'desktop_redirect_schemes' in validated:
+        if sorted(validated['desktop_redirect_schemes'] or []) != sorted(company.desktop_redirect_schemes or []):
+            return True
+    if 'allow_desktop_dev_scheme' in validated:
+        if bool(validated['allow_desktop_dev_scheme']) != bool(company.allow_desktop_dev_scheme):
+            return True
+    return False
 
 
 @extend_schema_view(
@@ -72,6 +90,22 @@ class CompanyViewSet(
             key in validated for key in ('name', 'owner_ids', 'access_mode', 'allowed_email_domains')
         ):
             return Response({'error': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
+
+        if 'owner_ids' in validated and is_agent_request(request):
+            # An agent acts as the person who created it, but who owns a project is a human
+            # decision. No approval mode lets an agent grant, move or remove ownership.
+            return Response(
+                {
+                    'error': 'Agents cannot change who owns a company.',
+                    'error_code': 'agent_cannot_change_owners',
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        if is_agent_request(request) and _changes_desktop_sign_in(company, validated):
+            from apps.authapi.views import _agent_cannot_change_signin_or_credentials_response
+
+            return _agent_cannot_change_signin_or_credentials_response(request)
 
         if 'owner_ids' in validated and not validated['owner_ids']:
             return Response(

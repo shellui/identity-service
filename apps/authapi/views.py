@@ -3513,6 +3513,49 @@ class ShellUIAdminUserListView(APIView):
         )
 
 
+def _agent_cannot_touch_owner_response(request, company, target) -> Response | None:
+    """403 when an agent tries to remove or disable a company owner.
+
+    An agent acts as the person who created it, but who owns a company is a human decision.
+    No approval mode lets an agent grant, move, disable or remove ownership. This holds for
+    the owner's own agent too, and after a person approved the call.
+    """
+    from apps.agents.permissions import is_agent_request
+
+    if not is_agent_request(request):
+        return None
+    if not _is_user_company_owner(target, company):
+        return None
+    return Response(
+        {
+            'error': 'Agents cannot remove or disable a company owner.',
+            'error_code': 'agent_cannot_change_owners',
+        },
+        status=status.HTTP_403_FORBIDDEN,
+    )
+
+
+def _agent_cannot_change_signin_or_credentials_response(request) -> Response | None:
+    """403 when an agent tries to change how people sign in, or to create or set a credential.
+
+    Where redirects may go, which identity providers a company uses, SCIM tokens, personal
+    access tokens and webhook secrets decide who can sign in as whom. A change in any of them
+    can take over an account, so it stays a human decision. No approval mode changes this, and
+    it holds after a person approved the call. Reads and revokes are not refused.
+    """
+    from apps.agents.permissions import is_agent_request
+
+    if not is_agent_request(request):
+        return None
+    return Response(
+        {
+            'error': 'Agents cannot change sign-in or credentials.',
+            'error_code': 'agent_cannot_manage_credentials',
+        },
+        status=status.HTTP_403_FORBIDDEN,
+    )
+
+
 @extend_schema_view(
     get=extend_schema(
         **mcp_extend_schema_kwargs('identity_get_users'),
@@ -3567,6 +3610,11 @@ class ShellUIAdminUserDetailView(APIView):
         serializer = ShellUIAdminUserUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         validated = serializer.validated_data
+
+        if 'is_active' in validated:
+            refused = _agent_cannot_touch_owner_response(request, company, target)
+            if refused is not None:
+                return refused
 
         if target.pk == actor.pk:
             if validated.get('is_active') is False:
@@ -3684,6 +3732,9 @@ class ShellUIAdminUserDetailView(APIView):
         except User.DoesNotExist:
             return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
 
+        refused = _agent_cannot_touch_owner_response(request, company, target)
+        if refused is not None:
+            return refused
         if target.pk == actor.pk:
             return Response(
                 {'error': 'You cannot delete yourself here. Delete your account from Settings.'},
@@ -3964,6 +4015,9 @@ class ShellUIAdminOAuthClientListView(APIView):
         _actor, company, err = _require_staff_or_company_owner(request)
         if err:
             return err
+        refused = _agent_cannot_change_signin_or_credentials_response(request)
+        if refused is not None:
+            return refused
         serializer = ShellUIAdminOAuthClientCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         validated = serializer.validated_data
@@ -4102,6 +4156,9 @@ class ShellUIAdminOAuthSocialAppListView(APIView):
         _actor, company, err = _require_staff_or_company_owner(request)
         if err:
             return err
+        refused = _agent_cannot_change_signin_or_credentials_response(request)
+        if refused is not None:
+            return refused
         incoming = request.data.copy() if hasattr(request.data, 'copy') else dict(request.data)
         pre_slug = str(incoming.get('docs_slug') or incoming.get('provider') or '').strip().lower()
         if pre_slug == 'saml':
@@ -4222,6 +4279,9 @@ class ShellUIAdminOAuthSocialAppDetailView(APIView):
         _actor, company, err = _require_staff_or_company_owner(request)
         if err:
             return err
+        refused = _agent_cannot_change_signin_or_credentials_response(request)
+        if refused is not None:
+            return refused
         try:
             app = SocialApp.objects.get(pk=pk)
         except SocialApp.DoesNotExist:
@@ -4377,6 +4437,9 @@ class ShellUIAdminOAuthClientDetailView(APIView):
         _actor, company, err = _require_staff_or_company_owner(request)
         if err:
             return err
+        refused = _agent_cannot_change_signin_or_credentials_response(request)
+        if refused is not None:
+            return refused
         try:
             row = CompanyOAuthClient.objects.get(pk=pk, company=company)
         except CompanyOAuthClient.DoesNotExist:
@@ -4478,6 +4541,9 @@ class ShellUIAdminOAuthRedirectListView(APIView):
         _actor, company, err = _require_staff_or_company_owner(request)
         if err:
             return err
+        refused = _agent_cannot_change_signin_or_credentials_response(request)
+        if refused is not None:
+            return refused
         serializer = ShellUIAdminOAuthRedirectCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         validated = serializer.validated_data
@@ -4536,6 +4602,9 @@ class ShellUIAdminOAuthRedirectDetailView(APIView):
         _actor, company, err = _require_staff_or_company_owner(request)
         if err:
             return err
+        refused = _agent_cannot_change_signin_or_credentials_response(request)
+        if refused is not None:
+            return refused
         try:
             row = CompanyOAuthRedirect.objects.get(pk=pk, company=company)
         except CompanyOAuthRedirect.DoesNotExist:
@@ -4603,6 +4672,9 @@ class ShellUIHostingOAuthRedirectSyncView(APIView):
         _actor, company, err = _require_enabled_company_member(request)
         if err:
             return err
+        refused = _agent_cannot_change_signin_or_credentials_response(request)
+        if refused is not None:
+            return refused
         serializer = ShellUIHostingOAuthRedirectSyncSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         validated = serializer.validated_data
@@ -4678,6 +4750,9 @@ class ShellUIPersonalAccessTokenListCreateView(APIView):
         user, company, err = _require_authenticated_company_member(request)
         if err:
             return err
+        refused = _agent_cannot_change_signin_or_credentials_response(request)
+        if refused is not None:
+            return refused
         serializer = ShellUIPersonalAccessTokenCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         read_only = bool(serializer.validated_data.get('read_only'))
@@ -4760,6 +4835,9 @@ class ShellUIAdminScimTokenListCreateView(APIView):
         _actor, company, err = _require_staff_or_company_owner(request)
         if err:
             return err
+        refused = _agent_cannot_change_signin_or_credentials_response(request)
+        if refused is not None:
+            return refused
         qs = CompanyScimToken.objects.filter(company=company).order_by('-created_at')
         return Response({'results': [_scim_token_row(t) for t in qs]})
 
@@ -4767,6 +4845,9 @@ class ShellUIAdminScimTokenListCreateView(APIView):
         _actor, company, err = _require_staff_or_company_owner(request)
         if err:
             return err
+        refused = _agent_cannot_change_signin_or_credentials_response(request)
+        if refused is not None:
+            return refused
         if not getattr(settings, 'SCIM_ENABLED', True):
             return Response(
                 {'error': 'SCIM is not enabled on this identity deployment.'},
@@ -4853,6 +4934,9 @@ class ShellUIAdminAuthMethodsView(APIView):
         _actor, company, err = _require_staff_or_company_owner(request)
         if err:
             return err
+        refused = _agent_cannot_change_signin_or_credentials_response(request)
+        if refused is not None:
+            return refused
         serializer = ShellUIAdminAuthMethodsUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         if 'enable_magic_link' not in serializer.validated_data:

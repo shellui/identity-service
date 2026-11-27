@@ -112,7 +112,7 @@ class McpAgentApprovalGuardTests(TestCase):
             f'/api/v1/mcp/approvals/{row.id}/approve',
             HTTP_AUTHORIZATION=f'Bearer {access}',
         )
-        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.status_code, 401)
 
     def test_company_owner_can_approve_with_user_token(self):
         row = McpApprovalRequest.objects.create(

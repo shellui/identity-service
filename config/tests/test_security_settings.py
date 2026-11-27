@@ -67,6 +67,7 @@ class HostPrefixCookieNameTests(SimpleTestCase):
     SESSION_COOKIE_DOMAIN=None,
     CSRF_COOKIE_DOMAIN=None,
     ALLOWED_HOSTS=['testserver'],
+    STAFF_ADMIN_LOGIN_HARDENED=False,
 )
 class AdminLoginHostCookieTests(TestCase):
     """Django admin login uses the form token, not a script that reads csrftoken."""

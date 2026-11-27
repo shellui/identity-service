@@ -17,6 +17,11 @@ from django.dispatch import receiver
 
 from .login_audit import LoginOutcome, record_login_event
 from .magic_link import delete_unused_magic_link_tokens_for_user, is_staff_account
+from .staff_admin_login import (
+    STAFF_TOTP_SESSION_KEY,
+    clear_staff_login_failures,
+    record_staff_login_failure,
+)
 from .user_activity import touch_user_last_seen
 
 User = get_user_model()
@@ -45,6 +50,13 @@ def _user_from_failed_credentials(credentials: dict | None) -> User | None:
 
 
 @receiver(user_logged_in)
+def mark_session_totp_verified(sender, request, user, **kwargs):
+    """Only the staff form that accepted a code sets the flag. Any other sign-in leaves it unset."""
+    if request is not None and getattr(request, '_staff_totp_verified', False):
+        request.session[STAFF_TOTP_SESSION_KEY] = user.pk
+
+
+@receiver(user_logged_in)
 def login_event_on_admin_session_login(sender, request, user, **kwargs):
     if not _is_django_admin_login_path(request):
         return
@@ -54,6 +66,7 @@ def login_event_on_admin_session_login(sender, request, user, **kwargs):
         provider=PROVIDER_DJANGO_ADMIN,
         user=user,
     )
+    clear_staff_login_failures(user)
     touch_user_last_seen(user)
 
 
@@ -69,6 +82,7 @@ def login_event_on_admin_session_login_failed(sender, credentials, request, **kw
         user=candidate,
         failure_reason='Invalid credentials',
     )
+    record_staff_login_failure(candidate)
 
 
 @receiver(post_save, sender=User, dispatch_uid='authapi_staff_magic_link_tokens')

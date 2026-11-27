@@ -9,13 +9,14 @@ from django.test import TestCase, override_settings
 from django.utils import timezone
 from shellui_django.mcp.internal import build_mcp_revocation_assertion
 
-from apps.agents.models import Agent
+from apps.agents.models import Agent, DeletedAgentRevocation
 from apps.agents.tests.mcp_test_settings import (
     TEST_CALLER_SIGNING,
     TRUSTED_TEST_CALLER_SETTINGS,
     rs256_identity_settings,
 )
 from apps.agents.trusted_revocation import parse_trusted_revocation_poll_response_identity
+from apps.companies.access import set_company_access
 from apps.companies.models import Company
 
 User = get_user_model()
@@ -46,6 +47,7 @@ class McpRevocationSnapshotTests(TestCase):
         self.company = Company.objects.create(name='Rev Co', slug='rev-co')
         self.owner = User.objects.create_user('rev-own', 'rev@example.com', 'x')
         self.company.owners.add(self.owner)
+        set_company_access(self.company, self.owner, enabled=True)
 
     def _get(self, *, company_id: int | None = None):
         assertion = build_mcp_revocation_assertion(audience_url=_ORIGIN, **TEST_CALLER_SIGNING)
@@ -178,3 +180,133 @@ class McpRevocationSnapshotTests(TestCase):
                 data2, expected_issuer=_ORIGIN, jwks=jwks
             )
             self.assertNotEqual(policy_before, policy_after)
+
+
+def _storage_agent_blocked_for_tenant(agent_id, *, company_id, payload):
+    """Copy of apps/storage/mcp_identity.py ``_agent_blocked_for_tenant`` (storage #90)."""
+    revoked_ids = {str(item) for item in (payload.get('revoked_ids') or [])}
+    if str(agent_id) not in revoked_ids:
+        return False
+    if company_id is None:
+        return True
+    agents = payload.get('agents') or []
+    if not agents:
+        return True
+    for entry in agents:
+        if str(entry.get('agent_id') or '') != str(agent_id):
+            continue
+        entry_company = entry.get('company_id')
+        if entry_company is None:
+            return True
+        try:
+            return int(entry_company) == int(company_id)
+        except (TypeError, ValueError):
+            return False
+    return False
+
+
+def _ai_agent_blocked_for_tenant(agent_id, *, company_id, payload):
+    """Copy of apps/connector/mcp_identity.py ``_agent_blocked_for_tenant`` (ai #88)."""
+    revoked_ids = {str(item) for item in (payload.get('revoked_ids') or [])}
+    if str(agent_id) not in revoked_ids:
+        return False
+    if company_id is None:
+        return True
+    agents = payload.get('agents') or []
+    if not agents:
+        return True
+    for entry in agents:
+        if str(entry.get('agent_id') or '') != str(agent_id):
+            continue
+        entry_company = entry.get('company_id')
+        if entry_company is None:
+            return True
+        raw = entry_company
+        if isinstance(raw, bool) or raw is None:
+            return True
+        try:
+            parsed = int(str(raw).strip()) if not isinstance(raw, int) else raw
+        except ValueError:
+            return True
+        if parsed < 0:
+            return True
+        return parsed == int(company_id)
+    return False
+
+
+@override_settings(
+    **TRUSTED_TEST_CALLER_SETTINGS,
+    JWT_ISSUER=_ORIGIN,
+    JWT_AUDIENCE='shellui-test',
+    AUTH_RATE_LIMIT_ENABLED=False,
+)
+class DeletedAgentsAreRefusedByCompanyScopedConsumersTests(TestCase):
+    """The real snapshot after a company delete, run through the ai and storage checks."""
+
+    CHECKS = (_storage_agent_blocked_for_tenant, _ai_agent_blocked_for_tenant)
+
+    def setUp(self):
+        self.company = Company.objects.create(name='Gone Co', slug='gone-co-snap')
+        self.other = Company.objects.create(name='Stay Co', slug='stay-co-snap')
+        self.user = User.objects.create_user('gone-own', 'gone@example.com', 'x')
+        for company in (self.company, self.other):
+            company.owners.add(self.user)
+            set_company_access(company, self.user, enabled=True)
+        self.gone = Agent.objects.create(company=self.company, name='Gone', created_by=self.user, services_allowed=['ai'])
+        self.live = Agent.objects.create(company=self.other, name='Live', created_by=self.user, services_allowed=['ai'])
+        self.gone_id = str(self.gone.pk)
+        self.gone_company_id = self.company.pk
+        self.company.delete()
+
+    def _poll(self, *, company_id=None):
+        assertion = build_mcp_revocation_assertion(audience_url=_ORIGIN, **TEST_CALLER_SIGNING)
+        path = _PATH if company_id is None else f'{_PATH}?company_id={company_id}'
+        with rs256_identity_settings() as (_signing, jwks):
+            response = self.client.get(path, HTTP_AUTHORIZATION=f'Bearer {assertion}')
+            self.assertEqual(response.status_code, 200, response.content)
+            body = response.json()
+            ids, _cache, agents, _policy = parse_trusted_revocation_poll_response_identity(
+                body, expected_issuer=_ORIGIN, jwks=jwks
+            )
+        return body, {'revoked_ids': sorted(ids), 'agents': agents}
+
+    def test_a_company_scoped_check_refuses_the_deleted_agent(self):
+        for company_id in (None, self.gone_company_id):
+            body, payload = self._poll(company_id=company_id)
+            self.assertIn(self.gone_id, payload['revoked_ids'])
+            for check in self.CHECKS:
+                with self.subTest(check=check.__name__, poll_company=company_id):
+                    self.assertTrue(check(self.gone_id, company_id=self.gone_company_id, payload=payload))
+                    self.assertTrue(check(self.gone_id, company_id=None, payload=payload))
+
+    def test_the_tombstone_row_is_in_the_signed_agents_and_the_policy_version(self):
+        _body, payload = self._poll()
+        rows = [r for r in payload['agents'] if r['agent_id'] == self.gone_id]
+        self.assertEqual(
+            rows,
+            [{'agent_id': self.gone_id, 'company_id': self.gone_company_id, 'is_active': False, 'paused': False, 'grant_version': 0}],
+        )
+        before = self._poll()[0]['revocation_policy_version']
+        DeletedAgentRevocation.objects.filter(pk=self.gone_id).delete()
+        after = self._poll()[0]['revocation_policy_version']
+        self.assertNotEqual(before, after)
+
+    def test_without_the_row_the_company_scoped_check_would_let_it_through(self):
+        _body, payload = self._poll()
+        stripped = {**payload, 'agents': [r for r in payload['agents'] if r['agent_id'] != self.gone_id]}
+        self.assertTrue(stripped['agents'])
+        for check in self.CHECKS:
+            with self.subTest(check=check.__name__):
+                self.assertFalse(check(self.gone_id, company_id=self.gone_company_id, payload=stripped))
+
+    def test_the_deleted_agent_is_not_refused_for_another_company(self):
+        _body, payload = self._poll()
+        for check in self.CHECKS:
+            with self.subTest(check=check.__name__):
+                self.assertFalse(check(self.gone_id, company_id=self.other.pk, payload=payload))
+
+    def test_a_live_agent_is_not_refused(self):
+        _body, payload = self._poll()
+        for check in self.CHECKS:
+            with self.subTest(check=check.__name__):
+                self.assertFalse(check(str(self.live.pk), company_id=self.other.pk, payload=payload))

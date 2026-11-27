@@ -96,6 +96,42 @@ class UserNavigationOverlay(models.Model):
         return f'UserNavigationOverlay(user_id={self.user_id}, company_id={self.company_id})'
 
 
+class StaffAdminGuard(models.Model):
+    """Per-account lockout and TOTP secret for Django staff sign-in."""
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='staff_admin_guard',
+    )
+    # Fernet ciphertext (``enc1:...``). Read and write it through ``secret`` and ``set_secret``.
+    totp_secret = models.CharField(max_length=255, blank=True, default='')
+    totp_confirmed_at = models.DateTimeField(null=True, blank=True)
+    # Counter of the last accepted 30 second step. A code at or below it is a replay.
+    totp_last_step = models.BigIntegerField(default=0)
+    failed_attempts = models.PositiveIntegerField(default=0)
+    locked_until = models.DateTimeField(null=True, blank=True)
+
+    def set_secret(self, plain: str) -> None:
+        from apps.authapi.secret_box import encrypt_text
+
+        self.totp_secret = encrypt_text(plain)
+        self.totp_last_step = 0
+
+    @property
+    def secret(self) -> str:
+        """The decrypted secret, or an empty string when none is set or it cannot be read."""
+        from apps.authapi.secret_box import SecretBoxError, decrypt_text
+
+        try:
+            return decrypt_text(self.totp_secret)
+        except SecretBoxError:
+            return ''
+
+    def __str__(self) -> str:
+        return f'StaffAdminGuard(user_id={self.user_id})'
+
+
 class PersonalAccessToken(models.Model):
     """
     Metadata for a long-lived JWT (Shellui access token shape with ``pat_id`` and ``pat_ro``).

@@ -117,9 +117,10 @@ class AgentTokenExchangeTests(_CryptoMixin, TestCase):
         agent = Agent.objects.get(company=self.company, global_agent_id=self.global_agent_id)
         self.assertEqual(str(agent.id), claims['agent_id'])
         self.assertEqual(agent.created_by_id, user.pk)
-        self.assertEqual(claims['owner_user_id'], user.pk)
-        self.assertIsInstance(claims['owner_user_id'], int)
-        self.assertNotIsInstance(claims['owner_user_id'], bool)
+        # A global agent is not its creator's personal agent: no owner claims, even though the
+        # regional row records created_by.
+        self.assertNotIn('owner_user_id', claims)
+        self.assertNotIn('owner_is_company_owner', claims)
         refreshed = self.client.post(
             '/oauth/mcp/token',
             data=json.dumps(
@@ -133,7 +134,8 @@ class AgentTokenExchangeTests(_CryptoMixin, TestCase):
         )
         self.assertEqual(refreshed.status_code, 200, refreshed.content)
         rotated = jwt.decode(refreshed.json()['access_token'], options={'verify_signature': False})
-        self.assertEqual(rotated['owner_user_id'], user.pk)
+        self.assertNotIn('owner_user_id', rotated)
+        self.assertNotIn('owner_is_company_owner', rotated)
         self.assertEqual(rotated['aud'], claims['aud'])
         self.assertEqual(rotated['scope'], claims['scope'])
         self.assertEqual(agent.services_allowed, ['ai', 'identity', 'storage'])
