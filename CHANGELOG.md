@@ -25,9 +25,11 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 ### 🏗 Chore
 
+- Django 6.1 requires PostgreSQL 15 or newer, and drops 14. Check the database of any deployment before upgrading. CI runs PostgreSQL 18.
+- drf-spectacular 0.30 describes blank URL and slug fields as `oneOf` (the field's format or an empty string) in the OpenAPI schema. Generated clients and the published schema see that change. The API itself does not change.
 - CI runs `manage.py makemigrations --check --dry-run`, so a model change without a migration fails the build.
-- CI uses uv 0.13.10, which resolves Python 3.14.10, the patch the `python:3.14-slim` image ships. uv 0.12.1 resolved 3.14.6.
-- Migrations `agents.0027_sync_model_state` and `companies.0035_sync_data_retention_days_state` record help text, choices, validators and Meta options the models already had. They change no table or column (no SQL on PostgreSQL).
+- CI pins Python 3.14.10 and uv 0.13.10, and the Dockerfile copies the same uv, so CI and the image run the same interpreter and the same tool.
+- Migrations `agents.0027_sync_model_state` and `companies.0035_sync_data_retention_days_state` record help text, choices, validators and Meta options the models already had. `companies.0035` changes nothing in the database. `agents.0027` also creates three indexes the models already declared with `db_index=True` but the migration history never built: `agents_agent(global_company_id)`, `agents_mcpapprovalrequest(global_agent_id)` and `agents_mcpapprovalrequest(global_company_id)`. The `CREATE INDEX` statements are not concurrent, so each takes a write lock on its table while it builds.
 
 ## [0.13.6] - 2026-11-26
 
