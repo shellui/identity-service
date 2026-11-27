@@ -133,6 +133,18 @@ def _install_result_redaction() -> None:
         return decision
 
     server_mod.decide_write = decide_write
+    # Refuse a bad webhook call before the gate, so it never gets an approval row.
+    original_validate = server_mod.validate_mcp_tool_arguments
+
+    def validate_mcp_tool_arguments(arguments, meta):
+        original_validate(arguments, meta)
+        from apps.actions.agent_webhook_guard import agent_webhook_call_problem
+
+        problem = agent_webhook_call_problem(arguments, meta)
+        if problem:
+            raise server_mod.McpToolArgumentError(problem)
+
+    server_mod.validate_mcp_tool_arguments = validate_mcp_tool_arguments
     original = server_mod.redact_mapping
 
     def redact_mapping(data, *, read_sensitive, markers=None):
@@ -287,7 +299,10 @@ def _approval_summary(payload: dict) -> str:
     if action != 'identity_create_action_rules' or not isinstance(arguments, dict):
         return ''
     body = arguments.get('body') if isinstance(arguments.get('body'), dict) else {}
-    return webhook_approval_summary(str(arguments.get('url') or body.get('url') or ''))
+    return webhook_approval_summary(
+        str(arguments.get('url') or body.get('url') or ''),
+        str(arguments.get('event_type') or body.get('event_type') or ''),
+    )
 
 
 def _maybe_create_approval(payload: dict) -> dict | None:
