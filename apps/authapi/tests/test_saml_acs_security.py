@@ -35,10 +35,6 @@ User = get_user_model()
 class SAMLACSSecurityTests(TestCase):
     def setUp(self):
         cache.clear()
-        # xmlsec keeps process-global state. Earlier crypto in the suite can make
-        # the next signature check fail closed. Reset it before each SAML case.
-        xmlsec.shutdown()
-        xmlsec.init()
         self.client = Client()
         self.site = Site.objects.get_current()
         self.company = Company.objects.create(name='SAML Co', slug='saml-co', allowed_email_domains=['example.com'])
