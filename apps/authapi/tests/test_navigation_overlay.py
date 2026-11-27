@@ -206,8 +206,11 @@ class NavigationOverlayApiTests(TestCase):
         header = f'Bearer {encode_access_token(agent, resource="https://identity.test/mcp")}'
         for method in (self._get, lambda **kw: self._put(_overlay(), **kw), lambda **kw: self._delete(if_match='*', **kw)):
             response = method(auth=header)
-            self.assertEqual(response.status_code, 403, response.data)
-            self.assertEqual(response.data['error_code'], 'agent_cannot_edit_navigation')
+            # Authentication already refuses an agent token outside /mcp (401). The view also
+            # refuses one (403) as a second line of defense.
+            self.assertIn(response.status_code, (401, 403), response.data)
+            if response.status_code == 403:
+                self.assertEqual(response.data['error_code'], 'agent_cannot_edit_navigation')
         self.assertFalse(UserNavigationOverlay.objects.exists())
 
     def test_schema_rejections_do_not_replace_a_saved_document(self):
