@@ -217,6 +217,13 @@ class CompanyAdminMetadataIsPrivilegedTests(TestCase):
     def _users_url(self, user) -> str:
         return f'/api/v1/users/{user.pk}?company_id={self.company.pk}'
 
+    def test_is_company_admin_is_on_the_privileged_strip_list(self):
+        from apps.authapi.views import _SHELLUI_JWT_PRIVILEGED_METADATA_KEYS
+
+        self.assertIn('is_company_admin', _SHELLUI_JWT_PRIVILEGED_METADATA_KEYS)
+        for key in ('is_staff', 'is_superuser', 'is_company_owner', 'groups'):
+            self.assertIn(key, _SHELLUI_JWT_PRIVILEGED_METADATA_KEYS)
+
     def test_a_metadata_merge_cannot_set_is_company_admin(self):
         client = self._client(self.member)
         response = client.put(
