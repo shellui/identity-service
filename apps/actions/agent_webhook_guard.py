@@ -7,15 +7,20 @@ import unicodedata
 
 MAX_AGENT_URL_LENGTH = 2048
 MAX_AGENT_DESCRIPTION_LENGTH = 500
+# A description is prose, so it may have line breaks and tabs. A URL may not.
+DESCRIPTION_LAYOUT_CHARS = '\n\r\t'
 
 
 _EVENT_TYPE = re.compile(r'[A-Za-z0-9_.:-]{1,128}')
 _WEBHOOK_TOOLS = {'identity_create_action_rules': True, 'identity_update_action_rules': False}
 
 
-def has_control_or_format_char(text: str) -> bool:
-    """True for any Unicode control (Cc) or format (Cf) character: newlines, zero-width, right-to-left override."""
-    return any(unicodedata.category(ch) in ('Cc', 'Cf') for ch in text)
+def has_control_or_format_char(text: str, *, allowed: str = '') -> bool:
+    """True for any Unicode control (Cc) or format (Cf) character: newlines, zero-width, right-to-left override.
+
+    ``allowed`` lists characters that are fine despite being controls (the description allows text layout).
+    """
+    return any(unicodedata.category(ch) in ('Cc', 'Cf') and ch not in allowed for ch in text)
 
 
 def _without_control_chars(text: str) -> str:
@@ -85,8 +90,10 @@ def agent_webhook_value_problem(data: dict) -> str | None:
     """Why an agent's webhook fields are refused, or ``None``. Applies to create and update."""
     url = str(data.get('url') or '').strip()
     description = str(data.get('description') or '')
-    if has_control_or_format_char(str(data.get('url') or '')) or has_control_or_format_char(description):
-        return 'Agents cannot use control or non-printing characters in a webhook URL or description.'
+    if has_control_or_format_char(str(data.get('url') or '')):
+        return 'Agents cannot use control or non-printing characters in a webhook URL.'
+    if has_control_or_format_char(description, allowed=DESCRIPTION_LAYOUT_CHARS):
+        return 'Agents cannot use control or non-printing characters in a webhook description, other than line breaks and tabs.'
     if url and url_has_userinfo(url):
         return 'Agents cannot use a webhook URL that contains user information before the host.'
     if url and not url_host_is_ascii(url):

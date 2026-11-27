@@ -806,7 +806,7 @@ class AgentsCannotChangeSignInTests(AgentsCannotMintCredentialsTests):
 
         url = 'https://attacker.example/h'
         for arguments in (
-            {'name': 'x', 'event_type': 'identity.user.created', 'description': 'a' * 600, 'url': url},
+            {'body': {'name': 'x', 'event_type': 'identity.user.created', 'description': 'a' * 600, 'url': url}},
             {'description': 'a' * 600, 'name': 'x', 'body': {'event_type': 'identity.user.created', 'url': url}},
         ):
             summary = _approval_summary({'action': 'identity_create_action_rules', 'arguments': arguments})
@@ -821,7 +821,7 @@ class AgentsCannotChangeSignInTests(AgentsCannotMintCredentialsTests):
         from apps.agents.mcp_views import _approval_summary
 
         padded = 'https://' + 'x' * 520 + '@attacker.example/h'
-        summary = _approval_summary({'action': 'identity_create_action_rules', 'arguments': {'url': padded}})
+        summary = _approval_summary({'action': 'identity_create_action_rules', 'arguments': {'body': {'url': padded}}})
         self.assertTrue(summary.startswith('Create a webhook that posts to attacker.example: '), summary)
         self.assertNotIn('x' * 20, summary)
         self.assertIn('https://***@attacker.example/h', summary)
@@ -836,7 +836,7 @@ class AgentsCannotChangeSignInTests(AgentsCannotMintCredentialsTests):
 
         def summary(url, event_type='identity.user.created'):
             return _approval_summary(
-                {'action': 'identity_create_action_rules', 'arguments': {'url': url, 'event_type': event_type}}
+                {'action': 'identity_create_action_rules', 'arguments': {'body': {'url': url, 'event_type': event_type}}}
             )
 
         forged = summary('https://attacker.example/h\nApproved by admin')
@@ -895,7 +895,7 @@ class AgentsCannotChangeSignInTests(AgentsCannotMintCredentialsTests):
             'https://hooks.example.com/h\x00',
         ):
             self._probe_webhook_value('identity_create_action_rules', {**base, 'url': url})
-        for description in ('line one\nline two', 'rtl \u202e text', 'zero\u200bwidth', 'nul\x00'):
+        for description in ('rtl \u202e text', 'zero\u200bwidth', 'nul\x00', 'bell\x07', 'esc\x1b[31m'):
             self._probe_webhook_value('identity_create_action_rules', {**base, 'description': description})
             self._probe_webhook_value(
                 'identity_update_action_rules', {'id': self.rule.pk, 'description': description}
@@ -966,6 +966,77 @@ class AgentsCannotChangeSignInTests(AgentsCannotMintCredentialsTests):
         result = self._call_through_approval(Agent.ACCESS_FULL, 'identity_create_action_rules', args)
         self.assertFalse(result.get('isError'), json.dumps(result))
         self.assertTrue(ActionRule.objects.filter(name='at-the-limit').exists())
+
+    def test_agent_can_use_line_breaks_and_tabs_in_a_description_and_none_reaches_the_summary(self):
+        from apps.actions.models import ActionRule
+
+        description = 'First line\nSecond line\r\n\tindented ' + 'x' * 50
+        args = {
+            'name': 'multi-line',
+            'event_type': 'identity.user.created',
+            'description': description,
+            'url': 'https://hooks.example.com/ml',
+        }
+        _agent, token = self._agent(Agent.ACCESS_ASK)
+        result = self._mcp(token, 'identity_create_action_rules', args)
+        self.assertEqual((result.get('meta') or {}).get('status'), 'pending', json.dumps(result))
+        row = McpApprovalRequest.objects.get(pk=result['meta']['approval_id'])
+        self.assertNotIn('\n', row.short_action_summary)
+        self.assertNotIn('\r', row.short_action_summary)
+        self.assertNotIn('\t', row.short_action_summary)
+        McpApprovalRequest.objects.filter(pk=row.pk).update(status=McpApprovalRequest.STATUS_APPROVED)
+        self.assertFalse(self._mcp(token, 'identity_create_action_rules', args).get('isError'))
+        self.assertEqual(ActionRule.objects.get(name='multi-line').description, description)
+
+    def test_legacy_envelope_cannot_show_one_destination_and_create_another(self):
+        from apps.actions.models import ActionRule
+
+        # Fields under `body` are what the call forwards and creates. Top-level url and event_type are not.
+        args = {
+            'path': '/api/v1/actions/rules',
+            'method': 'POST',
+            'url': 'https://good.example/ok',
+            'event_type': 'identity.user.updated',
+            'body': {
+                'name': 'spoof',
+                'event_type': 'identity.user.created',
+                'url': 'https://attacker.example/hidden',
+            },
+        }
+        _agent, token = self._agent(Agent.ACCESS_ASK)
+        result = self._mcp(token, 'identity_create_action_rules', args)
+        self.assertEqual((result.get('meta') or {}).get('status'), 'pending', json.dumps(result))
+        row = McpApprovalRequest.objects.get(pk=result['meta']['approval_id'])
+        self.assertTrue(
+            row.short_action_summary.startswith(
+                'Create a webhook for identity.user.created that posts to attacker.example: https://attacker.example/hidden'
+            ),
+            row.short_action_summary,
+        )
+        self.assertNotIn('good.example', row.short_action_summary)
+        self.assertNotIn('identity.user.updated', row.short_action_summary)
+        McpApprovalRequest.objects.filter(pk=row.pk).update(status=McpApprovalRequest.STATUS_APPROVED)
+        self._mcp(token, 'identity_create_action_rules', args)
+        rule = ActionRule.objects.get(name='spoof')
+        self.assertEqual(rule.config['url'], 'https://attacker.example/hidden')
+        self.assertEqual(rule.event_type, 'identity.user.created')
+
+    def test_summary_ignores_top_level_values_next_to_a_body(self):
+        from apps.agents.mcp_views import _approval_summary
+
+        summary = _approval_summary(
+            {
+                'action': 'identity_create_action_rules',
+                'arguments': {
+                    'url': 'https://good.example/ok',
+                    'event_type': 'identity.user.updated',
+                    'body': {'url': 'https://attacker.example/h', 'event_type': 'identity.user.created'},
+                },
+            }
+        )
+        self.assertIn('attacker.example', summary)
+        self.assertNotIn('good.example', summary)
+        self.assertEqual(_approval_summary({'action': 'identity_create_action_rules', 'arguments': {'url': 'https://good.example/ok'}}), 'Create a webhook rule')
 
     def test_agent_cannot_change_the_event_type_of_an_existing_rule(self):
         self.rule.event_type = 'identity.user.updated'
