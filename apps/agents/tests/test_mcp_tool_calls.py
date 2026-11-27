@@ -336,8 +336,9 @@ def _oauth_clients_list(self):
 
 def _oauth_clients_create(self):
     app = self._social_app('gitlab', 'cid-gitlab')
-    body = self.call('identity_create_oauth_clients', body={'social_app_id': app.pk, 'is_active': True})
-    self.assertEqual(body['social_app_id'], app.pk)
+    before = CompanyOAuthClient.objects.count()
+    self.call_refused('identity_create_oauth_clients', body={'social_app_id': app.pk, 'is_active': True})
+    self.assertEqual(CompanyOAuthClient.objects.count(), before)
 
 
 def _oauth_clients_retrieve(self):
@@ -346,12 +347,13 @@ def _oauth_clients_retrieve(self):
 
 
 def _oauth_clients_update(self):
-    body = self.call(
+    was_active = CompanyOAuthClient.objects.get(pk=self.mapping.pk).is_active
+    self.call_refused(
         'identity_replace_oauth_clients',
         path_params={'id': self.mapping.pk},
-        body={'is_active': True},
+        body={'is_active': not was_active},
     )
-    self.assertTrue(body['is_active'])
+    self.assertEqual(CompanyOAuthClient.objects.get(pk=self.mapping.pk).is_active, was_active)
 
 
 def _oauth_clients_destroy(self):
@@ -365,11 +367,11 @@ def _oauth_redirects_list(self):
 
 
 def _oauth_redirects_create(self):
-    body = self.call(
+    self.call_refused(
         'identity_create_oauth_redirects',
         body={'base_url': 'https://new.example.com', 'label': 'New'},
     )
-    self.assertEqual(body['base_url'], 'https://new.example.com')
+    self.assertFalse(CompanyOAuthRedirect.objects.filter(base_url='https://new.example.com').exists())
 
 
 def _oauth_redirects_retrieve(self):
@@ -378,12 +380,13 @@ def _oauth_redirects_retrieve(self):
 
 
 def _oauth_redirects_partial_update(self):
-    body = self.call(
+    label = CompanyOAuthRedirect.objects.get(pk=self.redirect.pk).label
+    self.call_refused(
         'identity_update_oauth_redirects',
         path_params={'id': self.redirect.pk},
         body={'label': 'Updated'},
     )
-    self.assertEqual(body['label'], 'Updated')
+    self.assertEqual(CompanyOAuthRedirect.objects.get(pk=self.redirect.pk).label, label)
 
 
 def _oauth_redirects_destroy(self):
@@ -397,21 +400,22 @@ def _oauth_social_apps_list(self):
 
 
 def _oauth_social_apps_create(self):
-    body = self.call(
+    self.call_refused(
         'identity_create_oauth_social_apps',
         body={'docs_slug': 'gitlab', 'client_id': 'cid-new', 'client_secret': 'super-secret'},
     )
-    self.assertEqual(body['social_app']['provider'], 'gitlab')
+    self.assertFalse(SocialApp.objects.filter(client_id='cid-new').exists())
     self.assertFalse(McpCallLog.objects.filter(tool='identity_create_oauth_social_apps').exists())
 
 
 def _oauth_social_apps_update(self):
-    body = self.call(
+    client_id = SocialApp.objects.get(pk=self.social_app.pk).client_id
+    self.call_refused(
         'identity_replace_oauth_social_apps',
         path_params={'id': self.social_app.pk},
         body={'client_id': 'cid-github-2'},
     )
-    self.assertEqual(body['client_id'], 'cid-github-2')
+    self.assertEqual(SocialApp.objects.get(pk=self.social_app.pk).client_id, client_id)
 
 
 def _oauth_social_apps_destroy(self):
@@ -425,12 +429,11 @@ def _oauth_provider_catalog(self):
 
 
 def _hosting_update(self):
-    body = self.call(
+    self.call_refused(
         'identity_replace_hosting_oauth_redirects',
         body={'base_url': 'https://host.example.com', 'label': 'Host'},
     )
-    self.assertEqual(body['base_url'], 'https://host.example.com')
-    self.assertEqual(body['source'], 'hosting')
+    self.assertFalse(CompanyOAuthRedirect.objects.filter(base_url='https://host.example.com').exists())
 
 
 def _hosting_destroy(self):

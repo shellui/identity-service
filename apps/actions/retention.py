@@ -164,15 +164,10 @@ def purge_expired_data(
             Agent.objects.filter(pk__in=ids).delete()
             stats['revoked_mcp_agents'] += len(ids)
     if not dry_run:
-        # A deleted agent's id stays refused for as long as a personal token could be valid.
-        from datetime import timedelta
-
-        from django.conf import settings
-
+        # A deleted agent's id stays refused until the last credential it held has expired.
         from apps.agents.models import DeletedAgentRevocation
 
-        days = int(getattr(settings, 'MCP_PERSONAL_AGENT_MAX_LIFETIME_DAYS', 90) or 90) + 1
-        DeletedAgentRevocation.objects.filter(deleted_at__lt=now - timedelta(days=days)).delete()
+        DeletedAgentRevocation.objects.filter(token_expires_at__lt=now).delete()
     from apps.actions.scheduled_jobs import normalize_purge_expired_data_stats
 
     return normalize_purge_expired_data_stats(stats)

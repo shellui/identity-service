@@ -492,26 +492,48 @@ class AgentsCannotMintCredentialsTests(TestCase):
                 self._refused(self._call_through_approval(mode, 'identity_rotate_rule_secret', {'id': self.rule.pk}))
         self._assert_nothing_minted()
 
-    def test_the_credential_tools_on_mcp_are_exactly_the_known_ones(self):
-        """A new tool that names a token, key or secret must be looked at before it ships."""
+    def test_the_sign_in_and_credential_tools_on_mcp_are_exactly_the_known_ones(self):
+        """A new tool that names a token, key, secret or sign-in setting must be looked at before it ships."""
         from shellui_django.mcp import server as mcp_server
 
         from apps.agents import mcp_views
 
         names = {t['name'] for t in mcp_server.tools_from_schema(mcp_views._schema())}
-        credential_like = {n for n in names if any(w in n for w in ('token', 'secret', 'key', 'credential'))}
-        self.assertEqual(
-            credential_like,
-            {
-                'identity_create_scim_tokens',
-                'identity_list_scim_tokens',
-                'identity_revoke_scim_tokens',
-                'identity_create_personal_access_tokens',
-                'identity_list_personal_access_tokens',
-                'identity_revoke_personal_access_tokens',
-                'identity_rotate_rule_secret',
-            },
-        )
+        words = ('token', 'secret', 'key', 'credential', 'redirect', 'social_app', 'oauth', 'auth_method')
+        found = {n for n in names if any(w in n for w in words)}
+        refused_for_agents = {
+            'identity_create_scim_tokens',
+            'identity_list_scim_tokens',
+            'identity_create_personal_access_tokens',
+            'identity_rotate_rule_secret',
+            'identity_create_oauth_redirects',
+            'identity_update_oauth_redirects',
+            'identity_replace_hosting_oauth_redirects',
+            'identity_create_oauth_social_apps',
+            'identity_replace_oauth_social_apps',
+            'identity_create_oauth_clients',
+            'identity_replace_oauth_clients',
+        }
+        # Reads and calls that only remove access stay available to agents.
+        still_allowed = {
+            'identity_revoke_scim_tokens',
+            'identity_list_personal_access_tokens',
+            'identity_revoke_personal_access_tokens',
+            'identity_delete_oauth_redirects',
+            'identity_delete_hosting_oauth_redirects',
+            'identity_delete_oauth_social_apps',
+            'identity_delete_oauth_clients',
+            'identity_get_oauth_redirects',
+            'identity_list_oauth_redirects',
+            'identity_get_oauth_clients',
+            'identity_list_oauth_clients',
+            'identity_list_oauth_social_apps',
+            'identity_get_oauth_provider_catalog',
+            'identity_get_auth_methods',
+            'identity_update_auth_methods',
+            'identity_replace_auth_methods',
+        }
+        self.assertEqual(found, refused_for_agents | still_allowed)
 
     def test_a_person_can_still_manage_credentials(self):
         from apps.authapi.views import _issue_shellui_tokens
@@ -550,3 +572,169 @@ class AgentsCannotMintCredentialsTests(TestCase):
                 response = getattr(client, method)(path, **auth)
                 self.assertIn(response.status_code, (401, 403), response.content)
         self._assert_nothing_minted()
+
+
+class AgentsCannotChangeSignInTests(AgentsCannotMintCredentialsTests):
+    """Where sign-in redirects, which providers a company uses and who a webhook trusts."""
+
+    def setUp(self):
+        from allauth.socialaccount.models import SocialApp
+        from django.contrib.sites.models import Site
+
+        from apps.companies.models import CompanyOAuthClient, CompanyOAuthRedirect
+
+        super().setUp()
+        self.redirect = CompanyOAuthRedirect.objects.create(
+            company=self.company, base_url='https://manual.example.com', label='Manual'
+        )
+        self.hosting_redirect = CompanyOAuthRedirect.objects.create(
+            company=self.company,
+            base_url='https://preview.example.com',
+            source=CompanyOAuthRedirect.SOURCE_HOSTING,
+        )
+        self.app = SocialApp.objects.create(
+            provider='github',
+            name='github',
+            client_id='cid-github',
+            secret='secret',
+            settings={'catalog_slug': 'github', 'created_by_company_id': self.company.id},
+        )
+        self.app.sites.add(Site.objects.get_current())
+        self.mapping = CompanyOAuthClient.objects.create(company=self.company, social_app=self.app, is_active=False)
+
+    def _state(self):
+        from allauth.socialaccount.models import SocialApp
+
+        from apps.actions.models import ActionRule
+        from apps.companies.models import CompanyOAuthClient, CompanyOAuthRedirect
+
+        self.company.refresh_from_db()
+        return {
+            'redirects': sorted(CompanyOAuthRedirect.objects.values_list('base_url', 'label', 'source')),
+            'apps': sorted(SocialApp.objects.values_list('client_id', 'secret')),
+            'clients': sorted(CompanyOAuthClient.objects.values_list('social_app_id', 'is_active')),
+            'desktop': (self.company.desktop_redirect_schemes, self.company.allow_desktop_dev_scheme),
+            'rules': sorted((r.name, json.dumps(r.config, sort_keys=True)) for r in ActionRule.objects.all()),
+        }
+
+    def _probe(self, tool, args):
+        """Refused in every mode, even after approval, and nothing changed."""
+        for mode in (Agent.ACCESS_FULL, Agent.ACCESS_ASK):
+            before = self._state()
+            with self.subTest(mode=mode, tool=tool, args=sorted(args)):
+                self._refused(self._call_through_approval(mode, tool, args))
+                self.assertEqual(self._state(), before)
+
+    def test_agent_cannot_create_update_or_replace_a_redirect(self):
+        self._probe('identity_create_oauth_redirects', {'base_url': 'https://evil.example.com', 'label': 'x'})
+        self._probe('identity_update_oauth_redirects', {'id': self.redirect.pk, 'base_url': 'https://evil.example.com'})
+        self._probe('identity_update_oauth_redirects', {'id': self.redirect.pk, 'label': 'Renamed'})
+        self._probe('identity_replace_hosting_oauth_redirects', {'base_url': 'https://evil.example.com', 'label': 'x'})
+
+    def test_agent_cannot_change_the_desktop_redirect_fields_on_update_or_replace(self):
+        for tool in ('identity_update_companies', 'identity_replace_companies'):
+            self._probe(tool, {'id': self.company.pk, 'desktop_redirect_schemes': ['evil-app']})
+            self._probe(tool, {'id': self.company.pk, 'allow_desktop_dev_scheme': True})
+            self._probe(
+                tool,
+                {'id': self.company.pk, 'name': 'Renamed', 'desktop_redirect_schemes': ['evil-app'], 'allow_desktop_dev_scheme': True},
+            )
+
+    def test_agent_can_still_update_a_company_without_changing_the_desktop_fields(self):
+        self.company.desktop_redirect_schemes = ['kept-app']
+        self.company.save(update_fields=['desktop_redirect_schemes'])
+        for tool in ('identity_update_companies', 'identity_replace_companies'):
+            with self.subTest(tool=tool):
+                result = self._call_through_approval(
+                    Agent.ACCESS_FULL,
+                    tool,
+                    {'id': self.company.pk, 'name': f'Renamed {tool}', 'desktop_redirect_schemes': ['kept-app'], 'allow_desktop_dev_scheme': False},
+                )
+                self.assertFalse(result.get('isError'), json.dumps(result))
+        self.company.refresh_from_db()
+        self.assertEqual(self.company.desktop_redirect_schemes, ['kept-app'])
+        self.assertTrue(self.company.name.startswith('Renamed'))
+
+    def test_agent_cannot_create_replace_or_activate_a_social_app_or_oauth_client(self):
+        self._probe('identity_create_oauth_social_apps', {'docs_slug': 'gitlab', 'client_id': 'cid-evil', 'client_secret': 'evil-secret'})
+        self._probe('identity_replace_oauth_social_apps', {'id': self.app.pk, 'client_id': 'cid-evil'})
+        self._probe('identity_replace_oauth_social_apps', {'id': self.app.pk, 'client_secret': 'evil-secret'})
+        self._probe('identity_create_oauth_clients', {'social_app_id': self.app.pk, 'is_active': True})
+        self._probe('identity_replace_oauth_clients', {'id': self.mapping.pk, 'is_active': True})
+
+    def test_agent_cannot_set_a_webhook_secret_or_authorization_header(self):
+        base = {'name': 'new', 'event_type': 'identity.user.created', 'url': 'https://hooks.example.com/n'}
+        self._probe('identity_create_action_rules', {**base, 'secret': 'chosen-secret-value-123'})
+        self._probe('identity_create_action_rules', {**base, 'authorization_header': 'Bearer chosen'})
+        self._probe('identity_create_action_rules', {**base, 'allow_private_urls': True})
+        for extra in (
+            {'secret': 'chosen-secret-value-123'},
+            {'authorization_header': 'Bearer chosen'},
+            {'allow_private_urls': True},
+            {'name': 'renamed', 'secret': 'chosen-secret-value-123'},
+        ):
+            self._probe('identity_update_action_rules', {'id': self.rule.pk, **extra})
+
+    def test_agent_can_still_create_and_rename_a_rule_without_those_fields(self):
+        from apps.actions.models import ActionRule
+
+        base = {'name': 'plain', 'event_type': 'identity.user.created', 'url': 'https://hooks.example.com/p'}
+        created = self._call_through_approval(Agent.ACCESS_FULL, 'identity_create_action_rules', base)
+        self.assertFalse(created.get('isError'), json.dumps(created))
+        renamed = self._call_through_approval(
+            Agent.ACCESS_FULL, 'identity_update_action_rules', {'id': self.rule.pk, 'name': 'renamed', 'allow_private_urls': False}
+        )
+        self.assertFalse(renamed.get('isError'), json.dumps(renamed))
+        self.assertEqual(ActionRule.objects.get(pk=self.rule.pk).name, 'renamed')
+
+    def test_agent_can_still_read_and_remove(self):
+        from apps.companies.models import CompanyOAuthClient, CompanyOAuthRedirect
+
+        for tool, args in (
+            ('identity_list_oauth_redirects', {}),
+            ('identity_get_oauth_redirects', {'id': self.redirect.pk}),
+            ('identity_list_oauth_social_apps', {}),
+            ('identity_list_oauth_clients', {}),
+            ('identity_get_oauth_clients', {'id': self.mapping.pk}),
+            ('identity_get_auth_methods', {}),
+        ):
+            with self.subTest(tool=tool):
+                result = self._call_through_approval(Agent.ACCESS_FULL, tool, args)
+                self.assertFalse(result.get('isError'), json.dumps(result))
+        for tool, args in (
+            ('identity_delete_oauth_redirects', {'id': self.redirect.pk}),
+            ('identity_delete_hosting_oauth_redirects', {'base_url': 'https://preview.example.com'}),
+            ('identity_delete_oauth_clients', {'id': self.mapping.pk}),
+        ):
+            with self.subTest(tool=tool):
+                result = self._call_through_approval(Agent.ACCESS_FULL, tool, args)
+                self.assertFalse(result.get('isError'), json.dumps(result))
+        self.assertFalse(CompanyOAuthRedirect.objects.filter(pk=self.redirect.pk).exists())
+        self.assertFalse(CompanyOAuthRedirect.objects.filter(pk=self.hosting_redirect.pk).exists())
+        self.assertFalse(CompanyOAuthClient.objects.filter(pk=self.mapping.pk).exists())
+
+    def test_a_person_can_still_change_sign_in(self):
+        from apps.actions.models import ActionRule
+        from apps.authapi.views import _issue_shellui_tokens
+
+        auth = f'Bearer {_issue_shellui_tokens(self.owner, company=self.company)["access_token"]}'
+        client = APIClient()
+        made = client.post('/api/v1/oauth-redirects', {'base_url': 'https://ok.example.com', 'label': 'ok'}, format='json', HTTP_AUTHORIZATION=auth)
+        self.assertEqual(made.status_code, 201, made.content)
+        patched = client.patch(
+            f'/api/v1/companies/{self.company.pk}/',
+            {'desktop_redirect_schemes': ['ok-app'], 'allow_desktop_dev_scheme': True},
+            format='json',
+            HTTP_AUTHORIZATION=auth,
+        )
+        self.assertEqual(patched.status_code, 200, patched.content)
+        self.company.refresh_from_db()
+        self.assertEqual(self.company.desktop_redirect_schemes, ['ok-app'])
+        rule = client.patch(
+            f'/api/v1/actions/rules/{self.rule.pk}',
+            {'secret': 'a-person-chose-this-secret', 'authorization_header': 'Bearer person'},
+            format='json',
+            HTTP_AUTHORIZATION=auth,
+        )
+        self.assertEqual(rule.status_code, 200, rule.content)
+        self.assertEqual(ActionRule.objects.get(pk=self.rule.pk).config['secret'], 'a-person-chose-this-secret')

@@ -139,16 +139,85 @@ class DeletingACompanyKeepsItsAgentsRevokedTests(TestCase):
         self.assertIn(agent_id, revoked_agent_ids())
         self.assertIn(agent_id, blocked_agent_ids(company_id=self.company_id))
         self.assertTrue(agent_id_is_blocked(agent_id, self.company_id))
-        self.assertNotIn(agent_id, {r['agent_id'] for r in regional_agent_snapshots(company_id=self.company_id)})
+        rows = [r for r in regional_agent_snapshots(company_id=self.company_id) if r['agent_id'] == agent_id]
+        self.assertEqual(
+            rows,
+            [{'agent_id': agent_id, 'company_id': self.company_id, 'is_active': False, 'paused': False, 'grant_version': 0}],
+        )
 
-    def test_a_purged_revoked_agent_stays_refused_until_a_personal_token_would_expire(self):
+    def _delete_with_a_credential(self, **credential):
+        row, _access = create_personal_agent_credential(
+            user=self.user,
+            company=self.company,
+            name='carl-token',
+            services=['ai'],
+            access_mode=Agent.ACCESS_FULL,
+            read_level=Agent.READ_SAFE,
+            allow_destructive=False,
+            expires_at=credential['expires_at'],
+        )
+        agent_id = row.agent_id
+        self.company.delete()
+        return DeletedAgentRevocation.objects.get(pk=agent_id)
+
+    def test_the_tombstone_keeps_the_real_expiry_of_the_personal_token(self):
+        expires = timezone.now() + timedelta(days=60)
+        tomb = self._delete_with_a_credential(expires_at=expires)
+        self.assertEqual(tomb.token_expires_at, expires)
+
+    def test_the_tombstone_covers_a_refresh_session_plus_one_access_token(self):
+        from django.conf import settings
+
+        from apps.agents.models import AgentRefreshSession
+
+        row, _access = create_personal_agent_credential(
+            user=self.user,
+            company=self.company,
+            name='short',
+            services=['ai'],
+            access_mode=Agent.ACCESS_FULL,
+            read_level=Agent.READ_SAFE,
+            allow_destructive=False,
+            expires_at=timezone.now() + timedelta(days=1),
+        )
+        session_expiry = timezone.now() + timedelta(days=20)
+        AgentRefreshSession.objects.filter(agent_id=row.agent_id).delete()
+        issue_agent_refresh(row.agent, resource=f'https://ai.test/c/{self.company_id}/mcp')
+        AgentRefreshSession.objects.filter(agent_id=row.agent_id).update(expires_at=session_expiry)
+        agent_id = row.agent_id
+        self.company.delete()
+        tomb = DeletedAgentRevocation.objects.get(pk=agent_id)
+        self.assertEqual(tomb.token_expires_at, session_expiry + settings.MCP_ACCESS_TOKEN_LIFETIME)
+
+    def test_an_agent_with_no_credential_stays_for_one_access_token_lifetime(self):
+        from django.conf import settings
+
+        before = timezone.now()
+        self.company.delete()
+        tomb = DeletedAgentRevocation.objects.get(pk=self.agent.pk)
+        self.assertGreaterEqual(tomb.token_expires_at, before + settings.MCP_ACCESS_TOKEN_LIFETIME)
+        self.assertLess(tomb.token_expires_at, timezone.now() + settings.MCP_ACCESS_TOKEN_LIFETIME + timedelta(seconds=5))
+
+    def test_purge_waits_for_the_real_expiry_not_a_setting_plus_a_day(self):
+        expires = timezone.now() + timedelta(days=60)
+        tomb = self._delete_with_a_credential(expires_at=expires)
+        # Well past any retention setting plus one day, still before the token expires.
+        purge_expired_data(now=timezone.now() + timedelta(days=59))
+        self.assertTrue(DeletedAgentRevocation.objects.filter(pk=tomb.pk).exists())
+        self.assertIn(str(tomb.pk), revoked_agent_ids(company_id=self.company_id))
+        purge_expired_data(now=expires + timedelta(minutes=1))
+        self.assertFalse(DeletedAgentRevocation.objects.filter(pk=tomb.pk).exists())
+        self.assertNotIn(str(tomb.pk), revoked_agent_ids(company_id=self.company_id))
+
+    def test_a_purged_revoked_agent_stays_refused_until_its_token_would_expire(self):
         self.agent.revoked_at = timezone.now() - timedelta(days=30)
         self.agent.save(update_fields=['revoked_at'])
         purge_expired_data(now=timezone.now())
         self.assertFalse(Agent.objects.filter(pk=self.agent.pk).exists())
         self.assertIn(str(self.agent.pk), revoked_agent_ids(company_id=self.company_id))
-        # Past the longest token lifetime the tombstone itself is purged.
-        DeletedAgentRevocation.objects.filter(pk=self.agent.pk).update(deleted_at=timezone.now() - timedelta(days=200))
+        DeletedAgentRevocation.objects.filter(pk=self.agent.pk).update(
+            token_expires_at=timezone.now() - timedelta(seconds=1)
+        )
         purge_expired_data(now=timezone.now())
         self.assertNotIn(str(self.agent.pk), revoked_agent_ids(company_id=self.company_id))
 

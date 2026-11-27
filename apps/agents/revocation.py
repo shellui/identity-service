@@ -196,14 +196,43 @@ def agent_snapshot(agent: Agent, *, creator_status: str | None = None) -> dict:
     return snap
 
 
+def tombstone_snapshot(row: DeletedAgentRevocation) -> dict:
+    """A minimal ``agents`` row for a deleted agent: its id and company, inactive.
+
+    Company-scoped consumers (ai, storage) only refuse a revoked id when an ``agents`` row
+    names the same company, so without this row a deleted agent's token would pass for a
+    company-scoped call. It is in the same shape as ``agent_snapshot`` and carries no creator.
+    """
+    return {
+        'agent_id': str(row.agent_id),
+        'company_id': int(row.company_id),
+        'is_active': False,
+        'paused': False,
+        'grant_version': 0,
+    }
+
+
+def tombstone_snapshots(*, company_id: int | None = None) -> list[dict]:
+    qs = DeletedAgentRevocation.objects.all().order_by('agent_id')
+    if company_id is not None:
+        qs = qs.filter(company_id=company_id)
+    return [tombstone_snapshot(row) for row in qs]
+
+
 def regional_agent_snapshots(*, company_id: int | None = None) -> list[dict]:
-    """Every regional agent for this poll, including active rows consumers authorize against."""
+    """Every regional agent for this poll, including active rows consumers authorize against.
+
+    Deleted agents follow as minimal inactive rows, so consumers match their revoked ids.
+    """
     qs = Agent.objects.all().order_by('id')
     if company_id is not None:
         qs = qs.filter(company_id=company_id)
     rows = list(qs)
     statuses = creator_statuses(rows)
-    return [agent_snapshot(agent, creator_status=statuses.get(str(agent.pk))) for agent in rows]
+    snapshots = [agent_snapshot(agent, creator_status=statuses.get(str(agent.pk))) for agent in rows]
+    live = {snap['agent_id'] for snap in snapshots}
+    snapshots.extend(snap for snap in tombstone_snapshots(company_id=company_id) if snap['agent_id'] not in live)
+    return snapshots
 
 
 def blocked_agent_snapshots(*, company_id: int | None = None) -> list[dict]:
@@ -213,4 +242,9 @@ def blocked_agent_snapshots(*, company_id: int | None = None) -> list[dict]:
         return []
     rows = list(Agent.objects.filter(pk__in=ids).order_by('id'))
     statuses = creator_statuses(rows)
-    return [agent_snapshot(agent, creator_status=statuses.get(str(agent.pk))) for agent in rows]
+    snapshots = [agent_snapshot(agent, creator_status=statuses.get(str(agent.pk))) for agent in rows]
+    live = {snap['agent_id'] for snap in snapshots}
+    snapshots.extend(
+        snap for snap in tombstone_snapshots(company_id=company_id) if snap['agent_id'] not in live and snap['agent_id'] in ids
+    )
+    return snapshots

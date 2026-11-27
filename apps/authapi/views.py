@@ -3530,12 +3530,13 @@ def _agent_cannot_touch_owner_response(request, company, target) -> Response | N
     )
 
 
-def _agent_cannot_mint_credentials_response(request) -> Response | None:
-    """403 when an agent tries to create, rotate or list a credential.
+def _agent_cannot_change_signin_or_credentials_response(request) -> Response | None:
+    """403 when an agent tries to change how people sign in, or to create or set a credential.
 
-    SCIM tokens, personal access tokens and webhook signing secrets let a caller act as a
-    person or a company with no agent limits. An agent can neither mint them nor read their
-    metadata. No approval mode changes this, and it holds after a person approved the call.
+    Where redirects may go, which identity providers a company uses, SCIM tokens, personal
+    access tokens and webhook secrets decide who can sign in as whom. A change in any of them
+    can take over an account, so it stays a human decision. No approval mode changes this, and
+    it holds after a person approved the call. Reads and revokes are not refused.
     """
     from apps.agents.permissions import is_agent_request
 
@@ -3543,7 +3544,7 @@ def _agent_cannot_mint_credentials_response(request) -> Response | None:
         return None
     return Response(
         {
-            'error': 'Agents cannot create, rotate or list credentials.',
+            'error': 'Agents cannot change sign-in or credentials.',
             'error_code': 'agent_cannot_manage_credentials',
         },
         status=status.HTTP_403_FORBIDDEN,
@@ -4009,6 +4010,9 @@ class ShellUIAdminOAuthClientListView(APIView):
         _actor, company, err = _require_staff_or_company_owner(request)
         if err:
             return err
+        refused = _agent_cannot_change_signin_or_credentials_response(request)
+        if refused is not None:
+            return refused
         serializer = ShellUIAdminOAuthClientCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         validated = serializer.validated_data
@@ -4147,6 +4151,9 @@ class ShellUIAdminOAuthSocialAppListView(APIView):
         _actor, company, err = _require_staff_or_company_owner(request)
         if err:
             return err
+        refused = _agent_cannot_change_signin_or_credentials_response(request)
+        if refused is not None:
+            return refused
         incoming = request.data.copy() if hasattr(request.data, 'copy') else dict(request.data)
         pre_slug = str(incoming.get('docs_slug') or incoming.get('provider') or '').strip().lower()
         if pre_slug == 'saml':
@@ -4267,6 +4274,9 @@ class ShellUIAdminOAuthSocialAppDetailView(APIView):
         _actor, company, err = _require_staff_or_company_owner(request)
         if err:
             return err
+        refused = _agent_cannot_change_signin_or_credentials_response(request)
+        if refused is not None:
+            return refused
         try:
             app = SocialApp.objects.get(pk=pk)
         except SocialApp.DoesNotExist:
@@ -4422,6 +4432,9 @@ class ShellUIAdminOAuthClientDetailView(APIView):
         _actor, company, err = _require_staff_or_company_owner(request)
         if err:
             return err
+        refused = _agent_cannot_change_signin_or_credentials_response(request)
+        if refused is not None:
+            return refused
         try:
             row = CompanyOAuthClient.objects.get(pk=pk, company=company)
         except CompanyOAuthClient.DoesNotExist:
@@ -4523,6 +4536,9 @@ class ShellUIAdminOAuthRedirectListView(APIView):
         _actor, company, err = _require_staff_or_company_owner(request)
         if err:
             return err
+        refused = _agent_cannot_change_signin_or_credentials_response(request)
+        if refused is not None:
+            return refused
         serializer = ShellUIAdminOAuthRedirectCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         validated = serializer.validated_data
@@ -4581,6 +4597,9 @@ class ShellUIAdminOAuthRedirectDetailView(APIView):
         _actor, company, err = _require_staff_or_company_owner(request)
         if err:
             return err
+        refused = _agent_cannot_change_signin_or_credentials_response(request)
+        if refused is not None:
+            return refused
         try:
             row = CompanyOAuthRedirect.objects.get(pk=pk, company=company)
         except CompanyOAuthRedirect.DoesNotExist:
@@ -4648,6 +4667,9 @@ class ShellUIHostingOAuthRedirectSyncView(APIView):
         _actor, company, err = _require_enabled_company_member(request)
         if err:
             return err
+        refused = _agent_cannot_change_signin_or_credentials_response(request)
+        if refused is not None:
+            return refused
         serializer = ShellUIHostingOAuthRedirectSyncSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         validated = serializer.validated_data
@@ -4723,7 +4745,7 @@ class ShellUIPersonalAccessTokenListCreateView(APIView):
         user, company, err = _require_authenticated_company_member(request)
         if err:
             return err
-        refused = _agent_cannot_mint_credentials_response(request)
+        refused = _agent_cannot_change_signin_or_credentials_response(request)
         if refused is not None:
             return refused
         serializer = ShellUIPersonalAccessTokenCreateSerializer(data=request.data)
@@ -4808,7 +4830,7 @@ class ShellUIAdminScimTokenListCreateView(APIView):
         _actor, company, err = _require_staff_or_company_owner(request)
         if err:
             return err
-        refused = _agent_cannot_mint_credentials_response(request)
+        refused = _agent_cannot_change_signin_or_credentials_response(request)
         if refused is not None:
             return refused
         qs = CompanyScimToken.objects.filter(company=company).order_by('-created_at')
@@ -4818,7 +4840,7 @@ class ShellUIAdminScimTokenListCreateView(APIView):
         _actor, company, err = _require_staff_or_company_owner(request)
         if err:
             return err
-        refused = _agent_cannot_mint_credentials_response(request)
+        refused = _agent_cannot_change_signin_or_credentials_response(request)
         if refused is not None:
             return refused
         if not getattr(settings, 'SCIM_ENABLED', True):

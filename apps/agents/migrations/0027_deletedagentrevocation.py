@@ -15,6 +15,7 @@ class Migration(migrations.Migration):
                 ('agent_id', models.UUIDField(primary_key=True, serialize=False)),
                 ('company_id', models.PositiveIntegerField(db_index=True)),
                 ('deleted_at', models.DateTimeField(default=django.utils.timezone.now)),
+                ('token_expires_at', models.DateTimeField(db_index=True, default=django.utils.timezone.now)),
             ],
             options={
                 'ordering': ['-deleted_at'],
