@@ -103,10 +103,16 @@ jobs:
       - name: Run tests
         run: uv run python manage.py test --verbosity=1
 
-      - name: Postgres approval lock regression
+      - name: Postgres row lock regression
         env:
           POSTGRES_DATABASE_URL: postgres://identity:identity@localhost:5432/identity
-        run: uv run python manage.py test apps.agents.tests.test_approval_row_lock --verbosity=1
+        run: |
+          uv run python manage.py test --verbosity=1 \
+            apps.agents.tests.test_approval_row_lock \
+            apps.authapi.tests.test_invitation_row_lock \
+            apps.authapi.tests.test_migration_0014_oidc \
+            apps.authapi.tests.test_migration_0014_oidc_unresolved \
+            apps.authapi.tests.test_migration_0014_oidc_collision
 
   security:
     name: Security & hygiene

@@ -248,17 +248,25 @@ class ShellUIAdminInvitationView(APIView):
         return Response({'invitation': _invitation_payload(invitation)}, status=status.HTTP_201_CREATED)
 
 
+def _company_invitation_lock_queryset(company, pk: int):
+    """The invitation row to lock for revoke and delete.
+
+    ``invited_by`` is nullable, so ``select_related`` makes a LEFT OUTER JOIN, and Postgres refuses
+    FOR UPDATE on the nullable side of an outer join. ``of=('self',)`` locks only the invitation row.
+    """
+    return (
+        CompanyInvitation.objects.select_for_update(of=('self',))
+        .select_related('invited_by')
+        .filter(company=company, pk=pk)
+    )
+
+
 def _locked_company_invitation(request, pk: int):
     """Returns ``(actor, invitation, err)`` with the invitation row locked, scoped to the caller's company."""
     actor, company, err = _require_staff_or_company_owner(request)
     if err:
         return None, None, err
-    invitation = (
-        CompanyInvitation.objects.select_for_update()
-        .select_related('invited_by')
-        .filter(company=company, pk=pk)
-        .first()
-    )
+    invitation = _company_invitation_lock_queryset(company, pk).first()
     if invitation is None:
         return None, None, Response({'error': 'Invitation not found.'}, status=status.HTTP_404_NOT_FOUND)
     return actor, invitation, None
