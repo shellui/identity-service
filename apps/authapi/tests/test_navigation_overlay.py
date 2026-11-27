@@ -1,5 +1,6 @@
 """Per-user, per-company navigation overlay: auth, isolation, schema, and size limits."""
 
+import json
 from pathlib import Path
 
 from django.contrib.auth import get_user_model
@@ -457,10 +458,43 @@ class NavigationOverlayApiTests(TestCase):
             '\uffa0',
             'Files\u2028',
             'Files\u2029',
+            'Fi\u2028les',
+            'Fi\u2029les',
+            'Fi\u0085les',
+            'Files\u009f',
+            '\u034f',
+            '\u17b4\u17b5',
+            '\u180b\u180c\u180d\u180f',
+            '\ufe00\ufe0f',
+            '\U000e0100\U000e01ef',
+            ' \u034f ',
         ):
             with self.subTest(name=repr(name)):
                 response = self._put(_overlay(installedApps=[_app(name=name)]))
                 self.assertEqual(response.status_code, 400, response.content)
+
+    def test_names_with_a_visible_character_and_marks_are_kept(self):
+        response = self._put(_overlay(installedApps=[_app(name='Caf\u0065\u0301 \u2601\ufe0f')]))
+        self.assertEqual(response.status_code, 200, response.content)
+
+    def test_lone_surrogates_are_a_400_not_a_database_error(self):
+        cases = {
+            'name': {'name': 'App \ud800'},
+            'capabilities': {'capabilities': ['theme', '\ud800']},
+            'icon': {'icon': 'https://app0.example.com/\ud800.png'},
+            'url': {'url': 'https://app0.example.com/\ud800', 'origin': 'https://app0.example.com'},
+            'key': {'\udfff': True},
+        }
+        for field, extra in cases.items():
+            with self.subTest(field=field):
+                # A fresh user each time, so the write is reached and not refused with a 412.
+                UserNavigationOverlay.objects.all().delete()
+                body = json.dumps(_overlay(installedApps=[_app(**extra)]))
+                response = self.client.put(
+                    URL, data=body, content_type='application/json', HTTP_AUTHORIZATION=self.auth
+                )
+                self.assertEqual(response.status_code, 400, response.content)
+        self.assertFalse(UserNavigationOverlay.objects.exists())
 
     def test_if_match_star_or_empty_does_not_create_a_document(self):
         self.assertEqual(self._put(_overlay(), if_match='*').status_code, 412)

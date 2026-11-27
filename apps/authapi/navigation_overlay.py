@@ -81,7 +81,8 @@ class OverlayValidationError(Exception):
 
 
 def _control_chars(value: str) -> bool:
-    return any(ord(ch) < 32 or ord(ch) == 127 for ch in value)
+    """C0, DEL and C1 controls (category Cc)."""
+    return any(unicodedata.category(ch) == 'Cc' for ch in value)
 
 
 # Letters and symbols that render as blank space, so a name made of them looks empty.
@@ -92,6 +93,12 @@ def _invisible_chars(value: str) -> bool:
     """Characters that can disguise a name: format characters (Cf, such as U+202E or U+200B),
     line and paragraph separators (Zl, Zp), and blank fillers such as U+3164 or U+2800."""
     return any(ch in _BLANK_FILLERS or unicodedata.category(ch) in {'Cf', 'Zl', 'Zp'} for ch in value)
+
+
+def _has_visible_char(value: str) -> bool:
+    """At least one letter, number, punctuation or symbol, so a name of only marks or spaces
+    (U+034F, U+FE00 and the like) cannot look empty."""
+    return any(unicodedata.category(ch)[0] in 'LNPS' and ch not in _BLANK_FILLERS for ch in value)
 
 
 def _split_url(value: str, label: str):
@@ -305,6 +312,7 @@ def _installed_app(value, *, index: int) -> dict:
         or len(name) > MAX_NAME_LENGTH
         or _control_chars(name)
         or _invisible_chars(name)
+        or not _has_visible_char(name)
     ):
         raise OverlayValidationError(f'{label}.name must be 1 to {MAX_NAME_LENGTH} characters.')
     if value.get('thirdParty') is not True:
@@ -333,6 +341,15 @@ def validate_navigation_overlay(data) -> dict:
     """Return a cleaned version-1 overlay document, or raise OverlayValidationError."""
     if not isinstance(data, dict):
         raise OverlayValidationError('Navigation overlay must be a JSON object.')
+    # JSON accepts a lone surrogate such as "\ud800", but it is not valid UTF-8: Postgres jsonb
+    # refuses it on write, and an error message that quotes it cannot be rendered. Refuse the
+    # whole document first, keys included, as a 400.
+    try:
+        json.dumps(data, ensure_ascii=False).encode('utf-8')
+    except UnicodeEncodeError as exc:
+        raise OverlayValidationError('Navigation overlay text must be valid Unicode.') from exc
+    except (TypeError, ValueError) as exc:
+        raise OverlayValidationError('Navigation overlay must be a JSON object.') from exc
     unknown = set(data) - TOP_LEVEL_KEYS - SCOPING_KEYS
     if unknown:
         name = sorted(unknown)[0]
