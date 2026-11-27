@@ -23,8 +23,13 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 ## [Unreleased]
 
+### ✨ Feature
+
+- `GET`, `PUT`, and `DELETE /api/v1/navigation-overlay` store one Shellui navigation overlay per user and company. Installed apps are third-party only: `firstParty` is rejected, `thirdParty` must be true, and the `auth` capability is never accepted. Each app must include `origin`, `url`, `path`, `installedAt`, and `updatedAt`, matching the shared schema in `apps/authapi/schemas/navigation-overlay.v1.json`. App URLs must be https and must not use a loopback or private host. Apps may not claim or hide reserved core paths. The raw body is limited to 64 KB (413 when larger) and `installedApps` to 100 entries. Writes require an enabled company membership, refuse agent tokens and personal access tokens, honor `If-Match` / `ETag` (a `412` carries the current `ETag`; `If-Match: *` needs an existing document and an empty `If-Match` is a `400`), and are rate-limited. Malformed `url`, `icon` or `origin` values are a `400`, and app names cannot contain invisible or blank characters (format characters, C0 and C1 controls, line and paragraph separators, and fillers such as U+3164 or U+2800) and need at least one letter, number, punctuation mark or symbol. ZWNJ and ZWJ (U+200C, U+200D) are accepted only between two visible characters, as in Persian, Indic scripts and emoji sequences. An unknown field name is cut to 40 characters in the error. A document with a lone surrogate (such as `\ud800`) anywhere is a `400`, not a database error. Leaving a company deletes that company overlay. Overlay writes are recorded in the company event log. The migrations are `0024_user_navigation_overlay` (after `0023_stable_social_account_uids`) and `0025_navigation_overlay_drop_user_index`, which drops the user index the unique constraint already covers.
+
 ### Upgrade notes
 
+- The shared company membership check (`_required_company_from_request`) now refuses disabled members on every endpoint that uses it (22 call sites, including `GET`, `PUT`, and `DELETE /api/v1/preferences`). A member whose company access has been turned off used to be accepted on those routes and now gets 403.
 - When the process starts with `DEBUG=false`, Django staff sign-in at `/admin/login/` requires a confirmed authenticator and locks the account after repeated failures. Every page under `/admin/` also needs a session that signed in with a verified code: any other staff session (one that existed before this release, or one created another way) is signed out and sent to the sign-in page. Sign everyone in again once after you deploy. A process that starts with `DEBUG=true` still asks for the password only. `STAFF_ADMIN_LOGIN_HARDENED` overrides that.
 - Enroll with `python manage.py enroll_staff_totp <username> --show-secret` (or `--show-uri`), add the secret to an authenticator app, then confirm with `--code`. The command prints nothing secret unless you pass `--show-secret` or `--show-uri`, and only for an unconfirmed secret. `--rotate` replaces a secret. Defaults are `STAFF_ADMIN_LOCKOUT_FAILURES=5` and `STAFF_ADMIN_LOCKOUT_SECONDS=900`. See [Security hardening](docs/security-hardening.md#django-admin-staff-sign-in).
 - Staff TOTP secrets are encrypted in the database. The key is `STAFF_TOTP_ENCRYPTION_KEY` (a Fernet key) when set, and otherwise derived from `SECRET_KEY`. If you rotate `SECRET_KEY`, keep the old one in `SECRET_KEY_FALLBACKS`, or re-enroll the staff accounts.
@@ -138,6 +143,7 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 ### 📚 Documentation
 
 - Metrics, configuration, scheduled jobs, JWKS, and the upgrade notes describe OpenTelemetry instead of Prometheus scrape endpoints.
+
 
 ## [0.12.0] - 2026-11-18
 

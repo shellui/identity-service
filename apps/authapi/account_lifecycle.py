@@ -17,6 +17,7 @@ from .models import (
     OAuthSessionDeliveryCode,
     PersonalAccessToken,
     RefreshTokenSession,
+    UserNavigationOverlay,
 )
 from .refresh_sessions import revoke_all_refresh_sessions_for_user
 
@@ -96,6 +97,7 @@ def remove_user_from_company(user, company, *, source: str) -> None:
         SocialAccount.objects.filter(user=user, provider__in=provider_ids).delete()
     user.company_groups.remove(*CompanyGroup.objects.filter(company=company, members=user))
     company.owners.remove(user)
+    UserNavigationOverlay.objects.filter(user=user, company=company).delete()
     EventLog.objects.filter(user=user, company=company).update(user=None)
     CompanyMembership.objects.filter(user=user, company=company).delete()
     cache.delete(f'shellui:user_metadata:{user.id}')

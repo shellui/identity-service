@@ -66,6 +66,38 @@ class UserPreference(models.Model):
         return f'UserPreference(user_id={self.user_id})'
 
 
+class UserNavigationOverlay(models.Model):
+    """Shellui navigation overlay (schema version 1), one row per user and company."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name='navigation_overlays',
+        on_delete=models.CASCADE,
+        # The (user, company) unique constraint already indexes user first.
+        db_index=False,
+    )
+    company = models.ForeignKey(
+        'companies.Company',
+        related_name='navigation_overlays',
+        on_delete=models.CASCADE,
+    )
+    document = models.JSONField()
+    updated_at = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'company'],
+                name='uniq_user_navigation_overlay_user_company',
+            ),
+        ]
+        ordering = ['user_id', 'company_id']
+
+    def __str__(self) -> str:
+        return f'UserNavigationOverlay(user_id={self.user_id}, company_id={self.company_id})'
+
+
 class StaffAdminGuard(models.Model):
     """Per-account lockout and TOTP secret for Django staff sign-in."""
 

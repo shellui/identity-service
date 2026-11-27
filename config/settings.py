@@ -358,6 +358,10 @@ SPECTACULAR_SETTINGS = {
         {'name': 'auth-social', 'description': 'OAuth/social login flow endpoints.'},
         {'name': 'auth-profile', 'description': 'Current authenticated user profile and metadata.'},
         {'name': 'auth-preferences', 'description': 'Current authenticated user preferences.'},
+        {
+            'name': 'auth-navigation',
+            'description': 'Per-user Shellui navigation overlay for the authenticated account.',
+        },
         {'name': 'directory-users', 'description': 'User directory management for staff/company owners.'},
         {'name': 'directory-groups', 'description': 'Group management for staff/company owners.'},
         {'name': 'oauth-clients', 'description': 'Company OAuth client mappings.'},
@@ -794,6 +798,10 @@ AUTH_RATE_LIMITS = {
     'cli_device_code': {'limit': _env_int('AUTH_RATE_LIMIT_CLI_DEVICE_CODE', 30), 'window': 300},
     'cli_device_verify': {'limit': _env_int('AUTH_RATE_LIMIT_CLI_DEVICE_VERIFY', 8), 'window': 300},
     'invitation': {'limit': _env_int('AUTH_RATE_LIMIT_INVITATION', 30), 'window': 300},
+    'navigation_overlay_write': {
+        'limit': _env_int('AUTH_RATE_LIMIT_NAVIGATION_OVERLAY_WRITE', 30),
+        'window': 60,
+    },
 }
 
 # Identity browser session (the Django session cookie). Unset matches the refresh token.

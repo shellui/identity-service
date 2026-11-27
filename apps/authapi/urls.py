@@ -19,6 +19,7 @@ from .invitation_views import (
     ShellUIAdminInvitationView,
 )
 from .magic_link_views import ShellUIMagicLinkRequestView, ShellUIMagicLinkVerifyView
+from .navigation_overlay import ShellUINavigationOverlayView
 from .saml.views import (
     ShellUISAMLACSView,
     ShellUISAMLFinishACSView,
@@ -147,6 +148,11 @@ urlpatterns = [
         name='shellui-admin-invitation-revoke',
     ),
     path('preferences', ShellUIPreferenceView.as_view(), name='shellui-preferences'),
+    path(
+        'navigation-overlay',
+        ShellUINavigationOverlayView.as_view(),
+        name='shellui-navigation-overlay',
+    ),
     path('providers/<str:provider>/authorize/', SocialAuthorizeView.as_view(), name='social-authorize'),
     path('providers/<str:provider>/login/', SocialLoginView.as_view(), name='social-login'),
     path(

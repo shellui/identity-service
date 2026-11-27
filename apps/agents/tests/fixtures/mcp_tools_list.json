@@ -1415,6 +1415,8 @@
               "identity.group.updated",
               "identity.mcp.approval_decision",
               "identity.mcp.call",
+              "identity.navigation_overlay.deleted",
+              "identity.navigation_overlay.updated",
               "identity.scheduled_job.failed",
               "identity.scheduled_job.succeeded",
               "identity.scim.provisioning_conflict",

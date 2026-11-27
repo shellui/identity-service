@@ -1439,7 +1439,9 @@ def _jwt_bearer_company_id(request) -> int | None:
 def _required_company_from_request(request, user: User | None = None) -> tuple[Company | None, Response | None]:
     raw_candidate = request.GET.get('company_id')
     if raw_candidate is None and hasattr(request, 'data'):
-        raw_candidate = request.data.get('company_id')
+        body = request.data
+        if isinstance(body, dict):
+            raw_candidate = body.get('company_id')
     raw = str(raw_candidate).strip() if raw_candidate not in (None, '') else ''
     token_company_id = _jwt_bearer_company_id(request)
 
@@ -1466,7 +1468,10 @@ def _required_company_from_request(request, user: User | None = None) -> tuple[C
         return None, Response({'error': 'Company not found.'}, status=status.HTTP_404_NOT_FOUND)
 
     if user is not None:
-        if not company.members.filter(pk=user.pk).exists():
+        from apps.agents.mcp_signin import is_company_member
+
+        # Owners, or an enabled membership. Disabled members are refused.
+        if not is_company_member(company, user):
             return None, Response({'error': 'Forbidden for this company.'}, status=status.HTTP_403_FORBIDDEN)
     return company, None
 

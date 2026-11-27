@@ -2,6 +2,7 @@ from django.contrib import admin
 from django.contrib.auth import get_user_model
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 
+from apps.actions.emit import emit_event_if_rules
 from apps.actions.user_hooks import (
     emit_user_account_created,
     emit_user_company_snapshots,
@@ -9,7 +10,7 @@ from apps.actions.user_hooks import (
 )
 from apps.authapi.account_lifecycle import delete_user_account
 
-from .models import PersonalAccessToken, UserActivity, UserPreference
+from .models import PersonalAccessToken, UserActivity, UserNavigationOverlay, UserPreference
 
 User = get_user_model()
 
@@ -191,3 +192,39 @@ class UserPreferenceAdmin(admin.ModelAdmin):
     search_fields = ('user__username', 'user__email', 'theme_name', 'region')
     ordering = ('user_id',)
     readonly_fields = ('created_at', 'updated_at')
+
+
+@admin.register(UserNavigationOverlay)
+class UserNavigationOverlayAdmin(admin.ModelAdmin):
+    list_display = ('id', 'user', 'company', 'updated_at', 'created_at')
+    list_select_related = ('user', 'company')
+    search_fields = ('user__username', 'user__email', 'company__name', 'company__slug')
+    ordering = ('user_id', 'company_id')
+    readonly_fields = ('user', 'company', 'document', 'created_at', 'updated_at')
+
+    def delete_model(self, request, obj):
+        company, user = obj.company, obj.user
+        super().delete_model(request, obj)
+        emit_event_if_rules(
+            'identity.navigation_overlay.deleted',
+            company,
+            {
+                'user_id': user.pk,
+                'source': 'admin',
+                'email': getattr(user, 'email', '') or '',
+            },
+        )
+
+    def delete_queryset(self, request, queryset):
+        rows = list(queryset.select_related('company', 'user'))
+        super().delete_queryset(request, queryset)
+        for obj in rows:
+            emit_event_if_rules(
+                'identity.navigation_overlay.deleted',
+                obj.company,
+                {
+                    'user_id': obj.user_id,
+                    'source': 'admin',
+                    'email': getattr(obj.user, 'email', '') or '',
+                },
+            )
