@@ -29,6 +29,24 @@ def totp_at(secret: str, counter: int, *, digits: int = 6) -> str:
     return str(binary % (10**digits)).zfill(digits)
 
 
+def totp_match_step(secret: str, code: str | None, *, now: int | None = None, window: int = 1, step: int = 30) -> int | None:
+    """Return the counter of the step the code belongs to, or None when it matches no step."""
+    cleaned = normalize_totp_code(code)
+    if len(cleaned) != 6 or not secret:
+        return None
+    moment = int(time.time()) if now is None else int(now)
+    counter = moment // step
+    matched = None
+    for skew in range(-window, window + 1):
+        if counter + skew < 0:
+            continue
+        expected = totp_at(secret, counter + skew)
+        # Compare every candidate so timing does not reveal which step matched.
+        if hmac.compare_digest(expected, cleaned):
+            matched = counter + skew
+    return matched
+
+
 def totp_matches(secret: str, code: str | None, *, now: int | None = None, window: int = 1, step: int = 30) -> bool:
     cleaned = normalize_totp_code(code)
     if len(cleaned) != 6 or not secret:

@@ -34,14 +34,14 @@ Abuse-prone endpoints are rate limited, with counters in the shared cache (Redis
 | Per-account lockout | 5 failures, then 900 seconds | `DEBUG` is false. `STAFF_ADMIN_LOCKOUT_FAILURES`, `STAFF_ADMIN_LOCKOUT_SECONDS` |
 | Authenticator code (TOTP) | 6 digits, 30 second step, SHA-1 | `DEBUG` is false. `DEBUG=true` asks for the password only |
 
-Enroll each staff account before production sign-in. The command prints a secret and an `otpauth://` URI. Add that URI to an authenticator app, then confirm with a current code:
+Enroll each staff account before production sign-in. The command stores a secret and prints nothing secret unless you ask. `--show-secret` prints the base32 secret and `--show-uri` prints the `otpauth://` URI, and both work only while the secret is unconfirmed. Add it to an authenticator app, then confirm with a current code:
 
 ```bash
-python manage.py enroll_staff_totp your_staff_username
+python manage.py enroll_staff_totp your_staff_username --show-secret
 python manage.py enroll_staff_totp your_staff_username --code 123456
 ```
 
-`your_staff_username` is the Django username. `123456` stands in for the 6-digit code the app shows. `--rotate` replaces a confirmed secret. The next sign-in must use a code from the new secret. The database stores the secret. A staff account with no confirmed secret cannot sign in while `DEBUG` is false.
+`your_staff_username` is the Django username. `123456` stands in for the 6-digit code the app shows. `--rotate` replaces a confirmed secret. The next sign-in must use a code from the new secret. The database stores the secret encrypted (Fernet). The key is `STAFF_TOTP_ENCRYPTION_KEY` when set, and otherwise derived from `SECRET_KEY`, so keep an old `SECRET_KEY` in `SECRET_KEY_FALLBACKS` when you rotate it, or re-enroll. A code works once: the last accepted step is stored and the same or an older step is refused. Every page under `/admin/` requires a session that signed in through this form with a code. Older staff sessions and sessions created another way are signed out on their next `/admin/` request. A staff account with no confirmed secret cannot sign in while `DEBUG` is false.
 
 ## HTTPS and cookies
 

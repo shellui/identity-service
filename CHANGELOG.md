@@ -25,14 +25,16 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 ### Upgrade notes
 
-- When the process starts with `DEBUG=false`, Django staff sign-in at `/admin/login/` requires a confirmed authenticator and locks the account after repeated failures. A process that starts with `DEBUG=true` still asks for the password only. `STAFF_ADMIN_LOGIN_HARDENED` overrides that. Enroll with `python manage.py enroll_staff_totp <username>`, then confirm with `--code`. Defaults are `STAFF_ADMIN_LOCKOUT_FAILURES=5` and `STAFF_ADMIN_LOCKOUT_SECONDS=900`. See [Security hardening](docs/security-hardening.md#django-admin-staff-sign-in).
+- When the process starts with `DEBUG=false`, Django staff sign-in at `/admin/login/` requires a confirmed authenticator and locks the account after repeated failures. Every page under `/admin/` also needs a session that signed in with a verified code: any other staff session (one that existed before this release, or one created another way) is signed out and sent to the sign-in page. Sign everyone in again once after you deploy. A process that starts with `DEBUG=true` still asks for the password only. `STAFF_ADMIN_LOGIN_HARDENED` overrides that.
+- Enroll with `python manage.py enroll_staff_totp <username> --show-secret` (or `--show-uri`), add the secret to an authenticator app, then confirm with `--code`. The command prints nothing secret unless you pass `--show-secret` or `--show-uri`, and only for an unconfirmed secret. `--rotate` replaces a secret. Defaults are `STAFF_ADMIN_LOCKOUT_FAILURES=5` and `STAFF_ADMIN_LOCKOUT_SECONDS=900`. See [Security hardening](docs/security-hardening.md#django-admin-staff-sign-in).
+- Staff TOTP secrets are encrypted in the database. The key is `STAFF_TOTP_ENCRYPTION_KEY` (a Fernet key) when set, and otherwise derived from `SECRET_KEY`. If you rotate `SECRET_KEY`, keep the old one in `SECRET_KEY_FALLBACKS`, or re-enroll the staff accounts.
 - An MCP agent access token is accepted as a bearer only on `POST /mcp`. Company admin HTTP routes require an access token whose audience is `JWT_AUDIENCE`. A refresh token is not a bearer, including after its session is revoked. On `/mcp`, the call runs as the creating user and keeps that user's company role.
 
 ### 🚨 Changed
 
-- A downstream token minted for ai-service carries `mcp_gateway_delegated` as `{"action": "<tool name>", "exp": <unix seconds>}` only when the signed mint request names the approved tool. The `true` value is no longer issued, since `shellui-django` 0.6 and later ignore it.
+- A downstream token minted for ai-service carries `mcp_gateway_delegated` as `{"action": "<tool name>", "exp": <unix seconds>}` only when the signed mint request names the approved tool. The grant `exp` is the signed request's `exp`, capped at 60 seconds from the mint. A claim that is not exactly `{action, exp}` with a plain string action and an integer, unexpired `exp` is refused with a 400. The `true` value is no longer issued, since `shellui-django` 0.6 and later ignore it.
 - User token exchange refuses `is_global_staff` the same way it refuses `is_staff` and `is_superuser`.
-- Django staff sign-in uses a per-account lockout and a TOTP authenticator when `DEBUG` is false.
+- Django staff sign-in uses a per-account lockout and a TOTP authenticator when `DEBUG` is false. An accepted code cannot be used again: the last accepted 30 second step is stored (`totp_last_step`, created by migration `0022`) and a code at or below it is refused.
 
 ### 🔒 Security
 

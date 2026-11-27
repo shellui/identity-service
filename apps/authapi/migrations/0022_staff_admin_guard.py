@@ -23,8 +23,9 @@ class Migration(migrations.Migration):
                         verbose_name='ID',
                     ),
                 ),
-                ('totp_secret', models.CharField(blank=True, default='', max_length=64)),
+                ('totp_secret', models.CharField(blank=True, default='', max_length=255)),
                 ('totp_confirmed_at', models.DateTimeField(blank=True, null=True)),
+                ('totp_last_step', models.BigIntegerField(default=0)),
                 ('failed_attempts', models.PositiveIntegerField(default=0)),
                 ('locked_until', models.DateTimeField(blank=True, null=True)),
                 (

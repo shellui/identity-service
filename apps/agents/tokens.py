@@ -58,7 +58,16 @@ def apply_owner_user_id_claim(claims: dict, agent: Agent) -> None:
     claims['owner_user_id'] = int(raw)
 
 
-def build_agent_access_token(agent: Agent, *, resource: str, gateway_delegated_action: str = '') -> dict:
+DELEGATED_GRANT_MAX_SECONDS = 60
+
+
+def build_agent_access_token(
+    agent: Agent,
+    *,
+    resource: str,
+    gateway_delegated_action: str = '',
+    gateway_delegated_exp: int | None = None,
+) -> dict:
     audience = normalize_resource_indicator(resource)
     if not audience:
         raise ValueError('Invalid MCP resource for access token audience.')
@@ -89,7 +98,11 @@ def build_agent_access_token(agent: Agent, *, resource: str, gateway_delegated_a
     action = str(gateway_delegated_action or '').strip()
     if action:
         # Downstream /mcp skips a second approval only for this tool until exp.
-        claims['mcp_gateway_delegated'] = {'action': action, 'exp': int(exp.timestamp())}
+        # The grant expires at the signed request's own exp, never later than 60 seconds from now.
+        # Without a signed exp (not expected from the gateway) it gets the cap, not the token lifetime.
+        cap = int(now.timestamp()) + DELEGATED_GRANT_MAX_SECONDS
+        grant_exp = min(int(gateway_delegated_exp), cap) if gateway_delegated_exp is not None else cap
+        claims['mcp_gateway_delegated'] = {'action': action, 'exp': min(grant_exp, int(exp.timestamp()))}
     if ga is not None:
         claims['mcp_authority'] = 'delegated'
     # Tests often override ``JWT_ISSUER`` without refreshing ``SIMPLE_JWT['ISSUER']``;
@@ -133,13 +146,24 @@ def build_agent_access_token(agent: Agent, *, resource: str, gateway_delegated_a
     return claims
 
 
-def encode_access_token(agent: Agent, *, resource: str, gateway_delegated_action: str = '') -> str:
+def encode_access_token(
+    agent: Agent,
+    *,
+    resource: str,
+    gateway_delegated_action: str = '',
+    gateway_delegated_exp: int | None = None,
+) -> str:
     import jwt
 
     ga = getattr(agent, 'global_agent_id', None)
     if ga is not None and global_agent_exchange_blocked(ga):
         raise ValueError('Global agent is revoked.')
-    claims = build_agent_access_token(agent, resource=resource, gateway_delegated_action=gateway_delegated_action)
+    claims = build_agent_access_token(
+        agent,
+        resource=resource,
+        gateway_delegated_action=gateway_delegated_action,
+        gateway_delegated_exp=gateway_delegated_exp,
+    )
     headers = {}
     kid = getattr(settings, 'JWT_ACTIVE_KEY_ID', '')
     if kid:

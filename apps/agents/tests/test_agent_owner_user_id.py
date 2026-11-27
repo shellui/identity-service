@@ -77,10 +77,11 @@ class AgentOwnerUserIdClaimTests(TestCase):
             gateway_delegated_action='identity_list_services',
         )
         _assert_owner(self, delegated, self.user.pk)
-        self.assertEqual(
-            delegated['mcp_gateway_delegated'],
-            {'action': 'identity_list_services', 'exp': delegated['exp']},
-        )
+        grant = delegated['mcp_gateway_delegated']
+        self.assertEqual(grant['action'], 'identity_list_services')
+        # No signed exp was passed, so the grant gets the 60 second cap, not the token lifetime.
+        self.assertLessEqual(grant['exp'] - int(timezone.now().timestamp()), 60)
+        self.assertLessEqual(grant['exp'], delegated['exp'])
         self.assertEqual(delegated['aud'], claims['aud'])
         self.assertEqual(delegated['scope'], claims['scope'])
 

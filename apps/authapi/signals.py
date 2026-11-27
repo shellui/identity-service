@@ -17,7 +17,11 @@ from django.dispatch import receiver
 
 from .login_audit import LoginOutcome, record_login_event
 from .magic_link import delete_unused_magic_link_tokens_for_user, is_staff_account
-from .staff_admin_login import clear_staff_login_failures, record_staff_login_failure
+from .staff_admin_login import (
+    STAFF_TOTP_SESSION_KEY,
+    clear_staff_login_failures,
+    record_staff_login_failure,
+)
 from .user_activity import touch_user_last_seen
 
 User = get_user_model()
@@ -43,6 +47,13 @@ def _user_from_failed_credentials(credentials: dict | None) -> User | None:
         return User.objects.get(**{field: username})
     except User.DoesNotExist:
         return None
+
+
+@receiver(user_logged_in)
+def mark_session_totp_verified(sender, request, user, **kwargs):
+    """Only the staff form that accepted a code sets the flag. Any other sign-in leaves it unset."""
+    if request is not None and getattr(request, '_staff_totp_verified', False):
+        request.session[STAFF_TOTP_SESSION_KEY] = user.pk
 
 
 @receiver(user_logged_in)

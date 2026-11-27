@@ -12,7 +12,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.authapi.models import StaffAdminGuard
-from apps.authapi.staff_totp import totp_matches
+from apps.authapi.staff_totp import totp_match_step
 
 
 def staff_lockout_enabled() -> bool:
@@ -91,7 +91,28 @@ def clear_staff_login_failures(user) -> None:
 
 def staff_totp_confirmed(user) -> bool:
     guard = _guard(user)
-    return bool(guard and guard.totp_secret and guard.totp_confirmed_at)
+    return bool(guard and guard.secret and guard.totp_confirmed_at)
+
+
+STAFF_TOTP_SESSION_KEY = 'staff_totp_verified_user_id'
+
+
+def consume_totp_code(user, code) -> bool:
+    """Accept a code once. A step at or below the last accepted one is a replay.
+
+    The guard row is locked so two parallel requests cannot both use the same code.
+    """
+    with transaction.atomic():
+        try:
+            guard = StaffAdminGuard.objects.select_for_update().get(user=user)
+        except StaffAdminGuard.DoesNotExist:
+            return False
+        step = totp_match_step(guard.secret, code)
+        if step is None or step <= int(guard.totp_last_step or 0):
+            return False
+        guard.totp_last_step = step
+        guard.save(update_fields=['totp_last_step'])
+        return True
 
 
 class StaffAdminAuthenticationForm(AdminAuthenticationForm):
@@ -132,10 +153,13 @@ class StaffAdminAuthenticationForm(AdminAuthenticationForm):
                 code='totp_required',
             )
         code = self.cleaned_data.get('otp') if 'otp' in self.fields else ''
-        if not totp_matches(user.staff_admin_guard.totp_secret, code):
+        if not consume_totp_code(user, code):
             record_staff_login_failure(user)
             raise forms.ValidationError(
                 'That authenticator code is not valid.',
                 code='totp_invalid',
             )
+        # The sign-in signal turns this into a session flag that /admin/ requires.
+        if self.request is not None:
+            self.request._staff_totp_verified = True
         return cleaned

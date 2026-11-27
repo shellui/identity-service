@@ -51,6 +51,7 @@ def _delegation_request(
     issuer: str = AI_ISSUER,
     ttl: int = 60,
     action: str = '',
+    grant=None,
 ) -> str:
     token = sign_downstream_token_request(
         private_pem,
@@ -61,11 +62,11 @@ def _delegation_request(
         resource,
         ttl,
     )
-    if not action:
+    if not action and grant is None:
         return token
     # Same shape ai-service adds: re-sign the request with the approved tool.
     claims = jwt.decode(token, options={'verify_signature': False})
-    claims['mcp_gateway_delegated'] = {'action': action, 'exp': claims['exp']}
+    claims['mcp_gateway_delegated'] = grant if grant is not None else {'action': action, 'exp': claims['exp']}
     return jwt.encode(claims, private_pem, algorithm='RS256', headers={'kid': kid})
 
 
@@ -177,13 +178,63 @@ class McpDownstreamAccessTokenTests(TestCase):
         self.assertEqual(payload['agent_id'], str(self.agent.id))
         self.assertEqual(payload['company_id'], self.company.id)
         self.assertEqual(payload['company_name'], self.company.name)
+        signed = jwt.decode(token, options={'verify_signature': False})
         self.assertEqual(
             payload.get('mcp_gateway_delegated'),
-            {'action': 'storage_list_files', 'exp': payload['exp']},
+            {'action': 'storage_list_files', 'exp': signed['exp']},
         )
         self.assertEqual(payload['owner_user_id'], self.owner.pk)
         self.assertIsInstance(payload['owner_user_id'], int)
         self.assertNotIsInstance(payload['owner_user_id'], bool)
+
+    def _mint_with_grant(self, grant):
+        token = self._sign(grant=grant)
+        return _post_mint(
+            self.client,
+            token=token,
+            agent_id=str(self.agent.id),
+            company_id=self.company.id,
+            resource=STORAGE_MCP,
+        )
+
+    def test_delegated_grant_is_capped_at_sixty_seconds(self):
+        now = int(time.time())
+        response = self._mint_with_grant({'action': 'storage_list_files', 'exp': now + 900})
+        self.assertEqual(response.status_code, 200)
+        payload = jwt.decode(response.json()['access_token'], options={'verify_signature': False})
+        grant = payload['mcp_gateway_delegated']
+        self.assertEqual(grant['action'], 'storage_list_files')
+        self.assertLessEqual(grant['exp'], int(time.time()) + 60)
+        self.assertGreater(grant['exp'], now)
+
+    def test_delegated_grant_keeps_a_shorter_signed_exp(self):
+        exp = int(time.time()) + 20
+        response = self._mint_with_grant({'action': 'storage_list_files', 'exp': exp})
+        payload = jwt.decode(response.json()['access_token'], options={'verify_signature': False})
+        self.assertEqual(payload['mcp_gateway_delegated']['exp'], exp)
+
+    def test_malformed_delegated_grants_are_refused(self):
+        future = int(time.time()) + 30
+        bad = [
+            'storage_list_files',
+            ['storage_list_files', future],
+            {'action': 'storage_list_files'},
+            {'exp': future},
+            {'action': '', 'exp': future},
+            {'action': 'has space', 'exp': future},
+            {'action': 'x' * 200, 'exp': future},
+            {'action': 5, 'exp': future},
+            {'action': 'storage_list_files', 'exp': str(future)},
+            {'action': 'storage_list_files', 'exp': True},
+            {'action': 'storage_list_files', 'exp': future + 0.5},
+            {'action': 'storage_list_files', 'exp': int(time.time()) - 5},
+            {'action': 'storage_list_files', 'exp': future, 'scope': 'all'},
+        ]
+        for grant in bad:
+            cache.clear()
+            response = self._mint_with_grant(grant)
+            self.assertEqual(response.status_code, 400, msg=repr(grant))
+            self.assertNotIn('access_token', response.json())
 
     def test_omits_owner_user_id_when_agent_has_no_owner(self):
         agent = Agent.objects.create(

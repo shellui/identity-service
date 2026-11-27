@@ -772,9 +772,80 @@ def test_safe_read_masks_email(self):
     self.assertIn('[redacted]', dumped)
 
 
+def _ask_agent_token(self, action: str = '', exp: int | None = None) -> str:
+    import jwt
+    from rest_framework_simplejwt.settings import api_settings
+
+    from apps.agents.tokens import build_agent_access_token
+
+    self.agent.access_mode = Agent.ACCESS_ASK
+    self.agent.save(update_fields=['access_mode'])
+    claims = build_agent_access_token(
+        self.agent, resource=IDENTITY_MCP, gateway_delegated_action=action, gateway_delegated_exp=exp
+    )
+    from django.conf import settings as dj_settings
+
+    kid = getattr(dj_settings, 'JWT_ACTIVE_KEY_ID', '')
+    headers = {'kid': kid} if kid else None
+    return jwt.encode(claims, api_settings.SIGNING_KEY, algorithm=api_settings.ALGORITHM, headers=headers)
+
+
+def test_delegated_agent_token_runs_only_the_approved_tool_on_mcp(self):
+    import time
+
+    self.token = _ask_agent_token(self, 'identity_create_groups', int(time.time()) + 30)
+    allowed = self._post(
+        'identity_create_groups',
+        self._arguments('identity_create_groups', body={'display_name': 'Delegated'}),
+    )
+    self.assertFalse(allowed['result'].get('isError'), allowed)
+    self.assertFalse(self._needs_approval(allowed), allowed)
+    self.assertTrue(CompanyGroup.objects.filter(company=self.company, display_name='Delegated').exists())
+
+    other = self._post(
+        'identity_create_oauth_social_apps',
+        self._arguments(
+            'identity_create_oauth_social_apps',
+            body={'docs_slug': 'gitlab', 'client_id': 'cid-other', 'client_secret': 'other-secret'},
+        ),
+    )
+    self.assertTrue(self._needs_approval(other) or other['result'].get('isError'), other)
+    self.assertFalse(SocialApp.objects.filter(client_id='cid-other').exists())
+
+
+def test_expired_delegated_grant_still_needs_approval_on_mcp(self):
+    import time
+
+    self.token = _ask_agent_token(self, 'identity_create_groups', int(time.time()) - 5)
+    payload = self._post(
+        'identity_create_groups',
+        self._arguments('identity_create_groups', body={'display_name': 'Stale'}),
+    )
+    self.assertTrue(self._needs_approval(payload), payload)
+    self.assertFalse(CompanyGroup.objects.filter(display_name='Stale').exists())
+
+
+def test_agent_token_without_a_grant_needs_approval_in_ask_mode(self):
+    self.token = _ask_agent_token(self)
+    payload = self._post(
+        'identity_create_groups',
+        self._arguments('identity_create_groups', body={'display_name': 'NoGrant'}),
+    )
+    self.assertTrue(self._needs_approval(payload), payload)
+
+
 _bind_tool_tests()
 McpToolCallTests.test_every_exposed_tool_has_a_call_test = test_every_exposed_tool_has_a_call_test
 McpToolCallTests.test_read_only_agent_cannot_write = test_read_only_agent_cannot_write
 McpToolCallTests.test_other_company_user_is_hidden = test_other_company_user_is_hidden
 McpToolCallTests.test_ask_mode_write_runs_after_approval = test_ask_mode_write_runs_after_approval
 McpToolCallTests.test_safe_read_masks_email = test_safe_read_masks_email
+McpToolCallTests.test_delegated_agent_token_runs_only_the_approved_tool_on_mcp = (
+    test_delegated_agent_token_runs_only_the_approved_tool_on_mcp
+)
+McpToolCallTests.test_expired_delegated_grant_still_needs_approval_on_mcp = (
+    test_expired_delegated_grant_still_needs_approval_on_mcp
+)
+McpToolCallTests.test_agent_token_without_a_grant_needs_approval_in_ask_mode = (
+    test_agent_token_without_a_grant_needs_approval_in_ask_mode
+)
