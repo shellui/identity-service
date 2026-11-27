@@ -107,6 +107,9 @@ jobs:
         env:
           POSTGRES_DATABASE_URL: postgres://identity:identity@localhost:5432/identity
         run: |
+          # A missing or wrong POSTGRES_DATABASE_URL would silently fall back to SQLite, where
+          # FOR UPDATE is ignored and these tests prove nothing. Fail here instead.
+          uv run python manage.py shell -c "from django.db import connection; assert connection.vendor == 'postgresql', connection.vendor"
           uv run python manage.py test --verbosity=1 \
             apps.agents.tests.test_approval_row_lock \
             apps.authapi.tests.test_invitation_row_lock \
