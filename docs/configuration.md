@@ -170,6 +170,7 @@ The entrypoint sets `--worker-tmp-dir /dev/shm` (the heartbeat file lives in mem
 | `AUTH_RATE_LIMIT_MAGIC_LINK` | `10` | Magic link requests per minute |
 | `AUTH_RATE_LIMIT_TOKEN_EXCHANGE` | `30` | Token exchange requests per minute, per client IP |
 | `AUTH_RATE_LIMIT_PAT` | `30` | Personal access token requests per minute |
+| `AUTH_RATE_LIMIT_NAVIGATION_OVERLAY_WRITE` | `30` | Navigation overlay writes (`PUT`, `DELETE`) per minute, per user |
 | `AUTH_RATE_LIMIT_ADMIN_LOGIN` | `10` | Django admin sign-ins per 5 minutes |
 | `AUTH_RATE_LIMIT_INVITATION` | `30` | Invitations per 5 minutes per company |
 | `AUTH_RATE_LIMIT_MCP_PERSONAL_AGENT` | `10` | Personal MCP agent token creations per hour, per user |

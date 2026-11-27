@@ -22,6 +22,7 @@ Abuse-prone endpoints are rate limited, with counters in the shared cache (Redis
 | `invitation` | 30 per 5 minutes per company | `POST /api/v1/invitations` | `AUTH_RATE_LIMIT_INVITATION` |
 | `admin_login` | 10 per 5 minutes per IP | `POST /admin/login/` | `AUTH_RATE_LIMIT_ADMIN_LOGIN` |
 | `pat` | 30 per minute per user | `GET` and `POST /api/v1/personal-access-tokens`, revoke | `AUTH_RATE_LIMIT_PAT` |
+| `navigation_overlay_write` | 30 per minute per user | `PUT` and `DELETE /api/v1/navigation-overlay` | `AUTH_RATE_LIMIT_NAVIGATION_OVERLAY_WRITE` |
 
 `AUTH_RATE_LIMIT_ENABLED=false` turns all limits off. Do not do this in production.
 

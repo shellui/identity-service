@@ -7,7 +7,11 @@ from pathlib import Path
 
 from django.test import SimpleTestCase
 
-from apps.authapi.navigation_overlay import OverlayValidationError, validate_navigation_overlay
+from apps.authapi.navigation_overlay import (
+    RESERVED_PATH_SEGMENTS,
+    OverlayValidationError,
+    validate_navigation_overlay,
+)
 
 SCHEMA_DIR = Path(__file__).resolve().parents[1] / 'schemas'
 SCHEMA_PATH = SCHEMA_DIR / 'navigation-overlay.v1.json'
@@ -73,3 +77,51 @@ class NavigationOverlayContractTests(SimpleTestCase):
         with self.assertRaises(OverlayValidationError) as raised:
             validate_navigation_overlay(with_auth)
         self.assertIn('auth', raised.exception.message)
+
+    def test_reserved_segments_match_the_shell_list(self):
+        # The shell keeps the same list in packages/sdk (RESERVED_PATH_SEGMENTS). Its contract
+        # test reads the same schema description, so a change on one side fails on the other.
+        shell_segments = {'admin', '__settings', 'legal', 'files', 'login', 'marketplace', 'settings'}
+        self.assertEqual(set(RESERVED_PATH_SEGMENTS), shell_segments)
+        description = self.schema['$defs']['installedApp']['properties']['path']['description']
+        for segment in shell_segments:
+            self.assertIn(segment, description)
+
+    def test_refuses_what_the_shell_validator_refuses(self):
+        # Mirrors the cases in packages/sdk/src/marketplace/overlayContract.spec.ts.
+        def with_app(**changes):
+            doc = json.loads(json.dumps(self.example))
+            doc['installedApps'][0].update(changes)
+            return doc
+
+        refused = [
+            with_app(thirdParty=False),
+            with_app(safeForAuthToken=True),
+            with_app(url='http://notes.example.com/app', origin='http://notes.example.com'),
+            with_app(url='https://127.0.0.1/app', origin='https://127.0.0.1'),
+            with_app(origin='https://other.example.com'),
+        ]
+        for path in (
+            'admin',
+            'Admin/x',
+            '__settings',
+            'legal/terms',
+            'files',
+            'login',
+            'marketplace',
+            'settings',
+            '../x',
+            'a/..',
+            '/a//b',
+        ):
+            refused.append(with_app(path=path))
+        for doc in refused:
+            with self.subTest(app=doc['installedApps'][0]):
+                with self.assertRaises(OverlayValidationError):
+                    validate_navigation_overlay(doc)
+
+    def test_stray_document_keys_are_refused(self):
+        doc = json.loads(json.dumps(self.example))
+        doc['extra'] = 1
+        with self.assertRaises(OverlayValidationError):
+            validate_navigation_overlay(doc)
