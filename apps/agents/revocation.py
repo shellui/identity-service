@@ -5,7 +5,7 @@ from __future__ import annotations
 from django.db.models import Max
 from django.utils import timezone
 
-from apps.agents.models import Agent
+from apps.agents.models import Agent, DeletedAgentRevocation
 
 REVOCATION_CACHE_SECONDS = 30
 
@@ -21,9 +21,71 @@ def active_max_grant_version(*, company_id: int | None = None) -> int:
 
 def revoked_agent_ids(*, company_id: int | None = None) -> list[str]:
     qs = Agent.objects.filter(revoked_at__isnull=False)
+    deleted = DeletedAgentRevocation.objects.all()
     if company_id is not None:
         qs = qs.filter(company_id=company_id)
-    return [str(aid) for aid in qs.values_list('id', flat=True)]
+        deleted = deleted.filter(company_id=company_id)
+    ids = {str(aid) for aid in qs.values_list('id', flat=True)}
+    ids.update(str(aid) for aid in deleted.values_list('agent_id', flat=True))
+    return sorted(ids)
+
+
+def is_agent_blocked(agent: Agent) -> bool:
+    """True when this one agent must be refused. Looks at the agent only, not the company.
+
+    Same rules as ``blocked_agent_ids``: revoked, paused, expired, or its creator is gone.
+    """
+    if agent.revoked_at is not None or agent.paused_at is not None:
+        return True
+    if agent.expires_at is not None and agent.expires_at <= timezone.now():
+        return True
+    return creator_statuses([agent]).get(str(agent.pk)) == CREATOR_GONE
+
+
+def agent_id_is_blocked(agent_id: str, company_id: int | None = None) -> bool:
+    """``is_agent_blocked`` by id, one row. An agent that no longer exists is blocked."""
+    import uuid
+
+    try:
+        pk = uuid.UUID(str(agent_id))
+    except (ValueError, AttributeError, TypeError):
+        return True
+    qs = Agent.objects.filter(pk=pk)
+    if company_id is not None:
+        qs = qs.filter(company_id=company_id)
+    agent = qs.first()
+    if agent is None:
+        return True
+    return is_agent_blocked(agent)
+
+
+def revoke_agents(agents) -> int:
+    """Revoke these agents now: row, refresh sessions and approval session grants."""
+    from apps.agents.agent_permissions import invalidate_agent_session_grants
+    from apps.agents.tokens import revoke_all_agent_refresh_sessions
+
+    now = timezone.now()
+    count = 0
+    for agent in agents:
+        if agent.revoked_at is None:
+            Agent.objects.filter(pk=agent.pk, revoked_at__isnull=True).update(
+                revoked_at=now, paused_at=agent.paused_at or now
+            )
+            count += 1
+        revoke_all_agent_refresh_sessions(agent)
+        invalidate_agent_session_grants(agent)
+    return count
+
+
+def revoke_agents_created_by(user) -> int:
+    """Revoke every non-global agent this user created, in every company.
+
+    Called before a user row is deleted: ``Agent.created_by`` is ``SET_NULL``, so without this
+    the agents would outlive the person with no creator and no status.
+    """
+    return revoke_agents(
+        list(Agent.objects.filter(created_by=user, global_agent_id__isnull=True, revoked_at__isnull=True))
+    )
 
 
 def paused_agent_ids(*, company_id: int | None = None) -> list[str]:

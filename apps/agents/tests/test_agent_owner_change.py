@@ -10,6 +10,7 @@ from datetime import timedelta
 from django.contrib.admin.sites import site as admin_site
 from django.contrib.auth import get_user_model
 from django.test import RequestFactory, TestCase, override_settings
+from django.urls import reverse
 from django.utils import timezone
 from rest_framework.test import APIClient
 
@@ -310,3 +311,97 @@ class AgentsCannotChangeCompanyOwnersTests(TestCase):
         )
         self.assertEqual(response.status_code, 200, response.content)
         self.assertEqual(self._owners(), sorted([self.owner.pk, self.member.pk]))
+
+
+@override_settings(**SETTINGS)
+class AgentsCannotRemoveOrDisableOwnersTests(TestCase):
+    """Deleting a co-owner or changing an owner's ``is_active`` changes who owns the company."""
+
+    def setUp(self):
+        self.company = Company.objects.create(name='Users Co', slug='users-co-agent-owners')
+        self.owner = User.objects.create_user(username='own', email='own@u.test', password='x')
+        self.co_owner = User.objects.create_user(username='co', email='co@u.test', password='x')
+        self.member = User.objects.create_user(username='mem', email='mem@u.test', password='x')
+        for user in (self.owner, self.co_owner, self.member):
+            set_company_access(self.company, user, enabled=True)
+        self.company.owners.add(self.owner, self.co_owner)
+
+    def _agent(self, mode):
+        agent = Agent.objects.create(
+            company=self.company,
+            name='Caller',
+            created_by=self.owner,
+            access_mode=mode,
+            read_level=Agent.READ_SENSITIVE,
+            services_allowed=['identity'],
+        )
+        return agent, encode_access_token(agent, resource=IDENTITY_MCP)
+
+    def _mcp(self, token, name, arguments):
+        response = self.client.post(
+            '/mcp',
+            data=_rpc('tools/call', name=name, arguments=arguments),
+            content_type='application/json',
+            HTTP_AUTHORIZATION=f'Bearer {token}',
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        return response.json()['result']
+
+    def _approve_pending(self, agent):
+        McpApprovalRequest.objects.filter(agent=agent).update(status=McpApprovalRequest.STATUS_APPROVED)
+
+    def _assert_refused(self, result):
+        text = json.dumps(result)
+        self.assertTrue(result.get('isError'), text)
+        self.assertIn('agent_cannot_change_owners', text)
+        self.assertEqual(sorted(self.company.owners.values_list('pk', flat=True)), sorted([self.owner.pk, self.co_owner.pk]))
+        self.assertTrue(User.objects.filter(pk=self.co_owner.pk).exists())
+        self.assertTrue(CompanyMembership.objects.filter(company=self.company, user=self.co_owner, is_enabled=True).exists())
+
+    def _refused_after_approval(self, mode, tool, args):
+        agent, token = self._agent(mode)
+        first = self._mcp(token, tool, args)
+        self.assertEqual((first.get('meta') or {}).get('status'), 'pending', json.dumps(first))
+        self._approve_pending(agent)
+        self._assert_refused(self._mcp(token, tool, args))
+
+    def test_agent_cannot_delete_a_co_owner_in_either_mode(self):
+        for mode in (Agent.ACCESS_FULL, Agent.ACCESS_ASK):
+            with self.subTest(mode=mode):
+                self._refused_after_approval(mode, 'identity_delete_users', {'id': self.co_owner.pk})
+
+    def test_agent_cannot_disable_or_enable_an_owner_in_either_mode(self):
+        for mode in (Agent.ACCESS_FULL, Agent.ACCESS_ASK):
+            for active in (False, True):
+                with self.subTest(mode=mode, is_active=active):
+                    self._refused_after_approval(
+                        mode, 'identity_replace_users', {'id': self.co_owner.pk, 'is_active': active}
+                    )
+
+    def test_an_owners_other_profile_fields_are_not_refused(self):
+        agent, token = self._agent(Agent.ACCESS_FULL)
+        args = {'id': self.co_owner.pk, 'first_name': 'Co'}
+        self.assertEqual((self._mcp(token, 'identity_replace_users', args).get('meta') or {}).get('status'), 'pending')
+        self._approve_pending(agent)
+        result = self._mcp(token, 'identity_replace_users', args)
+        self.assertFalse(result.get('isError'), json.dumps(result))
+
+    def test_agent_can_still_disable_or_remove_a_plain_member_after_approval(self):
+        for tool, args in (
+            ('identity_replace_users', {'id': self.member.pk, 'is_active': False}),
+            ('identity_delete_users', {'id': self.member.pk}),
+        ):
+            with self.subTest(tool=tool):
+                agent, token = self._agent(Agent.ACCESS_FULL)
+                self.assertEqual((self._mcp(token, tool, args).get('meta') or {}).get('status'), 'pending')
+                self._approve_pending(agent)
+                result = self._mcp(token, tool, args)
+                self.assertFalse(result.get('isError'), json.dumps(result))
+
+    def test_a_person_can_still_delete_a_co_owner(self):
+        from apps.authapi.views import _issue_shellui_tokens
+
+        auth = f'Bearer {_issue_shellui_tokens(self.owner, company=self.company)["access_token"]}'
+        response = APIClient().delete(reverse('shellui-admin-user-detail', args=[self.co_owner.pk]), HTTP_AUTHORIZATION=auth)
+        self.assertEqual(response.status_code, 204, response.content)
+        self.assertEqual(sorted(self.company.owners.values_list('pk', flat=True)), [self.owner.pk])

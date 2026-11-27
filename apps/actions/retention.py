@@ -163,6 +163,16 @@ def purge_expired_data(
             stats['mcp_call_logs'] += McpCallLog.objects.filter(agent_id__in=ids).count()
             Agent.objects.filter(pk__in=ids).delete()
             stats['revoked_mcp_agents'] += len(ids)
+    if not dry_run:
+        # A deleted agent's id stays refused for as long as a personal token could be valid.
+        from datetime import timedelta
+
+        from django.conf import settings
+
+        from apps.agents.models import DeletedAgentRevocation
+
+        days = int(getattr(settings, 'MCP_PERSONAL_AGENT_MAX_LIFETIME_DAYS', 90) or 90) + 1
+        DeletedAgentRevocation.objects.filter(deleted_at__lt=now - timedelta(days=days)).delete()
     from apps.actions.scheduled_jobs import normalize_purge_expired_data_stats
 
     return normalize_purge_expired_data_stats(stats)

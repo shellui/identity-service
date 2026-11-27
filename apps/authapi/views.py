@@ -3508,6 +3508,29 @@ class ShellUIAdminUserListView(APIView):
         )
 
 
+def _agent_cannot_touch_owner_response(request, company, target) -> Response | None:
+    """403 when an agent tries to remove or disable a company owner.
+
+    An agent acts as the person who created it, but who owns a company is a human decision.
+    No approval mode lets an agent grant, move, disable or remove ownership. This holds for
+    the owner's own agent too, and after a person approved the call.
+    """
+    from apps.agents.permissions import is_agent_request
+
+    if not is_agent_request(request):
+        return None
+    if not _is_user_company_owner(target, company):
+        return None
+    return Response(
+        {
+            'error': 'Agents cannot remove or disable a company owner.',
+            'error_code': 'agent_cannot_change_owners',
+        },
+        status=status.HTTP_403_FORBIDDEN,
+    )
+
+
+
 @extend_schema_view(
     get=extend_schema(
         **mcp_extend_schema_kwargs('identity_get_users'),
@@ -3562,6 +3585,11 @@ class ShellUIAdminUserDetailView(APIView):
         serializer = ShellUIAdminUserUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         validated = serializer.validated_data
+
+        if 'is_active' in validated:
+            refused = _agent_cannot_touch_owner_response(request, company, target)
+            if refused is not None:
+                return refused
 
         if target.pk == actor.pk:
             if validated.get('is_active') is False:
@@ -3679,6 +3707,9 @@ class ShellUIAdminUserDetailView(APIView):
         except User.DoesNotExist:
             return Response({'error': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
 
+        refused = _agent_cannot_touch_owner_response(request, company, target)
+        if refused is not None:
+            return refused
         if target.pk == actor.pk:
             return Response(
                 {'error': 'You cannot delete yourself here. Delete your account from Settings.'},

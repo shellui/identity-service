@@ -28,7 +28,7 @@ from apps.agents.ai_service_config import (
 )
 from apps.agents.mcp_resources import catalog_resources_by_url
 from apps.agents.models import Agent
-from apps.agents.revocation import blocked_agent_ids
+from apps.agents.revocation import is_agent_blocked
 from apps.agents.services import service_allowed
 from apps.agents.tokens import encode_access_token
 from apps.authapi.throttling import check_rate_limit
@@ -146,7 +146,7 @@ class McpDownstreamAccessTokenView(APIView):
 
         if not agent.is_active:
             return Response({'error': 'Agent inactive.'}, status=status.HTTP_403_FORBIDDEN)
-        if str(agent.id) in set(blocked_agent_ids(company_id=body_company)):
+        if is_agent_blocked(agent):
             return Response({'error': 'Agent revoked.'}, status=status.HTTP_403_FORBIDDEN)
 
         service_id = catalog[resource]
