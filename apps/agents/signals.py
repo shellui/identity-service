@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from django.db.models.signals import post_save, pre_save
+from django.contrib.auth import get_user_model
+from django.db.models.signals import post_save, pre_delete, pre_save
 from django.dispatch import receiver
 
 from apps.agents.agent_permissions import invalidate_agent_session_grants
@@ -55,3 +56,52 @@ def agent_permissions_changed(sender, instance: Agent, created: bool, **kwargs):
     )
     if changed:
         invalidate_agent_session_grants(instance)
+
+
+def latest_credential_expiry(agent: Agent):
+    """The last moment any credential this agent held could still be accepted.
+
+    A personal token, or a refresh session (which can mint an access token up to one access
+    lifetime later). Never earlier than now plus one access token
+    lifetime, for an access token minted just before the delete.
+    """
+    from datetime import timedelta
+
+    from django.conf import settings
+    from django.db.models import Max
+    from django.utils import timezone
+
+    from apps.agents.models import AgentRefreshSession, PersonalAgentCredential
+
+    access = getattr(settings, 'MCP_ACCESS_TOKEN_LIFETIME', timedelta(minutes=15))
+    now = timezone.now()
+    latest = now + access
+    personal = PersonalAgentCredential.objects.filter(agent_id=agent.pk).aggregate(m=Max('expires_at'))['m']
+    if personal is not None:
+        latest = max(latest, personal)
+    refresh = AgentRefreshSession.objects.filter(agent_id=agent.pk).aggregate(m=Max('expires_at'))['m']
+    if refresh is not None:
+        latest = max(latest, refresh + access)
+    return latest
+
+
+@receiver(pre_delete, sender=Agent)
+def agent_deleted_stays_revoked(sender, instance: Agent, **kwargs):
+    """Remember a deleted agent so the revocation snapshot keeps refusing it."""
+    from apps.agents.models import DeletedAgentRevocation
+
+    DeletedAgentRevocation.objects.get_or_create(
+        agent_id=instance.pk,
+        defaults={
+            'company_id': int(instance.company_id),
+            'token_expires_at': latest_credential_expiry(instance),
+        },
+    )
+
+
+@receiver(pre_delete, sender=get_user_model())
+def user_deleted_revokes_their_agents(sender, instance, **kwargs):
+    """Covers every delete path, Django admin included, not only ``delete_user_account``."""
+    from apps.agents.revocation import revoke_agents_created_by
+
+    revoke_agents_created_by(instance)

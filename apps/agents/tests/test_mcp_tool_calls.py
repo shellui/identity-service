@@ -235,6 +235,20 @@ class McpToolCallTests(TestCase):
         return json.loads(result['content'][0]['text'])
 
 
+    def call_refused(self, name: str, *, path_params=None, body=None, query=None) -> None:
+        """The agent is refused, even after a person approved the call. Nothing is minted."""
+        arguments = self._arguments(name, path_params=path_params, body=body, query=query)
+        payload = self._post(name, arguments)
+        if self._needs_approval(payload):
+            McpApprovalRequest.objects.filter(pk=payload['result']['meta']['approval_id']).update(
+                status=McpApprovalRequest.STATUS_APPROVED,
+            )
+            payload = self._post(name, arguments)
+        result = payload['result']
+        self.assertTrue(result.get('isError'), result)
+        self.assertIn('agent_cannot_manage_credentials', json.dumps(result))
+
+
 def _bind_tool_tests() -> None:
     def _make(tool_name: str):
         def test(self):
@@ -322,8 +336,9 @@ def _oauth_clients_list(self):
 
 def _oauth_clients_create(self):
     app = self._social_app('gitlab', 'cid-gitlab')
-    body = self.call('identity_create_oauth_clients', body={'social_app_id': app.pk, 'is_active': True})
-    self.assertEqual(body['social_app_id'], app.pk)
+    before = CompanyOAuthClient.objects.count()
+    self.call_refused('identity_create_oauth_clients', body={'social_app_id': app.pk, 'is_active': True})
+    self.assertEqual(CompanyOAuthClient.objects.count(), before)
 
 
 def _oauth_clients_retrieve(self):
@@ -332,12 +347,13 @@ def _oauth_clients_retrieve(self):
 
 
 def _oauth_clients_update(self):
-    body = self.call(
+    was_active = CompanyOAuthClient.objects.get(pk=self.mapping.pk).is_active
+    self.call_refused(
         'identity_replace_oauth_clients',
         path_params={'id': self.mapping.pk},
-        body={'is_active': True},
+        body={'is_active': not was_active},
     )
-    self.assertTrue(body['is_active'])
+    self.assertEqual(CompanyOAuthClient.objects.get(pk=self.mapping.pk).is_active, was_active)
 
 
 def _oauth_clients_destroy(self):
@@ -351,11 +367,11 @@ def _oauth_redirects_list(self):
 
 
 def _oauth_redirects_create(self):
-    body = self.call(
+    self.call_refused(
         'identity_create_oauth_redirects',
         body={'base_url': 'https://new.example.com', 'label': 'New'},
     )
-    self.assertEqual(body['base_url'], 'https://new.example.com')
+    self.assertFalse(CompanyOAuthRedirect.objects.filter(base_url='https://new.example.com').exists())
 
 
 def _oauth_redirects_retrieve(self):
@@ -364,12 +380,13 @@ def _oauth_redirects_retrieve(self):
 
 
 def _oauth_redirects_partial_update(self):
-    body = self.call(
+    label = CompanyOAuthRedirect.objects.get(pk=self.redirect.pk).label
+    self.call_refused(
         'identity_update_oauth_redirects',
         path_params={'id': self.redirect.pk},
         body={'label': 'Updated'},
     )
-    self.assertEqual(body['label'], 'Updated')
+    self.assertEqual(CompanyOAuthRedirect.objects.get(pk=self.redirect.pk).label, label)
 
 
 def _oauth_redirects_destroy(self):
@@ -383,21 +400,22 @@ def _oauth_social_apps_list(self):
 
 
 def _oauth_social_apps_create(self):
-    body = self.call(
+    self.call_refused(
         'identity_create_oauth_social_apps',
         body={'docs_slug': 'gitlab', 'client_id': 'cid-new', 'client_secret': 'super-secret'},
     )
-    self.assertEqual(body['social_app']['provider'], 'gitlab')
+    self.assertFalse(SocialApp.objects.filter(client_id='cid-new').exists())
     self.assertFalse(McpCallLog.objects.filter(tool='identity_create_oauth_social_apps').exists())
 
 
 def _oauth_social_apps_update(self):
-    body = self.call(
+    client_id = SocialApp.objects.get(pk=self.social_app.pk).client_id
+    self.call_refused(
         'identity_replace_oauth_social_apps',
         path_params={'id': self.social_app.pk},
         body={'client_id': 'cid-github-2'},
     )
-    self.assertEqual(body['client_id'], 'cid-github-2')
+    self.assertEqual(SocialApp.objects.get(pk=self.social_app.pk).client_id, client_id)
 
 
 def _oauth_social_apps_destroy(self):
@@ -411,12 +429,11 @@ def _oauth_provider_catalog(self):
 
 
 def _hosting_update(self):
-    body = self.call(
+    self.call_refused(
         'identity_replace_hosting_oauth_redirects',
         body={'base_url': 'https://host.example.com', 'label': 'Host'},
     )
-    self.assertEqual(body['base_url'], 'https://host.example.com')
-    self.assertEqual(body['source'], 'hosting')
+    self.assertFalse(CompanyOAuthRedirect.objects.filter(base_url='https://host.example.com').exists())
 
 
 def _hosting_destroy(self):
@@ -438,13 +455,19 @@ def _auth_methods_retrieve(self):
 
 
 def _auth_methods_partial_update(self):
-    body = self.call('identity_update_auth_methods', body={'enable_magic_link': False})
-    self.assertFalse(body['enable_magic_link'])
+    self.company.refresh_from_db()
+    was = self.company.enable_magic_link
+    self.call_refused('identity_update_auth_methods', body={'enable_magic_link': not was})
+    self.company.refresh_from_db()
+    self.assertEqual(self.company.enable_magic_link, was)
 
 
 def _auth_methods_update(self):
-    body = self.call('identity_replace_auth_methods', body={'enable_magic_link': True})
-    self.assertTrue(body['enable_magic_link'])
+    self.company.refresh_from_db()
+    was = self.company.enable_magic_link
+    self.call_refused('identity_replace_auth_methods', body={'enable_magic_link': not was})
+    self.company.refresh_from_db()
+    self.assertEqual(self.company.enable_magic_link, was)
 
 
 def _scim_status(self):
@@ -453,15 +476,12 @@ def _scim_status(self):
 
 
 def _scim_tokens_list(self):
-    body = self.call('identity_list_scim_tokens')
-    self.assertIn('scimprefix', json.dumps(body))
+    self.call_refused('identity_list_scim_tokens')
 
 
 def _scim_tokens_create(self):
-    body = self.call('identity_create_scim_tokens', body={'name': 'minted'})
-    self.assertEqual(body.get('token'), '[redacted]')
-    self.assertEqual(body.get('name'), 'minted')
-    self.assertTrue(CompanyScimToken.objects.filter(company=self.company, name='minted', revoked_at__isnull=True).exists())
+    self.call_refused('identity_create_scim_tokens', body={'name': 'minted'})
+    self.assertFalse(CompanyScimToken.objects.filter(company=self.company, name='minted').exists())
 
 
 def _scim_tokens_revoke(self):
@@ -476,13 +496,8 @@ def _pat_list(self):
 
 
 def _pat_create(self):
-    body = self.call('identity_create_personal_access_tokens', body={'name': 'minted', 'read_only': True})
-    self.assertEqual(body.get('access_token'), '[redacted]')
-    self.assertTrue(body['read_only'])
-    self.assertEqual(body['name'], 'minted')
-    self.assertTrue(
-        PersonalAccessToken.objects.filter(company=self.company, user=self.owner, name='minted').exists()
-    )
+    self.call_refused('identity_create_personal_access_tokens', body={'name': 'minted', 'read_only': True})
+    self.assertFalse(PersonalAccessToken.objects.filter(company=self.company, name='minted').exists())
 
 
 def _pat_revoke(self):
@@ -612,12 +627,9 @@ def _actions_rules_destroy(self):
 
 
 def _actions_rules_rotate_secret(self):
-    body = self.call('identity_rotate_rule_secret', path_params={'id': self.rule.pk})
-    self.assertEqual(body.get('secret'), '[redacted]')
+    self.call_refused('identity_rotate_rule_secret', path_params={'id': self.rule.pk})
     self.rule.refresh_from_db()
-    stored = self.rule.config['secret']
-    self.assertNotEqual(stored, self.rule_secret)
-    self.assertNotIn(stored, json.dumps(body))
+    self.assertEqual(self.rule.config['secret'], self.rule_secret)
 
 
 def _actions_rules_send_test(self):
@@ -772,9 +784,80 @@ def test_safe_read_masks_email(self):
     self.assertIn('[redacted]', dumped)
 
 
+def _ask_agent_token(self, action: str = '', exp: int | None = None) -> str:
+    import jwt
+    from rest_framework_simplejwt.settings import api_settings
+
+    from apps.agents.tokens import build_agent_access_token
+
+    self.agent.access_mode = Agent.ACCESS_ASK
+    self.agent.save(update_fields=['access_mode'])
+    claims = build_agent_access_token(
+        self.agent, resource=IDENTITY_MCP, gateway_delegated_action=action, gateway_delegated_exp=exp
+    )
+    from django.conf import settings as dj_settings
+
+    kid = getattr(dj_settings, 'JWT_ACTIVE_KEY_ID', '')
+    headers = {'kid': kid} if kid else None
+    return jwt.encode(claims, api_settings.SIGNING_KEY, algorithm=api_settings.ALGORITHM, headers=headers)
+
+
+def test_delegated_agent_token_runs_only_the_approved_tool_on_mcp(self):
+    import time
+
+    self.token = _ask_agent_token(self, 'identity_create_groups', int(time.time()) + 30)
+    allowed = self._post(
+        'identity_create_groups',
+        self._arguments('identity_create_groups', body={'display_name': 'Delegated'}),
+    )
+    self.assertFalse(allowed['result'].get('isError'), allowed)
+    self.assertFalse(self._needs_approval(allowed), allowed)
+    self.assertTrue(CompanyGroup.objects.filter(company=self.company, display_name='Delegated').exists())
+
+    other = self._post(
+        'identity_create_oauth_social_apps',
+        self._arguments(
+            'identity_create_oauth_social_apps',
+            body={'docs_slug': 'gitlab', 'client_id': 'cid-other', 'client_secret': 'other-secret'},
+        ),
+    )
+    self.assertTrue(self._needs_approval(other) or other['result'].get('isError'), other)
+    self.assertFalse(SocialApp.objects.filter(client_id='cid-other').exists())
+
+
+def test_expired_delegated_grant_still_needs_approval_on_mcp(self):
+    import time
+
+    self.token = _ask_agent_token(self, 'identity_create_groups', int(time.time()) - 5)
+    payload = self._post(
+        'identity_create_groups',
+        self._arguments('identity_create_groups', body={'display_name': 'Stale'}),
+    )
+    self.assertTrue(self._needs_approval(payload), payload)
+    self.assertFalse(CompanyGroup.objects.filter(display_name='Stale').exists())
+
+
+def test_agent_token_without_a_grant_needs_approval_in_ask_mode(self):
+    self.token = _ask_agent_token(self)
+    payload = self._post(
+        'identity_create_groups',
+        self._arguments('identity_create_groups', body={'display_name': 'NoGrant'}),
+    )
+    self.assertTrue(self._needs_approval(payload), payload)
+
+
 _bind_tool_tests()
 McpToolCallTests.test_every_exposed_tool_has_a_call_test = test_every_exposed_tool_has_a_call_test
 McpToolCallTests.test_read_only_agent_cannot_write = test_read_only_agent_cannot_write
 McpToolCallTests.test_other_company_user_is_hidden = test_other_company_user_is_hidden
 McpToolCallTests.test_ask_mode_write_runs_after_approval = test_ask_mode_write_runs_after_approval
 McpToolCallTests.test_safe_read_masks_email = test_safe_read_masks_email
+McpToolCallTests.test_delegated_agent_token_runs_only_the_approved_tool_on_mcp = (
+    test_delegated_agent_token_runs_only_the_approved_tool_on_mcp
+)
+McpToolCallTests.test_expired_delegated_grant_still_needs_approval_on_mcp = (
+    test_expired_delegated_grant_still_needs_approval_on_mcp
+)
+McpToolCallTests.test_agent_token_without_a_grant_needs_approval_in_ask_mode = (
+    test_agent_token_without_a_grant_needs_approval_in_ask_mode
+)

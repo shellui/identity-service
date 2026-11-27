@@ -435,6 +435,7 @@ MIDDLEWARE = [
 
 _auth_middleware_index = MIDDLEWARE.index('django.contrib.auth.middleware.AuthenticationMiddleware')
 MIDDLEWARE.insert(_auth_middleware_index + 1, 'apps.scim.middleware.ScimBearerAuthMiddleware')
+MIDDLEWARE.insert(_auth_middleware_index + 2, 'apps.authapi.middleware.StaffTotpAdminMiddleware')
 MIDDLEWARE.append('config.telemetry.ShelluiSpanMiddleware')
 
 ROOT_URLCONF = 'config.urls'
@@ -758,6 +759,24 @@ CSRF_COOKIE_HTTPONLY = True
 REDIS_URL = os.getenv('REDIS_URL', '').strip()
 CACHES = _caches_config(REDIS_URL)
 AUTH_RATE_LIMIT_ENABLED = _env_bool('AUTH_RATE_LIMIT_ENABLED', True)
+# Django staff sign-in (/admin/login/). Unset follows DEBUG at process start:
+# on when DEBUG is false, off when DEBUG is true. The test runner sets DEBUG
+# false later and does not change this flag.
+STAFF_ADMIN_LOGIN_HARDENED = _env_bool('STAFF_ADMIN_LOGIN_HARDENED', not DEBUG)
+STAFF_ADMIN_LOCKOUT_FAILURES = max(1, _env_int('STAFF_ADMIN_LOCKOUT_FAILURES', 5))
+STAFF_ADMIN_LOCKOUT_SECONDS = max(1, _env_int('STAFF_ADMIN_LOCKOUT_SECONDS', 900))
+# Optional Fernet key for the staff TOTP secrets at rest. Unset derives a key from SECRET_KEY.
+STAFF_TOTP_ENCRYPTION_KEY = os.getenv('STAFF_TOTP_ENCRYPTION_KEY', '').strip()
+if STAFF_TOTP_ENCRYPTION_KEY:
+    try:
+        from cryptography.fernet import Fernet as _Fernet
+
+        _Fernet(STAFF_TOTP_ENCRYPTION_KEY.encode('ascii'))
+    except Exception as exc:  # noqa: BLE001
+        raise ImproperlyConfigured(
+            'STAFF_TOTP_ENCRYPTION_KEY must be a Fernet key. Generate one with: '
+            'python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"'
+        ) from exc
 AUTH_RATE_LIMITS = {
     'default': {'limit': 60, 'window': 60},
     'oauth': {'limit': _env_int('AUTH_RATE_LIMIT_OAUTH', 30), 'window': 60},

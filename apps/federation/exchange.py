@@ -92,11 +92,11 @@ def handle_token_exchange(request) -> Response:
 
     metadata = claims.get('user_metadata') if isinstance(claims.get('user_metadata'), dict) else {}
     # Global access tokens carry user_metadata.is_staff. Fail closed when it is missing, and refuse
-    # any staff or superuser flag: staff use local regional accounts, never a federated one.
+    # any staff, superuser, or global-staff flag: staff use local regional accounts, never a federated one.
     if not isinstance(metadata.get('is_staff'), bool) or any(
         source.get(flag) is not False
         for source in (metadata, claims)
-        for flag in ('is_staff', 'is_superuser')
+        for flag in ('is_staff', 'is_superuser', 'is_global_staff')
         if flag in source
     ):
         logger.info('token exchange: global staff refused company_id=%s', company.pk)

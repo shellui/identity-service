@@ -170,7 +170,11 @@ The entrypoint sets `--worker-tmp-dir /dev/shm` (the heartbeat file lives in mem
 | `AUTH_RATE_LIMIT_MAGIC_LINK` | `10` | Magic link requests per minute |
 | `AUTH_RATE_LIMIT_TOKEN_EXCHANGE` | `30` | Token exchange requests per minute, per client IP |
 | `AUTH_RATE_LIMIT_PAT` | `30` | Personal access token requests per minute |
-| `AUTH_RATE_LIMIT_ADMIN_LOGIN` | `10` | Django admin sign-ins per 5 minutes |
+| `AUTH_RATE_LIMIT_ADMIN_LOGIN` | `10` | Django admin sign-ins per 5 minutes, per IP |
+| `STAFF_ADMIN_LOGIN_HARDENED` | on when the process starts with `DEBUG=false` | Per-account lockout and authenticator code on `/admin/login/`. Set `false` to keep password sign-in |
+| `STAFF_TOTP_ENCRYPTION_KEY` | empty. Derived from `SECRET_KEY` | Optional Fernet key that encrypts staff authenticator secrets in the database. Generate one with `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` |
+| `STAFF_ADMIN_LOCKOUT_FAILURES` | `5` | Failed Django staff sign-ins before that account locks |
+| `STAFF_ADMIN_LOCKOUT_SECONDS` | `900` | How long that lock lasts, in seconds |
 | `AUTH_RATE_LIMIT_INVITATION` | `30` | Invitations per 5 minutes per company |
 | `AUTH_RATE_LIMIT_MCP_PERSONAL_AGENT` | `10` | Personal MCP agent token creations per hour, per user |
 | `AUTH_RATE_LIMIT_MCP_DEVICE_CODE` | `30` | Device authorization requests per 5 minutes, per client IP |

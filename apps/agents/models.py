@@ -19,6 +19,25 @@ class GlobalAgentRevocation(models.Model):
         ordering = ['-revoked_at']
 
 
+class DeletedAgentRevocation(models.Model):
+    """An agent row that was deleted, kept so its tokens stay refused.
+
+    A deleted agent (its company was deleted, or its revoked row was purged) would otherwise
+    vanish from the revocation snapshot while a personal token could still be valid. The id is
+    listed in ``revoked_agent_ids``, with a minimal ``agents`` row so company-scoped consumers
+    match it, until ``token_expires_at``: the latest moment any credential the agent held could
+    still be accepted. Then ``purge_expired_data`` removes the row.
+    """
+
+    agent_id = models.UUIDField(primary_key=True)
+    company_id = models.PositiveIntegerField(db_index=True)
+    deleted_at = models.DateTimeField(default=timezone.now)
+    token_expires_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        ordering = ['-deleted_at']
+
+
 class McpOAuthClient(models.Model):
     """Dynamically registered MCP OAuth client (public, PKCE-only)."""
 

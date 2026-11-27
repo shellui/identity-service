@@ -111,11 +111,21 @@ class TokenExchangeTests(_CryptoMixin, TestCase):
             self.assertEqual(response.status_code, 400, token)
             self.assertEqual(response.json()['error'], 'invalid_grant')
 
+    def test_global_staff_false_still_exchanges(self):
+        self._member()
+        token = self._global_token(
+            user_metadata={'full_name': 'Ada', 'is_staff': False, 'is_global_staff': False},
+        )
+        self.assertEqual(self._post(token).status_code, 200)
+
     def test_global_staff_is_refused(self):
         self._member()
         for token in (
             self._global_token(user_metadata={'full_name': 'Ada', 'is_staff': True}),
             self._global_token(user_metadata={'full_name': 'Ada', 'is_staff': False, 'is_superuser': True}),
+            self._global_token(user_metadata={'full_name': 'Ada', 'is_staff': False, 'is_global_staff': True}),
+            self._global_token(is_global_staff=True),
+            self._global_token(user_metadata={'full_name': 'Ada', 'is_staff': False, 'is_global_staff': 'false'}),
             self._global_token(is_superuser=True),
             self._global_token(is_staff='false'),
             self._global_token(user_metadata={'full_name': 'Ada'}),

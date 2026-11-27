@@ -93,14 +93,35 @@ def _validation_error_response(exc: DjangoValidationError) -> Response:
     return Response({'error': ' '.join(messages)}, status=status.HTTP_400_BAD_REQUEST)
 
 
+def _agent_credential_fields_refusal(request, data: dict) -> Response | None:
+    """Refuse an agent that sets a webhook credential, or switches on private URLs.
+
+    A ``secret`` or ``authorization_header`` the caller chooses is a credential, the same as
+    the one ``identity_rotate_rule_secret`` mints. ``allow_private_urls`` points a webhook at
+    internal addresses and follows ``is_superuser``. Clearing a credential or turning private
+    URLs off narrows, so those stay allowed.
+    """
+    from apps.authapi.views import _agent_cannot_change_signin_or_credentials_response
+
+    sets_credential = any(str(data.get(key) or '').strip() for key in ('secret', 'authorization_header'))
+    if sets_credential or data.get('allow_private_urls') is True:
+        return _agent_cannot_change_signin_or_credentials_response(request)
+    return None
+
+
 def _apply_rule_config(
     rule: ActionRule,
     data: dict,
     *,
     actor,
     partial: bool,
+    request=None,
 ) -> tuple[Response | None, str | None]:
     existing = dict(rule.config or {})
+    if request is not None:
+        refused = _agent_credential_fields_refusal(request, data)
+        if refused is not None:
+            return refused, None
     is_superuser = bool(getattr(actor, 'is_superuser', False))
     secret_in_body = 'secret' in data
     provided_secret = (data.get('secret') or '').strip() if secret_in_body else ''
@@ -210,7 +231,7 @@ class ShellUIAdminActionRuleListCreateView(APIView):
             action_kind=ActionRule.ACTION_WEBHOOK,
             config={},
         )
-        cfg_err, _generated_secret = _apply_rule_config(rule, data, actor=actor, partial=False)
+        cfg_err, _generated_secret = _apply_rule_config(rule, data, actor=actor, partial=False, request=request)
         if cfg_err:
             return cfg_err
         rule.save()
@@ -265,7 +286,7 @@ class ShellUIAdminActionRuleDetailView(APIView):
         for field in ('name', 'description', 'event_type', 'enabled'):
             if field in data:
                 setattr(rule, field, data[field])
-        cfg_err, _generated = _apply_rule_config(rule, data, actor=actor, partial=True)
+        cfg_err, _generated = _apply_rule_config(rule, data, actor=actor, partial=True, request=request)
         if cfg_err:
             return cfg_err
         rule.action_kind = ActionRule.ACTION_WEBHOOK
@@ -331,6 +352,11 @@ class ShellUIAdminActionRuleRotateSecretView(APIView):
         _actor, company, err = _require_staff_or_company_owner(request)
         if err:
             return err
+        from apps.authapi.views import _agent_cannot_change_signin_or_credentials_response
+
+        refused = _agent_cannot_change_signin_or_credentials_response(request)
+        if refused is not None:
+            return refused
         try:
             rule = ActionRule.objects.get(pk=pk, company=company)
         except ActionRule.DoesNotExist:

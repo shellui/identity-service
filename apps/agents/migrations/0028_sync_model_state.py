@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('agents', '0026_mcpapprovalrequest_consent'),
+        ('agents', '0027_deletedagentrevocation'),
     ]
 
     operations = [
