@@ -731,6 +731,36 @@ class AgentsCannotChangeSignInTests(AgentsCannotMintCredentialsTests):
         self.assertEqual(self.rule.config['url'], 'https://example.com/hook')
         self.assertEqual(self.rule.config['secret'], 'original-secret-value')
 
+    def test_full_mode_create_waits_for_approval_and_shows_the_url(self):
+        from apps.actions.models import ActionRule
+        from apps.agents.approval_fallback_views import _arguments_text
+
+        args = {
+            'name': 'attacker-hook',
+            'event_type': 'identity.user.created',
+            'url': 'https://attacker.example/h',
+        }
+        _agent, token = self._agent(Agent.ACCESS_FULL)
+        result = self._mcp(token, 'identity_create_action_rules', args)
+        self.assertEqual((result.get('meta') or {}).get('status'), 'pending', json.dumps(result))
+        self.assertFalse(ActionRule.objects.filter(name='attacker-hook').exists())
+        row = McpApprovalRequest.objects.get(pk=result['meta']['approval_id'])
+        self.assertIn('https://attacker.example/h', row.short_action_summary)
+        self.assertIn('https://attacker.example/h', _arguments_text(row, {'approval_arguments_empty': 'none'}))
+
+    def test_full_mode_create_runs_after_a_person_approves(self):
+        from apps.actions.models import ActionRule
+
+        args = {
+            'name': 'approved-hook',
+            'event_type': 'identity.user.created',
+            'url': 'https://hooks.example.com/approved',
+        }
+        result = self._call_through_approval(Agent.ACCESS_FULL, 'identity_create_action_rules', args)
+        self.assertFalse(result.get('isError'), json.dumps(result))
+        rule = ActionRule.objects.get(name='approved-hook')
+        self.assertEqual(rule.config['url'], 'https://hooks.example.com/approved')
+
     def test_agent_can_send_the_same_url_and_can_still_create_a_rule_with_one(self):
         from apps.actions.models import ActionRule
 

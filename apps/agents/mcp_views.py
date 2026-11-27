@@ -273,6 +273,22 @@ def _consume_approval(approval_id: str, payload: dict | None = None) -> bool:
     return True
 
 
+
+def _approval_summary(payload: dict) -> str:
+    """A short line for the approval page, including a webhook destination when there is one."""
+    action = str(payload.get('action') or '')
+    arguments = payload.get('arguments') or {}
+    body = arguments.get('body') if isinstance(arguments, dict) and isinstance(arguments.get('body'), dict) else {}
+    url = ''
+    if isinstance(arguments, dict):
+        url = str(arguments.get('url') or body.get('url') or '').strip()
+    if action == 'identity_create_action_rules':
+        if url:
+            return f'Create a webhook that posts to {url}'[:500]
+        return 'Create a webhook rule'
+    return ''
+
+
 def _maybe_create_approval(payload: dict) -> dict | None:
     agent_id = payload.get('agent_id')
     company_id = payload.get('company_id')
@@ -297,6 +313,7 @@ def _maybe_create_approval(payload: dict) -> dict | None:
         target=target,
         arguments_hash=str(payload.get('arguments_hash') or ''),
         arguments_redacted=redact_mapping(payload.get('arguments') or {}, read_sensitive=False),
+        short_action_summary=_approval_summary(payload),
         expires_at=timezone.now() + timedelta(minutes=10),
     )
     return {'id': str(row.id)}
