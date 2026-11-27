@@ -333,6 +333,18 @@ Services poll `GET /api/v1/mcp/internal/mcp-revocations` with a signed assertion
 - `cache_seconds`: `30`
 - `max_active_grant_version`: integer, the largest `grant_version` among agents with `revoked_at` null, or `0` when there is none. The JSON value and the signed claim are the same integer.
 - **`revocation_policy_version`**: integer fingerprint of `revoked_agent_ids`, every agent snapshot, `cache_seconds`, and `max_active_grant_version`. It changes when a blocked id set changes, when any snapshot changes (`is_active`, `paused`, `grant_version`, or SaaS binding), or when the active grant cap changes.
+- **`agents[].creator_status`**: `owner`, `member` or `gone`, the live standing of the person who created the agent in the agent's company. `owner` means the creator is in `Company.owners` and has enabled access, `member` means enabled access only, `gone` means the membership was removed or disabled or the account is inactive. It is present only for agents that have a creator and are not global agents. Services use it to give a personal agent its creator's role (storage-service does) instead of trusting a claim in the token, and to refuse the agent when the creator is `gone`. Every `gone` agent is also listed in `revoked_agent_ids`, so services that ignore the field still refuse it. Identity does not put a role claim in agent access tokens.
+- **Deleted accounts and companies.** Deleting a user revokes every non-global agent they created before the row goes. A deleted agent (company deleted, or a revoked row purged) stays in `revoked_agent_ids` as a tombstone, with a minimal inactive row in `agents` (its id and company id, in the `agent_snapshot` shape, and no creator status), so ai and storage refuse its token on company-scoped calls too. The tombstone is kept until the last moment one of its credentials could still be accepted (`DeletedAgentRevocation.token_expires_at`: the personal token expiry, or the latest refresh session expiry plus one access token lifetime), then purged. Consumers can also treat an agent that is missing from `agents` for its company as unknown.
+- **Sign-in and credentials.** An agent cannot change how people sign in or create or set a credential, whatever its mode and even after a person approves. These return 403 `agent_cannot_manage_credentials`:
+  - SCIM tokens: `identity_create_scim_tokens` and `identity_list_scim_tokens`.
+  - Personal access tokens and webhook secrets: `identity_create_personal_access_tokens` and `identity_rotate_rule_secret`.
+  - Redirect allowlist writes: `identity_create_oauth_redirects`, `identity_update_oauth_redirects` and `identity_replace_hosting_oauth_redirects`.
+  - Desktop redirect settings: `desktop_redirect_schemes` or `allow_desktop_dev_scheme` changed through `identity_update_companies` or `identity_replace_companies`. Sending the values the company already has is not a change.
+  - Sign-in methods: `identity_update_auth_methods` and `identity_replace_auth_methods` (the magic-link switch), and the matching REST paths.
+  - Social apps and OAuth clients: `identity_create_oauth_social_apps`, `identity_replace_oauth_social_apps`, `identity_create_oauth_clients` and `identity_replace_oauth_clients` (which also activates a client).
+  - Webhook rules: a non-empty `secret` or `authorization_header`, or `allow_private_urls: true`, on `identity_create_action_rules` or `identity_update_action_rules`.
+
+  Reads, revokes and deletes stay available, because they only narrow access. An agent can still add members through invitations, the join mode (`access_mode`) and the allowed email domains (`allowed_email_domains`). Those carry no role, so a new member joins as a plain member.
 - `revocation_assertion`: RS256 JWT (scope `mcp.revocation.list`, short `exp`) whose payload repeats `revoked_agent_ids`, `agents`, `cache_seconds`, `revocation_policy_version`, and `max_active_grant_version`. A body that omits or disagrees with any of those claims fails closed (`Revocation list body mismatch`). There is no feature flag.
 
 Verify `revocation_assertion` with RS256 against Identity `/.well-known/jwks.json` (issuer `JWT_ISSUER`, audience `shellui-mcp-revocation`). Gateways that cache **positive** decisions (agent not in `revoked_agent_ids`) must treat the cache as stale when **`revocation_policy_version`** or the signed **`revocation_assertion`** JWT changes, or when the agent access token `jti` / `exp` / `grant_version` / `company_binding_version` no longer match.
@@ -370,6 +382,7 @@ When ai-service forwards `tools/call` to storage, hosting, email, SaaS, or Ident
 - **Endpoint:** `POST /api/v1/mcp/internal/mcp-downstream-access-token` (answers **404** unless `AI_SERVICE_URL`, `AI_SERVICE_ISSUER`, and pinned `AI_SERVICE_JWKS` or `AI_SERVICE_JWKS_URL` are set).
 - **Authorization:** `Bearer` RS256 delegation JWT signed by ai-service (`shellui_django.mcp.delegation.sign_downstream_token_request` on the caller). Identity verifies with `verify_downstream_token_request` against ai-service JWKS and expected issuer `AI_SERVICE_ISSUER`. Audience `shellui-mcp-downstream-token`, scope `mcp.downstream_token.mint`. Claims include `agent_id`, `company_id`, `resource`, and single-use `jti` (cached on Identity).
 - **JSON body:** `{ "agent_id": "<uuid>", "company_id": <int>, "resource": "<canonical /mcp URL>" }` must match the JWT claims.
+- **Approved tool:** when the delegation JWT carries `mcp_gateway_delegated` with an `action`, the access token includes `mcp_gateway_delegated` as `{"action": "<tool name>", "exp": <unix seconds>}`. The `exp` is the signed request's `exp`, capped at 60 seconds from the mint, and the claim must be exactly `{action, exp}` or the mint returns 400. Without it, the claim is omitted and the downstream service applies its own approval rules.
 - **Response:** `{ "access_token": "<Identity RS256 agent JWT>" }` with the same agent claims as OAuth, `aud` narrowed to `resource`. `owner_user_id` is included when the agent has an owner user.
 - **Checks:** agent exists, active, not revoked, belongs to `company_id`; `resource` is exactly one configured service `/mcp` URL and allowed in the agent's `services_allowed`. Per-agent and global rate limits apply. Identity never logs minted tokens.
 
@@ -396,7 +409,7 @@ Access tokens include:
 | `sub` | `agent:{uuid}` |
 | `agent_id` | Agent uuid |
 | `company_id` | Company id |
-| `owner_user_id` | Regional user id the agent acts for. JSON integer, the same value as `Agent.created_by_id`. Omitted when the agent has no owner user. Not sent as null. |
+| `owner_user_id` | Regional user id the agent acts for. JSON integer, the same value as `Agent.created_by_id`. Omitted when the agent has no owner user, and for global agents. Not sent as null. |
 | `scope` | Space-separated service ids |
 | `grant_version` | Bumps when company-scoped MCP permissions invalidate session Allow grants |
 | `global_company_id` | SaaS global company uuid when the regional agent is bound |
@@ -405,12 +418,15 @@ Access tokens include:
 | `mcp_access` | `read_only`, `ask`, or `full` |
 | `mcp_read` | `safe` or `sensitive` |
 | `mcp_destructive` | Boolean on the JWT; `true` only for non-delegated agents that still have legacy `allow_destructive_without_asking`. Always `false` when `mcp_authority` is **`delegated`**. |
+| `mcp_gateway_delegated` | Object `{"action": "<tool name>", "exp": <unix seconds>}` on a downstream token minted for one tool. Omitted when the signed mint request names no tool. A boolean does not skip approval |
 
 Personal tokens, OAuth authorization-code tokens, device-login tokens, tokens from agent token exchange, access tokens rotated with `refresh_token`, and downstream tokens minted for ai-service all follow that rule. A global agent or a company service agent with no `created_by` user omits `owner_user_id`.
 
 Refresh tokens use `grant_type=refresh_token` at `POST /oauth/token` (or `POST /oauth/mcp/token`) with the same `resource` parameter. Each refresh token is bound to one resource. The new access token keeps `owner_user_id` when the agent still has an owner user.
 
 Regional Identity deployments scope agents to the company only (no `project_scope` in consent or JWT). Project binding for SaaS is enforced in saas-service.
+
+An agent access token is a bearer only on that route. There it acts as the user in `owner_user_id` (`Agent.created_by`). Company role stays that user's membership: the token does not make a member an owner. Other routes, including the company admin HTTP API, require an access token whose `aud` is `JWT_AUDIENCE`. A refresh token is not a bearer. A revoked agent refresh session is rejected.
 
 Agent bearer tokens cannot pause, revoke, approve, list call logs, or change agent settings. Those admin routes require a human company owner token (`allow_agent_token=false`) and are not exported as MCP tools. Identity `/mcp` exposes the company admin operations on the MCP allowlist. Service discovery is `identity_list_services`.
 

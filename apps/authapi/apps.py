@@ -13,3 +13,8 @@ class AuthApiConfig(AppConfig):
         from .db import connect_sqlite_hooks
 
         connect_sqlite_hooks()
+        from django.contrib import admin
+
+        from .staff_admin_login import StaffAdminAuthenticationForm
+
+        admin.site.login_form = StaffAdminAuthenticationForm

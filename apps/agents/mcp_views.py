@@ -24,7 +24,7 @@ from apps.agents.approval_internal import (
     public_approval_status,
 )
 from apps.agents.models import Agent, McpApprovalRequest
-from apps.agents.revocation import blocked_agent_ids
+from apps.agents.revocation import agent_id_is_blocked
 from apps.authapi.authentication import ShellUIJWTAuthentication
 from apps.authapi.mcp_tool_schema import append_query, publish_tools, rewrite_tool_call_arguments
 from shellui_django.mcp.masking import redact_mapping
@@ -204,8 +204,7 @@ def _get_server() -> McpServer:
             schema_provider=_schema,
             urlconf=settings.ROOT_URLCONF,
             service_name='identity',
-            identity_revocation_check=lambda agent_id, company_id: agent_id
-            in set(blocked_agent_ids(company_id=company_id)),
+            identity_revocation_check=lambda agent_id, company_id: agent_id_is_blocked(agent_id, company_id),
             approval_handler=_maybe_create_approval,
             approval_state=_approval_state,
             approval_consume=_consume_approval,

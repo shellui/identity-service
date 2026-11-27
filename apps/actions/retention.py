@@ -163,6 +163,11 @@ def purge_expired_data(
             stats['mcp_call_logs'] += McpCallLog.objects.filter(agent_id__in=ids).count()
             Agent.objects.filter(pk__in=ids).delete()
             stats['revoked_mcp_agents'] += len(ids)
+    if not dry_run:
+        # A deleted agent's id stays refused until the last credential it held has expired.
+        from apps.agents.models import DeletedAgentRevocation
+
+        DeletedAgentRevocation.objects.filter(token_expires_at__lt=now).delete()
     from apps.actions.scheduled_jobs import normalize_purge_expired_data_stats
 
     return normalize_purge_expired_data_stats(stats)
