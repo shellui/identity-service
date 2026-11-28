@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from shellui_django.mcp.fields import McpDestinationCharField
 
 from .access import normalize_allowed_domains
 from .models import Company
@@ -42,12 +43,12 @@ class CompanyUpdateSerializer(serializers.Serializer):
         help_text='How people join the company: public, domain, or invite.',
     )
     allowed_email_domains = serializers.ListField(
-        child=serializers.CharField(allow_blank=False, max_length=253),
+        child=McpDestinationCharField(allow_blank=False, max_length=253),
         required=False,
         allow_empty=True,
     )
     desktop_redirect_schemes = serializers.ListField(
-        child=serializers.CharField(allow_blank=True, max_length=64),
+        child=McpDestinationCharField(allow_blank=True, max_length=64),
         required=False,
         allow_empty=True,
     )

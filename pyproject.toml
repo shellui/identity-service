@@ -26,7 +26,7 @@ dependencies = [
     "python3-saml>=1.16.0",
     "defusedxml>=0.7.1",
     "celery==5.7.0",
-    "shellui-django[mcp,otel]==0.8.0",
+    "shellui-django[mcp,otel]==0.9.0",
 ]
 
 [dependency-groups]
