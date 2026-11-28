@@ -60,7 +60,7 @@
     },
     "annotations": {
       "readOnlyHint": false,
-      "destructiveHint": false
+      "destructiveHint": true
     },
     "_meta": {
       "path": "/api/v1/actions/rules",
@@ -85,7 +85,7 @@
         "url"
       ],
       "read_only": false,
-      "destructive": false,
+      "destructive": true,
       "mcp_tagged": true,
       "destinations_declared": true
     }

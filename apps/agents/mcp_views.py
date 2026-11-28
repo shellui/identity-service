@@ -133,6 +133,18 @@ def _install_result_redaction() -> None:
         return decision
 
     server_mod.decide_write = decide_write
+    # Refuse a bad webhook call before the gate, so it never gets an approval row.
+    original_validate = server_mod.validate_mcp_tool_arguments
+
+    def validate_mcp_tool_arguments(arguments, meta):
+        original_validate(arguments, meta)
+        from apps.actions.agent_webhook_guard import agent_webhook_call_problem
+
+        problem = agent_webhook_call_problem(arguments, meta)
+        if problem:
+            raise server_mod.McpToolArgumentError(problem)
+
+    server_mod.validate_mcp_tool_arguments = validate_mcp_tool_arguments
     original = server_mod.redact_mapping
 
     def redact_mapping(data, *, read_sensitive, markers=None):
@@ -274,6 +286,23 @@ def _consume_approval(approval_id: str, payload: dict | None = None) -> bool:
     return True
 
 
+
+def _approval_summary(payload: dict) -> str:
+    """A short line for the approval page. A webhook shows its destination host first, then the URL.
+
+    It reads only the body the call forwards. A top-level ``url`` or ``event_type`` next to a ``body``
+    is not part of the request, so it must not appear in the line. On the gateway path ai-service
+    builds the line and sends it as ``arguments_summary`` (`approval_arguments_summary`).
+    """
+    from apps.actions.agent_webhook_guard import webhook_approval_summary
+
+    arguments = payload.get('arguments')
+    if payload.get('action') != 'identity_create_action_rules' or not isinstance(arguments, dict):
+        return ''
+    body = arguments.get('body') if isinstance(arguments.get('body'), dict) else {}
+    return webhook_approval_summary(str(body.get('url') or ''), str(body.get('event_type') or ''))
+
+
 def _maybe_create_approval(payload: dict) -> dict | None:
     agent_id = payload.get('agent_id')
     company_id = payload.get('company_id')
@@ -298,6 +327,7 @@ def _maybe_create_approval(payload: dict) -> dict | None:
         target=target,
         arguments_hash=str(payload.get('arguments_hash') or ''),
         arguments_redacted=redact_mapping(payload.get('arguments') or {}, read_sensitive=False),
+        short_action_summary=_approval_summary(payload),
         expires_at=timezone.now() + timedelta(minutes=10),
     )
     return {'id': str(row.id)}

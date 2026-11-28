@@ -445,7 +445,11 @@ class AgentsCannotMintCredentialsTests(TestCase):
             HTTP_AUTHORIZATION=f'Bearer {token}',
         )
         self.assertEqual(response.status_code, 200, response.content)
-        return response.json()['result']
+        body = response.json()
+        if 'error' in body:
+            # Refused while checking the arguments, before the gate: shaped like a tool error.
+            return {'isError': True, 'content': [{'type': 'text', 'text': body['error']['message']}], 'rpc_error': True}
+        return body['result']
 
     def _call_through_approval(self, mode, tool, args):
         """The agent's call, repeated after a person approved it if it asked."""
@@ -708,6 +712,401 @@ class AgentsCannotChangeSignInTests(AgentsCannotMintCredentialsTests):
             {'name': 'renamed', 'secret': 'chosen-secret-value-123'},
         ):
             self._probe('identity_update_action_rules', {'id': self.rule.pk, **extra})
+
+    def _refused_url(self, result):
+        text = json.dumps(result)
+        self.assertTrue(result.get('isError'), text)
+        self.assertIn('agent_cannot_change_webhook_url', text)
+
+    def test_agent_cannot_change_the_url_of_an_existing_rule(self):
+        for mode in (Agent.ACCESS_FULL, Agent.ACCESS_ASK):
+            for extra in (
+                {'url': 'https://evil.example.com/steal'},
+                {'url': 'https://example.com/hook2'},
+                {'name': 'renamed', 'url': 'https://evil.example.com/steal'},
+            ):
+                before = self._state()
+                with self.subTest(mode=mode, extra=sorted(extra)):
+                    self._refused_url(
+                        self._call_through_approval(mode, 'identity_update_action_rules', {'id': self.rule.pk, **extra})
+                    )
+                    self.assertEqual(self._state(), before)
+        self.rule.refresh_from_db()
+        self.assertEqual(self.rule.config['url'], 'https://example.com/hook')
+        self.assertEqual(self.rule.config['secret'], 'original-secret-value')
+
+    def test_full_mode_create_waits_for_approval_and_shows_the_url(self):
+        from apps.actions.models import ActionRule
+        from apps.agents.approval_fallback_views import _arguments_text
+
+        args = {
+            'name': 'attacker-hook',
+            'event_type': 'identity.user.created',
+            'url': 'https://attacker.example/h',
+        }
+        _agent, token = self._agent(Agent.ACCESS_FULL)
+        result = self._mcp(token, 'identity_create_action_rules', args)
+        self.assertEqual((result.get('meta') or {}).get('status'), 'pending', json.dumps(result))
+        self.assertFalse(ActionRule.objects.filter(name='attacker-hook').exists())
+        row = McpApprovalRequest.objects.get(pk=result['meta']['approval_id'])
+        self.assertIn('https://attacker.example/h', row.short_action_summary)
+        self.assertIn('https://attacker.example/h', _arguments_text(row, {'approval_arguments_empty': 'none'}))
+
+    def test_full_mode_create_runs_after_a_person_approves(self):
+        from apps.actions.models import ActionRule
+
+        args = {
+            'name': 'approved-hook',
+            'event_type': 'identity.user.created',
+            'url': 'https://hooks.example.com/approved',
+        }
+        result = self._call_through_approval(Agent.ACCESS_FULL, 'identity_create_action_rules', args)
+        self.assertFalse(result.get('isError'), json.dumps(result))
+        rule = ActionRule.objects.get(name='approved-hook')
+        self.assertEqual(rule.config['url'], 'https://hooks.example.com/approved')
+
+    def test_agent_can_send_the_same_url_and_can_still_create_a_rule_with_one(self):
+        from apps.actions.models import ActionRule
+
+        same = self._call_through_approval(
+            Agent.ACCESS_FULL,
+            'identity_update_action_rules',
+            {'id': self.rule.pk, 'name': 'same-url', 'url': 'https://example.com/hook'},
+        )
+        self.assertFalse(same.get('isError'), json.dumps(same))
+        self.assertEqual(ActionRule.objects.get(pk=self.rule.pk).name, 'same-url')
+        created = self._call_through_approval(
+            Agent.ACCESS_ASK,
+            'identity_create_action_rules',
+            {'name': 'with-url', 'event_type': 'identity.user.created', 'url': 'https://hooks.example.com/w'},
+        )
+        self.assertFalse(created.get('isError'), json.dumps(created))
+        self.assertEqual(ActionRule.objects.get(name='with-url').config['url'], 'https://hooks.example.com/w')
+
+    def _refused_with(self, result, code):
+        text = json.dumps(result)
+        self.assertTrue(result.get('isError'), text)
+        self.assertIn(code, text)
+
+    def _probe_webhook_value(self, tool, args, code='agent_webhook_value_refused', *, up_front=True):
+        """Refused in every mode. A bad create or update never gets an approval row."""
+        for mode in (Agent.ACCESS_FULL, Agent.ACCESS_ASK):
+            before = self._state()
+            rows = McpApprovalRequest.objects.count()
+            with self.subTest(mode=mode, tool=tool, args=sorted(args)):
+                result = self._call_through_approval(mode, tool, args)
+                self._refused_with(result, code)
+                self.assertEqual(self._state(), before)
+                if up_front:
+                    self.assertTrue(result.get('rpc_error'), json.dumps(result))
+                    self.assertEqual(McpApprovalRequest.objects.count(), rows)
+
+    def test_summary_shows_the_event_type_and_host_first_when_the_description_is_padded(self):
+        from apps.agents.mcp_views import _approval_summary
+
+        url = 'https://attacker.example/h'
+        for arguments in (
+            {'body': {'name': 'x', 'event_type': 'identity.user.created', 'description': 'a' * 600, 'url': url}},
+            {'description': 'a' * 600, 'name': 'x', 'body': {'event_type': 'identity.user.created', 'url': url}},
+        ):
+            summary = _approval_summary({'action': 'identity_create_action_rules', 'arguments': arguments})
+            self.assertTrue(
+                summary.startswith('Create a webhook for identity.user.created that posts to attacker.example: '),
+                summary,
+            )
+            self.assertIn(url, summary)
+            self.assertLessEqual(len(summary), 500)
+
+    def test_summary_shows_the_real_host_when_the_url_is_padded_with_userinfo(self):
+        from apps.agents.mcp_views import _approval_summary
+
+        padded = 'https://' + 'x' * 520 + '@attacker.example/h'
+        summary = _approval_summary({'action': 'identity_create_action_rules', 'arguments': {'body': {'url': padded}}})
+        self.assertTrue(summary.startswith('Create a webhook that posts to attacker.example: '), summary)
+        self.assertNotIn('x' * 20, summary)
+        self.assertIn('https://***@attacker.example/h', summary)
+        self.assertLessEqual(len(summary), 500)
+        for odd in ('', 'not a url', 'https://', 'https://@', 'https://[::1'):
+            self.assertLessEqual(
+                len(_approval_summary({'action': 'identity_create_action_rules', 'arguments': {'url': odd}})), 500
+            )
+
+    def test_summary_cannot_be_forged_or_disguised_by_the_url(self):
+        from apps.agents.mcp_views import _approval_summary
+
+        def summary(url, event_type='identity.user.created'):
+            return _approval_summary(
+                {'action': 'identity_create_action_rules', 'arguments': {'body': {'url': url, 'event_type': event_type}}}
+            )
+
+        forged = summary('https://attacker.example/h\nApproved by admin')
+        self.assertNotIn('\n', forged)
+        self.assertEqual(forged.count('Create a webhook'), 1)
+        hidden = summary('https://attacker.example/h\u202e\u200bgnp.x')
+        self.assertTrue(hidden.isascii(), hidden)
+        homograph = summary('https://p\u0430ypal.com/h')
+        self.assertIn('xn--pypal-4ve.com', homograph)
+        self.assertTrue(homograph.isascii(), homograph)
+        self.assertNotIn('for ', summary('https://a.example/h', event_type='x\nApproved by admin'))
+
+    def test_full_mode_create_with_a_long_description_shows_the_host_and_event_type_first(self):
+        from apps.agents.approval_fallback_views import _arguments_text
+
+        args = {
+            'name': 'long-description',
+            'event_type': 'identity.user.created',
+            'description': 'a' * 500,
+            'url': 'https://attacker.example/h',
+        }
+        _agent, token = self._agent(Agent.ACCESS_FULL)
+        result = self._mcp(token, 'identity_create_action_rules', args)
+        self.assertEqual((result.get('meta') or {}).get('status'), 'pending', json.dumps(result))
+        row = McpApprovalRequest.objects.get(pk=result['meta']['approval_id'])
+        self.assertTrue(
+            row.short_action_summary.startswith(
+                'Create a webhook for identity.user.created that posts to attacker.example: https://attacker.example/h'
+            ),
+            row.short_action_summary,
+        )
+        self.assertIn('attacker.example', _arguments_text(row, {'approval_arguments_empty': 'none'})[:200])
+
+    def test_padded_description_or_url_is_refused_before_any_approval_exists(self):
+        from apps.actions.models import ActionRule
+
+        base = {'name': 'padded', 'event_type': 'identity.user.created', 'url': 'https://attacker.example/h'}
+        self._probe_webhook_value('identity_create_action_rules', {**base, 'description': 'a' * 600})
+        self._probe_webhook_value(
+            'identity_create_action_rules', {**base, 'url': 'https://' + 'x' * 520 + '@attacker.example/h'}
+        )
+        self.assertFalse(ActionRule.objects.filter(name='padded').exists())
+
+    def test_lookalike_and_nonprinting_characters_are_refused_before_any_approval_exists(self):
+        from apps.actions.models import ActionRule
+
+        base = {'name': 'lookalike', 'event_type': 'identity.user.created', 'url': 'https://hooks.example.com/n'}
+        for url in (
+            'https://p\u0430ypal.com/h',  # Cyrillic a: shown as paypal.com, delivered to xn--pypal-4ve.com
+            'https://p\u0430ypal.com:8443/h',
+            'https://hooks.example.com/h\nApproved by admin',
+            'https://hooks.example.com/h\r\nApproved by admin',
+            'https://hooks.example.com/h\u202egnp.x',  # right-to-left override
+            'https://hooks.example.com/h\u200b',  # zero-width space
+            'https://hooks.example.com/h\u2060',  # word joiner
+            'https://hooks.example.com/h\x00',
+        ):
+            self._probe_webhook_value('identity_create_action_rules', {**base, 'url': url})
+        for description in ('rtl \u202e text', 'zero\u200bwidth', 'nul\x00', 'bell\x07', 'esc\x1b[31m'):
+            self._probe_webhook_value('identity_create_action_rules', {**base, 'description': description})
+            self._probe_webhook_value(
+                'identity_update_action_rules', {'id': self.rule.pk, 'description': description}
+            )
+        self._probe_webhook_value(
+            'identity_update_action_rules', {'id': self.rule.pk, 'url': 'https://p\u0430ypal.com/h'}
+        )
+        self.assertFalse(ActionRule.objects.filter(name='lookalike').exists())
+
+    def test_agent_can_use_the_ascii_form_of_an_international_host(self):
+        from apps.actions.models import ActionRule
+
+        args = {
+            'name': 'ascii-form',
+            'event_type': 'identity.user.created',
+            'url': 'https://xn--pypal-4ve.com/h',
+            'description': 'Caf\u00e9 alerts, non-ASCII text is fine outside the host',
+        }
+        result = self._call_through_approval(Agent.ACCESS_FULL, 'identity_create_action_rules', args)
+        self.assertFalse(result.get('isError'), json.dumps(result))
+        self.assertTrue(ActionRule.objects.filter(name='ascii-form').exists())
+
+    def test_invalid_webhook_arguments_are_refused_before_any_approval_exists(self):
+        base = {'name': 'invalid', 'event_type': 'identity.user.created', 'url': 'https://hooks.example.com/n'}
+        for extra in ({'url': 'not a url'}, {'event_type': 'no.such.event'}):
+            self._probe_webhook_value(
+                'identity_create_action_rules', {**base, **extra}, code='invalid_webhook_arguments'
+            )
+
+    def test_a_person_on_rest_is_not_held_to_the_agent_limits(self):
+        from apps.actions.models import ActionRule
+        from apps.authapi.views import _issue_shellui_tokens
+
+        auth = f'Bearer {_issue_shellui_tokens(self.owner, company=self.company)["access_token"]}'
+        response = APIClient().patch(
+            f'/api/v1/actions/rules/{self.rule.pk}',
+            {'description': 'line one\nline two ' + 'd' * 600},
+            format='json',
+            HTTP_AUTHORIZATION=auth,
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertTrue(ActionRule.objects.get(pk=self.rule.pk).description.startswith('line one'))
+
+    def test_agent_cannot_send_userinfo_or_oversized_webhook_values(self):
+        base = {'name': 'new', 'event_type': 'identity.user.created', 'url': 'https://hooks.example.com/n'}
+        for extra in (
+            {'url': 'https://user:pass@hooks.example.com/n'},
+            {'url': 'https://user@hooks.example.com/n'},
+            {'description': 'd' * 501},
+        ):
+            self._probe_webhook_value('identity_create_action_rules', {**base, **extra})
+        # Django's URL validator already stops anything over 2048 characters; the agent cap says the same.
+        too_long_url = 'https://hooks.example.com/' + 'p' * 2030
+        self.assertGreater(len(too_long_url), 2048)
+        self._probe_webhook_value('identity_create_action_rules', {**base, 'url': too_long_url})
+        for extra in ({'description': 'd' * 501}, {'name': 'renamed', 'description': 'd' * 501}):
+            self._probe_webhook_value('identity_update_action_rules', {'id': self.rule.pk, **extra})
+
+    def test_agent_can_send_a_description_at_the_limit(self):
+        from apps.actions.models import ActionRule
+
+        args = {
+            'name': 'at-the-limit',
+            'event_type': 'identity.user.created',
+            'description': 'd' * 500,
+            'url': 'https://hooks.example.com/limit',
+        }
+        result = self._call_through_approval(Agent.ACCESS_FULL, 'identity_create_action_rules', args)
+        self.assertFalse(result.get('isError'), json.dumps(result))
+        self.assertTrue(ActionRule.objects.filter(name='at-the-limit').exists())
+
+    def test_agent_can_use_line_breaks_and_tabs_in_a_description_and_none_reaches_the_summary(self):
+        from apps.actions.models import ActionRule
+
+        description = 'First line\nSecond line\r\n\tindented ' + 'x' * 50
+        args = {
+            'name': 'multi-line',
+            'event_type': 'identity.user.created',
+            'description': description,
+            'url': 'https://hooks.example.com/ml',
+        }
+        _agent, token = self._agent(Agent.ACCESS_ASK)
+        result = self._mcp(token, 'identity_create_action_rules', args)
+        self.assertEqual((result.get('meta') or {}).get('status'), 'pending', json.dumps(result))
+        row = McpApprovalRequest.objects.get(pk=result['meta']['approval_id'])
+        self.assertNotIn('\n', row.short_action_summary)
+        self.assertNotIn('\r', row.short_action_summary)
+        self.assertNotIn('\t', row.short_action_summary)
+        McpApprovalRequest.objects.filter(pk=row.pk).update(status=McpApprovalRequest.STATUS_APPROVED)
+        self.assertFalse(self._mcp(token, 'identity_create_action_rules', args).get('isError'))
+        self.assertEqual(ActionRule.objects.get(name='multi-line').description, description)
+
+    def test_legacy_envelope_cannot_show_one_destination_and_create_another(self):
+        from apps.actions.models import ActionRule
+
+        # Fields under `body` are what the call forwards and creates. Top-level url and event_type are not.
+        args = {
+            'path': '/api/v1/actions/rules',
+            'method': 'POST',
+            'url': 'https://good.example/ok',
+            'event_type': 'identity.user.updated',
+            'body': {
+                'name': 'spoof',
+                'event_type': 'identity.user.created',
+                'url': 'https://attacker.example/hidden',
+            },
+        }
+        _agent, token = self._agent(Agent.ACCESS_ASK)
+        result = self._mcp(token, 'identity_create_action_rules', args)
+        self.assertEqual((result.get('meta') or {}).get('status'), 'pending', json.dumps(result))
+        row = McpApprovalRequest.objects.get(pk=result['meta']['approval_id'])
+        self.assertTrue(
+            row.short_action_summary.startswith(
+                'Create a webhook for identity.user.created that posts to attacker.example: https://attacker.example/hidden'
+            ),
+            row.short_action_summary,
+        )
+        self.assertNotIn('good.example', row.short_action_summary)
+        self.assertNotIn('identity.user.updated', row.short_action_summary)
+        McpApprovalRequest.objects.filter(pk=row.pk).update(status=McpApprovalRequest.STATUS_APPROVED)
+        self._mcp(token, 'identity_create_action_rules', args)
+        rule = ActionRule.objects.get(name='spoof')
+        self.assertEqual(rule.config['url'], 'https://attacker.example/hidden')
+        self.assertEqual(rule.event_type, 'identity.user.created')
+
+    def test_summary_ignores_top_level_values_next_to_a_body(self):
+        from apps.agents.mcp_views import _approval_summary
+
+        summary = _approval_summary(
+            {
+                'action': 'identity_create_action_rules',
+                'arguments': {
+                    'url': 'https://good.example/ok',
+                    'event_type': 'identity.user.updated',
+                    'body': {'url': 'https://attacker.example/h', 'event_type': 'identity.user.created'},
+                },
+            }
+        )
+        self.assertIn('attacker.example', summary)
+        self.assertNotIn('good.example', summary)
+        self.assertEqual(_approval_summary({'action': 'identity_create_action_rules', 'arguments': {'url': 'https://good.example/ok'}}), 'Create a webhook rule')
+
+    def test_agent_cannot_change_the_event_type_of_an_existing_rule(self):
+        self.rule.event_type = 'identity.user.updated'
+        self.rule.save(update_fields=['event_type'])
+        for extra in (
+            {'event_type': 'identity.user.created'},
+            {'name': 'renamed', 'event_type': 'identity.user.created'},
+        ):
+            self._probe_webhook_value(
+                'identity_update_action_rules',
+                {'id': self.rule.pk, **extra},
+                code='agent_cannot_change_webhook_event_type',
+                up_front=False,
+            )
+        self.rule.refresh_from_db()
+        self.assertEqual(self.rule.event_type, 'identity.user.updated')
+
+    def test_agent_can_send_the_same_event_type_on_an_update(self):
+        from apps.actions.models import ActionRule
+
+        self.rule.event_type = 'identity.user.updated'
+        self.rule.save(update_fields=['event_type'])
+        result = self._call_through_approval(
+            Agent.ACCESS_FULL,
+            'identity_update_action_rules',
+            {'id': self.rule.pk, 'name': 'same-event', 'event_type': self.rule.event_type},
+        )
+        self.assertFalse(result.get('isError'), json.dumps(result))
+        self.assertEqual(ActionRule.objects.get(pk=self.rule.pk).name, 'same-event')
+
+    def test_a_person_can_still_change_the_event_type_of_a_rule(self):
+        from apps.actions.models import ActionRule
+
+        from apps.authapi.views import _issue_shellui_tokens
+
+        auth = f'Bearer {_issue_shellui_tokens(self.owner, company=self.company)["access_token"]}'
+        response = APIClient().patch(
+            f'/api/v1/actions/rules/{self.rule.pk}',
+            {'event_type': 'identity.user.created'},
+            format='json',
+            HTTP_AUTHORIZATION=auth,
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(ActionRule.objects.get(pk=self.rule.pk).event_type, 'identity.user.created')
+
+    def test_a_person_can_still_change_the_url_of_a_rule(self):
+        from apps.actions.models import ActionRule
+        from apps.authapi.views import _issue_shellui_tokens
+
+        auth = f'Bearer {_issue_shellui_tokens(self.owner, company=self.company)["access_token"]}'
+        response = APIClient().patch(
+            f'/api/v1/actions/rules/{self.rule.pk}',
+            {'url': 'https://hooks.example.com/moved'},
+            format='json',
+            HTTP_AUTHORIZATION=auth,
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(ActionRule.objects.get(pk=self.rule.pk).config['url'], 'https://hooks.example.com/moved')
+
+    def test_an_agent_bearer_cannot_patch_a_rule_url_over_rest(self):
+        _agent, token = self._agent(Agent.ACCESS_FULL)
+        before = self._state()
+        response = APIClient().patch(
+            f'/api/v1/actions/rules/{self.rule.pk}',
+            {'url': 'https://evil.example.com/steal'},
+            format='json',
+            HTTP_AUTHORIZATION=f'Bearer {token}',
+        )
+        self.assertIn(response.status_code, (401, 403), response.content)
+        self.assertEqual(self._state(), before)
 
     def test_agent_can_still_create_and_rename_a_rule_without_those_fields(self):
         from apps.actions.models import ActionRule
