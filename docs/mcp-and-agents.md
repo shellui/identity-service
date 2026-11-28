@@ -195,6 +195,8 @@ When a write needs human confirmation, the service creates an approval through I
 - One pending row per binding and arguments hash, **expires after 10 minutes**, runs once, never standing. Regional binding is `(agent_id, company_id, service, action, arguments_hash)`. Global binding is `(global_agent_id, global_company_id, company_binding_version, global_user_sub, service, action, arguments_hash)`.
 
 Storage, hosting, and email must use this contract exactly (assertion fields on state and consume, `approval_id` in the consume body).
+Request fields that say where a call sends something carry `x-mcp-destination: true` in the tool schema (on the list items for a list), so the gateway shows them first, in full, on the approval prompt. Here they are: the action rule `url`, invitation `email` and `app_url`, OAuth redirect `base_url`, `allowed_email_domains` and `desktop_redirect_schemes`. Declare a new field with `McpDestinationCharField`, `McpDestinationEmailField` or `McpDestinationURLField` from `shellui_django.mcp.fields` (for a list, use them as the `child`), and add its path to `DESTINATION_PATHS` in `apps/agents/tests/test_mcp_tool_contract.py`.
+
 
 **Delegated agents (`global_agent_id` set):** direct internal approval routes from storage, hosting, or email return **409** with `error_code` **`out_of_sync`**. Route those approvals through the **regional ai-service gateway** for that company, or use a **personal** agent credential when a human-owned direct flow is appropriate. That rule is intentional; hosting docs that describe a user-owned credential for direct service calls stay valid.
 

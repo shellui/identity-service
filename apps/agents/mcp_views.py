@@ -159,8 +159,9 @@ def _install_result_redaction() -> None:
     server_mod.redact_mapping = redact_mapping
     original_tools = server_mod.tools_from_schema
 
-    def tools_from_schema(schema):
-        return publish_tools(original_tools(schema), schema)
+    def tools_from_schema(schema, **kwargs):
+        # Every marked destination field is declared in this service, so the tools say so (fail closed otherwise).
+        return publish_tools(original_tools(schema, **{'destinations_declared': True, **kwargs}), schema)
 
     server_mod.tools_from_schema = tools_from_schema
     server_mod._identity_result_redaction_installed = True

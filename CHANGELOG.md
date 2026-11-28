@@ -23,6 +23,11 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 ## [Unreleased]
 
+### 🚨 Changed
+
+- Request fields that name a destination are marked `x-mcp-destination` in the OpenAPI schema and the MCP tool schemas: the action rule `url`, invitation `email` and `app_url`, OAuth redirect `base_url`, `allowed_email_domains` and `desktop_redirect_schemes`. The gateway reads the marker to show those values first and in full on the approval prompt. No request or response changes. Needs `shellui-django` 0.9.0.
+- The contract test fails when a new write-tool argument named like a destination (`*url`, `*uri`, `*host`, `*email`, `*domain`, `*origin`, `redirect*`, `callback*`) is neither marked `x-mcp-destination` nor on a short allow-list, and the tools now declare `destinations_declared` so the approval prompt does not warn about them. No request or response changes.
+
 ### Upgrade notes
 
 - When the process starts with `DEBUG=false`, Django staff sign-in at `/admin/login/` requires a confirmed authenticator and locks the account after repeated failures. Every page under `/admin/` also needs a session that signed in with a verified code: any other staff session (one that existed before this release, or one created another way) is signed out and sent to the sign-in page. Sign everyone in again once after you deploy. A process that starts with `DEBUG=true` still asks for the password only. `STAFF_ADMIN_LOGIN_HARDENED` overrides that.
@@ -53,6 +58,10 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 - `shellui-django` 0.8.0 with Django 6.1.3, Django REST framework 3.18.3 and drf-spectacular 0.30.0. The shellui-django pins are exact, so these move together.
 - gunicorn 27.0.1. A request whose `Transfer-Encoding` does not end with `chunked` (for example `identity` alone) now gets HTTP 400. No gunicorn setting changed.
 
+### 🐛 Bug Fixes
+
+- Revoking and deleting an invitation no longer fail with a 500 on PostgreSQL. The row lock joined the nullable `invited_by` column, and PostgreSQL refuses `FOR UPDATE` on the nullable side of an outer join. The lock now covers only the invitation row (`select_for_update(of=('self',))`). SQLite ignores row locks, so tests there never showed it.
+
 ### 🔒 Security
 
 - Agent access tokens authenticate only on `POST /mcp`. Refresh tokens are refused as bearer tokens, and a revoked refresh session stays refused.
@@ -61,6 +70,7 @@ See for sample https://raw.githubusercontent.com/favoloso/conventional-changelog
 
 ### 🏗 Chore
 
+- The `test_migration_0014_oidc*` tests build their audit table from Django's column types instead of SQLite-only SQL, and CI now runs them, with a new invitation row lock test, against PostgreSQL in the row lock regression step.
 - Node.js 26, the current LTS, for the image build stage and CI.
 - GitHub Actions: actions/checkout v7, actions/setup-node v7, astral-sh/setup-uv v10.4.0, docker/build-push-action v7, docker/login-action v4, docker/metadata-action v6, docker/setup-buildx-action v4, docker/setup-qemu-action v4, peter-evans/dockerhub-description v5.0.0.
 - Python dependencies: django-allauth 65.23.0, drf-spectacular 0.30.0, python-dotenv 1.2.4, requests 2.34.2, sentry-sdk 2.77.0, psycopg 3.3.9, cryptography 50.0.2, django-scim2 0.24.0, redis 8.2.0, celery 5.7.0.

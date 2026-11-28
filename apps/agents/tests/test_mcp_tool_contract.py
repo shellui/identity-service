@@ -9,6 +9,8 @@ from pathlib import Path
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 from drf_spectacular.generators import SchemaGenerator
+from shellui_django.mcp.approval_summary import destination_paths
+from shellui_django.mcp.destinations import lint_destination_names
 from shellui_django.mcp.openapi_tools import tools_from_schema
 
 from apps.agents.models import Agent
@@ -47,6 +49,24 @@ _BANNED_DESCRIPTION = re.compile(
 )
 
 User = get_user_model()
+
+# Properties that name where a call sends something. Each must carry `x-mcp-destination` (on the items
+# for a list) so the gateway shows it first in the approval prompt.
+DESTINATION_PATHS: dict[str, set[str]] = {
+    'identity_create_action_rules': {'url'},
+    'identity_update_action_rules': {'url'},
+    'identity_create_invitations': {'email', 'app_url'},
+    'identity_create_oauth_redirects': {'base_url'},
+    'identity_update_oauth_redirects': {'base_url'},
+    'identity_replace_hosting_oauth_redirects': {'base_url'},
+    'identity_delete_hosting_oauth_redirects': {'base_url'},
+    'identity_replace_companies': {'allowed_email_domains', 'desktop_redirect_schemes'},
+    'identity_update_companies': {'allowed_email_domains', 'desktop_redirect_schemes'},
+}
+
+# Write-tool arguments whose name looks like a destination but that are not one. Anything new that looks like
+# a destination must be marked `x-mcp-destination` (fix the serializer) or be added here with a reason.
+ALLOWED_UNMARKED: dict[str, set[str]] = {}
 
 IDENTITY_MCP = 'https://identity.test/mcp'
 FIXTURE = Path(__file__).resolve().parent / 'fixtures' / 'mcp_tools_list.json'
@@ -129,6 +149,17 @@ class McpToolContractTests(TestCase):
             self.assertFalse(schema['additionalProperties'], tool['name'])
             self.assertTrue(TRANSPORT_ARGUMENT_NAMES.isdisjoint(schema['properties']), tool['name'])
             self.assertTrue(TRANSPORT_ARGUMENT_NAMES.isdisjoint(schema.get('required') or []), tool['name'])
+
+    def test_destination_properties_are_marked_for_the_approval_prompt(self):
+        found = {tool['name']: destination_paths(tool['inputSchema']) for tool in self._tools_list()}
+        self.assertEqual({name: paths for name, paths in found.items() if paths}, DESTINATION_PATHS)
+
+    def test_every_tool_declares_its_destinations(self):
+        tools = self._tools_list()
+        self.assertTrue(all(tool['_meta'].get('destinations_declared') is True for tool in tools))
+
+    def test_fields_named_like_destinations_are_marked_or_allow_listed(self):
+        self.assertEqual(lint_destination_names(self._tools_list(), allow=ALLOWED_UNMARKED), [])
 
     def test_tool_descriptions_and_risk_annotations(self):
         by_name = {tool['name']: tool for tool in self._tools_list()}

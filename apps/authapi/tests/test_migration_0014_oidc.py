@@ -30,18 +30,26 @@ class _HistoricalApps:
 
 
 def ensure_oidc_audit_table() -> None:
+    """Create the audit table the migration used, with column types from the active database.
+
+    Migration 0019 dropped it, so tests make it. The types come from Django's own mapping, so the
+    same call works on SQLite and PostgreSQL.
+    """
+    quote = connection.ops.quote_name
+    table = OidcSocialAccountKeyMigration._meta.db_table
+    if table in connection.introspection.table_names():
+        return
+    key = models.BigAutoField(primary_key=True)
+    key_suffix = connection.data_types_suffix.get('BigAutoField', '')
+    columns = [
+        f'{quote("id")} {key.db_type(connection)} NOT NULL PRIMARY KEY {key_suffix}'.strip(),
+        f'{quote("social_account_id")} {models.BigIntegerField().db_type(connection)} NOT NULL',
+        f'{quote("old_provider")} {models.CharField(max_length=200).db_type(connection)} NOT NULL',
+        f'{quote("old_uid")} {models.CharField(max_length=255).db_type(connection)} NOT NULL',
+        f'{quote("migrated_at")} {models.DateTimeField().db_type(connection)} NOT NULL',
+    ]
     with connection.cursor() as cursor:
-        cursor.execute(
-            '''
-            CREATE TABLE IF NOT EXISTS authapi_oidcsocialaccountkeymigration (
-                id integer NOT NULL PRIMARY KEY AUTOINCREMENT,
-                social_account_id bigint NOT NULL,
-                old_provider varchar(200) NOT NULL,
-                old_uid varchar(255) NOT NULL,
-                migrated_at datetime NOT NULL
-            )
-            '''
-        )
+        cursor.execute(f'CREATE TABLE {quote(table)} ({", ".join(columns)})')
 
 
 class OidcMigration0014Tests(TestCase):
